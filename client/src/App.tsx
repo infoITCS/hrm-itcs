@@ -1,35 +1,28 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import MainLayout from './components/Layout/MainLayout';
+import PIM from './pages/PIM/PIM';
+import EmployeeList from './pages/PIM/EmployeeList';
+import AddEmployeeWizard from './pages/PIM/AddEmployeeWizard';
+import EmployeeProfile from './pages/PIM/EmployeeProfile';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<MainLayout />}>
+          <Route index element={<Navigate to="/pim" replace />} />
+          <Route path="pim" element={<PIM />}>
+            <Route index element={<EmployeeList />} />
+            <Route path="add" element={<AddEmployeeWizard />} />
+            <Route path="edit/:id" element={<AddEmployeeWizard />} />
+            <Route path="view/:id" element={<EmployeeProfile />} />
+          </Route>
+          <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
+          <Route path="*" element={<div className="p-4">Page Not Found</div>} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
-export default App
+export default App;
