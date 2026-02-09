@@ -52,25 +52,25 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
 
     return (
         <div className="space-y-1 relative" ref={containerRef}>
-            {label && <label className="block text-sm font-medium text-gray-600">{label}</label>}
+            {label && <label className="block text-sm font-semibold text-gray-700">{label}</label>}
 
             <div
-                className={`w-full border ${isOpen ? 'border-primary ring-1 ring-primary' : 'border-gray-300'} rounded-lg bg-white cursor-pointer relative flex items-center justify-between transition-all group hover:border-primary`}
+                className={`w-full border ${isOpen ? 'border-indigo-500 ring-1 ring-indigo-200' : 'border-slate-300'} rounded-lg bg-white cursor-pointer relative flex items-center justify-between transition-all group hover:border-indigo-400 hover:bg-indigo-50/30`}
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <span className={`px-3 py-2 text-sm ${selected ? 'text-gray-700' : 'text-gray-400'}`}>
+                <span className={`px-3 py-2 text-sm ${selected ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
                     {selectedLabel}
                 </span>
 
-                <div className="p-2 m-1 bg-slate-100 rounded-md text-gray-500 group-hover:bg-slate-200 transition-colors">
+                <div className="p-2 m-1 bg-indigo-50 rounded-md text-indigo-600 group-hover:bg-indigo-100 transition-colors">
                     {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </div>
             </div>
 
             {isOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg py-1 max-h-60 overflow-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-60 overflow-auto">
                     <div
-                        className="px-4 py-2 text-sm text-gray-400 cursor-pointer hover:bg-gray-50"
+                        className="px-3 py-2 text-sm text-slate-400 cursor-pointer hover:bg-indigo-50 transition-colors"
                         onClick={() => handleSelect('')}
                     >
                         {placeholder}
@@ -78,7 +78,11 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                     {normalizedOptions.map((opt) => (
                         <div
                             key={opt.value}
-                            className={`px-4 py-2 text-sm cursor-pointer transition-colors ${selected === opt.value ? 'bg-primary/5 text-primary font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
+                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                                selected === opt.value 
+                                    ? 'bg-indigo-100 text-indigo-700 font-medium' 
+                                    : 'text-slate-700 hover:bg-indigo-50'
+                            }`}
                             style={{ paddingLeft: `${(opt.level * 16) + 16}px` }}
                             onClick={() => handleSelect(opt.value)}
                         >

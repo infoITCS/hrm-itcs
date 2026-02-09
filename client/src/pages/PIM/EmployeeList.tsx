@@ -41,28 +41,28 @@ const EmployeeList = () => {
     }, []);
 
     return (
-        <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+        <div className="space-y-6 animate-fadeIn">
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200/50 p-6 animate-slide-up">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-lg font-semibold text-gray-700">Employee Information</h2>
+                    <h2 className="text-xl font-bold text-gray-800 tracking-tight">Employee Information</h2>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     {/* Row 1 */}
                     <div className="space-y-1">
-                        <label className="block text-sm font-medium text-gray-600">Employee Name</label>
+                        <label className="block text-sm font-semibold text-gray-700">Employee Name</label>
                         <input
                             type="text"
                             placeholder="Type for hints..."
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-200 bg-white transition-all"
                         />
                     </div>
 
                     <div className="space-y-1">
-                        <label className="block text-sm font-medium text-gray-600">Employee Id</label>
+                        <label className="block text-sm font-semibold text-gray-700">Employee Id</label>
                         <input
                             type="text"
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-200 bg-white transition-all"
                         />
                     </div>
 
@@ -82,11 +82,11 @@ const EmployeeList = () => {
                     </div>
 
                     <div className="space-y-1">
-                        <label className="block text-sm font-medium text-gray-600">Supervisor Name</label>
+                        <label className="block text-sm font-semibold text-gray-700">Supervisor Name</label>
                         <input
                             type="text"
                             placeholder="Type for hints..."
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-200 bg-white transition-all"
                         />
                     </div>
 
@@ -128,77 +128,77 @@ const EmployeeList = () => {
 
             <div className="flex justify-start">
                 <button
-                    onClick={() => navigate('/pim/add')} // Note: Ensure navigate hook is used
-                    className="bg-primary hover:bg-accent text-white px-6 py-2 rounded-md flex items-center gap-2 text-sm font-medium transition-colors shadow-sm"
+                    onClick={() => navigate('/pim/add')}
+                    className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 text-sm font-medium transition-all shadow-sm hover:shadow-md"
                 >
-                    <Plus size={16} /> Add
+                    <Plus size={18} /> Add Employee
                 </button>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="text-gray-500 font-medium">({employees.length}) Records Found</h3>
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200/50 overflow-hidden animate-slide-up">
+                <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+                    <h3 className="text-gray-700 font-semibold">({employees.length}) Records Found</h3>
                 </div>
                 <div className="overflow-visible">
                     <table className="w-full text-sm text-left border-separate border-spacing-y-0">
-                        <thead className="bg-slate-100 text-slate-700 font-medium">
+                        <thead className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white font-semibold">
                             <tr>
                                 <th className="px-6 py-4 rounded-l-lg w-10">
-                                    <input type="checkbox" className="rounded border-gray-300 w-4 h-4" />
+                                    <input type="checkbox" className="rounded border-gray-300 w-4 h-4 cursor-pointer" />
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
-                                        Id <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        Id <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
                                         <div className="flex flex-col leading-tight">
                                             <span>First (& Middle)</span>
                                             <span>Name</span>
                                         </div>
-                                        <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
-                                        Last Name <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        Last Name <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
-                                        Job Title <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        Job Title <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
                                         <div className="flex flex-col leading-tight">
                                             <span>Employment</span>
                                             <span>Status</span>
                                         </div>
-                                        <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
-                                        Sub Unit <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        Sub Unit <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
-                                <th className="px-4 py-4 cursor-pointer group hover:bg-slate-200 transition-colors">
+                                <th className="px-4 py-4 cursor-pointer group hover:bg-white/20 transition-colors">
                                     <div className="flex items-center gap-1">
-                                        Supervisor <ArrowUpDown size={14} className="text-gray-400 group-hover:text-gray-600" />
+                                        Supervisor <ArrowUpDown size={14} className="text-white/80 group-hover:text-white" />
                                     </div>
                                 </th>
                                 <th className="px-6 py-4 rounded-r-lg">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
+                        <tbody className="divide-y divide-slate-200/50 bg-white">
                             {employees.map((emp) => (
-                                <tr key={emp.employeeId} className="hover:bg-slate-50 transition-colors group">
+                                <tr key={emp.employeeId} className="hover:bg-indigo-50/50 transition-colors group">
                                     <td className="px-6 py-4 rounded-l-lg border-y border-l border-transparent group-hover:border-gray-100">
                                         <input type="checkbox" className="rounded border-gray-300 w-4 h-4" />
                                     </td>
-                                    <td className="px-4 py-4 border-y border-transparent group-hover:border-gray-100 text-blue-600 hover:underline cursor-pointer">{emp.employeeId}</td>
+                                    <td className="px-4 py-4 border-y border-transparent group-hover:border-indigo-200 text-indigo-600 hover:text-indigo-700 hover:underline cursor-pointer font-medium">{emp.employeeId}</td>
                                     <td className="px-4 py-4 border-y border-transparent group-hover:border-gray-100">{emp.firstName} {emp.middleName ? emp.middleName : ''}</td>
                                     <td className="px-4 py-4 border-y border-transparent group-hover:border-gray-100">{emp.lastName}</td>
                                     <td className="px-4 py-4 border-y border-transparent group-hover:border-gray-100">{emp.jobInfo?.designation || '-'}</td>
@@ -209,13 +209,13 @@ const EmployeeList = () => {
                                         <div className="flex items-center gap-2">
                                             <button
                                                 onClick={() => navigate(`/pim/view/${emp.employeeId}`)}
-                                                className="p-2 rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                                                className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
                                             >
                                                 <Pencil size={16} />
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteClick(emp.employeeId)}
-                                                className="p-2 rounded-full bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                                className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
                                             >
                                                 <Trash size={16} />
                                             </button>

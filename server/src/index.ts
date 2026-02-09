@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import employeeRoutes from './routes/employeeRoutes';
+import auditRoutes from './routes/auditRoutes';
 import { initScheduler } from './services/scheduler';
 
 dotenv.config();
@@ -25,6 +26,7 @@ mongoose.connect(process.env.MONGODB_URI as string, {
 
 // Routes
 app.use('/api/employees', employeeRoutes);
+app.use('/api/audit-logs', auditRoutes);
 
 app.get('/', (req, res) => {
     res.send('HRM API is running');
