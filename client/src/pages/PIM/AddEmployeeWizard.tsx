@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, User, Phone, Briefcase, FileText, Check } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
@@ -109,11 +109,6 @@ const AddEmployeeWizard = () => {
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            setFormData(prev => ({ ...prev, files: [...prev.files, ...Array.from(e.target.files!)] }));
-        }
-    };
 
     const addArrayItem = (field: 'emergencyContacts' | 'dependents') => {
         if (field === 'emergencyContacts') {
@@ -206,7 +201,6 @@ const AddEmployeeWizard = () => {
                 {steps.map((s, i) => {
                     const isCompleted = step > s.id;
                     const isCurrent = step === s.id;
-                    const isPending = step < s.id;
                     
                     return (
                         <div key={s.id} className="flex flex-col items-center relative z-10">

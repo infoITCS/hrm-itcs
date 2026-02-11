@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Calendar, Shield, AlertCircle } from 'lucide-react';
+import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle } from 'lucide-react';
 import api from '../../utils/api';
 
 const EmployeeProfile = () => {
