@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, User, Phone, Briefcase, FileText, Check } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
+import api from '../../utils/api';
 
 const AddEmployeeWizard = () => {
     const navigate = useNavigate();
@@ -53,7 +54,7 @@ const AddEmployeeWizard = () => {
     useEffect(() => {
         if (isEditMode) {
             setLoading(true);
-            fetch(`http://localhost:5000/api/employees`)
+            fetch(api.employees)
                 .then(res => res.json())
                 .then(data => {
                     const found = data.find((e: any) => e.employeeId === id) || data.find((e: any) => e._id === id);
@@ -133,7 +134,7 @@ const AddEmployeeWizard = () => {
         setLoading(true);
         try {
             // 1. Create Employee Logic (JSON)
-            const response = await fetch('http://localhost:5000/api/employees', {
+            const response = await fetch(api.employees, {
                 method: 'POST',
                 // Mock Auth Header
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer mock-token' },
@@ -150,7 +151,7 @@ const AddEmployeeWizard = () => {
                         fileData.append('file', file);
                         fileData.append('fileType', 'Document'); // Default for now
 
-                        await fetch(`http://localhost:5000/api/employees/${newEmp.employeeId}/attachments`, {
+                        await fetch(api.employeeAttachments(newEmp.employeeId), {
                             method: 'POST',
                             headers: { 'Authorization': 'Bearer mock-token' },
                             body: fileData

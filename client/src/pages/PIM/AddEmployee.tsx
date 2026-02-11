@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Save } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
+import api from '../../utils/api';
 
 const AddEmployee = () => {
     const navigate = useNavigate();
@@ -76,7 +77,7 @@ const AddEmployee = () => {
         };
 
         try {
-            const response = await fetch('http://localhost:5000/api/employees', {
+            const response = await fetch(api.employees, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

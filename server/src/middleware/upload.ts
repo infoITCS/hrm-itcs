@@ -3,8 +3,12 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
+// Use /tmp for Vercel serverless functions, or local uploads for development
+const uploadDir = process.env.VERCEL 
+    ? '/tmp/uploads' 
+    : path.join(__dirname, '../../uploads');
+
 // Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -35,6 +39,6 @@ export const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
+        fileSize: 10 * 1024 * 1024 // 10MB limit for production
     }
 });

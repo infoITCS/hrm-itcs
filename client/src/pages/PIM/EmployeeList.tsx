@@ -3,6 +3,7 @@ import { Plus, ArrowUpDown, Pencil, Trash } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
 import { useNavigate } from 'react-router-dom';
 import CustomSelect from '../../components/UI/CustomSelect';
+import api from '../../utils/api';
 
 const EmployeeList = () => {
     const navigate = useNavigate();
@@ -18,7 +19,7 @@ const EmployeeList = () => {
     const confirmDelete = () => {
         if (!employeeToDelete) return;
 
-        fetch(`http://localhost:5000/api/employees/${employeeToDelete}`, {
+        fetch(api.employee(employeeToDelete), {
             method: 'DELETE',
         })
             .then(res => {
@@ -34,7 +35,7 @@ const EmployeeList = () => {
     };
 
     React.useEffect(() => {
-        fetch('http://localhost:5000/api/employees')
+        fetch(api.employees)
             .then(res => res.json())
             .then(data => setEmployees(data))
             .catch(err => console.error('Error fetching employees:', err));

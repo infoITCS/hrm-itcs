@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Calendar, Shield, AlertCircle } from 'lucide-react';
+import api from '../../utils/api';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
@@ -13,7 +14,7 @@ const EmployeeProfile = () => {
 
     useEffect(() => {
         // Fetch employee data
-        fetch(`http://localhost:5000/api/employees`) // In real app, endpoint should be /api/employees/:id
+        fetch(api.employees) // In real app, endpoint should be /api/employees/:id
             .then(res => res.json())
             .then(data => {
                 // Mock filtering since our API currently returns all. 
@@ -28,7 +29,7 @@ const EmployeeProfile = () => {
             });
 
         // Fetch audit logs
-        fetch(`http://localhost:5000/api/audit-logs?targetResource=Employee&targetId=${id}`)
+        fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`)
             .then(res => res.json())
             .then(data => setAuditLogs(data || []))
             .catch(err => console.error('Error fetching audit logs:', err));
