@@ -1,15 +1,17 @@
+import dotenv from 'dotenv';
+// Load environment variables FIRST before any other imports
+dotenv.config();
+
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import session from 'express-session';
 import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
 import { initScheduler } from './services/scheduler';
 
 import passport from 'passport';
 import configurePassport from './config/passport';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,12 +27,25 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Session configuration (required for OAuth state/PKCE)
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
+
 // Initialize Scheduler (only in production with proper environment)
 if (process.env.NODE_ENV === 'production' && process.env.ENABLE_SCHEDULER !== 'false') {
     initScheduler();
 }
 
 app.use(passport.initialize());
+app.use(passport.session()); // Required for OAuth state/PKCE
 configurePassport();
 
 // Database Connection

@@ -1,8 +1,8 @@
 
-import express from 'express';
+import express, { Request, Response } from 'express';
 import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 
 const router = express.Router();
@@ -34,7 +34,8 @@ router.get('/', async (req, res) => {
 });
 
 // Create employee (Protected, HR/Admin)
-router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachments'), async (req: any, res) => {
+router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachments'), async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
     // Note: req.body will contain text fields, req.files will contain files
     // Since we are sending JSON for complex nested fields from frontend, 
     // dealing with multipart/form-data for nested objects can be tricky.
@@ -68,7 +69,7 @@ router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachm
         const newEmployee = await employee.save();
 
         // Log action
-        await createAuditLog('CREATE', newEmployee.employeeId, req.user?.userId || 'unknown', { name: `${newEmployee.firstName} ${newEmployee.lastName}` });
+        await createAuditLog('CREATE', newEmployee.employeeId, authReq.user?.userId || 'unknown', { name: `${newEmployee.firstName} ${newEmployee.lastName}` });
 
         res.status(201).json(newEmployee);
     } catch (err: any) {
@@ -77,7 +78,8 @@ router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachm
 });
 
 // Upload attachment for an employee
-router.post('/:id/attachments', authenticate, upload.single('file'), async (req: any, res) => {
+router.post('/:id/attachments', authenticate, upload.single('file'), async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
     try {
         if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
@@ -96,7 +98,7 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         employee.attachments.push(attachment as any);
         await employee.save();
 
-        await createAuditLog('UPLOAD_DOC', employee.employeeId, req.user?.userId || 'unknown', { file: req.file.originalname });
+        await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: req.file.originalname });
 
         res.status(200).json(attachment);
 
@@ -106,7 +108,8 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 });
 
 // Update employee
-router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: any, res) => {
+router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
     try {
         const employee = await Employee.findOne({ employeeId: req.params.id });
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
@@ -121,7 +124,7 @@ router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: any, re
         Object.assign(employee, updates);
         const updatedEmployee = await employee.save();
 
-        await createAuditLog('UPDATE', updatedEmployee.employeeId, req.user?.userId || 'unknown', { updates: Object.keys(updates) });
+        await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { updates: Object.keys(updates) });
 
         res.json(updatedEmployee);
     } catch (err: any) {
@@ -130,14 +133,15 @@ router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: any, re
 });
 
 // Delete employee
-router.delete('/:id', authenticate, authorize(['admin']), async (req: any, res) => {
+router.delete('/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
     try {
         const deletedEmployee = await Employee.findOneAndDelete({ employeeId: req.params.id });
         if (!deletedEmployee) {
             return res.status(404).json({ message: 'Employee not found' });
         }
 
-        await createAuditLog('DELETE', req.params.id, req.user?.userId || 'unknown', {});
+        await createAuditLog('DELETE', req.params.id, authReq.user?.userId || 'unknown', {});
 
         res.json({ message: 'Employee deleted' });
     } catch (err: any) {

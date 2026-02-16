@@ -3,7 +3,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import { AuthUtils } from '../middleware/auth.utils';
 import { User, IUser } from '../models/User.model';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -12,10 +12,17 @@ const router = Router();
  * @desc    Initiate Microsoft OAuth login
  * @access  Public
  */
-router.get('/microsoft', passport.authenticate('microsoft', {
-    // Optional: define scopes here if not defined in strategy
-    // scope: ['user.read']
-}));
+router.get('/microsoft', (req: Request, res: Response, next: NextFunction) => {
+    if (!process.env.MICROSOFT_CLIENT_ID || !process.env.MICROSOFT_CLIENT_SECRET) {
+        return res.status(503).json({ 
+            message: 'Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables.' 
+        });
+    }
+    passport.authenticate('microsoft', {
+        // Optional: define scopes here if not defined in strategy
+        // scope: ['user.read']
+    })(req, res, next);
+});
 
 /**
  * @route   GET /api/auth/microsoft/callback
@@ -24,10 +31,16 @@ router.get('/microsoft', passport.authenticate('microsoft', {
  */
 router.get(
     '/microsoft/callback',
-    passport.authenticate('microsoft', {
-        failureRedirect: `${process.env.CLIENT_URL}/login?error=login_failed`,
-        session: false // We use JWT, so no session needed
-    }),
+    (req: Request, res: Response, next: NextFunction) => {
+        if (!process.env.MICROSOFT_CLIENT_ID || !process.env.MICROSOFT_CLIENT_SECRET) {
+            const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+            return res.redirect(`${clientUrl}/login?error=microsoft_not_configured`);
+        }
+        passport.authenticate('microsoft', {
+            failureRedirect: `${process.env.CLIENT_URL}/login?error=login_failed`,
+            session: false // We use JWT, so no session needed
+        })(req, res, next);
+    },
     async (req: Request, res: Response) => {
         try {
             const user = req.user as IUser;
@@ -53,15 +66,17 @@ router.get(
 );
 
 // Add /auth/me endpoint for fetching current user
-router.get('/me', authenticate, async (req: any, res: Response) => {
+router.get('/me', authenticate, async (req: Request, res: Response) => {
     try {
-        const user = await User.findById(req.user.userId).select('-microsoftId'); // Exclude sensitive info if any
+        const authReq = req as AuthRequest;
+        const user = await User.findById(authReq.user?.userId).select('-microsoftId -password'); // Exclude sensitive info
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
         res.json(user);
     } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        console.error('Error fetching user:', error);
+        res.status(500).json({ message: error.message || 'Internal server error' });
     }
 });
 

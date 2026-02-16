@@ -19,56 +19,77 @@ passport.deserializeUser(async (id: string, done: any) => {
 });
 
 // Microsoft OAuth Strategy configuration
-passport.use(
-    new MicrosoftStrategy(
-        {
-            clientID: process.env.MICROSOFT_CLIENT_ID || '',
-            clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
-            callbackURL: process.env.MICROSOFT_CALLBACK_URL || '',
-            scope: ['openid', 'profile', 'email', 'user.read'], // Added required openid scope
-            tenant: process.env.MICROSOFT_TENANT_ID || 'common',
-            authorizationURL: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-            tokenURL: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        },
-        async (accessToken: string, refreshToken: string, profile: any, done: any) => {
-            try {
-                // Extract email from profile
-                const email = profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
+// Only initialize if required environment variables are present
+if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
+    // Use tenant-specific endpoint (required for single-tenant apps)
+    // If MICROSOFT_TENANT_ID is not set, use 'organizations' as fallback (works for most orgs)
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'organizations';
+    const baseUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0`;
+    
+    // Build strategy options
+    const strategyOptions: any = {
+        clientID: process.env.MICROSOFT_CLIENT_ID,
+        callbackURL: process.env.MICROSOFT_CALLBACK_URL,
+        scope: ['openid', 'profile', 'email', 'user.read'], // Added required openid scope
+        tenant: tenantId,
+        authorizationURL: `${baseUrl}/authorize`,
+        tokenURL: `${baseUrl}/token`,
+        pkce: true, // Enable PKCE (Proof Key for Code Exchange) - required by Azure AD
+        state: true, // Required when PKCE is enabled
+    };
+    
+    // Only add clientSecret if provided (for confidential clients/Web apps)
+    // Public clients (SPA/Mobile) don't use client secrets
+    if (process.env.MICROSOFT_CLIENT_SECRET) {
+        strategyOptions.clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+    }
+    
+    passport.use(
+        new MicrosoftStrategy(
+            strategyOptions,
+            async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+                try {
+                    // Extract email from profile
+                    const email = profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
 
-                if (!email) {
-                    console.error('❌ No email found in Microsoft profile');
-                    // done should be called with (error, user, info)
-                    return done(null, false, { message: 'No email found in Microsoft profile' });
+                    if (!email) {
+                        console.error('❌ No email found in Microsoft profile');
+                        // done should be called with (error, user, info)
+                        return done(null, false, { message: 'No email found in Microsoft profile' });
+                    }
+
+                    // Find existing user or create new one
+                    let user = await User.findOne({ email });
+
+                    if (!user) {
+                        // Create new user with default Employee role
+                        user = await User.create({
+                            email,
+                            password: 'microsoft-sso-' + Date.now(), // Random password
+                            role: UserRole.EMPLOYEE,
+                            isActive: true, // Default to active for SSO
+                            firstName: profile.name?.givenName || 'Unknown',
+                            lastName: profile.name?.familyName || 'User',
+                            microsoftId: profile.id
+                        });
+                    } else if (!user.microsoftId) {
+                        // Link if exists by email but not microsoftId
+                        user.microsoftId = profile.id;
+                        await user.save();
+                    }
+
+                    return done(null, user);
+                } catch (error: any) {
+                    console.error('❌ Microsoft SSO error:', error.message);
+                    return done(error, undefined);
                 }
-
-                // Find existing user or create new one
-                let user = await User.findOne({ email });
-
-                if (!user) {
-                    // Create new user with default Employee role
-                    user = await User.create({
-                        email,
-                        password: 'microsoft-sso-' + Date.now(), // Random password
-                        role: UserRole.EMPLOYEE,
-                        isActive: true, // Default to active for SSO
-                        firstName: profile.name?.givenName || 'Unknown',
-                        lastName: profile.name?.familyName || 'User',
-                        microsoftId: profile.id
-                    });
-                } else if (!user.microsoftId) {
-                    // Link if exists by email but not microsoftId
-                    user.microsoftId = profile.id;
-                    await user.save();
-                }
-
-                return done(null, user);
-            } catch (error: any) {
-                console.error('❌ Microsoft SSO error:', error.message);
-                return done(error, undefined);
             }
-        }
-    )
-);
+        )
+    );
+    console.log(`✅ Microsoft OAuth strategy configured (Tenant: ${tenantId})`);
+} else {
+    console.warn('⚠️  Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_CALLBACK_URL to enable.');
+}
 
 export default () => { }; // Export empty function to satisfy init expectation or change call site
 

@@ -1,9 +1,6 @@
 
 import { Request, Response, NextFunction } from 'express';
-// Note: In a real app, you'd use a library like jsonwebtoken
-// For this MVP/Demo, we'll assume a simple header-based auth or mock it
-// IF the user wants full JWT, we'd need to install encryption libraries. 
-// Given the requirements mentioned "Data Security & Permissions", we'll verify a mock token.
+import { AuthUtils } from './auth.utils';
 
 export interface AuthRequest extends Request {
     user?: {
@@ -12,31 +9,47 @@ export interface AuthRequest extends Request {
     };
 }
 
-export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
-    // simple mock auth for now, can be replaced with real JWT verify
-    const token = req.header('Authorization');
+export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const authHeader = authReq.header('Authorization');
 
-    if (!token) {
-        // for development, let's default to an admin user if no token, 
-        // OR reject. Let's reject to encourage proper login flow if one existed.
-        // BUT since there's no login flow yet in the plan, let's PASS a default admin
-        req.user = { userId: 'admin-123', role: 'admin' };
-        next();
-        return;
+    if (!authHeader) {
+        return res.status(401).json({ message: 'No authorization token provided' });
     }
 
-    // Check token validity logic here...
-    req.user = { userId: 'admin-123', role: 'admin' };
+    // Extract token from "Bearer <token>" format
+    const token = authHeader.startsWith('Bearer ') 
+        ? authHeader.substring(7) 
+        : authHeader;
+
+    if (!token) {
+        return res.status(401).json({ message: 'Invalid authorization token format' });
+    }
+
+    // Verify JWT token
+    const decoded = AuthUtils.verifyToken(token);
+    
+    if (!decoded || !decoded.userId) {
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+
+    // Set user info from token payload
+    authReq.user = {
+        userId: decoded.userId,
+        role: decoded.role || 'employee'
+    };
+
     next();
 };
 
 export const authorize = (roles: string[]) => {
-    return (req: AuthRequest, res: Response, next: NextFunction) => {
-        if (!req.user) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        const authReq = req as AuthRequest;
+        if (!authReq.user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        if (!roles.includes(req.user.role)) {
+        if (!roles.includes(authReq.user.role)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
 

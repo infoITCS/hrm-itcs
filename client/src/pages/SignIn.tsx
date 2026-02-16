@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { User, UserRole } from '../types';
 import APIService from '../services/api';
-
+import itcsLogo from '../assets/logo.png'
 interface SignInProps {
     onLogin: (user: User) => void;
 }
@@ -73,7 +73,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
                 {/* Logo Area */}
                 <div className="relative z-10 flex flex-col gap-6 items-start">
-                    <img src="/itcs-logo.webp" alt="ITCS Logo" className="h-28 w-auto object-contain drop-shadow-2xl" />
+                    <img src={itcsLogo} alt="ITCS Logo" className="h-28 w-auto object-contain drop-shadow-2xl" />
                     <div className="flex flex-col gap-2">
                         <div className="h-1 w-12 bg-gradient-to-r from-primary to-blue-500 rounded-full"></div>
                         <p className="text-xs text-blue-200 font-bold tracking-[0.3em] uppercase opacity-90 text-shadow-sm">
