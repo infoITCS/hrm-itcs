@@ -2,13 +2,11 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import APIService from '../services/api';
 import type { User, UserRole } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
-interface AuthCallbackProps {
-    onLogin: (user: User) => void;
-}
-
-export const AuthCallback: React.FC<AuthCallbackProps> = ({ onLogin }) => {
+export const AuthCallback: React.FC = () => {
     const navigate = useNavigate();
+    const { login } = useAuth();
 
     useEffect(() => {
         const handleCallback = async () => {
@@ -57,7 +55,7 @@ export const AuthCallback: React.FC<AuthCallbackProps> = ({ onLogin }) => {
                 sessionStorage.setItem('itcs_user', JSON.stringify(user));
                 sessionStorage.setItem('itcs_auth', 'true');
 
-                onLogin(user);
+                login(user);
                 navigate('/pim'); // standard dashboard route
             } catch (error) {
                 console.error('Failed to complete authentication:', error);
@@ -66,7 +64,7 @@ export const AuthCallback: React.FC<AuthCallbackProps> = ({ onLogin }) => {
         };
 
         handleCallback();
-    }, [navigate, onLogin]);
+    }, [navigate, login]);
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">

@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MainLayout from './components/Layout/MainLayout';
+import ProtectedRoute from './components/ProtectedRoute';
 import PIM from './pages/PIM/PIM';
 import EmployeeList from './pages/PIM/EmployeeList';
 import AddEmployeeWizard from './pages/PIM/AddEmployeeWizard';
@@ -7,30 +9,73 @@ import EmployeeProfile from './pages/PIM/EmployeeProfile';
 import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
 
-function App() {
-  const handleLogin = (user: any) => {
-    console.log('Logged in', user);
-    // basic handling: redirect to /pim
-    window.location.href = '/pim';
-  };
+// Component to redirect if already logged in
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="mt-6 text-lg font-semibold text-gray-700">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/pim" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+function AppRoutes() {
+  const { login } = useAuth();
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<SignIn onLogin={handleLogin} />} />
-        <Route path="/auth/callback" element={<AuthCallback onLogin={handleLogin} />} />
-        <Route path="/" element={<MainLayout />}>
-          <Route index element={<Navigate to="/login" replace />} />
-          <Route path="pim" element={<PIM />}>
-            <Route index element={<EmployeeList />} />
-            <Route path="add" element={<AddEmployeeWizard />} />
-            <Route path="edit/:id" element={<AddEmployeeWizard />} />
-            <Route path="view/:id" element={<EmployeeProfile />} />
-          </Route>
-          <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
-          <Route path="*" element={<div className="p-4">Page Not Found</div>} />
+    <Routes>
+      <Route 
+        path="/login" 
+        element={
+          <PublicRoute>
+            <SignIn onLogin={login} />
+          </PublicRoute>
+        } 
+      />
+      <Route 
+        path="/auth/callback" 
+        element={<AuthCallback onLogin={login} />} 
+      />
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/pim" replace />} />
+        <Route path="pim" element={<PIM />}>
+          <Route index element={<EmployeeList />} />
+          <Route path="add" element={<AddEmployeeWizard />} />
+          <Route path="edit/:id" element={<AddEmployeeWizard />} />
+          <Route path="view/:id" element={<EmployeeProfile />} />
         </Route>
-      </Routes>
+        <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
+        <Route path="*" element={<div className="p-4">Page Not Found</div>} />
+      </Route>
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
 }

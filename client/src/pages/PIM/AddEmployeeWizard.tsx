@@ -10,6 +10,7 @@ const AddEmployeeWizard = () => {
     const isEditMode = !!id;
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
 
@@ -132,38 +133,64 @@ const AddEmployeeWizard = () => {
 
     const handleSubmit = async () => {
         setLoading(true);
+        setError(null);
+        
         try {
-            // 1. Create Employee Logic (JSON)
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('You must be logged in to submit. Please log in and try again.');
+                setLoading(false);
+                return;
+            }
+
+            // 1. Create Employee (without files - files are uploaded separately)
+            const { files, ...employeeData } = formData;
+            
             const response = await fetch(api.employees, {
                 method: 'POST',
-                // Mock Auth Header
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer mock-token' },
-                body: JSON.stringify(formData)
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Authorization': `Bearer ${token}` 
+                },
+                body: JSON.stringify(employeeData)
             });
 
-            if (response.ok) {
-                const newEmp = await response.json();
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to create employee' }));
+                throw new Error(errorData.message || `Server error: ${response.status}`);
+            }
 
-                // 2. Upload Files if any
-                if (formData.files.length > 0) {
-                    for (const fileObj of formData.files) {
+            const newEmp = await response.json();
+
+            // 2. Upload Files if any
+            if (files.length > 0) {
+                for (const fileObj of files) {
+                    try {
                         const fileData = new FormData();
                         fileData.append('file', fileObj.file);
                         fileData.append('fileType', fileObj.type || 'Document');
 
-                        await fetch(api.employeeAttachments(newEmp.employeeId), {
+                        const fileResponse = await fetch(api.employeeAttachments(newEmp.employeeId), {
                             method: 'POST',
-                            headers: { 'Authorization': 'Bearer mock-token' },
+                            headers: { 'Authorization': `Bearer ${token}` },
                             body: fileData
                         });
+
+                        if (!fileResponse.ok) {
+                            console.warn(`Failed to upload file ${fileObj.file.name}`);
+                        }
+                    } catch (fileError) {
+                        console.error(`Error uploading file ${fileObj.file.name}:`, fileError);
+                        // Continue with other files even if one fails
                     }
                 }
-                navigate('/pim');
-            } else {
-                console.error('Failed to create employee');
             }
-        } catch (error) {
+            
+            // Success - navigate to employee list
+            navigate('/pim');
+        } catch (error: any) {
             console.error('Error submitting form:', error);
+            setError(error.message || 'Failed to submit employee. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -842,6 +869,20 @@ const AddEmployeeWizard = () => {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Error Message */}
+                {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+                        <span className="text-red-500">⚠️</span>
+                        <span>{error}</span>
+                        <button
+                            onClick={() => setError(null)}
+                            className="ml-auto text-red-500 hover:text-red-700"
+                        >
+                            ×
+                        </button>
                     </div>
                 )}
 

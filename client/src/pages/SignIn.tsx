@@ -45,11 +45,14 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
             const user: User = {
                 id: response.data.user._id || response.data.user.id,
-                name: response.data.user.email.split('@')[0],
+                name: (response.data.user.firstName && response.data.user.lastName)
+                    ? `${response.data.user.firstName} ${response.data.user.lastName}`
+                    : response.data.user.email.split('@')[0],
                 email: response.data.user.email,
                 role: response.data.user.role as UserRole,
-                avatar: 'https://picsum.photos/seed/' + response.data.user.email + '/100',
-                _id: response.data.user._id // Ensure this matches interface if needed
+                avatar: response.data.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(response.data.user.firstName || response.data.user.email)}`,
+                firstName: response.data.user.firstName,
+                lastName: response.data.user.lastName
             };
 
             onLogin(user);
