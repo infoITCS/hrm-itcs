@@ -112,11 +112,14 @@ const AddEmployeeWizard = () => {
         }
     };
 
+<<<<<<< HEAD
 
 
     const addEmergencyContact = () => {
         setFormData(prev => ({ ...prev, emergencyContacts: [...prev.emergencyContacts, { name: '', relation: '', phone: '' }] }));
     };
+=======
+>>>>>>> bf804904067a08fedd653d1aab8613ba2d8f218a
 
     const removeEmergencyContact = (index: number) => {
         setFormData(prev => ({
@@ -202,7 +205,11 @@ const AddEmployeeWizard = () => {
                 {steps.map((s, i) => {
                     const isCompleted = step > s.id;
                     const isCurrent = step === s.id;
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> bf804904067a08fedd653d1aab8613ba2d8f218a
                     return (
                         <div key={s.id} className="flex flex-col items-center relative z-10">
                             {/* Step Circle with Completion Animation */}
