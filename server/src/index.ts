@@ -6,6 +6,9 @@ import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
 import { initScheduler } from './services/scheduler';
 
+import passport from 'passport';
+import configurePassport from './config/passport';
+
 dotenv.config();
 
 const app = express();
@@ -27,6 +30,9 @@ if (process.env.NODE_ENV === 'production' && process.env.ENABLE_SCHEDULER !== 'f
     initScheduler();
 }
 
+app.use(passport.initialize());
+configurePassport();
+
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI as string, {
     dbName: 'hrm'
@@ -34,9 +40,12 @@ mongoose.connect(process.env.MONGODB_URI as string, {
     .then(() => console.log('Connected to MongoDB (hrm)'))
     .catch(err => console.error('Could not connect to MongoDB', err));
 
+import authRoutes from './routes/authRoutes';
+
 // Routes
 app.use('/api/employees', employeeRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/', (req, res) => {
     res.send('HRM API is running');

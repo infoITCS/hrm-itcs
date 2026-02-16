@@ -37,8 +37,18 @@ const EmployeeList = () => {
     React.useEffect(() => {
         fetch(api.employees)
             .then(res => res.json())
-            .then(data => setEmployees(data))
-            .catch(err => console.error('Error fetching employees:', err));
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setEmployees(data);
+                } else {
+                    console.error('API returned non-array data:', data);
+                    setEmployees([]);
+                }
+            })
+            .catch(err => {
+                console.error('Error fetching employees:', err);
+                setEmployees([]);
+            });
     }, []);
 
     return (
