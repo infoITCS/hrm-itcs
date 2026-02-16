@@ -37,6 +37,13 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Sync state with props
+    useEffect(() => {
+        if (value !== undefined) {
+            setSelected(value);
+        }
+    }, [value]);
+
     const handleSelect = (optionValue: string) => {
         setSelected(optionValue);
         if (onChange) onChange(optionValue);
@@ -78,11 +85,10 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                     {normalizedOptions.map((opt) => (
                         <div
                             key={opt.value}
-                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                                selected === opt.value 
-                                    ? 'bg-indigo-100 text-indigo-700 font-medium' 
+                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${selected === opt.value
+                                    ? 'bg-indigo-100 text-indigo-700 font-medium'
                                     : 'text-slate-700 hover:bg-indigo-50'
-                            }`}
+                                }`}
                             style={{ paddingLeft: `${(opt.level * 16) + 16}px` }}
                             onClick={() => handleSelect(opt.value)}
                         >

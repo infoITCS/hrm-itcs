@@ -1,6 +1,6 @@
 
 import { NavLink, Outlet } from 'react-router-dom';
-import { ChevronDown, HelpCircle, Plus } from 'lucide-react';
+import { ChevronDown, HelpCircle } from 'lucide-react';
 
 const PIM = () => {
     return (
