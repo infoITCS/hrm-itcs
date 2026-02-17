@@ -6,6 +6,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import session from 'express-session';
+import path from 'path';
 import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
 import { initScheduler } from './services/scheduler';
@@ -56,6 +57,9 @@ mongoose.connect(process.env.MONGODB_URI as string, {
     .catch(err => console.error('Could not connect to MongoDB', err));
 
 import authRoutes from './routes/authRoutes';
+
+// Static Files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Routes
 app.use('/api/employees', employeeRoutes);

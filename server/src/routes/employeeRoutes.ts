@@ -1,6 +1,7 @@
 
 import express, { Request, Response } from 'express';
 import Employee from '../models/Employee';
+import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
@@ -71,15 +72,15 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
     const authReq = req as AuthRequest;
     const role = authReq.user?.role || '';
     const userId = authReq.user?.userId;
-    
+
     // Check if employee is trying to create their own record
     const isCreatingOwnRecord = req.body.userId === userId;
-    
+
     // If not creating own record, check admin permission
     if (!isCreatingOwnRecord && !canCreateUser(role)) {
         return res.status(403).json({ message: 'You do not have permission to create employees' });
     }
-    
+
     // If employee is creating own record, ensure userId matches
     if (isCreatingOwnRecord && role === 'employee') {
         // Ensure the userId in the request matches the authenticated user
@@ -116,6 +117,14 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         });
 
         const newEmployee = await employee.save();
+
+        // Sync names to User model if userId exists
+        if (newEmployee.userId && (newEmployee.firstName || newEmployee.lastName)) {
+            await User.findByIdAndUpdate(newEmployee.userId, {
+                ...(newEmployee.firstName && { firstName: newEmployee.firstName }),
+                ...(newEmployee.lastName && { lastName: newEmployee.lastName })
+            });
+        }
 
         // Log action
         await createAuditLog('CREATE', newEmployee.employeeId, authReq.user?.userId || 'unknown', { name: `${newEmployee.firstName} ${newEmployee.lastName}` });
@@ -175,7 +184,7 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         const attachment = {
             fileType: req.body.fileType || 'Document', // 'ID', 'Contract', etc.
             fileName: req.file.originalname,
-            filePath: req.file.path,
+            filePath: req.file.filename, // Store just the filename, we serve from /uploads
             uploadDate: new Date(),
             status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending', // Auto-approve if admin
             uploadedBy: authReq.user?.userId
@@ -183,6 +192,11 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 
         employee.attachments.push(attachment as any);
         await employee.save();
+
+        // If this is a profile picture, update the User model too
+        if (attachment.fileType === 'Profile Picture' && employee.userId) {
+            await User.findByIdAndUpdate(employee.userId, { avatar: `/uploads/${req.file.filename}` });
+        }
 
         await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: req.file.originalname });
 
@@ -216,9 +230,9 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
 
         await employee.save();
 
-        await createAuditLog('DOC_APPROVAL', employee.employeeId, authReq.user?.userId || 'unknown', { 
-            attachment: req.params.attachmentId, 
-            status 
+        await createAuditLog('DOC_APPROVAL', employee.employeeId, authReq.user?.userId || 'unknown', {
+            attachment: req.params.attachmentId,
+            status
         });
 
         res.json(employee.attachments[attachmentIndex]);
@@ -247,11 +261,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
 
         const updates = req.body;
         const role = authReq.user?.role || '';
-        
+
         // Fields that can only be set once and cannot be edited after being filled
         // Admins can override this restriction
         const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'] as const;
-        
+
         // Only apply one-time field restrictions if user is NOT an admin
         // Admins can edit all fields including one-time fields
         if (role !== 'super-admin' && role !== 'admin') {
@@ -261,7 +275,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
                 const employeeObj = employee.toObject();
                 const currentValue = employeeObj[field as keyof typeof employeeObj];
                 const newValue = updates[field];
-                
+
                 // If field already has a value and user is trying to change it, prevent the change
                 if (currentValue && newValue && currentValue !== newValue) {
                     // Field already exists and user is trying to change it - prevent this
@@ -284,6 +298,14 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         Object.assign(employee, updates);
         const updatedEmployee = await employee.save();
 
+        // Sync names to User model if userId exists
+        if (employee.userId && (updates.firstName || updates.lastName)) {
+            await User.findByIdAndUpdate(employee.userId, {
+                ...(updates.firstName && { firstName: updates.firstName }),
+                ...(updates.lastName && { lastName: updates.lastName })
+            });
+        }
+
         await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { updates: Object.keys(updates) });
 
         res.json(updatedEmployee);
@@ -295,12 +317,12 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
 // Delete employee (Super-Admin/Admin only)
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
-    
+
     // Check permission
     if (!canCreateUser(authReq.user?.role || '')) {
         return res.status(403).json({ message: 'You do not have permission to delete employees' });
     }
-    
+
     try {
         const deletedEmployee = await Employee.findOneAndDelete({ employeeId: req.params.id });
         if (!deletedEmployee) {

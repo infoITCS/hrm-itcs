@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../types';
 import APIService from '../services/api';
+import { api } from '../utils/api';
 
 interface AuthContextType {
     user: User | null;
@@ -32,7 +33,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             : userData.email.split('@')[0],
                         email: userData.email,
                         role: userData.role,
-                        avatar: userData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.firstName || userData.email)}`,
+                        avatar: userData.avatar
+                            ? (userData.avatar.startsWith('http') ? userData.avatar : `${api.baseURL}${userData.avatar}`)
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent((userData.firstName && userData.lastName) ? `${userData.firstName} ${userData.lastName}` : userData.email.split('@')[0])}&background=random`,
                         firstName: userData.firstName,
                         lastName: userData.lastName
                     };

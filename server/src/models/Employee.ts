@@ -12,6 +12,7 @@ export interface IEmployee extends Document {
     gender?: string;
     maritalStatus?: string;
     nationality?: string;
+    cnic?: string;
     fatherName?: string;
     bloodGroup?: string;
     address?: {
@@ -83,6 +84,7 @@ const EmployeeSchema: Schema = new Schema({
     gender: { type: String },
     maritalStatus: { type: String },
     nationality: { type: String },
+    cnic: { type: String },
     fatherName: { type: String },
     bloodGroup: { type: String },
     address: {

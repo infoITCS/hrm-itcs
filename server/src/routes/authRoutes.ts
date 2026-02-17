@@ -3,6 +3,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import { AuthUtils } from '../middleware/auth.utils';
 import { User, IUser } from '../models/User.model';
+import Employee from '../models/Employee';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -14,28 +15,28 @@ const router = Router();
  */
 router.get('/microsoft', (req: Request, res: Response, next: NextFunction) => {
     if (!process.env.MICROSOFT_CLIENT_ID || !process.env.MICROSOFT_CLIENT_SECRET) {
-        return res.status(503).json({ 
-            message: 'Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables.' 
+        return res.status(503).json({
+            message: 'Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables.'
         });
     }
-    
+
     // Check if user wants to select a different account
     const prompt = req.query.prompt === 'select_account' ? 'select_account' : undefined;
-    
+
     // Store prompt in the request so customParams can access it
     if (prompt) {
         (req as any).oauthPrompt = prompt;
         // Also store in query for passport to pick up
         req.query.prompt = prompt;
     }
-    
+
     // Create a wrapper that ensures prompt is passed
     const authenticate = passport.authenticate('microsoft', {
         session: false,
         // Try to pass prompt through authenticate options
         ...(prompt && { prompt })
     });
-    
+
     authenticate(req, res, next);
 });
 
@@ -84,10 +85,38 @@ router.get(
 router.get('/me', authenticate, async (req: Request, res: Response) => {
     try {
         const authReq = req as AuthRequest;
-        const user = await User.findById(authReq.user?.userId).select('-microsoftId -password'); // Exclude sensitive info
+        let user = await User.findById(authReq.user?.userId).select('-microsoftId -password'); // Exclude sensitive info
+
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
+
+        // Auto-sync from Employee record if names or avatar are missing
+        if (!user.firstName || !user.lastName || !user.avatar) {
+            const employee = await Employee.findOne({ userId: user._id });
+            if (employee) {
+                let updated = false;
+                if (!user.firstName && employee.firstName) {
+                    user.firstName = employee.firstName;
+                    updated = true;
+                }
+                if (!user.lastName && employee.lastName) {
+                    user.lastName = employee.lastName;
+                    updated = true;
+                }
+                // Check if there's a profile picture attachment
+                const profilePic = employee.attachments?.find((att: any) => att.fileType === 'Profile Picture');
+                if (!user.avatar && profilePic) {
+                    user.avatar = `/uploads/${profilePic.filePath}`;
+                    updated = true;
+                }
+
+                if (updated) {
+                    await user.save();
+                }
+            }
+        }
+
         res.json(user);
     } catch (error: any) {
         console.error('Error fetching user:', error);
