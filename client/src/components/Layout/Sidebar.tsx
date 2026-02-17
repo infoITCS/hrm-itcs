@@ -34,7 +34,7 @@ const Sidebar = () => {
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
         { name: 'Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Buzz', icon: MessageSquare, path: '/buzz', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        // { name: 'Buzz', icon: MessageSquare, path: '/buzz', roles: ['super-admin', 'admin', 'manager', 'employee'] },
     ];
     
     // Filter menu items based on user role
