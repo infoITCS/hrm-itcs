@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 export const AuthCallback: React.FC = () => {
     const navigate = useNavigate();
     const { login } = useAuth();
-    //test
+
     useEffect(() => {
         const handleCallback = async () => {
             try {
