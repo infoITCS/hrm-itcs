@@ -225,12 +225,13 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         const updates = req.body;
         
         // Fields that can only be set once and cannot be edited after being filled
-        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'];
+        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'] as const;
         
         // Prevent editing one-time fields if they already exist
         // Allow setting if field is currently empty, but prevent changing if already filled
         oneTimeFields.forEach(field => {
-            const currentValue = employee[field];
+            const employeeObj = employee.toObject();
+            const currentValue = employeeObj[field as keyof typeof employeeObj];
             const newValue = updates[field];
             
             // If field already has a value and user is trying to change it, prevent the change
