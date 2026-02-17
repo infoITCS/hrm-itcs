@@ -64,6 +64,10 @@ export interface IEmployee extends Document {
         fileName: string;
         filePath: string;
         uploadDate: Date;
+        status?: 'pending' | 'approved' | 'rejected';
+        uploadedBy?: string;
+        reviewedBy?: string;
+        reviewedAt?: Date;
     }[];
 }
 

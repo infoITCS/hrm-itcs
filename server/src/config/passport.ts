@@ -66,7 +66,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                         user = await User.create({
                             email,
                             password: 'microsoft-sso-' + Date.now(), // Random password
-                            role: UserRole.EMPLOYEE,
+                            role: UserRole.EMPLOYEE, // Default role for new SSO users
                             isActive: true, // Default to active for SSO
                             firstName: profile.name?.givenName || 'Unknown',
                             lastName: profile.name?.familyName || 'User',

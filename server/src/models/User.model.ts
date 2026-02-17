@@ -2,8 +2,9 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export enum UserRole {
+    SUPER_ADMIN = 'super-admin',
     ADMIN = 'admin',
-    HR = 'hr',
+    MANAGER = 'manager',
     EMPLOYEE = 'employee',
 }
 

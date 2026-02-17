@@ -1,12 +1,14 @@
 import React from 'react';
-import { Plus, ArrowUpDown, Pencil, Trash } from 'lucide-react';
+import { Plus, ArrowUpDown, Pencil, Trash, Eye } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
 import { useNavigate } from 'react-router-dom';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const EmployeeList = () => {
     const navigate = useNavigate();
+    const { canCreateUser, canEditSensitiveData, role } = usePermissions();
     const [employees, setEmployees] = React.useState<any[]>([]);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false);
     const [employeeToDelete, setEmployeeToDelete] = React.useState<string | null>(null);
@@ -19,8 +21,12 @@ const EmployeeList = () => {
     const confirmDelete = () => {
         if (!employeeToDelete) return;
 
+        const token = localStorage.getItem('token');
         fetch(api.employee(employeeToDelete), {
             method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
         })
             .then(res => {
                 if (res.ok) {
@@ -35,8 +41,18 @@ const EmployeeList = () => {
     };
 
     React.useEffect(() => {
-        fetch(api.employees)
-            .then(res => res.json())
+        const token = localStorage.getItem('token');
+        fetch(api.employees, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('Failed to fetch employees');
+                }
+                return res.json();
+            })
             .then(data => {
                 if (Array.isArray(data)) {
                     setEmployees(data);
@@ -137,14 +153,16 @@ const EmployeeList = () => {
                 </div>
             </div>
 
-            <div className="flex justify-start">
-                <button
-                    onClick={() => navigate('/pim/add')}
-                    className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 text-sm font-medium transition-all shadow-sm hover:shadow-md"
-                >
-                    <Plus size={18} /> Add Employee
-                </button>
-            </div>
+            {canCreateUser() && (
+                <div className="flex justify-start">
+                    <button
+                        onClick={() => navigate('/pim/add')}
+                        className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 text-sm font-medium transition-all shadow-sm hover:shadow-md"
+                    >
+                        <Plus size={18} /> Add Employee
+                    </button>
+                </div>
+            )}
 
             <div className="bg-white rounded-lg shadow-sm border border-slate-200/50 overflow-hidden animate-slide-up">
                 <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-purple-50">
@@ -220,16 +238,29 @@ const EmployeeList = () => {
                                         <div className="flex items-center gap-2">
                                             <button
                                                 onClick={() => navigate(`/pim/view/${emp.employeeId}`)}
-                                                className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                                                className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                                title="View"
                                             >
-                                                <Pencil size={16} />
+                                                <Eye size={16} />
                                             </button>
-                                            <button
-                                                onClick={() => handleDeleteClick(emp.employeeId)}
-                                                className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
-                                            >
-                                                <Trash size={16} />
-                                            </button>
+                                            {canEditSensitiveData() && (
+                                                <>
+                                                    <button
+                                                        onClick={() => navigate(`/pim/edit/${emp.employeeId}`)}
+                                                        className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Pencil size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteClick(emp.employeeId)}
+                                                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash size={16} />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

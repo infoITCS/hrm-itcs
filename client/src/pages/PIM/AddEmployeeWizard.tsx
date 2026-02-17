@@ -3,11 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const AddEmployeeWizard = () => {
     const navigate = useNavigate();
     const { id } = useParams();
     const isEditMode = !!id;
+    const { canEditSensitiveData, canCreateUser } = usePermissions();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -143,8 +145,23 @@ const AddEmployeeWizard = () => {
                 return;
             }
 
+            // Check permission to create employees
+            if (!isEditMode && !canCreateUser()) {
+                setError('You do not have permission to create employees.');
+                setLoading(false);
+                return;
+            }
+
             // 1. Create Employee (without files - files are uploaded separately)
             const { files, ...employeeData } = formData;
+            
+            // Remove sensitive fields if user cannot edit them
+            if (!canEditSensitiveData()) {
+                delete employeeData.cnic;
+                delete employeeData.dateOfBirth;
+                delete employeeData.fatherName;
+                delete employeeData.bloodGroup;
+            }
             
             const response = await fetch(api.employees, {
                 method: 'POST',
@@ -358,25 +375,62 @@ const AddEmployeeWizard = () => {
                             <label className="block text-sm font-medium text-gray-600">Last Name *</label>
                             <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                         </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
-                            <input type="text" name="cnic" value={formData.cnic} onChange={handleChange} placeholder="e.g. 12345-1234567-1" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
-                            <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Father Name</label>
-                            <input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Nationality</label>
-                            <input type="text" name="nationality" value={formData.nationality} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                        </div>
-                        <div className="space-y-2">
-                            <CustomSelect label="Blood Group" value={formData.bloodGroup} onChange={(val) => setFormData({ ...formData, bloodGroup: val })} options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
-                        </div>
+                        {canEditSensitiveData() ? (
+                            <>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
+                                    <input type="text" name="cnic" value={formData.cnic} onChange={handleChange} placeholder="e.g. 12345-1234567-1" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
+                                    <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Father Name</label>
+                                    <input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Nationality</label>
+                                    <input type="text" name="nationality" value={formData.nationality} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                </div>
+                                <div className="space-y-2">
+                                    <CustomSelect label="Blood Group" value={formData.bloodGroup} onChange={(val) => setFormData({ ...formData, bloodGroup: val })} options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {formData.cnic && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
+                                        <input type="text" value={formData.cnic} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
+                                    </div>
+                                )}
+                                {formData.dateOfBirth && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
+                                        <input type="date" value={formData.dateOfBirth} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
+                                    </div>
+                                )}
+                                {formData.fatherName && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">Father Name</label>
+                                        <input type="text" value={formData.fatherName} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
+                                    </div>
+                                )}
+                                {formData.nationality && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">Nationality</label>
+                                        <input type="text" value={formData.nationality} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
+                                    </div>
+                                )}
+                                {formData.bloodGroup && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">Blood Group</label>
+                                        <input type="text" value={formData.bloodGroup} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
+                                    </div>
+                                )}
+                            </>
+                        )}
                         <div className="space-y-2">
                             <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                         </div>

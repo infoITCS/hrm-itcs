@@ -4,6 +4,7 @@ import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
+import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 
 const router = express.Router();
 
@@ -22,20 +23,45 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
     }
 };
 
-// Get all employees (Protected)
-router.get('/', async (req, res) => {
+// Get all employees (Protected) - Role-based filtering
+router.get('/', authenticate, async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
     try {
-        // In a real app, might filter by visibility
-        const employees = await Employee.find();
+        const role = authReq.user?.role || 'employee';
+        const userId = authReq.user?.userId;
+
+        let employees;
+
+        if (role === 'super-admin' || role === 'admin') {
+            // Super-admin and Admin can see all employees
+            employees = await Employee.find();
+        } else if (role === 'manager') {
+            // Manager can only see direct reports
+            const managerEmployee = await Employee.findOne({ userId });
+            if (!managerEmployee) {
+                return res.status(404).json({ message: 'Manager employee record not found' });
+            }
+            employees = await Employee.find({ 'jobInfo.reportingManager': managerEmployee.employeeId });
+        } else {
+            // Employee can only see their own profile
+            const employee = await Employee.findOne({ userId });
+            employees = employee ? [employee] : [];
+        }
+
         res.json(employees);
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Create employee (Protected, HR/Admin)
-router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachments'), async (req: Request, res: Response) => {
+// Create employee (Protected, Super-Admin/Admin only)
+router.post('/', authenticate, upload.array('attachments'), async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
+    
+    // Check permission
+    if (!canCreateUser(authReq.user?.role || '')) {
+        return res.status(403).json({ message: 'You do not have permission to create employees' });
+    }
     // Note: req.body will contain text fields, req.files will contain files
     // Since we are sending JSON for complex nested fields from frontend, 
     // dealing with multipart/form-data for nested objects can be tricky.
@@ -77,7 +103,31 @@ router.post('/', authenticate, authorize(['admin', 'hr']), upload.array('attachm
     }
 });
 
-// Upload attachment for an employee
+// Get single employee (Role-based access)
+router.get('/:id', authenticate, async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    try {
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        // Check if user can view this employee
+        const canView = await canViewEmployee(
+            authReq.user?.role || '',
+            authReq.user?.userId || '',
+            req.params.id,
+            employee
+        );
+        if (!canView) {
+            return res.status(403).json({ message: 'You do not have permission to view this employee' });
+        }
+
+        res.json(employee);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Upload attachment for an employee (All roles can upload)
 router.post('/:id/attachments', authenticate, upload.single('file'), async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
@@ -86,13 +136,26 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         const employee = await Employee.findOne({ employeeId: req.params.id });
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
+        // Check if user can view this employee (to upload for them)
+        const canView = await canViewEmployee(
+            authReq.user?.role || '',
+            authReq.user?.userId || '',
+            req.params.id,
+            employee
+        );
+        if (!canView) {
+            return res.status(403).json({ message: 'You do not have permission to upload documents for this employee' });
+        }
+
         if (!employee.attachments) employee.attachments = [];
 
         const attachment = {
             fileType: req.body.fileType || 'Document', // 'ID', 'Contract', etc.
             fileName: req.file.originalname,
             filePath: req.file.path,
-            uploadDate: new Date()
+            uploadDate: new Date(),
+            status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending', // Auto-approve if admin
+            uploadedBy: authReq.user?.userId
         };
 
         employee.attachments.push(attachment as any);
@@ -107,14 +170,70 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
     }
 });
 
-// Update employee
-router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: Request, res: Response) => {
+// Approve/Reject document (Super-Admin/Admin only)
+router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    try {
+        if (!canApproveDocuments(authReq.user?.role || '')) {
+            return res.status(403).json({ message: 'You do not have permission to approve documents' });
+        }
+
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        const { status } = req.body; // 'approved' or 'rejected'
+        if (!employee.attachments) return res.status(404).json({ message: 'No attachments found' });
+
+        const attachmentIndex = employee.attachments.findIndex((att: any) => att._id?.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) return res.status(404).json({ message: 'Attachment not found' });
+
+        (employee.attachments[attachmentIndex] as any).status = status;
+        (employee.attachments[attachmentIndex] as any).reviewedBy = authReq.user?.userId;
+        (employee.attachments[attachmentIndex] as any).reviewedAt = new Date();
+
+        await employee.save();
+
+        await createAuditLog('DOC_APPROVAL', employee.employeeId, authReq.user?.userId || 'unknown', { 
+            attachment: req.params.attachmentId, 
+            status 
+        });
+
+        res.json(employee.attachments[attachmentIndex]);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Update employee (Role-based access)
+router.put('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
         const employee = await Employee.findOne({ employeeId: req.params.id });
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
+        // Check if user can view this employee
+        const canView = await canViewEmployee(
+            authReq.user?.role || '',
+            authReq.user?.userId || '',
+            req.params.id,
+            employee
+        );
+        if (!canView) {
+            return res.status(403).json({ message: 'You do not have permission to view this employee' });
+        }
+
+        // Check if user can edit sensitive data
+        const canEdit = canEditSensitiveData(authReq.user?.role || '');
         const updates = req.body;
+        
+        // If user cannot edit sensitive data, filter out sensitive fields
+        if (!canEdit) {
+            // Remove sensitive fields from updates
+            const sensitiveFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'salary', 'bankAccount'];
+            sensitiveFields.forEach(field => {
+                delete updates[field];
+            });
+        }
 
         // Auto-calculate probation end if status changes to Probation
         if (updates.employmentStatus?.status === 'Probation' && employee.employmentStatus?.status !== 'Probation') {
@@ -132,9 +251,15 @@ router.put('/:id', authenticate, authorize(['admin', 'hr']), async (req: Request
     }
 });
 
-// Delete employee
-router.delete('/:id', authenticate, authorize(['admin']), async (req: Request, res: Response) => {
+// Delete employee (Super-Admin/Admin only)
+router.delete('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
+    
+    // Check permission
+    if (!canCreateUser(authReq.user?.role || '')) {
+        return res.status(403).json({ message: 'You do not have permission to delete employees' });
+    }
+    
     try {
         const deletedEmployee = await Employee.findOneAndDelete({ employeeId: req.params.id });
         if (!deletedEmployee) {

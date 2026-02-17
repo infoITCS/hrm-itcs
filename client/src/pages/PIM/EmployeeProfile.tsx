@@ -1,26 +1,36 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle } from 'lucide-react';
+import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X } from 'lucide-react';
 import api from '../../utils/api';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { canEditSensitiveData, canApproveDocuments, canViewDocuments } = usePermissions();
     const [activeTab, setActiveTab] = useState('personal');
     const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
     useEffect(() => {
-        // Fetch employee data
-        fetch(api.employees) // In real app, endpoint should be /api/employees/:id
-            .then(res => res.json())
+        const token = localStorage.getItem('token');
+        
+        // Fetch employee data using the new endpoint
+        fetch(`${api.employees}/${id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        })
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error('Failed to fetch employee');
+                }
+                return res.json();
+            })
             .then(data => {
-                // Mock filtering since our API currently returns all. 
-                // Ideally backend has GET /:id
-                const found = data.find((e: any) => e.employeeId === id) || data[0]; // Fallback for demo
-                setEmployee(found);
+                setEmployee(data);
                 setLoading(false);
             })
             .catch(err => {
@@ -29,7 +39,12 @@ const EmployeeProfile = () => {
             });
 
         // Fetch audit logs
-        fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`)
+        const auditToken = localStorage.getItem('token');
+        fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`, {
+            headers: {
+                'Authorization': `Bearer ${auditToken}`
+            }
+        })
             .then(res => res.json())
             .then(data => setAuditLogs(data || []))
             .catch(err => console.error('Error fetching audit logs:', err));
@@ -93,10 +108,13 @@ const EmployeeProfile = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8 animate-fadeIn">
                         <Field label="Employee ID" value={employee.employeeId} />
                         <Field label="Full Name" value={`${employee.firstName} ${employee.middleName || ''} ${employee.lastName}`} />
-                        <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />
+                        {canEditSensitiveData() && <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />}
                         <Field label="Gender" value={employee.gender} />
                         <Field label="Marital Status" value={employee.maritalStatus} />
-                        <Field label="Nationality" value={employee.nationality} />
+                        {canEditSensitiveData() && <Field label="Nationality" value={employee.nationality} />}
+                        {canEditSensitiveData() && employee.cnic && <Field label="CNIC / Govt ID" value={employee.cnic} />}
+                        {canEditSensitiveData() && employee.fatherName && <Field label="Father Name" value={employee.fatherName} />}
+                        {canEditSensitiveData() && employee.bloodGroup && <Field label="Blood Group" value={employee.bloodGroup} />}
                     </div>
                 )}
 
@@ -251,23 +269,101 @@ const EmployeeProfile = () => {
                                         };
                                         return colors[type] || colors['Document'];
                                     };
+                                    
+                                    const getStatusBadge = (status: string) => {
+                                        if (status === 'approved') {
+                                            return <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Check size={12} /> Approved</span>;
+                                        } else if (status === 'rejected') {
+                                            return <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded flex items-center gap-1"><X size={12} /> Rejected</span>;
+                                        } else {
+                                            return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Pending</span>;
+                                        }
+                                    };
+
+                                    const handleApprove = async (attachmentId: string) => {
+                                        const token = localStorage.getItem('token');
+                                        try {
+                                            const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+                                                method: 'PATCH',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'Authorization': `Bearer ${token}`
+                                                },
+                                                body: JSON.stringify({ status: 'approved' })
+                                            });
+                                            if (response.ok) {
+                                                // Refresh employee data
+                                                const updated = await fetch(`${api.employees}/${id}`, {
+                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                }).then(r => r.json());
+                                                setEmployee(updated);
+                                            }
+                                        } catch (err) {
+                                            console.error('Error approving document:', err);
+                                        }
+                                    };
+
+                                    const handleReject = async (attachmentId: string) => {
+                                        const token = localStorage.getItem('token');
+                                        try {
+                                            const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+                                                method: 'PATCH',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'Authorization': `Bearer ${token}`
+                                                },
+                                                body: JSON.stringify({ status: 'rejected' })
+                                            });
+                                            if (response.ok) {
+                                                // Refresh employee data
+                                                const updated = await fetch(`${api.employees}/${id}`, {
+                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                }).then(r => r.json());
+                                                setEmployee(updated);
+                                            }
+                                        } catch (err) {
+                                            console.error('Error rejecting document:', err);
+                                        }
+                                    };
+
                                     return (
                                         <div key={i} className="flex items-center justify-between p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 hover:bg-gradient-to-br hover:from-indigo-100 hover:to-purple-100 transition-colors">
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-3 flex-1">
                                                 <div className={`p-2 bg-gradient-to-r ${getFileTypeColor(file.fileType)} rounded-lg shadow-sm text-white`}>
                                                     <FileText size={20} />
                                                 </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
                                                         <p className="font-medium text-gray-800">{file.fileName}</p>
                                                         <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">{file.fileType || 'Document'}</span>
+                                                        {getStatusBadge(file.status || 'pending')}
                                                     </div>
                                                     <p className="text-xs text-gray-500">Uploaded on {formatDate(file.uploadDate)}</p>
                                                 </div>
                                             </div>
-                                            <button className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all">
-                                                <Download size={20} />
-                                            </button>
+                                            <div className="flex items-center gap-2">
+                                                {canApproveDocuments() && file.status !== 'approved' && file.status !== 'rejected' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleApprove(file._id)}
+                                                            className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-all"
+                                                            title="Approve"
+                                                        >
+                                                            <Check size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleReject(file._id)}
+                                                            className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
+                                                            title="Reject"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                                <button className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all">
+                                                    <Download size={20} />
+                                                </button>
+                                            </div>
                                         </div>
                                     );
                                 })}
