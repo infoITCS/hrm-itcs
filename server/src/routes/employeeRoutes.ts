@@ -29,10 +29,20 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     try {
         const role = authReq.user?.role || 'employee';
         const userId = authReq.user?.userId;
+        const queryUserId = req.query.userId as string; // Support querying by userId
 
         let employees;
 
-        if (role === 'super-admin' || role === 'admin') {
+        if (queryUserId) {
+            // If userId query parameter is provided, return that specific employee
+            // Only allow if user is querying their own userId or is admin
+            if (queryUserId === userId || role === 'super-admin' || role === 'admin') {
+                const employee = await Employee.findOne({ userId: queryUserId });
+                employees = employee ? [employee] : [];
+            } else {
+                return res.status(403).json({ message: 'You do not have permission to view this employee' });
+            }
+        } else if (role === 'super-admin' || role === 'admin') {
             // Super-admin and Admin can see all employees
             employees = await Employee.find();
         } else if (role === 'manager') {
@@ -54,13 +64,26 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     }
 });
 
-// Create employee (Protected, Super-Admin/Admin only)
+// Create employee (Protected)
+// Super-Admin/Admin can create any employee
+// Employees can create their own employee record
 router.post('/', authenticate, upload.array('attachments'), async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    const userId = authReq.user?.userId;
     
-    // Check permission
-    if (!canCreateUser(authReq.user?.role || '')) {
+    // Check if employee is trying to create their own record
+    const isCreatingOwnRecord = req.body.userId === userId;
+    
+    // If not creating own record, check admin permission
+    if (!isCreatingOwnRecord && !canCreateUser(role)) {
         return res.status(403).json({ message: 'You do not have permission to create employees' });
+    }
+    
+    // If employee is creating own record, ensure userId matches
+    if (isCreatingOwnRecord && role === 'employee') {
+        // Ensure the userId in the request matches the authenticated user
+        req.body.userId = userId;
     }
     // Note: req.body will contain text fields, req.files will contain files
     // Since we are sending JSON for complex nested fields from frontend, 
@@ -223,29 +246,35 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         }
 
         const updates = req.body;
+        const role = authReq.user?.role || '';
         
         // Fields that can only be set once and cannot be edited after being filled
+        // Admins can override this restriction
         const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'] as const;
         
-        // Prevent editing one-time fields if they already exist
-        // Allow setting if field is currently empty, but prevent changing if already filled
-        oneTimeFields.forEach(field => {
-            const employeeObj = employee.toObject();
-            const currentValue = employeeObj[field as keyof typeof employeeObj];
-            const newValue = updates[field];
-            
-            // If field already has a value and user is trying to change it, prevent the change
-            if (currentValue && newValue && currentValue !== newValue) {
-                // Field already exists and user is trying to change it - prevent this
-                delete updates[field];
-            }
-            // If field is empty and user is setting it, allow it (newValue exists but currentValue doesn't)
-            // If field already has a value and user sends the same value, allow it (no change)
-            // If field already has a value and user sends empty/null, prevent clearing it
-            if (currentValue && (!newValue || newValue === '')) {
-                delete updates[field];
-            }
-        });
+        // Only apply one-time field restrictions if user is NOT an admin
+        // Admins can edit all fields including one-time fields
+        if (role !== 'super-admin' && role !== 'admin') {
+            // Prevent editing one-time fields if they already exist
+            // Allow setting if field is currently empty, but prevent changing if already filled
+            oneTimeFields.forEach(field => {
+                const employeeObj = employee.toObject();
+                const currentValue = employeeObj[field as keyof typeof employeeObj];
+                const newValue = updates[field];
+                
+                // If field already has a value and user is trying to change it, prevent the change
+                if (currentValue && newValue && currentValue !== newValue) {
+                    // Field already exists and user is trying to change it - prevent this
+                    delete updates[field];
+                }
+                // If field is empty and user is setting it, allow it (newValue exists but currentValue doesn't)
+                // If field already has a value and user sends the same value, allow it (no change)
+                // If field already has a value and user sends empty/null, prevent clearing it
+                if (currentValue && (!newValue || newValue === '')) {
+                    delete updates[field];
+                }
+            });
+        }
 
         // Auto-calculate probation end if status changes to Probation
         if (updates.employmentStatus?.status === 'Probation' && employee.employmentStatus?.status !== 'Probation') {

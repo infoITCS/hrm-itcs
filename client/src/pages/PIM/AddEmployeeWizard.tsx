@@ -469,19 +469,20 @@ const AddEmployeeWizard = () => {
                             <label className="block text-sm font-medium text-gray-600">Last Name *</label>
                             <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                         </div>
-                        {/* CNIC, Father Name, Nationality, Blood Group - Visible to all, editable only if empty */}
+                        {/* CNIC, Father Name, Nationality, Blood Group - Visible to all, editable only if empty (except admins) */}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
                             <input 
                                 type="text" 
                                 name="cnic" 
-                                value={formData.cnic} 
+                                value={formData.cnic || ''} 
                                 onChange={handleChange} 
                                 placeholder="e.g. 12345-1234567-1" 
-                                disabled={!!formData.cnic}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.cnic ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                disabled={!!formData.cnic && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.cnic && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
@@ -490,10 +491,11 @@ const AddEmployeeWizard = () => {
                                 name="dateOfBirth" 
                                 value={formData.dateOfBirth} 
                                 onChange={handleChange} 
-                                disabled={!!formData.dateOfBirth}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.dateOfBirth ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                disabled={!!formData.dateOfBirth && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.dateOfBirth && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.dateOfBirth && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Father Name</label>
@@ -502,10 +504,11 @@ const AddEmployeeWizard = () => {
                                 name="fatherName" 
                                 value={formData.fatherName} 
                                 onChange={handleChange} 
-                                disabled={!!formData.fatherName}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.fatherName ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                disabled={!!formData.fatherName && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.fatherName && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.fatherName && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Nationality</label>
@@ -514,14 +517,15 @@ const AddEmployeeWizard = () => {
                                 name="nationality" 
                                 value={formData.nationality} 
                                 onChange={handleChange} 
-                                disabled={!!formData.nationality}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.nationality ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                disabled={!!formData.nationality && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.nationality && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Blood Group</label>
-                            {formData.bloodGroup ? (
+                            {formData.bloodGroup && !canEditSensitiveData() ? (
                                 <input 
                                     type="text" 
                                     value={formData.bloodGroup} 
@@ -533,10 +537,12 @@ const AddEmployeeWizard = () => {
                                     label="" 
                                     value={formData.bloodGroup} 
                                     onChange={(val) => setFormData({ ...formData, bloodGroup: val })} 
-                                    options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} 
+                                    options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']}
+                                    disabled={false}
                                 />
                             )}
-                            {formData.bloodGroup && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.bloodGroup && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {formData.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />

@@ -18,10 +18,25 @@ router.get('/microsoft', (req: Request, res: Response, next: NextFunction) => {
             message: 'Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables.' 
         });
     }
-    passport.authenticate('microsoft', {
-        // Optional: define scopes here if not defined in strategy
-        // scope: ['user.read']
-    })(req, res, next);
+    
+    // Check if user wants to select a different account
+    const prompt = req.query.prompt === 'select_account' ? 'select_account' : undefined;
+    
+    // Store prompt in the request so customParams can access it
+    if (prompt) {
+        (req as any).oauthPrompt = prompt;
+        // Also store in query for passport to pick up
+        req.query.prompt = prompt;
+    }
+    
+    // Create a wrapper that ensures prompt is passed
+    const authenticate = passport.authenticate('microsoft', {
+        session: false,
+        // Try to pass prompt through authenticate options
+        ...(prompt && { prompt })
+    });
+    
+    authenticate(req, res, next);
 });
 
 /**

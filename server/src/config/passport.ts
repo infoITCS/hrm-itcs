@@ -36,6 +36,18 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
         tokenURL: `${baseUrl}/token`,
         pkce: true, // Enable PKCE (Proof Key for Code Exchange) - required by Azure AD
         state: true, // Required when PKCE is enabled
+        // Custom function to add prompt parameter to authorization URL
+        // This function is called by passport-oauth2 to add custom parameters to the authorization URL
+        customParams: (req: any) => {
+            // Check both query param and request property (set in authRoutes)
+            // Note: req might be undefined in some passport-oauth2 versions, so we check multiple sources
+            const prompt = req?.query?.prompt || req?.oauthPrompt || (req && typeof req === 'object' && 'prompt' in req ? req.prompt : undefined);
+            console.log('customParams called with prompt:', prompt, 'req:', req ? 'exists' : 'undefined');
+            if (prompt === 'select_account') {
+                return { prompt: 'select_account' };
+            }
+            return {};
+        }
     };
     
     // Only add clientSecret if provided (for confidential clients/Web apps)

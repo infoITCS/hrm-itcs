@@ -14,25 +14,31 @@ import {
     MessageSquare
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
+import { usePermissions } from '../../hooks/usePermissions';
 
 
 const Sidebar = () => {
     const location = useLocation();
+    const { role } = usePermissions();
     
-    const menuItems = [
-        { name: 'Search', icon: Search, path: '/search' },
-        { name: 'Admin', icon: UserCog, path: '/admin' },
-        { name: 'PIM', icon: Users, path: '/pim' },
-        { name: 'Leave', icon: Calendar, path: '/leave' },
-        { name: 'Recruitment', icon: UserPlus, path: '/recruitment' },
-        { name: 'My Info', icon: User, path: '/my-info' },
-        { name: 'Performance', icon: Star, path: '/performance' },
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-        { name: 'Directory', icon: BookOpen, path: '/directory' },
-        { name: 'Maintenance', icon: Settings, path: '/maintenance' },
-        { name: 'Claim', icon: DollarSign, path: '/claim' },
-        { name: 'Buzz', icon: MessageSquare, path: '/buzz' },
+    // Define all menu items with their visibility rules
+    const allMenuItems = [
+        { name: 'Search', icon: Search, path: '/search', roles: ['super-admin', 'admin', 'manager'] },
+        { name: 'Admin', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'] },
+        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
+        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin'] },
+        { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
+        { name: 'Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Buzz', icon: MessageSquare, path: '/buzz', roles: ['super-admin', 'admin', 'manager', 'employee'] },
     ];
+    
+    // Filter menu items based on user role
+    const menuItems = allMenuItems.filter(item => item.roles.includes(role));
 
     return (
         <aside className="w-64 bg-white shadow-lg h-screen fixed left-0 top-0 overflow-y-auto flex flex-col z-10 border-r border-slate-200/50">

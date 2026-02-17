@@ -30,9 +30,13 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
         }
     }, []);
 
-    const handleMicrosoftLogin = () => {
+    const handleMicrosoftLogin = (forceAccountSelection: boolean = false) => {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-        window.location.href = `${apiUrl}/auth/microsoft`;
+        const url = forceAccountSelection 
+            ? `${apiUrl}/auth/microsoft?prompt=select_account`
+            : `${apiUrl}/auth/microsoft`;
+        console.log('Redirecting to Microsoft OAuth:', url);
+        window.location.href = url;
     };
 
     const handleEmailLogin = async (e: React.FormEvent) => {
@@ -139,7 +143,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                 /* SSO Login View */
                                 <div className="space-y-6">
                                     <button
-                                        onClick={handleMicrosoftLogin}
+                                        onClick={() => handleMicrosoftLogin(false)}
                                         className="w-full group relative flex items-center justify-center gap-3 px-6 py-4 bg-[#2F2F2F] hover:bg-[#1a1a1a] text-white rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                                     >
                                         <div className="flex items-center justify-center w-6 h-6 bg-white rounded-sm p-[1px]">
@@ -151,6 +155,21 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                             </svg>
                                         </div>
                                         <span className="font-semibold text-lg">Sign in with Microsoft</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            console.log('Use different account clicked');
+                                            handleMicrosoftLogin(true);
+                                        }}
+                                        className="w-full flex items-center justify-center gap-2 px-6 py-3 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 font-medium transition-all rounded-lg border border-transparent hover:border-gray-200 cursor-pointer active:scale-[0.98]"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                        </svg>
+                                        Use a different Microsoft account
                                     </button>
 
                                     <div className="relative">

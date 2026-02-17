@@ -6,6 +6,7 @@ import PIM from './pages/PIM/PIM';
 import EmployeeList from './pages/PIM/EmployeeList';
 import AddEmployeeWizard from './pages/PIM/AddEmployeeWizard';
 import EmployeeProfile from './pages/PIM/EmployeeProfile';
+import MyInfo from './pages/MyInfo/MyInfo';
 import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
 
@@ -63,6 +64,7 @@ function AppRoutes() {
           <Route path="edit/:id" element={<AddEmployeeWizard />} />
           <Route path="view/:id" element={<EmployeeProfile />} />
         </Route>
+        <Route path="my-info" element={<MyInfo />} />
         <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
         <Route path="*" element={<div className="p-4">Page Not Found</div>} />
       </Route>
