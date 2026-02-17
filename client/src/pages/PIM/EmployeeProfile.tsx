@@ -108,13 +108,13 @@ const EmployeeProfile = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8 animate-fadeIn">
                         <Field label="Employee ID" value={employee.employeeId} />
                         <Field label="Full Name" value={`${employee.firstName} ${employee.middleName || ''} ${employee.lastName}`} />
-                        {canEditSensitiveData() && <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />}
+                        <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />
                         <Field label="Gender" value={employee.gender} />
                         <Field label="Marital Status" value={employee.maritalStatus} />
-                        {canEditSensitiveData() && <Field label="Nationality" value={employee.nationality} />}
-                        {canEditSensitiveData() && employee.cnic && <Field label="CNIC / Govt ID" value={employee.cnic} />}
-                        {canEditSensitiveData() && employee.fatherName && <Field label="Father Name" value={employee.fatherName} />}
-                        {canEditSensitiveData() && employee.bloodGroup && <Field label="Blood Group" value={employee.bloodGroup} />}
+                        <Field label="Nationality" value={employee.nationality} />
+                        {employee.cnic && <Field label="CNIC / Govt ID" value={employee.cnic} />}
+                        {employee.fatherName && <Field label="Father Name" value={employee.fatherName} />}
+                        {employee.bloodGroup && <Field label="Blood Group" value={employee.bloodGroup} />}
                     </div>
                 )}
 

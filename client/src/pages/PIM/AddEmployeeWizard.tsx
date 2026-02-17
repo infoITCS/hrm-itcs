@@ -16,6 +16,13 @@ const AddEmployeeWizard = () => {
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
 
+    // Redirect unauthorized users trying to create employees
+    useEffect(() => {
+        if (!isEditMode && !canCreateUser()) {
+            navigate('/pim', { replace: true });
+        }
+    }, [isEditMode, canCreateUser, navigate]);
+
     // Initial State including Nested Objects
     const [formData, setFormData] = useState({
         // Personal
@@ -55,40 +62,129 @@ const AddEmployeeWizard = () => {
 
     // Fetch Data for Edit Mode
     useEffect(() => {
-        if (isEditMode) {
+        if (isEditMode && id) {
             setLoading(true);
-            fetch(api.employees)
-                .then(res => res.json())
-                .then(data => {
-                    if (!Array.isArray(data)) {
-                        console.error('API Error: Expected array but got', data);
-                        setLoading(false);
-                        return;
+            const token = localStorage.getItem('token');
+            
+            fetch(`${api.employees}/${id}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error('Failed to fetch employee data');
                     }
-                    const found = data.find((e: any) => e.employeeId === id) || data.find((e: any) => e._id === id);
-
+                    return res.json();
+                })
+                .then(found => {
                     if (found) {
-                        setFormData(prev => ({
-                            ...prev,
-                            ...found,
-                            address: found.address || prev.address,
+                        // Format dates for input fields
+                        const formatDate = (date: any) => {
+                            if (!date) return '';
+                            if (typeof date === 'string') {
+                                return date.split('T')[0];
+                            }
+                            if (date instanceof Date) {
+                                return date.toISOString().split('T')[0];
+                            }
+                            return '';
+                        };
+
+                        setFormData({
+                            // Personal Info
+                            employeeId: found.employeeId || '',
+                            firstName: found.firstName || '',
+                            lastName: found.lastName || '',
+                            middleName: found.middleName || '',
+                            cnic: found.cnic || '',
+                            email: found.email || '',
+                            phone: found.phone || '',
+                            dateOfBirth: formatDate(found.dateOfBirth),
+                            gender: found.gender || '',
+                            maritalStatus: found.maritalStatus || '',
+                            nationality: found.nationality || '',
+                            fatherName: found.fatherName || '',
+                            bloodGroup: found.bloodGroup || '',
+
+                            // Address
+                            address: found.address || { street: '', city: '', country: '' },
+
+                            // Job Info
                             jobInfo: {
-                                ...prev.jobInfo,
-                                ...(found.jobInfo || {}),
-                                joiningDate: found.jobInfo?.joiningDate ? found.jobInfo.joiningDate.split('T')[0] : ''
+                                designation: found.jobInfo?.designation || '',
+                                department: found.jobInfo?.department || '',
+                                reportingManager: found.jobInfo?.reportingManager || '',
+                                employmentType: found.jobInfo?.employmentType || '',
+                                workLocation: found.jobInfo?.workLocation || '',
+                                joiningDate: formatDate(found.jobInfo?.joiningDate)
                             },
+
+                            // Employment Status
                             employmentStatus: typeof found.employmentStatus === 'string'
                                 ? { status: found.employmentStatus, autoUpdated: false }
-                                : (found.employmentStatus || prev.employmentStatus),
-                            emergencyContacts: found.emergencyContacts?.length ? found.emergencyContacts : prev.emergencyContacts,
-                            // Date formatting for inputs
-                            dateOfBirth: found.dateOfBirth ? found.dateOfBirth.split('T')[0] : ''
-                        }));
+                                : (found.employmentStatus || { status: 'Probation', autoUpdated: false }),
+
+                            // Emergency Contacts
+                            emergencyContacts: found.emergencyContacts?.length 
+                                ? found.emergencyContacts.map((ec: any) => ({
+                                    name: ec.name || '',
+                                    relation: ec.relation || '',
+                                    phone: ec.phone || ''
+                                }))
+                                : [{ name: '', relation: '', phone: '' }],
+
+                            // Dependents
+                            dependents: found.dependents?.length
+                                ? found.dependents.map((dep: any) => ({
+                                    name: dep.name || '',
+                                    relation: dep.relation || '',
+                                    dateOfBirth: formatDate(dep.dateOfBirth)
+                                }))
+                                : [{ name: '', relation: '', dateOfBirth: '' }],
+
+                            // Immigration History
+                            immigrationHistory: found.immigrationHistory?.length
+                                ? found.immigrationHistory.map((imm: any) => ({
+                                    documentType: imm.documentType || 'Passport',
+                                    documentNumber: imm.documentNumber || '',
+                                    issueDate: formatDate(imm.issueDate),
+                                    expiryDate: formatDate(imm.expiryDate),
+                                    issuingCountry: imm.issuingCountry || ''
+                                }))
+                                : [{ documentType: 'Passport', documentNumber: '', issueDate: '', expiryDate: '', issuingCountry: '' }],
+
+                            // Employment History
+                            employmentHistory: found.employmentHistory?.length
+                                ? found.employmentHistory.map((eh: any) => ({
+                                    companyName: eh.companyName || '',
+                                    jobTitle: eh.jobTitle || '',
+                                    startDate: formatDate(eh.startDate),
+                                    endDate: formatDate(eh.endDate),
+                                    reasonForLeaving: eh.reasonForLeaving || ''
+                                }))
+                                : [{ companyName: '', jobTitle: '', startDate: '', endDate: '', reasonForLeaving: '' }],
+
+                            // Education
+                            education: found.education?.length
+                                ? found.education.map((edu: any) => ({
+                                    level: edu.level || '',
+                                    institute: edu.institute || '',
+                                    year: edu.year || '',
+                                    score: edu.score || ''
+                                }))
+                                : [{ level: '', institute: '', year: '', score: '' }],
+
+                            // Files - Note: We can't load actual File objects from server, so we'll keep this empty
+                            // The attachments are shown separately in the employee profile
+                            files: []
+                        });
                     }
                     setLoading(false);
                 })
                 .catch(err => {
                     console.error('Error fetching employee:', err);
+                    setError('Failed to load employee data. Please try again.');
                     setLoading(false);
                 });
         }
@@ -152,19 +248,14 @@ const AddEmployeeWizard = () => {
                 return;
             }
 
-            // 1. Create Employee (without files - files are uploaded separately)
+            // 1. Create or Update Employee (without files - files are uploaded separately)
             const { files, ...employeeData } = formData;
             
-            // Remove sensitive fields if user cannot edit them
-            if (!canEditSensitiveData()) {
-                delete employeeData.cnic;
-                delete employeeData.dateOfBirth;
-                delete employeeData.fatherName;
-                delete employeeData.bloodGroup;
-            }
+            const url = isEditMode ? `${api.employees}/${id}` : api.employees;
+            const method = isEditMode ? 'PUT' : 'POST';
             
-            const response = await fetch(api.employees, {
-                method: 'POST',
+            const response = await fetch(url, {
+                method,
                 headers: { 
                     'Content-Type': 'application/json', 
                     'Authorization': `Bearer ${token}` 
@@ -173,13 +264,14 @@ const AddEmployeeWizard = () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ message: 'Failed to create employee' }));
+                const errorData = await response.json().catch(() => ({ message: isEditMode ? 'Failed to update employee' : 'Failed to create employee' }));
                 throw new Error(errorData.message || `Server error: ${response.status}`);
             }
 
-            const newEmp = await response.json();
+            const savedEmp = await response.json();
+            const employeeId = isEditMode ? id : savedEmp.employeeId;
 
-            // 2. Upload Files if any
+            // 2. Upload Files if any (only for new employees or new files)
             if (files.length > 0) {
                 for (const fileObj of files) {
                     try {
@@ -187,7 +279,7 @@ const AddEmployeeWizard = () => {
                         fileData.append('file', fileObj.file);
                         fileData.append('fileType', fileObj.type || 'Document');
 
-                        const fileResponse = await fetch(api.employeeAttachments(newEmp.employeeId), {
+                        const fileResponse = await fetch(api.employeeAttachments(employeeId), {
                             method: 'POST',
                             headers: { 'Authorization': `Bearer ${token}` },
                             body: fileData
@@ -322,7 +414,9 @@ const AddEmployeeWizard = () => {
                     <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center animate-fadeIn">
                         <div className="text-center">
                             <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="text-indigo-600 font-medium">Saving...</p>
+                            <p className="text-indigo-600 font-medium">
+                                {isEditMode ? 'Loading employee data...' : 'Saving...'}
+                            </p>
                         </div>
                     </div>
                 )}
@@ -375,62 +469,75 @@ const AddEmployeeWizard = () => {
                             <label className="block text-sm font-medium text-gray-600">Last Name *</label>
                             <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                         </div>
-                        {canEditSensitiveData() ? (
-                            <>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
-                                    <input type="text" name="cnic" value={formData.cnic} onChange={handleChange} placeholder="e.g. 12345-1234567-1" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
-                                    <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Father Name</label>
-                                    <input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Nationality</label>
-                                    <input type="text" name="nationality" value={formData.nationality} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                </div>
-                                <div className="space-y-2">
-                                    <CustomSelect label="Blood Group" value={formData.bloodGroup} onChange={(val) => setFormData({ ...formData, bloodGroup: val })} options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                {formData.cnic && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
-                                        <input type="text" value={formData.cnic} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
-                                    </div>
-                                )}
-                                {formData.dateOfBirth && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
-                                        <input type="date" value={formData.dateOfBirth} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
-                                    </div>
-                                )}
-                                {formData.fatherName && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-gray-600">Father Name</label>
-                                        <input type="text" value={formData.fatherName} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
-                                    </div>
-                                )}
-                                {formData.nationality && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-gray-600">Nationality</label>
-                                        <input type="text" value={formData.nationality} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
-                                    </div>
-                                )}
-                                {formData.bloodGroup && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-gray-600">Blood Group</label>
-                                        <input type="text" value={formData.bloodGroup} readOnly className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50" />
-                                    </div>
-                                )}
-                            </>
-                        )}
+                        {/* CNIC, Father Name, Nationality, Blood Group - Visible to all, editable only if empty */}
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
+                            <input 
+                                type="text" 
+                                name="cnic" 
+                                value={formData.cnic} 
+                                onChange={handleChange} 
+                                placeholder="e.g. 12345-1234567-1" 
+                                disabled={!!formData.cnic}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.cnic ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            />
+                            {formData.cnic && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
+                            <input 
+                                type="date" 
+                                name="dateOfBirth" 
+                                value={formData.dateOfBirth} 
+                                onChange={handleChange} 
+                                disabled={!!formData.dateOfBirth}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.dateOfBirth ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            />
+                            {formData.dateOfBirth && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Father Name</label>
+                            <input 
+                                type="text" 
+                                name="fatherName" 
+                                value={formData.fatherName} 
+                                onChange={handleChange} 
+                                disabled={!!formData.fatherName}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.fatherName ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            />
+                            {formData.fatherName && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Nationality</label>
+                            <input 
+                                type="text" 
+                                name="nationality" 
+                                value={formData.nationality} 
+                                onChange={handleChange} 
+                                disabled={!!formData.nationality}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.nationality ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            />
+                            {formData.nationality && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Blood Group</label>
+                            {formData.bloodGroup ? (
+                                <input 
+                                    type="text" 
+                                    value={formData.bloodGroup} 
+                                    disabled
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 cursor-not-allowed"
+                                />
+                            ) : (
+                                <CustomSelect 
+                                    label="" 
+                                    value={formData.bloodGroup} 
+                                    onChange={(val) => setFormData({ ...formData, bloodGroup: val })} 
+                                    options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} 
+                                />
+                            )}
+                            {formData.bloodGroup && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                        </div>
                         <div className="space-y-2">
                             <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                         </div>
@@ -971,7 +1078,7 @@ const AddEmployeeWizard = () => {
                             disabled={loading}
                             className="px-8 py-2.5 rounded-lg bg-success text-white font-medium hover:bg-success/90 flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
                         >
-                            <Save size={18} /> {loading ? 'Saving...' : 'Submit Employee'}
+                            <Save size={18} /> {loading ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update Employee' : 'Submit Employee')}
                         </button>
                     )}
                 </div>

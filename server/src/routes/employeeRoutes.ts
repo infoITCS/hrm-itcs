@@ -222,18 +222,29 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
             return res.status(403).json({ message: 'You do not have permission to view this employee' });
         }
 
-        // Check if user can edit sensitive data
-        const canEdit = canEditSensitiveData(authReq.user?.role || '');
         const updates = req.body;
         
-        // If user cannot edit sensitive data, filter out sensitive fields
-        if (!canEdit) {
-            // Remove sensitive fields from updates
-            const sensitiveFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'salary', 'bankAccount'];
-            sensitiveFields.forEach(field => {
+        // Fields that can only be set once and cannot be edited after being filled
+        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'];
+        
+        // Prevent editing one-time fields if they already exist
+        // Allow setting if field is currently empty, but prevent changing if already filled
+        oneTimeFields.forEach(field => {
+            const currentValue = employee[field];
+            const newValue = updates[field];
+            
+            // If field already has a value and user is trying to change it, prevent the change
+            if (currentValue && newValue && currentValue !== newValue) {
+                // Field already exists and user is trying to change it - prevent this
                 delete updates[field];
-            });
-        }
+            }
+            // If field is empty and user is setting it, allow it (newValue exists but currentValue doesn't)
+            // If field already has a value and user sends the same value, allow it (no change)
+            // If field already has a value and user sends empty/null, prevent clearing it
+            if (currentValue && (!newValue || newValue === '')) {
+                delete updates[field];
+            }
+        });
 
         // Auto-calculate probation end if status changes to Probation
         if (updates.employmentStatus?.status === 'Probation' && employee.employmentStatus?.status !== 'Probation') {

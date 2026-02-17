@@ -1,8 +1,10 @@
 
 import { NavLink, Outlet } from 'react-router-dom';
 import { ChevronDown, HelpCircle } from 'lucide-react';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const PIM = () => {
+    const { canCreateUser } = usePermissions();
     return (
         <div className="space-y-6">
             {/* Sub Navigation */}
@@ -22,16 +24,18 @@ const PIM = () => {
                     >
                         Employee List
                     </NavLink>
-                    <NavLink 
-                        to="/pim/add" 
-                        className={({ isActive }) => `px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                            isActive 
-                                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm' 
-                                : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
-                        }`}
-                    >
-                        Add Employee
-                    </NavLink>
+                    {canCreateUser() && (
+                        <NavLink 
+                            to="/pim/add" 
+                            className={({ isActive }) => `px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                                isActive 
+                                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm' 
+                                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
+                            }`}
+                        >
+                            Add Employee
+                        </NavLink>
+                    )}
                     <NavLink 
                         to="/pim/reports" 
                         className={({ isActive }) => `px-4 py-2 text-sm font-medium rounded-lg transition-all ${
