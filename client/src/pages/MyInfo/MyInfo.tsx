@@ -4,10 +4,12 @@ import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2,
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const MyInfo = () => {
     const navigate = useNavigate();
     const { user, login } = useAuth();
+    const { canEditSensitiveData } = usePermissions();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -20,6 +22,7 @@ const MyInfo = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('personal');
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
 
     const [formData, setFormData] = useState({
         // Personal
@@ -57,6 +60,19 @@ const MyInfo = () => {
 
         // Education
         education: [{ level: '', institute: '', year: '', score: '' }],
+
+        // Job
+        jobInfo: {
+            designation: '',
+            department: '',
+            reportingManager: '',
+            employmentType: '',
+            workLocation: '',
+            joiningDate: ''
+        },
+
+        // Status
+        employmentStatus: { status: 'Probation', autoUpdated: false },
 
         // Files
         files: [] as { file: File; type: string }[]
@@ -147,7 +163,25 @@ const MyInfo = () => {
                                     score: edu.score || ''
                                 }))
                                 : [{ level: '', institute: '', year: '', score: '' }],
+                            jobInfo: {
+                                designation: employee.jobInfo?.designation || '',
+                                department: employee.jobInfo?.department || '',
+                                reportingManager: employee.jobInfo?.reportingManager || '',
+                                employmentType: employee.jobInfo?.employmentType || '',
+                                workLocation: employee.jobInfo?.workLocation || '',
+                                joiningDate: formatDate(employee.jobInfo?.joiningDate)
+                            },
+                            employmentStatus: employee.employmentStatus || { status: 'Probation', autoUpdated: false },
                             files: []
+                        });
+
+                        // Track fields that were already filled to lock them for non-admins
+                        setInitialLockedFields({
+                            cnic: !!employee.cnic,
+                            dateOfBirth: !!employee.dateOfBirth,
+                            fatherName: !!employee.fatherName,
+                            nationality: !!employee.nationality,
+                            bloodGroup: !!employee.bloodGroup
                         });
                     } else {
                         // No employee record found, initialize with user data
@@ -169,7 +203,7 @@ const MyInfo = () => {
         };
 
         fetchEmployeeData();
-    }, [user, success]); // Refresh on success
+    }, [user]); // Refresh on success
 
     const handleChange = (e: any, section?: string, index?: number, subfield?: string) => {
         const { name, value } = e.target;
@@ -212,8 +246,14 @@ const MyInfo = () => {
         }));
     };
 
-    const handleNext = () => {
-        if (step < 5) {
+    const handleNext = async () => {
+        if (step === 1) {
+            // Auto-save on Step 1 to "anchor" one-time fields
+            const result = await handleSubmit(false);
+            if (!result) return; // Don't proceed if save failed
+        }
+
+        if (step < steps.length) {
             if (!completedSteps.includes(step)) {
                 setCompletedSteps([...completedSteps, step]);
                 setShowCompletion(step);
@@ -229,7 +269,7 @@ const MyInfo = () => {
         }
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (shouldNavigate = true) => {
         setSaving(true);
         setError(null);
         setSuccess(false);
@@ -325,11 +365,20 @@ const MyInfo = () => {
                 }
             }
 
+            setInitialLockedFields({
+                cnic: !!employeeData.cnic,
+                dateOfBirth: !!employeeData.dateOfBirth,
+                fatherName: !!employeeData.fatherName,
+                nationality: !!employeeData.nationality,
+                bloodGroup: !!employeeData.bloodGroup
+            });
+
             setSuccess(true);
             setTimeout(() => {
                 setSuccess(false);
-                setIsEditing(false); // Go back to profile view after save
+                if (shouldNavigate) setIsEditing(false); // Only exit editing mode if we are navigating away
             }, 3000);
+            return savedEmployee;
         } catch (err: any) {
             console.error('Error saving employee data:', err);
             setError(err.message || 'Failed to save your information. Please try again.');
@@ -410,8 +459,9 @@ const MyInfo = () => {
         { id: 1, title: 'Personal', icon: User },
         { id: 2, title: 'Contact & Dependents', icon: Users },
         { id: 3, title: 'Immigration', icon: Globe },
-        { id: 4, title: 'History & Education', icon: GraduationCap },
-        { id: 5, title: 'Documents', icon: FileText }
+        { id: 4, title: 'Job & Status', icon: Briefcase },
+        { id: 5, title: 'History & Education', icon: GraduationCap },
+        { id: 6, title: 'Documents', icon: FileText }
     ];
 
     if (loading) {
@@ -740,7 +790,7 @@ const MyInfo = () => {
                             <h2 className="text-xl font-semibold text-gray-700">
                                 {employeeId ? 'Edit Your Information' : 'Complete Your Profile'}
                             </h2>
-                            <p className="text-sm text-gray-500">Step {step} of 5: {steps[step - 1].title}</p>
+                            <p className="text-sm text-gray-500">Step {step} of {steps.length}: {steps[step - 1].title}</p>
                         </div>
                         {employeeId && (
                             <button
@@ -897,10 +947,11 @@ const MyInfo = () => {
                                         value={formData.cnic || ''}
                                         onChange={handleChange}
                                         placeholder="e.g. 12345-1234567-1"
-                                        disabled={!!formData.cnic}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${formData.cnic ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        disabled={initialLockedFields.cnic && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
-                                    {formData.cnic && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
@@ -909,10 +960,11 @@ const MyInfo = () => {
                                         name="dateOfBirth"
                                         value={formData.dateOfBirth}
                                         onChange={handleChange}
-                                        disabled={!!formData.dateOfBirth}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${formData.dateOfBirth ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        disabled={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
-                                    {formData.dateOfBirth && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.dateOfBirth && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Father Name</label>
@@ -921,10 +973,11 @@ const MyInfo = () => {
                                         name="fatherName"
                                         value={formData.fatherName}
                                         onChange={handleChange}
-                                        disabled={!!formData.fatherName}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${formData.fatherName ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        disabled={initialLockedFields.fatherName && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
-                                    {formData.fatherName && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.fatherName && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Nationality</label>
@@ -933,14 +986,15 @@ const MyInfo = () => {
                                         name="nationality"
                                         value={formData.nationality}
                                         onChange={handleChange}
-                                        disabled={!!formData.nationality}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${formData.nationality ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        disabled={initialLockedFields.nationality && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
-                                    {formData.nationality && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Blood Group</label>
-                                    {formData.bloodGroup ? (
+                                    {initialLockedFields.bloodGroup && !canEditSensitiveData() ? (
                                         <input
                                             type="text"
                                             value={formData.bloodGroup}
@@ -955,7 +1009,8 @@ const MyInfo = () => {
                                             options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']}
                                         />
                                     )}
-                                    {formData.bloodGroup && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.bloodGroup && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
@@ -1101,8 +1156,85 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Step 4: History & Education */}
+                        {/* Step 4: Job & Status (Read-only for employees) */}
                         {step === 4 && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up pb-20">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Designation</label>
+                                    <input
+                                        type="text"
+                                        value={formData.jobInfo.designation}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        placeholder="e.g. Software Engineer"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Department</label>
+                                    <input
+                                        type="text"
+                                        value={formData.jobInfo.department}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        placeholder="e.g. IT"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Reporting Manager</label>
+                                    <input
+                                        type="text"
+                                        value={formData.jobInfo.reportingManager}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Employment Type</label>
+                                    <input
+                                        type="text"
+                                        value={formData.jobInfo.employmentType}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Work Location</label>
+                                    <input
+                                        type="text"
+                                        value={formData.jobInfo.workLocation}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Joining Date</label>
+                                    <input
+                                        type="date"
+                                        value={formData.jobInfo.joiningDate}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Status</label>
+                                    <input
+                                        type="text"
+                                        value={formData.employmentStatus.status}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div className="md:col-span-2 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3 mt-4">
+                                    <Shield size={20} className="text-indigo-600 mt-0.5" />
+                                    <p className="text-sm text-indigo-700">
+                                        Note: Job and Status information can only be updated by the HR Department or an Administrator. Please contact HR if you believe this information is incorrect.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 5: History & Education */}
+                        {step === 5 && (
                             <div className="space-y-8 animate-slide-up pb-20">
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
@@ -1208,8 +1340,8 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Step 5: Documents */}
-                        {step === 5 && (
+                        {/* Step 6: Documents */}
+                        {step === 6 && (
                             <div className="animate-slide-up pb-20">
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-4">Additional Documents</h3>
@@ -1260,7 +1392,7 @@ const MyInfo = () => {
                             >
                                 <ChevronLeft size={16} /> Previous
                             </button>
-                            {step < 5 ? (
+                            {step < steps.length ? (
                                 <button
                                     onClick={handleNext}
                                     className="px-8 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium transition-all flex items-center gap-2 shadow-sm hover:shadow-md"
@@ -1269,7 +1401,7 @@ const MyInfo = () => {
                                 </button>
                             ) : (
                                 <button
-                                    onClick={handleSubmit}
+                                    onClick={() => handleSubmit()}
                                     disabled={saving}
                                     className="px-8 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium transition-all flex items-center gap-2 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                                 >

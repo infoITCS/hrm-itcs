@@ -1,48 +1,49 @@
+import { useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 export const usePermissions = () => {
     const { user } = useAuth();
 
-    const canCreateUser = (): boolean => {
+    const canCreateUser = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'super-admin' || user.role === 'admin';
-    };
+    }, [user]);
 
-    const canEditSensitiveData = (): boolean => {
+    const canEditSensitiveData = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'super-admin' || user.role === 'admin';
-    };
+    }, [user]);
 
-    const canApproveDocuments = (): boolean => {
+    const canApproveDocuments = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'super-admin' || user.role === 'admin';
-    };
+    }, [user]);
 
-    const canViewDocuments = (): boolean => {
+    const canViewDocuments = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    };
+    }, [user]);
 
-    const canUploadDocuments = (): boolean => {
+    const canUploadDocuments = useCallback((): boolean => {
         return true; // All roles can upload
-    };
+    }, []);
 
-    const canViewAllEmployees = (): boolean => {
+    const canViewAllEmployees = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'super-admin' || user.role === 'admin';
-    };
+    }, [user]);
 
-    const canViewDirectReports = (): boolean => {
+    const canViewDirectReports = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'manager';
-    };
+    }, [user]);
 
-    const canViewOwnProfile = (): boolean => {
+    const canViewOwnProfile = useCallback((): boolean => {
         if (!user) return false;
         return user.role === 'employee';
-    };
+    }, [user]);
 
-    return {
+    return useMemo(() => ({
         canCreateUser,
         canEditSensitiveData,
         canApproveDocuments,
@@ -52,6 +53,16 @@ export const usePermissions = () => {
         canViewDirectReports,
         canViewOwnProfile,
         role: user?.role || 'employee'
-    };
+    }), [
+        canCreateUser,
+        canEditSensitiveData,
+        canApproveDocuments,
+        canViewDocuments,
+        canUploadDocuments,
+        canViewAllEmployees,
+        canViewDirectReports,
+        canViewOwnProfile,
+        user?.role
+    ]);
 };
 

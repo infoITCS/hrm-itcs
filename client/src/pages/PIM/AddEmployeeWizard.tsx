@@ -15,6 +15,7 @@ const AddEmployeeWizard = () => {
     const [error, setError] = useState<string | null>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
+    const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
 
     // Redirect unauthorized users trying to create employees
     useEffect(() => {
@@ -26,7 +27,7 @@ const AddEmployeeWizard = () => {
     // Initial State including Nested Objects
     const [formData, setFormData] = useState({
         // Personal
-        employeeId: '', firstName: '', lastName: '', cnic: '',
+        employeeId: '', firstName: '', lastName: '', middleName: '', cnic: '',
         email: '', phone: '', dateOfBirth: '', gender: '',
         maritalStatus: '', nationality: '', fatherName: '', bloodGroup: '',
 
@@ -35,7 +36,7 @@ const AddEmployeeWizard = () => {
 
         // Job
         jobInfo: {
-            designation: '', department: '', joiningDate: ''
+            designation: '', department: '', reportingManager: '', employmentType: '', workLocation: '', joiningDate: ''
         },
 
         // Status
@@ -65,7 +66,7 @@ const AddEmployeeWizard = () => {
         if (isEditMode && id) {
             setLoading(true);
             const token = localStorage.getItem('token');
-            
+
             fetch(`${api.employees}/${id}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -126,7 +127,7 @@ const AddEmployeeWizard = () => {
                                 : (found.employmentStatus || { status: 'Probation', autoUpdated: false }),
 
                             // Emergency Contacts
-                            emergencyContacts: found.emergencyContacts?.length 
+                            emergencyContacts: found.emergencyContacts?.length
                                 ? found.emergencyContacts.map((ec: any) => ({
                                     name: ec.name || '',
                                     relation: ec.relation || '',
@@ -179,6 +180,15 @@ const AddEmployeeWizard = () => {
                             // The attachments are shown separately in the employee profile
                             files: []
                         });
+
+                        // Track fields that were already filled to lock them for non-admins
+                        setInitialLockedFields({
+                            cnic: !!found.cnic,
+                            dateOfBirth: !!found.dateOfBirth,
+                            fatherName: !!found.fatherName,
+                            nationality: !!found.nationality,
+                            bloodGroup: !!found.bloodGroup
+                        });
                     }
                     setLoading(false);
                 })
@@ -229,10 +239,10 @@ const AddEmployeeWizard = () => {
         }));
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (shouldNavigate = true) => {
         setLoading(true);
         setError(null);
-        
+
         try {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -250,15 +260,15 @@ const AddEmployeeWizard = () => {
 
             // 1. Create or Update Employee (without files - files are uploaded separately)
             const { files, ...employeeData } = formData;
-            
+
             const url = isEditMode ? `${api.employees}/${id}` : api.employees;
             const method = isEditMode ? 'PUT' : 'POST';
-            
+
             const response = await fetch(url, {
                 method,
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${token}` 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(employeeData)
             });
@@ -294,9 +304,22 @@ const AddEmployeeWizard = () => {
                     }
                 }
             }
-            
-            // Success - navigate to employee list
-            navigate('/pim');
+
+
+            // Update initialLockedFields after successful save to lock them on "Back"
+            setInitialLockedFields({
+                cnic: !!employeeData.cnic,
+                dateOfBirth: !!employeeData.dateOfBirth,
+                fatherName: !!employeeData.fatherName,
+                nationality: !!employeeData.nationality,
+                bloodGroup: !!employeeData.bloodGroup
+            });
+
+            // Success - navigate if requested
+            if (shouldNavigate) {
+                navigate('/pim');
+            }
+            return savedEmp;
         } catch (error: any) {
             console.error('Error submitting form:', error);
             setError(error.message || 'Failed to submit employee. Please try again.');
@@ -314,6 +337,23 @@ const AddEmployeeWizard = () => {
         { id: 6, title: 'Documents', icon: FileText }
     ];
 
+    const handleNext = async () => {
+        if (step === 1) {
+            // Auto-save on Step 1 to "anchor" one-time fields
+            const result = await handleSubmit(false);
+            if (!result) return; // Don't proceed if save failed
+        }
+
+        if (step < steps.length) {
+            if (!completedSteps.includes(step)) {
+                setCompletedSteps([...completedSteps, step]);
+                setShowCompletion(step);
+                setTimeout(() => setShowCompletion(null), 2000);
+            }
+            setStep(s => Math.min(steps.length, s + 1));
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -323,7 +363,7 @@ const AddEmployeeWizard = () => {
                 </button>
                 <div className="flex-1">
                     <h2 className="text-xl font-semibold text-gray-700">{isEditMode ? 'Edit Employee' : 'Add New Employee'}</h2>
-                    <p className="text-sm text-gray-500">Step {step} of 5: {steps[step - 1].title}</p>
+                    <p className="text-sm text-gray-500">Step {step} of {steps.length}: {steps[step - 1].title}</p>
                 </div>
             </div>
 
@@ -472,77 +512,77 @@ const AddEmployeeWizard = () => {
                         {/* CNIC, Father Name, Nationality, Blood Group - Visible to all, editable only if empty (except admins) */}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
-                            <input 
-                                type="text" 
-                                name="cnic" 
-                                value={formData.cnic || ''} 
-                                onChange={handleChange} 
-                                placeholder="e.g. 12345-1234567-1" 
-                                disabled={!!formData.cnic && !canEditSensitiveData()}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            <input
+                                type="text"
+                                name="cnic"
+                                value={formData.cnic || ''}
+                                onChange={handleChange}
+                                placeholder="e.g. 12345-1234567-1"
+                                disabled={initialLockedFields.cnic && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
-                            {formData.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                            {initialLockedFields.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
-                            <input 
-                                type="date" 
-                                name="dateOfBirth" 
-                                value={formData.dateOfBirth} 
-                                onChange={handleChange} 
-                                disabled={!!formData.dateOfBirth && !canEditSensitiveData()}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            <input
+                                type="date"
+                                name="dateOfBirth"
+                                value={formData.dateOfBirth}
+                                onChange={handleChange}
+                                disabled={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.dateOfBirth && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
-                            {formData.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                            {initialLockedFields.dateOfBirth && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Father Name</label>
-                            <input 
-                                type="text" 
-                                name="fatherName" 
-                                value={formData.fatherName} 
-                                onChange={handleChange} 
-                                disabled={!!formData.fatherName && !canEditSensitiveData()}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            <input
+                                type="text"
+                                name="fatherName"
+                                value={formData.fatherName}
+                                onChange={handleChange}
+                                disabled={initialLockedFields.fatherName && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.fatherName && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
-                            {formData.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                            {initialLockedFields.fatherName && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Nationality</label>
-                            <input 
-                                type="text" 
-                                name="nationality" 
-                                value={formData.nationality} 
-                                onChange={handleChange} 
-                                disabled={!!formData.nationality && !canEditSensitiveData()}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${formData.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            <input
+                                type="text"
+                                name="nationality"
+                                value={formData.nationality}
+                                onChange={handleChange}
+                                disabled={initialLockedFields.nationality && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
-                            {formData.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
-                            {formData.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                            {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Blood Group</label>
-                            {formData.bloodGroup && !canEditSensitiveData() ? (
-                                <input 
-                                    type="text" 
-                                    value={formData.bloodGroup} 
+                            {initialLockedFields.bloodGroup && !canEditSensitiveData() ? (
+                                <input
+                                    type="text"
+                                    value={formData.bloodGroup}
                                     disabled
                                     className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 cursor-not-allowed"
                                 />
                             ) : (
-                                <CustomSelect 
-                                    label="" 
-                                    value={formData.bloodGroup} 
-                                    onChange={(val) => setFormData({ ...formData, bloodGroup: val })} 
+                                <CustomSelect
+                                    label=""
+                                    value={formData.bloodGroup}
+                                    onChange={(val) => setFormData({ ...formData, bloodGroup: val })}
                                     options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']}
                                     disabled={false}
                                 />
                             )}
-                            {formData.bloodGroup && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
-                            {formData.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                            {initialLockedFields.bloodGroup && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
@@ -1063,24 +1103,16 @@ const AddEmployeeWizard = () => {
                         <ChevronLeft size={16} /> Back
                     </button>
 
-                    {step < 6 ? (
+                    {step < steps.length ? (
                         <button
-                            onClick={() => {
-                                if (!completedSteps.includes(step)) {
-                                    setCompletedSteps([...completedSteps, step]);
-                                    setShowCompletion(step);
-                                    // Hide completion notification after 2 seconds
-                                    setTimeout(() => setShowCompletion(null), 2000);
-                                }
-                                setStep(s => Math.min(6, s + 1));
-                            }}
+                            onClick={handleNext}
                             className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium hover:from-indigo-700 hover:to-purple-700 flex items-center gap-2 transition-all shadow-sm hover:shadow-md"
                         >
-                            Next <ChevronRight size={16} />
+                            {loading && step === 1 ? 'Saving...' : 'Next'} <ChevronRight size={16} />
                         </button>
                     ) : (
                         <button
-                            onClick={handleSubmit}
+                            onClick={() => handleSubmit()}
                             disabled={loading}
                             className="px-8 py-2.5 rounded-lg bg-success text-white font-medium hover:bg-success/90 flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
                         >
