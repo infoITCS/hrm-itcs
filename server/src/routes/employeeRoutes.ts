@@ -6,6 +6,7 @@ import AuditLog from '../models/AuditLog';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
+import { getDiff } from '../utils/diff';
 
 const router = express.Router();
 
@@ -227,7 +228,7 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
         (employee.attachments[attachmentIndex] as any).status = status;
         (employee.attachments[attachmentIndex] as any).reviewedBy = authReq.user?.userId;
         (employee.attachments[attachmentIndex] as any).reviewedAt = new Date();
-
+        employee.markModified('attachments');
         await employee.save();
 
         await createAuditLog('DOC_APPROVAL', employee.employeeId, authReq.user?.userId || 'unknown', {
@@ -236,6 +237,38 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
         });
 
         res.json(employee.attachments[attachmentIndex]);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Delete attachment
+router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    try {
+        if (!canApproveDocuments(authReq.user?.role || '')) {
+            return res.status(403).json({ message: 'You do not have permission to delete documents' });
+        }
+
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        if (!employee.attachments) return res.status(404).json({ message: 'No attachments found' });
+
+        const attachmentIndex = employee.attachments.findIndex((att: any) => att._id?.toString() === req.params.attachmentId);
+        if (attachmentIndex === -1) return res.status(404).json({ message: 'Attachment not found' });
+
+        const deletedAttachment = employee.attachments[attachmentIndex];
+        employee.attachments.splice(attachmentIndex, 1);
+
+        await employee.save();
+
+        await createAuditLog('DOC_DELETE', employee.employeeId, authReq.user?.userId || 'unknown', {
+            attachmentId: req.params.attachmentId,
+            fileName: (deletedAttachment as any).fileName
+        });
+
+        res.json({ message: 'Attachment deleted successfully' });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -295,6 +328,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
             updates.employmentStatus.probationEndDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
         }
 
+        // Calculate diff before saving
+        const diff = getDiff(employee.toObject(), updates);
+
         Object.assign(employee, updates);
         const updatedEmployee = await employee.save();
 
@@ -306,7 +342,13 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
             });
         }
 
-        await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { updates: Object.keys(updates) });
+        // Log detailed diff if there are changes
+        if (Object.keys(diff).length > 0) {
+            await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { diff });
+        } else {
+            // Fallback for actions that might not have a clean object diff (e.g. nested array updates if not fully handled)
+            await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { updates: Object.keys(updates) });
+        }
 
         res.json(updatedEmployee);
     } catch (err: any) {

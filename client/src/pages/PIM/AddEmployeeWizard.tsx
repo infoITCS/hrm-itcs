@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -30,9 +30,10 @@ const AddEmployeeWizard = () => {
         employeeId: '', firstName: '', lastName: '', middleName: '', cnic: '',
         email: '', phone: '', dateOfBirth: '', gender: '',
         maritalStatus: '', nationality: '', fatherName: '', bloodGroup: '',
+        religion: '', licenseNumber: '', simNumber: '', workEmail: '', otherEmail: '',
 
         // Address
-        address: { street: '', city: '', country: '' },
+        address: { street: '', city: '', state: '', zipCode: '', country: '' },
 
         // Job
         jobInfo: {
@@ -58,7 +59,23 @@ const AddEmployeeWizard = () => {
         education: [{ level: '', institute: '', year: '', score: '' }],
 
         // Attachments
-        files: [] as { file: File; type: string }[]
+        files: [] as { file: File; type: string }[],
+
+        // Phase 2: Supplemental
+        skills: [] as string[],
+        socialProfiles: [
+            { platform: 'LinkedIn', link: '' },
+            { platform: 'GitHub', link: '' },
+            { platform: 'Portfolio', link: '' }
+        ],
+        salaryComponents: [] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
+        bankDetails: {
+            bankName: '',
+            accountName: '',
+            accountNumber: '',
+            iban: '',
+            swiftCode: ''
+        }
     });
 
     // Fetch Data for Edit Mode
@@ -107,9 +124,20 @@ const AddEmployeeWizard = () => {
                             nationality: found.nationality || '',
                             fatherName: found.fatherName || '',
                             bloodGroup: found.bloodGroup || '',
+                            religion: found.religion || '',
+                            licenseNumber: found.licenseNumber || '',
+                            simNumber: found.simNumber || '',
+                            workEmail: found.workEmail || '',
+                            otherEmail: found.otherEmail || '',
 
                             // Address
-                            address: found.address || { street: '', city: '', country: '' },
+                            address: {
+                                street: found.address?.street || '',
+                                city: found.address?.city || '',
+                                state: found.address?.state || '',
+                                zipCode: found.address?.zipCode || '',
+                                country: found.address?.country || ''
+                            },
 
                             // Job Info
                             jobInfo: {
@@ -178,7 +206,23 @@ const AddEmployeeWizard = () => {
 
                             // Files - Note: We can't load actual File objects from server, so we'll keep this empty
                             // The attachments are shown separately in the employee profile
-                            files: []
+                            files: [],
+
+                            // Supplemental info
+                            skills: found.skills || [],
+                            socialProfiles: found.socialProfiles?.length ? found.socialProfiles : [
+                                { platform: 'LinkedIn', link: '' },
+                                { platform: 'GitHub', link: '' },
+                                { platform: 'Portfolio', link: '' }
+                            ],
+                            salaryComponents: found.salaryComponents || [],
+                            bankDetails: found.bankDetails || {
+                                bankName: '',
+                                accountName: '',
+                                accountNumber: '',
+                                iban: '',
+                                swiftCode: ''
+                            }
                         });
 
                         // Track fields that were already filled to lock them for non-admins
@@ -334,14 +378,22 @@ const AddEmployeeWizard = () => {
         { id: 3, title: 'Immigration', icon: Globe },
         { id: 4, title: 'Job & Status', icon: Briefcase },
         { id: 5, title: 'History & Education', icon: GraduationCap },
-        { id: 6, title: 'Documents', icon: FileText }
+        { id: 6, title: 'Finance & Assets', icon: CreditCard },
+        { id: 7, title: 'Documents', icon: FileText }
     ];
 
     const handleNext = async () => {
-        if (step === 1) {
-            // Auto-save on Step 1 to "anchor" one-time fields
-            const result = await handleSubmit(false);
-            if (!result) return; // Don't proceed if save failed
+        // Auto-save on every step to ensure data persistence
+        // Only skip auto-save if we are on the first step and it's a new employee AND we don't have enough data? 
+        // No, let's always try to save if we have at least first/last name.
+        if (formData.firstName && formData.lastName) {
+            const savedEmp = await handleSubmit(false);
+            if (!savedEmp) return; // Don't proceed if save failed
+
+            // If we just created a new employee, we need to update the URL so subsequent steps use PUT
+            if (!isEditMode && savedEmp.employeeId) {
+                navigate(`/pim/edit/${savedEmp.employeeId}`, { replace: true });
+            }
         }
 
         if (step < steps.length) {
@@ -585,6 +637,14 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Religion</label>
+                            <input type="text" name="religion" value={formData.religion} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">License Number</label>
+                            <input type="text" name="licenseNumber" value={formData.licenseNumber} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                        </div>
+                        <div className="space-y-2">
                             <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                         </div>
                         <div className="space-y-2">
@@ -599,16 +659,21 @@ const AddEmployeeWizard = () => {
                         <div>
                             <h3 className="text-lg font-medium text-gray-700 mb-4">Contact Info</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="phone" placeholder="Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="email" name="email" placeholder="Personal Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="email" name="workEmail" placeholder="Work Email" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="email" name="otherEmail" placeholder="Other Email" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="phone" placeholder="Personal Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="simNumber" placeholder="Company SIM Number" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
 
                         <div>
                             <h3 className="text-lg font-medium text-gray-700 mb-4">Address</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <input type="text" name="street" placeholder="Street" value={formData.address.street} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                                 <input type="text" name="city" placeholder="City" value={formData.address.city} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="state" placeholder="State / Province" value={formData.address.state} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="zipCode" placeholder="Zip / Postal Code" value={formData.address.zipCode} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                                 <input type="text" name="country" placeholder="Country" value={formData.address.country} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
@@ -1017,12 +1082,228 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 </div>
                             ))}
+
+                            {/* Skills & Social Profiles */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 pt-8 border-t border-gray-100">
+                                <div>
+                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Professional Skills</h3>
+                                    <div className="space-y-4">
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {formData.skills.map((skill, idx) => (
+                                                <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium group">
+                                                    {skill}
+                                                    <button onClick={() => setFormData(p => ({ ...p, skills: p.skills.filter((_, i) => i !== idx) }))} className="hover:text-red-500">
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Add a skill (e.g. React)"
+                                                id="skillInput"
+                                                className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        const val = (e.target as HTMLInputElement).value.trim();
+                                                        if (val && !formData.skills.includes(val)) {
+                                                            setFormData(p => ({ ...p, skills: [...p.skills, val] }));
+                                                            (e.target as HTMLInputElement).value = '';
+                                                        }
+                                                        e.preventDefault();
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    const input = document.getElementById('skillInput') as HTMLInputElement;
+                                                    const val = input.value.trim();
+                                                    if (val) {
+                                                        setFormData(p => ({ ...p, skills: [...p.skills, val] }));
+                                                        input.value = '';
+                                                    }
+                                                }}
+                                                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Digital Presence</h3>
+                                    <div className="space-y-4">
+                                        {formData.socialProfiles.map((profile, idx) => (
+                                            <div key={idx} className="flex items-center gap-3">
+                                                <label className="text-xs font-semibold text-gray-400 w-20 uppercase tracking-wider">{profile.platform}</label>
+                                                <input
+                                                    type="url"
+                                                    placeholder={`${profile.platform} URL`}
+                                                    value={profile.link}
+                                                    onChange={(e) => {
+                                                        const newProfiles = [...formData.socialProfiles];
+                                                        newProfiles[idx].link = e.target.value;
+                                                        setFormData(p => ({ ...p, socialProfiles: newProfiles }));
+                                                    }}
+                                                    className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
 
-                {/* Step 6: Additional Documents */}
+                {/* Step 6: Finance & Assets */}
                 {step === 6 && (
+                    <div className="space-y-8 animate-slide-up pb-20">
+                        {/* Salary Components */}
+                        <div>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-medium text-gray-700">Salary Components</h3>
+                                <button
+                                    onClick={() => setFormData(p => ({
+                                        ...p,
+                                        salaryComponents: [...p.salaryComponents, { component: '', amount: 0, type: 'fixed' }]
+                                    }))}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-all shadow-sm"
+                                >
+                                    + Add Component
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                {formData.salaryComponents.map((comp, idx) => (
+                                    <div key={idx} className="flex flex-col md:flex-row gap-4 p-4 bg-white border border-gray-100 rounded-xl shadow-sm relative group">
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Component Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Basic Salary"
+                                                value={comp.component}
+                                                onChange={(e) => {
+                                                    const newComps = [...formData.salaryComponents];
+                                                    newComps[idx].component = e.target.value;
+                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="w-full md:w-32 space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Amount</label>
+                                            <input
+                                                type="number"
+                                                placeholder="0.00"
+                                                value={comp.amount}
+                                                onChange={(e) => {
+                                                    const newComps = [...formData.salaryComponents];
+                                                    newComps[idx].amount = Number(e.target.value);
+                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="w-full md:w-40 space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Type</label>
+                                            <select
+                                                value={comp.type}
+                                                onChange={(e) => {
+                                                    const newComps = [...formData.salaryComponents];
+                                                    newComps[idx].type = e.target.value as 'fixed' | 'variable';
+                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
+                                            >
+                                                <option value="fixed">Fixed</option>
+                                                <option value="variable">Variable</option>
+                                            </select>
+                                        </div>
+                                        <button
+                                            onClick={() => setFormData(p => ({
+                                                ...p,
+                                                salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
+                                            }))}
+                                            className="self-end md:self-center p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {formData.salaryComponents.length === 0 && (
+                                    <div className="text-center py-8 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-gray-400 text-sm">
+                                        No salary components added yet.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Bank Details */}
+                        <div className="pt-8 border-t border-gray-100">
+                            <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
+                                <Banknote size={20} className="text-indigo-500" />
+                                Bank Account Details
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">Bank Name</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Chase Bank"
+                                        value={formData.bankDetails.bankName}
+                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">Account Holder Name</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Full name as per bank"
+                                        value={formData.bankDetails.accountName}
+                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">Account Number</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Account Number"
+                                        value={formData.bankDetails.accountNumber}
+                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">IBAN</label>
+                                    <input
+                                        type="text"
+                                        placeholder="International Bank Account Number"
+                                        value={formData.bankDetails.iban}
+                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">Swift Code (BIC)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Swift/BIC Code"
+                                        value={formData.bankDetails.swiftCode}
+                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 7: Additional Documents */}
+                {step === 7 && (
                     <div className="space-y-6 animate-slide-up">
                         <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 text-center">
                             <div className="border-2 border-dashed border-indigo-300 rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 transition-all relative group">

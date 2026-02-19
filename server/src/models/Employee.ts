@@ -15,6 +15,12 @@ export interface IEmployee extends Document {
     cnic?: string;
     fatherName?: string;
     bloodGroup?: string;
+    religion?: string;
+    licenseNumber?: string;
+    workEmail?: string;
+    otherEmail?: string;
+    simNumber?: string;
+    skills?: string[];
     address?: {
         street?: string;
         city?: string;
@@ -36,6 +42,22 @@ export interface IEmployee extends Document {
         workLocation?: string;
         joiningDate?: Date;
     };
+    salaryComponents?: {
+        component: string;
+        amount: number;
+        type: 'fixed' | 'variable';
+    }[];
+    bankDetails?: {
+        bankName?: string;
+        accountName?: string;
+        accountNumber?: string;
+        iban?: string;
+        swiftCode?: string;
+    };
+    socialProfiles?: {
+        platform: string;
+        link: string;
+    }[];
     // [NEW] Sub-documents
     emergencyContacts?: {
         name: string;
@@ -87,6 +109,12 @@ const EmployeeSchema: Schema = new Schema({
     cnic: { type: String },
     fatherName: { type: String },
     bloodGroup: { type: String },
+    religion: { type: String },
+    licenseNumber: { type: String },
+    workEmail: { type: String },
+    otherEmail: { type: String },
+    simNumber: { type: String },
+    skills: [{ type: String }],
     address: {
         street: { type: String },
         city: { type: String },
@@ -108,6 +136,22 @@ const EmployeeSchema: Schema = new Schema({
         workLocation: { type: String },
         joiningDate: { type: Date }
     },
+    salaryComponents: [{
+        component: { type: String },
+        amount: { type: Number },
+        type: { type: String, enum: ['fixed', 'variable'], default: 'fixed' }
+    }],
+    bankDetails: {
+        bankName: { type: String },
+        accountName: { type: String },
+        accountNumber: { type: String },
+        iban: { type: String },
+        swiftCode: { type: String }
+    },
+    socialProfiles: [{
+        platform: { type: String },
+        link: { type: String }
+    }],
     emergencyContacts: [{
         name: { type: String },
         relation: { type: String },
@@ -135,7 +179,10 @@ const EmployeeSchema: Schema = new Schema({
         fileType: { type: String },
         fileName: { type: String },
         filePath: { type: String },
-        uploadDate: { type: Date, default: Date.now }
+        uploadDate: { type: Date, default: Date.now },
+        status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+        reviewedBy: { type: String },
+        reviewedAt: { type: Date }
     }]
 }, { timestamps: true });
 

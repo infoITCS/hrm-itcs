@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,11 +38,18 @@ const MyInfo = () => {
         fatherName: '',
         bloodGroup: '',
         cnic: '',
+        religion: '',
+        licenseNumber: '',
+        simNumber: '',
+        workEmail: '',
+        otherEmail: '',
 
         // Address
         address: {
             street: '',
             city: '',
+            state: '',
+            zipCode: '',
             country: ''
         },
 
@@ -75,7 +82,23 @@ const MyInfo = () => {
         employmentStatus: { status: 'Probation', autoUpdated: false },
 
         // Files
-        files: [] as { file: File; type: string }[]
+        files: [] as { file: File; type: string }[],
+
+        // Supplemental
+        skills: [] as string[],
+        socialProfiles: [
+            { platform: 'LinkedIn', link: '' },
+            { platform: 'GitHub', link: '' },
+            { platform: 'Portfolio', link: '' }
+        ],
+        salaryComponents: [] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
+        bankDetails: {
+            bankName: '',
+            accountName: '',
+            accountNumber: '',
+            iban: '',
+            swiftCode: ''
+        }
     });
 
     // Fetch employee data linked to current user
@@ -122,7 +145,18 @@ const MyInfo = () => {
                             fatherName: employee.fatherName || '',
                             bloodGroup: employee.bloodGroup || '',
                             cnic: employee.cnic || '',
-                            address: employee.address || { street: '', city: '', country: '' },
+                            religion: employee.religion || '',
+                            licenseNumber: employee.licenseNumber || '',
+                            simNumber: employee.simNumber || '',
+                            workEmail: employee.workEmail || '',
+                            otherEmail: employee.otherEmail || '',
+                            address: {
+                                street: employee.address?.street || '',
+                                city: employee.address?.city || '',
+                                state: employee.address?.state || '',
+                                zipCode: employee.address?.zipCode || '',
+                                country: employee.address?.country || ''
+                            },
                             emergencyContacts: employee.emergencyContacts?.length
                                 ? employee.emergencyContacts.map((ec: any) => ({
                                     name: ec.name || '',
@@ -163,6 +197,20 @@ const MyInfo = () => {
                                     score: edu.score || ''
                                 }))
                                 : [{ level: '', institute: '', year: '', score: '' }],
+                            skills: employee.skills || [],
+                            socialProfiles: employee.socialProfiles?.length ? employee.socialProfiles : [
+                                { platform: 'LinkedIn', link: '' },
+                                { platform: 'GitHub', link: '' },
+                                { platform: 'Portfolio', link: '' }
+                            ],
+                            salaryComponents: employee.salaryComponents || [],
+                            bankDetails: employee.bankDetails || {
+                                bankName: '',
+                                accountName: '',
+                                accountNumber: '',
+                                iban: '',
+                                swiftCode: ''
+                            },
                             jobInfo: {
                                 designation: employee.jobInfo?.designation || '',
                                 department: employee.jobInfo?.department || '',
@@ -173,7 +221,7 @@ const MyInfo = () => {
                             },
                             employmentStatus: employee.employmentStatus || { status: 'Probation', autoUpdated: false },
                             files: []
-                        });
+                        } as any);
 
                         // Track fields that were already filled to lock them for non-admins
                         setInitialLockedFields({
@@ -338,6 +386,7 @@ const MyInfo = () => {
             }
 
             const savedEmployee = await response.json();
+            setRawEmployee(savedEmployee); // Update raw data to refresh profile view immediately
             if (savedEmployee.employeeId && !employeeId) {
                 setEmployeeId(savedEmployee.employeeId);
             }
@@ -461,7 +510,8 @@ const MyInfo = () => {
         { id: 3, title: 'Immigration', icon: Globe },
         { id: 4, title: 'Job & Status', icon: Briefcase },
         { id: 5, title: 'History & Education', icon: GraduationCap },
-        { id: 6, title: 'Documents', icon: FileText }
+        { id: 6, title: 'Finance & Assets', icon: CreditCard },
+        { id: 7, title: 'Documents', icon: FileText }
     ];
 
     if (loading) {
@@ -482,6 +532,7 @@ const MyInfo = () => {
             { id: 'personal', label: 'Personal', icon: User },
             { id: 'contact', label: 'Contact', icon: Phone },
             { id: 'job', label: 'Job', icon: Briefcase },
+            { id: 'finance', label: 'Finance', icon: CreditCard },
             { id: 'history', label: 'Employment History', icon: History },
             { id: 'education', label: 'Education', icon: GraduationCap },
             { id: 'dependents', label: 'Dependents', icon: Users },
@@ -588,15 +639,68 @@ const MyInfo = () => {
                 <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200/50 min-h-[400px] animate-slide-up">
                     {/* Personal Tab */}
                     {activeTab === 'personal' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-8 gap-x-12 animate-fadeIn">
-                            <Field label="Full Name" value={`${rawEmployee.firstName} ${rawEmployee.middleName || ''} ${rawEmployee.lastName}`} />
-                            <Field label="Date of Birth" value={formatDate(rawEmployee.dateOfBirth)} />
-                            <Field label="Gender" value={rawEmployee.gender} />
-                            <Field label="Marital Status" value={rawEmployee.maritalStatus} />
-                            <Field label="Nationality" value={rawEmployee.nationality} />
-                            <Field label="Father Name" value={rawEmployee.fatherName} />
-                            <Field label="Blood Group" value={rawEmployee.bloodGroup} />
-                            <Field label="CNIC / Govt ID" value={rawEmployee.cnic} />
+                        <div className="space-y-10 animate-fadeIn">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-8 gap-x-12">
+                                <Field label="Full Name" value={`${rawEmployee.firstName} ${rawEmployee.middleName || ''} ${rawEmployee.lastName}`} />
+                                <Field label="Date of Birth" value={formatDate(rawEmployee.dateOfBirth)} />
+                                <Field label="Gender" value={rawEmployee.gender} />
+                                <Field label="Marital Status" value={rawEmployee.maritalStatus} />
+                                <Field label="Nationality" value={rawEmployee.nationality} />
+                                <Field label="Father Name" value={rawEmployee.fatherName} />
+                                <Field label="Blood Group" value={rawEmployee.bloodGroup} />
+                                <Field label="CNIC / Govt ID" value={rawEmployee.cnic} />
+                                <Field label="Religion" value={rawEmployee.religion} />
+                                <Field label="License Number" value={rawEmployee.licenseNumber} />
+                                <Field label="Work Email" value={rawEmployee.workEmail} />
+                                <Field label="Other Email" value={rawEmployee.otherEmail} />
+                                <Field label="SIM Number" value={rawEmployee.simNumber} />
+                            </div>
+
+                            {/* Skills Section */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    Professional Skills
+                                </h3>
+                                <div className="flex flex-wrap gap-2">
+                                    {rawEmployee.skills?.length > 0 ? (
+                                        rawEmployee.skills.map((skill: string, idx: number) => (
+                                            <span key={idx} className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-sm font-semibold border border-indigo-100/50 shadow-sm">
+                                                {skill}
+                                            </span>
+                                        ))
+                                    ) : <p className="text-gray-400 italic">No skills added yet</p>}
+                                </div>
+                            </div>
+
+                            {/* Social Profiles */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <Globe size={16} /> Digital Presence
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {rawEmployee.socialProfiles?.length > 0 ? (
+                                        rawEmployee.socialProfiles.map((profile: any, idx: number) => (
+                                            profile.link && (
+                                                <a
+                                                    key={idx}
+                                                    href={profile.link}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-white transition-all group"
+                                                >
+                                                    <div className="p-2.5 bg-white rounded-xl group-hover:bg-indigo-50 text-slate-400 group-hover:text-indigo-600 border border-slate-100 transition-colors">
+                                                        <Globe size={18} />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{profile.platform}</p>
+                                                        <p className="text-sm font-bold text-slate-600 truncate">{profile.link.split('//')[1] || profile.link}</p>
+                                                    </div>
+                                                </a>
+                                            )
+                                        ))
+                                    ) : <p className="text-gray-400 italic">No social profiles linked</p>}
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -642,6 +746,9 @@ const MyInfo = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 <Field label="Designation" value={rawEmployee.jobInfo?.designation} />
                                 <Field label="Department" value={rawEmployee.jobInfo?.department} />
+                                <Field label="Reporting Manager" value={rawEmployee.jobInfo?.reportingManager} />
+                                <Field label="Employment Type" value={rawEmployee.jobInfo?.employmentType} />
+                                <Field label="Work Location" value={rawEmployee.jobInfo?.workLocation} />
                                 <Field label="Joining Date" value={formatDate(rawEmployee.jobInfo?.joiningDate)} />
                             </div>
                             <div className="p-8 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl text-white shadow-xl shadow-indigo-200">
@@ -657,6 +764,44 @@ const MyInfo = () => {
                                             <p className="text-xl font-bold">{formatDate(rawEmployee.employmentStatus.probationEndDate)}</p>
                                         </div>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Finance Tab */}
+                    {activeTab === 'finance' && (
+                        <div className="space-y-8 animate-fadeIn">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Structure</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {rawEmployee.salaryComponents?.length > 0 ? (
+                                        rawEmployee.salaryComponents.map((comp: any, i: number) => (
+                                            <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                                        <DollarSign size={16} />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-400 uppercase">{comp.type}</span>
+                                                </div>
+                                                <p className="text-sm font-bold text-gray-800">{comp.component}</p>
+                                                <p className="text-2xl font-black text-indigo-600 mt-1">
+                                                    {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
+                                                </p>
+                                            </div>
+                                        ))
+                                    ) : <p className="text-gray-400 italic">No salary components recorded</p>}
+                                </div>
+                            </div>
+
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Bank Account Details</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                                    <Field label="Bank Name" value={rawEmployee.bankDetails?.bankName} />
+                                    <Field label="Account Holder" value={rawEmployee.bankDetails?.accountName} />
+                                    <Field label="Account Number" value={rawEmployee.bankDetails?.accountNumber} />
+                                    <Field label="IBAN" value={rawEmployee.bankDetails?.iban} />
+                                    <Field label="Swift Code" value={rawEmployee.bankDetails?.swiftCode} />
                                 </div>
                             </div>
                         </div>
@@ -1013,6 +1158,14 @@ const MyInfo = () => {
                                     {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Religion</label>
+                                    <input type="text" name="religion" value={formData.religion} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">License Number</label>
+                                    <input type="text" name="licenseNumber" value={formData.licenseNumber} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                </div>
+                                <div className="space-y-2">
                                     <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                                 </div>
                                 <div className="space-y-2">
@@ -1027,16 +1180,21 @@ const MyInfo = () => {
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-4">Contact Info</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="phone" placeholder="Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="email" name="email" placeholder="Personal Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="email" name="workEmail" placeholder="Work Email" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="email" name="otherEmail" placeholder="Other Email" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="text" name="phone" placeholder="Personal Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="text" name="simNumber" placeholder="Company SIM Number" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
                                     </div>
                                 </div>
 
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-4">Address</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                         <input type="text" name="street" placeholder="Street" value={formData.address.street} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
                                         <input type="text" name="city" placeholder="City" value={formData.address.city} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="text" name="state" placeholder="State / Province" value={formData.address.state} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <input type="text" name="zipCode" placeholder="Zip / Postal Code" value={formData.address.zipCode} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
                                         <input type="text" name="country" placeholder="Country" value={formData.address.country} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
                                     </div>
                                 </div>
@@ -1295,8 +1453,7 @@ const MyInfo = () => {
                                             <div className="flex justify-end mb-2">
                                                 <button
                                                     onClick={() => {
-                                                        const newEdu = formData.education.filter((_, i) => i !== idx);
-                                                        setFormData({ ...formData, education: newEdu });
+                                                        setFormData(p => ({ ...p, education: p.education.filter((_, i) => i !== idx) }));
                                                     }}
                                                     className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50"
                                                     title="Delete Entry"
@@ -1337,11 +1494,222 @@ const MyInfo = () => {
                                         </div>
                                     ))}
                                 </div>
+
+                                {/* Skills & Social Profiles */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 pt-8 border-t border-gray-100">
+                                    <div>
+                                        <h3 className="text-lg font-medium text-gray-700 mb-4">Professional Skills</h3>
+                                        <div className="space-y-4">
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {formData.skills.map((skill, idx) => (
+                                                    <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium group">
+                                                        {skill}
+                                                        <button onClick={() => setFormData(p => ({ ...p, skills: p.skills.filter((_, i) => i !== idx) }))} className="hover:text-red-500">
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Add a skill (e.g. React)"
+                                                    id="skillInput"
+                                                    className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            const val = (e.target as HTMLInputElement).value.trim();
+                                                            if (val && !formData.skills.includes(val)) {
+                                                                setFormData(p => ({ ...p, skills: [...p.skills, val] }));
+                                                                (e.target as HTMLInputElement).value = '';
+                                                            }
+                                                            e.preventDefault();
+                                                        }
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => {
+                                                        const input = document.getElementById('skillInput') as HTMLInputElement;
+                                                        const val = input.value.trim();
+                                                        if (val) {
+                                                            setFormData(p => ({ ...p, skills: [...p.skills, val] }));
+                                                            input.value = '';
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
+                                                >
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-lg font-medium text-gray-700 mb-4">Digital Presence</h3>
+                                        <div className="space-y-4">
+                                            {formData.socialProfiles.map((profile, idx) => (
+                                                <div key={idx} className="flex items-center gap-3">
+                                                    <label className="text-xs font-semibold text-gray-400 w-20 uppercase tracking-wider">{profile.platform}</label>
+                                                    <input
+                                                        type="url"
+                                                        placeholder={`${profile.platform} URL`}
+                                                        value={profile.link}
+                                                        onChange={(e) => {
+                                                            const newProfiles = [...formData.socialProfiles];
+                                                            newProfiles[idx].link = e.target.value;
+                                                            setFormData(p => ({ ...p, socialProfiles: newProfiles }));
+                                                        }}
+                                                        className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
-                        {/* Step 6: Documents */}
+                        {/* Step 6: Finance & Assets */}
                         {step === 6 && (
+                            <div className="space-y-8 animate-slide-up pb-20">
+                                {/* Salary Components */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-lg font-medium text-gray-700">Salary Components</h3>
+                                        <button
+                                            onClick={() => setFormData(p => ({
+                                                ...p,
+                                                salaryComponents: [...p.salaryComponents, { component: '', amount: 0, type: 'fixed' }]
+                                            }))}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-all shadow-sm"
+                                        >
+                                            + Add Component
+                                        </button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {formData.salaryComponents.map((comp, idx) => (
+                                            <div key={idx} className="flex flex-col md:flex-row gap-4 p-4 bg-white border border-gray-100 rounded-xl shadow-sm relative group">
+                                                <div className="flex-1 space-y-1">
+                                                    <label className="text-xs font-medium text-gray-500">Component Name</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. Basic Salary"
+                                                        value={comp.component}
+                                                        onChange={(e) => {
+                                                            const newComps = [...formData.salaryComponents];
+                                                            newComps[idx].component = e.target.value;
+                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                        }}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
+                                                </div>
+                                                <div className="w-full md:w-32 space-y-1">
+                                                    <label className="text-xs font-medium text-gray-500">Amount</label>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="0.00"
+                                                        value={comp.amount}
+                                                        onChange={(e) => {
+                                                            const newComps = [...formData.salaryComponents];
+                                                            newComps[idx].amount = Number(e.target.value);
+                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                        }}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
+                                                </div>
+                                                <div className="w-full md:w-40 space-y-1">
+                                                    <label className="text-xs font-medium text-gray-500">Type</label>
+                                                    <select
+                                                        value={comp.type}
+                                                        onChange={(e) => {
+                                                            const newComps = [...formData.salaryComponents];
+                                                            newComps[idx].type = e.target.value as 'fixed' | 'variable';
+                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                        }}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
+                                                    >
+                                                        <option value="fixed">Fixed</option>
+                                                        <option value="variable">Variable</option>
+                                                    </select>
+                                                </div>
+                                                <button
+                                                    onClick={() => setFormData(p => ({
+                                                        ...p,
+                                                        salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
+                                                    }))}
+                                                    className="self-end md:self-center p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Bank Details */}
+                                <div className="pt-8 border-t border-gray-100">
+                                    <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
+                                        <Banknote size={20} className="text-indigo-500" />
+                                        Bank Account Details
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Bank Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Chase Bank"
+                                                value={formData.bankDetails.bankName}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Account Holder Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Full name as per bank"
+                                                value={formData.bankDetails.accountName}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Account Number</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Account Number"
+                                                value={formData.bankDetails.accountNumber}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">IBAN</label>
+                                            <input
+                                                type="text"
+                                                placeholder="International Bank Account Number"
+                                                value={formData.bankDetails.iban}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Swift Code (BIC)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Swift/BIC Code"
+                                                value={formData.bankDetails.swiftCode}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 7: Documents */}
+                        {step === 7 && (
                             <div className="animate-slide-up pb-20">
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-4">Additional Documents</h3>
