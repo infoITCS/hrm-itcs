@@ -422,9 +422,9 @@ const EmployeeProfile = () => {
                                         }
                                     };
 
-                                    const handleDownload = (filePath: string, fileName: string) => {
-                                        if (!filePath) return;
-                                        const url = filePath.startsWith('http') ? filePath : `${api.baseURL}/uploads/${filePath}`;
+                                    const handleDownload = (attachmentId: string, fileName: string) => {
+                                        if (!attachmentId) return;
+                                        const url = api.attachmentRaw(attachmentId);
                                         const link = document.createElement('a');
                                         link.href = url;
                                         link.download = fileName;
@@ -500,7 +500,7 @@ const EmployeeProfile = () => {
                                                     </button>
                                                 )}
                                                 <button
-                                                    onClick={() => handleDownload(file.filePath, file.fileName)}
+                                                    onClick={() => handleDownload(file._id, file.fileName)}
                                                     className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all"
                                                     title="Download"
                                                 >

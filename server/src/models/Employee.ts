@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IEmployee extends Document {
     employeeId: string;
@@ -83,9 +83,12 @@ export interface IEmployee extends Document {
         reasonForLeaving?: string;
     }[];
     attachments?: {
+        _id?: Types.ObjectId;
         fileType: string; // e.g., ID, Resume, Contract
         fileName: string;
         filePath: string;
+        fileData?: Buffer;
+        contentType?: string;
         uploadDate: Date;
         status?: 'pending' | 'approved' | 'rejected';
         uploadedBy?: string;
@@ -179,6 +182,8 @@ const EmployeeSchema: Schema = new Schema({
         fileType: { type: String },
         fileName: { type: String },
         filePath: { type: String },
+        fileData: { type: Buffer },
+        contentType: { type: String },
         uploadDate: { type: Date, default: Date.now },
         status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
         reviewedBy: { type: String },

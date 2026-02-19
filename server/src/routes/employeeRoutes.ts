@@ -1,4 +1,5 @@
 
+import fs from 'fs';
 import express, { Request, Response } from 'express';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
@@ -182,29 +183,64 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 
         if (!employee.attachments) employee.attachments = [];
 
+        // Read file into buffer for MongoDB storage
+        const filePath = req.file.path;
+        const fileBuffer = fs.readFileSync(filePath);
+
         const attachment = {
-            fileType: req.body.fileType || 'Document', // 'ID', 'Contract', etc.
+            fileType: req.body.fileType || 'Document',
             fileName: req.file.originalname,
-            filePath: req.file.filename, // Store just the filename, we serve from /uploads
+            filePath: req.file.filename,
+            fileData: fileBuffer,
+            contentType: req.file.mimetype,
             uploadDate: new Date(),
-            status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending', // Auto-approve if admin
+            status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending',
             uploadedBy: authReq.user?.userId
         };
 
         employee.attachments.push(attachment as any);
         await employee.save();
 
-        // If this is a profile picture, update the User model too
+        // If this is a profile picture, update the User model
         if (attachment.fileType === 'Profile Picture' && employee.userId) {
-            await User.findByIdAndUpdate(employee.userId, { avatar: `/uploads/${req.file.filename}` });
+            // we'll update with a special API URL instead of a static file path
+            const newAvatarUrl = `/api/employees/attachments/raw/${employee.attachments[employee.attachments.length - 1]._id}`;
+            await User.findByIdAndUpdate(employee.userId, { avatar: newAvatarUrl });
         }
 
         await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: req.file.originalname });
 
-        res.status(200).json(attachment);
+        // Clean up: delete the local file after saving to MongoDB
+        try {
+            fs.unlinkSync(filePath);
+        } catch (unlinkErr) {
+            console.error('Failed to delete temporary file:', unlinkErr);
+        }
+
+        res.status(200).json({
+            ...attachment,
+            fileData: undefined // Don't send buffer back in JSON
+        });
 
     } catch (err: any) {
         res.status(500).json({ message: err.message });
+    }
+});
+
+// Route to serve raw file from MongoDB
+router.get('/attachments/raw/:attachmentId', async (req: Request, res: Response) => {
+    try {
+        const employee = await Employee.findOne({ 'attachments._id': req.params.attachmentId });
+        if (!employee) return res.status(404).send('File not found');
+
+        const attachment = employee.attachments?.find((att: any) => att._id?.toString() === req.params.attachmentId);
+        if (!attachment || !attachment.fileData) return res.status(404).send('File content not found');
+
+        res.set('Content-Type', attachment.contentType || 'application/octet-stream');
+        res.set('Content-Disposition', `inline; filename="${attachment.fileName}"`);
+        res.send(attachment.fileData);
+    } catch (err: any) {
+        res.status(500).send(err.message);
     }
 });
 
