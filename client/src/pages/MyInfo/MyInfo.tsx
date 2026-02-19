@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
-import api from '../../utils/api';
+import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 
@@ -436,9 +436,9 @@ const MyInfo = () => {
         }
     };
 
-    const handleDownload = (filePath: string, fileName: string) => {
-        if (!filePath) return;
-        const url = `${api.baseURL}/uploads/${filePath}`;
+    const handleDownload = (attachmentId: string, fileName: string) => {
+        if (!attachmentId) return;
+        const url = apiHelpers.attachmentRaw(attachmentId);
         const link = document.createElement('a');
         link.href = url;
         link.download = fileName;
@@ -484,14 +484,11 @@ const MyInfo = () => {
                 if (employee) {
                     setRawEmployee(employee);
 
-                    // Also sync with AuthContext for Header/Sidebar
-                    // Get ALL profile pictures and pick the latest one
+                    // Sync with AuthContext for Header/Sidebar using new MongoDB raw endpoint
                     const profilePics = employee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
                     if (profilePics.length > 0 && user) {
                         const latestPic = profilePics[profilePics.length - 1];
-                        const newAvatar = latestPic.filePath.startsWith('/uploads')
-                            ? `${api.baseURL}${latestPic.filePath}`
-                            : `${api.baseURL}/uploads/${latestPic.filePath}`;
+                        const newAvatar = apiHelpers.attachmentRaw(latestPic._id);
                         login({ ...user, avatar: newAvatar });
                     }
                 }
@@ -559,10 +556,11 @@ const MyInfo = () => {
 
             if (profilePics.length > 0) {
                 const latestPic = profilePics[profilePics.length - 1];
-                const path = latestPic.filePath;
-                if (path.startsWith('http')) return path;
-                if (path.startsWith('/uploads')) return `${api.baseURL}${path}`;
-                return `${api.baseURL}/uploads/${path}`;
+                // Use the new MongoDB raw attachment endpoint (uses _id)
+                if (latestPic._id) return apiHelpers.attachmentRaw(latestPic._id);
+                // Legacy fallback for old local file paths
+                if (latestPic.filePath?.startsWith('http')) return latestPic.filePath;
+                if (latestPic.filePath?.startsWith('/uploads')) return `${api.baseURL}${latestPic.filePath}`;
             }
 
             // Fallback to user avatar from AuthContext
@@ -610,7 +608,7 @@ const MyInfo = () => {
                     </div>
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={() => setIsEditing(true)}
+                            onClick={() => { setIsEditing(true); setStep(1); }}
                             className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all font-semibold shadow-md shadow-indigo-100 hover:shadow-lg hover:scale-[1.02] active:scale-95"
                         >
                             <Edit2 size={18} /> Edit Profile
@@ -895,7 +893,7 @@ const MyInfo = () => {
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={() => handleDownload(file.filePath, file.fileName)}
+                                                onClick={() => handleDownload(file._id, file.fileName)}
                                                 className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
                                                 title="Download"
                                             >
