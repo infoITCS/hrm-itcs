@@ -2,11 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MainLayout from './components/Layout/MainLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import RoleProtectedRoute from './components/RoleProtectedRoute';
 import PIM from './pages/PIM/PIM';
 import EmployeeList from './pages/PIM/EmployeeList';
 import AddEmployeeWizard from './pages/PIM/AddEmployeeWizard';
 import EmployeeProfile from './pages/PIM/EmployeeProfile';
 import MyInfo from './pages/MyInfo/MyInfo';
+import Dashboard from './pages/Dashboard/Dashboard';
 import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
 
@@ -26,7 +28,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/pim" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -37,35 +39,52 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route 
-        path="/login" 
+      <Route
+        path="/login"
         element={
           <PublicRoute>
             <SignIn onLogin={login} />
           </PublicRoute>
-        } 
+        }
       />
-      <Route 
-        path="/auth/callback" 
-        element={<AuthCallback onLogin={login} />} 
+      <Route
+        path="/auth/callback"
+        element={<AuthCallback />}
       />
-      <Route 
-        path="/" 
+      <Route
+        path="/"
         element={
           <ProtectedRoute>
             <MainLayout />
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/pim" replace />} />
-        <Route path="pim" element={<PIM />}>
-          <Route index element={<EmployeeList />} />
-          <Route path="add" element={<AddEmployeeWizard />} />
-          <Route path="edit/:id" element={<AddEmployeeWizard />} />
-          <Route path="view/:id" element={<EmployeeProfile />} />
-        </Route>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        {/* Open to all authenticated users */}
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
+        <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
+        <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
+        <Route path="directory" element={<div className="p-4">Directory Module Placeholder</div>} />
+        <Route path="claim" element={<div className="p-4">Claim Module Placeholder</div>} />
+
+        {/* Restricted to Admins & Managers */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
+          <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
+          <Route path="pim" element={<PIM />}>
+            <Route index element={<EmployeeList />} />
+            <Route path="add" element={<AddEmployeeWizard />} />
+            <Route path="edit/:id" element={<AddEmployeeWizard />} />
+            <Route path="view/:id" element={<EmployeeProfile />} />
+          </Route>
+        </Route>
+
+        {/* Restricted to Admins only */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
+          <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
+          <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
+          <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} />
+        </Route>
         <Route path="*" element={<div className="p-4">Page Not Found</div>} />
       </Route>
     </Routes>

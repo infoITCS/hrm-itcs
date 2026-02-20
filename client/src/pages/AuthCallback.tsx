@@ -56,7 +56,7 @@ export const AuthCallback: React.FC = () => {
                 sessionStorage.setItem('itcs_auth', 'true');
 
                 login(user);
-                navigate('/pim'); // standard dashboard route
+                navigate('/dashboard'); // standard dashboard route
             } catch (error) {
                 console.error('Failed to complete authentication:', error);
                 navigate('/login');

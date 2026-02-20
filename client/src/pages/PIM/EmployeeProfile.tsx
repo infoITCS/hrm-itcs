@@ -8,7 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { canEditSensitiveData, canApproveDocuments, canViewDocuments } = usePermissions();
+    const { canEditSensitiveData, canApproveDocuments } = usePermissions();
     const [activeTab, setActiveTab] = useState('personal');
     const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(true);
