@@ -16,6 +16,38 @@ const AddEmployeeWizard = () => {
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
+    const [stepErrors, setStepErrors] = useState<string[]>([]);
+
+    // Required fields on step 1 (Personal) – must be filled before Next
+    const isStep1RequiredValid = () => {
+        return !!(
+            formData.employeeId?.trim() &&
+            formData.firstName?.trim() &&
+            formData.lastName?.trim() &&
+            formData.cnic?.trim() &&
+            formData.dateOfBirth &&
+            formData.fatherName?.trim() &&
+            formData.religion?.trim() &&
+            formData.nationality?.trim() &&
+            formData.gender &&
+            formData.maritalStatus
+        );
+    };
+
+    const getStep1RequiredErrors = (): string[] => {
+        const err: string[] = [];
+        if (!formData.employeeId?.trim()) err.push('Employee ID');
+        if (!formData.firstName?.trim()) err.push('First Name');
+        if (!formData.lastName?.trim()) err.push('Last Name');
+        if (!formData.cnic?.trim()) err.push('CNIC / Govt ID');
+        if (!formData.dateOfBirth) err.push('Date of Birth');
+        if (!formData.fatherName?.trim()) err.push('Father Name');
+        if (!formData.religion?.trim()) err.push('Religion');
+        if (!formData.nationality?.trim()) err.push('Nationality');
+        if (!formData.gender) err.push('Gender');
+        if (!formData.maritalStatus) err.push('Marital Status');
+        return err;
+    };
 
     // Redirect unauthorized users trying to create employees
     useEffect(() => {
@@ -383,14 +415,19 @@ const AddEmployeeWizard = () => {
     ];
 
     const handleNext = async () => {
-        // Auto-save on every step to ensure data persistence
-        // Only skip auto-save if we are on the first step and it's a new employee AND we don't have enough data? 
-        // No, let's always try to save if we have at least first/last name.
+        // On step 1, require: Employee ID, First Name, Last Name, CNIC, Date of Birth, Father Name, Religion, Nationality, Gender, Marital Status
+        if (step === 1) {
+            if (!isStep1RequiredValid()) {
+                setStepErrors(getStep1RequiredErrors());
+                return;
+            }
+            setStepErrors([]);
+        }
+
         if (formData.firstName && formData.lastName) {
             const savedEmp = await handleSubmit(false);
-            if (!savedEmp) return; // Don't proceed if save failed
+            if (!savedEmp) return;
 
-            // If we just created a new employee, we need to update the URL so subsequent steps use PUT
             if (!isEditMode && savedEmp.employeeId) {
                 navigate(`/pim/edit/${savedEmp.employeeId}`, { replace: true });
             }
@@ -563,7 +600,7 @@ const AddEmployeeWizard = () => {
                         </div>
                         {/* CNIC, Father Name, Nationality, Blood Group - Visible to all, editable only if empty (except admins) */}
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID</label>
+                            <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID *</label>
                             <input
                                 type="text"
                                 name="cnic"
@@ -577,7 +614,7 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Date of Birth</label>
+                            <label className="block text-sm font-medium text-gray-600">Date of Birth *</label>
                             <input
                                 type="date"
                                 name="dateOfBirth"
@@ -590,7 +627,7 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Father Name</label>
+                            <label className="block text-sm font-medium text-gray-600">Father Name *</label>
                             <input
                                 type="text"
                                 name="fatherName"
@@ -603,7 +640,7 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Nationality</label>
+                            <label className="block text-sm font-medium text-gray-600">Nationality *</label>
                             <input
                                 type="text"
                                 name="nationality"
@@ -637,7 +674,7 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Religion</label>
+                            <label className="block text-sm font-medium text-gray-600">Religion *</label>
                             <input type="text" name="religion" value={formData.religion} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                         </div>
                         <div className="space-y-2">
@@ -645,10 +682,10 @@ const AddEmployeeWizard = () => {
                             <input type="text" name="licenseNumber" value={formData.licenseNumber} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                         </div>
                         <div className="space-y-2">
-                            <CustomSelect label="Gender" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
+                            <CustomSelect label="Gender *" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                         </div>
                         <div className="space-y-2">
-                            <CustomSelect label="Marital Status" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Other']} />
+                            <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Other']} />
                         </div>
                     </div>
                 )}
@@ -1374,10 +1411,25 @@ const AddEmployeeWizard = () => {
                     </div>
                 )}
 
+                {/* Step 1 required fields validation */}
+                {step === 1 && stepErrors.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">
+                        <p className="font-medium mb-2">Please fill all required fields before continuing:</p>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                            {stepErrors.map((err, i) => (
+                                <li key={i}>{err}</li>
+                            ))}
+                        </ul>
+                        <button type="button" onClick={() => setStepErrors([])} className="mt-2 text-amber-600 hover:text-amber-800 text-sm font-medium">
+                            Dismiss
+                        </button>
+                    </div>
+                )}
+
                 {/* Navigation Buttons */}
                 <div className="flex justify-between pt-6 border-t border-gray-100">
                     <button
-                        onClick={() => setStep(s => Math.max(1, s - 1))}
+                        onClick={() => { setStepErrors([]); setStep(s => Math.max(1, s - 1)); }}
                         disabled={step === 1}
                         className={`px-6 py-2.5 rounded-xl border border-gray-300 font-medium flex items-center gap-2 transition-all ${step === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-50 hover:border-primary-300 hover:text-primary-700'}`}
                     >
@@ -1387,7 +1439,8 @@ const AddEmployeeWizard = () => {
                     {step < steps.length ? (
                         <button
                             onClick={handleNext}
-                            className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium hover:from-indigo-700 hover:to-purple-700 flex items-center gap-2 transition-all shadow-sm hover:shadow-md"
+                            disabled={step === 1 && !isStep1RequiredValid()}
+                            className={`px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${step === 1 && !isStep1RequiredValid() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 hover:shadow-md'}`}
                         >
                             {loading && step === 1 ? 'Saving...' : 'Next'} <ChevronRight size={16} />
                         </button>

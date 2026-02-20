@@ -1,6 +1,6 @@
+import { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-    Search,
     UserCog,
     Users,
     Calendar,
@@ -11,78 +11,109 @@ import {
     BookOpen,
     Settings,
     DollarSign,
-    MessageSquare
+    X,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
 
+interface SidebarProps {
+    isOpen?: boolean;
+    onClose?: () => void;
+}
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const location = useLocation();
     const { role } = usePermissions();
-    
-    // Define all menu items with their visibility rules
+
     const allMenuItems = [
-        { name: 'Search', icon: Search, path: '/search', roles: ['super-admin', 'admin', 'manager'] },
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Admin', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin'] },
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
         { name: 'Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        // { name: 'Buzz', icon: MessageSquare, path: '/buzz', roles: ['super-admin', 'admin', 'manager', 'employee'] },
     ];
-    
-    // Filter menu items based on user role
+
     const menuItems = allMenuItems.filter(item => item.roles.includes(role));
 
-    return (
-        <aside className="w-64 bg-white shadow-lg h-screen fixed left-0 top-0 overflow-y-auto flex flex-col z-10 border-r border-slate-200/50">
-            <div className="p-6 border-b border-gray-100/50">
-                <div className="flex items-center gap-3">
-                    <div className="p-2">
-                        <img src={logo} alt="ITCS Logo" className="h-8 w-auto object-contain" />
-                    </div>
-                    <div>
-                        <h2 className="text-sm font-bold text-gray-800">HRM System</h2>
-                       
-                    </div>
-                </div>
-            </div>
+    // Close sidebar when route changes (e.g. after clicking a nav link on mobile)
+    useEffect(() => {
+        onClose?.();
+    }, [location.pathname, onClose]);
 
-            <nav className="flex-1 px-3 py-4 space-y-1">
-                {menuItems.map((item) => {
-                    const IconComponent = item.icon;
-                    const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-                    return (
-                        <NavLink
-                            key={item.name}
-                            to={item.path}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
-                                isActive
-                                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
-                                    : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
-                            }`}
-                        >
-                            <IconComponent 
-                                size={20} 
-                                className={isActive ? 'text-white' : 'text-gray-500 group-hover:text-primary-600'} 
-                            />
-                            <span>{item.name}</span>
-                            {isActive && (
-                                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white"></div>
-                            )}
-                        </NavLink>
-                    );
-                })}
-            </nav>
-            
-            
-        </aside>
+    return (
+        <>
+            {/* Backdrop: visible only below 992px when sidebar is open */}
+            <div
+                aria-hidden="true"
+                onClick={onClose}
+                className={`fixed inset-0 bg-black/50 z-30 transition-opacity duration-300 min-[992px]:hidden ${
+                    isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+            />
+
+            {/* Sidebar panel */}
+            <aside
+                className={`
+                    w-64 max-w-[85vw] sm:max-w-none bg-white shadow-xl h-screen fixed left-0 top-0 overflow-y-auto flex flex-col z-40 border-r border-slate-200/50
+                    transition-transform duration-300 ease-out
+                    max-[991px]:-translate-x-full
+                    min-[992px]:translate-x-0
+                    ${isOpen ? 'max-[991px]:translate-x-0' : ''}
+                `}
+            >
+                <div className="p-4 min-[992px]:p-6 border-b border-gray-100/50 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 shrink-0">
+                            <img src={logo} alt="ITCS Logo" className="h-8 w-auto object-contain" />
+                        </div>
+                        <h2 className="text-sm font-bold text-gray-800 truncate">HRM System</h2>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 min-[992px]:hidden"
+                        aria-label="Close menu"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+                    {menuItems.map((item) => {
+                        const IconComponent = item.icon;
+                        return (
+                            <NavLink
+                                key={item.name}
+                                to={item.path}
+                                onClick={onClose}
+                                className={({ isActive, isPending }) =>
+                                    `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
+                                        isActive || isPending
+                                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
+                                            : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
+                                    }`
+                                }
+                            >
+                                {({ isActive }) => (
+                                    <>
+                                        <IconComponent size={20} className="shrink-0" />
+                                        <span className="truncate">{item.name}</span>
+                                        {isActive ? (
+                                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                                        ) : null}
+                                    </>
+                                )}
+                            </NavLink>
+                        );
+                    })}
+                </nav>
+            </aside>
+        </>
     );
 };
 

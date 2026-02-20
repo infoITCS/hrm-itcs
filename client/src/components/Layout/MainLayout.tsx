@@ -1,22 +1,32 @@
+import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet, useLocation } from 'react-router-dom';
 
 const MainLayout = () => {
     const location = useLocation();
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
-    // Determine title based on path, rough logic
     let title = 'Dashboard';
     if (location.pathname.includes('pim')) title = 'PIM';
     else if (location.pathname.includes('admin')) title = 'Admin';
-    // ... add others
+    else if (location.pathname.includes('leave')) title = 'Leave';
+    else if (location.pathname.includes('recruitment')) title = 'Recruitment';
+    else if (location.pathname.includes('my-info')) title = 'My Info';
+    else if (location.pathname.includes('performance')) title = 'Performance';
+    else if (location.pathname.includes('directory')) title = 'Directory';
+    else if (location.pathname.includes('maintenance')) title = 'Maintenance';
+    else if (location.pathname.includes('claim')) title = 'Claim';
 
     return (
         <div className="flex min-h-screen">
-            <Sidebar />
-            <div className="flex-1 flex flex-col ml-64 transition-all duration-300">
-                <Header title={title} />
-                <main className="flex-1 p-6 overflow-x-hidden">
+            <Sidebar
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+            />
+            <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300">
+                <Header title={title} onMenuClick={() => setSidebarOpen(true)} />
+                <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
                     <Outlet />
                 </main>
             </div>

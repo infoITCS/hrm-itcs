@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Bell, Search, X, LogOut, User as UserIcon } from 'lucide-react';
+import { ChevronDown, Bell, Search, X, LogOut, User as UserIcon, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
-const Header = ({ title }: { title: string }) => {
+const Header = ({ title, onMenuClick }: { title: string; onMenuClick?: () => void }) => {
     const { user, logout } = useAuth();
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
@@ -50,10 +50,22 @@ const Header = ({ title }: { title: string }) => {
     };
 
     return (
-        <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white h-16 flex items-center justify-between px-6 shadow-md sticky top-0 z-20 relative">
+        <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white h-14 min-[992px]:h-16 flex items-center justify-between px-4 min-[992px]:px-6 shadow-md sticky top-0 z-20 relative gap-2">
+
+            {/* Hamburger: visible below 992px */}
+            {onMenuClick && (
+                <button
+                    type="button"
+                    onClick={onMenuClick}
+                    className="p-2 rounded-lg hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 min-[992px]:hidden shrink-0"
+                    aria-label="Open menu"
+                >
+                    <Menu size={24} />
+                </button>
+            )}
 
             {/* Left Side: Title or Search Bar */}
-            <div className="flex-1 flex items-center">
+            <div className="flex-1 flex items-center min-w-0">
                 {isSearchOpen ? (
                     <div className="relative w-full max-w-md flex items-center animate-in fade-in zoom-in duration-200 origin-left">
                         <Search className="absolute left-3 text-indigo-500" size={18} />
@@ -71,14 +83,14 @@ const Header = ({ title }: { title: string }) => {
                         </button>
                     </div>
                 ) : (
-                    <h1 className="text-xl font-semibold tracking-tight animate-in fade-in slide-in-from-left-2 truncate">
+                    <h1 className="text-lg min-[992px]:text-xl font-semibold tracking-tight animate-in fade-in slide-in-from-left-2 truncate">
                         {title}
                     </h1>
                 )}
             </div>
 
             {/* Right Side: Icons & Profile */}
-            <div className="flex items-center gap-2 sm:gap-4 ml-4">
+            <div className="flex items-center gap-1 sm:gap-2 min-[992px]:gap-4 ml-2 min-[992px]:ml-4 shrink-0">
 
                 {/* Search Toggle (only visible when search is closed) */}
                 {!isSearchOpen && (
@@ -106,7 +118,7 @@ const Header = ({ title }: { title: string }) => {
 
                     {/* Notification Dropdown */}
                     {showNotifications && (
-                        <div className="absolute right-0 mt-3 w-80 bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-blue-100/50 ring-1 ring-black/5">
+                        <div className="absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-blue-100/50 ring-1 ring-black/5">
                             <div className="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/80 backdrop-blur-sm">
                                 <h3 className="font-semibold text-sm text-gray-700">Notifications</h3>
                                 {unreadCount > 0 && (
@@ -179,7 +191,7 @@ const Header = ({ title }: { title: string }) => {
 
                         {/* User Dropdown Menu */}
                         {showUserMenu && (
-                            <div className="absolute right-0 mt-3 w-56 bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-blue-100/50 ring-1 ring-black/5">
+                            <div className="absolute right-0 mt-3 w-56 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-blue-100/50 ring-1 ring-black/5">
                                 <div className="p-4 border-b border-gray-100 bg-gray-50/80">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-indigo-100 overflow-hidden flex items-center justify-center">

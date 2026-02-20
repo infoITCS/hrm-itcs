@@ -14,11 +14,16 @@
 }
 
 @layer base {
+  html {
+    overflow-x: hidden;
+  }
   body {
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e0e7ff 100%);
     background-attachment: fixed;
     color: #1e293b;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    overflow-x: hidden;
+    min-width: 0;
   }
   
   * {
