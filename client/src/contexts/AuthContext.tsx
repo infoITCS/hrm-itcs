@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../types';
 import APIService from '../services/api';
@@ -28,14 +28,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     const userData = await APIService.getMe();
                     const user: User = {
                         id: userData.id || userData._id,
-                        name: (userData.firstName && userData.lastName)
-                            ? `${userData.firstName} ${userData.lastName}`
-                            : userData.email.split('@')[0],
+                        name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
                         email: userData.email,
                         role: userData.role,
                         avatar: userData.avatar
                             ? (userData.avatar.startsWith('http') ? userData.avatar : `${api.baseURL}${userData.avatar}`)
-                            : `https://ui-avatars.com/api/?name=${encodeURIComponent((userData.firstName && userData.lastName) ? `${userData.firstName} ${userData.lastName}` : userData.email.split('@')[0])}&background=random`,
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent([userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0])}&background=random`,
                         firstName: userData.firstName,
                         lastName: userData.lastName
                     };

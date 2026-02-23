@@ -6,6 +6,7 @@ export interface IEmployee extends Document {
     firstName: string;
     middleName?: string;
     lastName: string;
+    avatar?: string;
     email?: string;
     phone?: string;
     dateOfBirth?: Date;
@@ -38,7 +39,6 @@ export interface IEmployee extends Document {
         designation: string;
         department: string;
         reportingManager?: string;
-        employmentType?: string;
         workLocation?: string;
         joiningDate?: Date;
     };
@@ -103,6 +103,7 @@ const EmployeeSchema: Schema = new Schema({
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },
+    avatar: { type: String },
     email: { type: String },
     phone: { type: String },
     dateOfBirth: { type: Date },
@@ -135,7 +136,6 @@ const EmployeeSchema: Schema = new Schema({
         designation: { type: String },
         department: { type: String },
         reportingManager: { type: String },
-        employmentType: { type: String },
         workLocation: { type: String },
         joiningDate: { type: Date }
     },

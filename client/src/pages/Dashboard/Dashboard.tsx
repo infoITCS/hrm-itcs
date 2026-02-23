@@ -14,6 +14,9 @@ import {
     TrendingUp,
     Shield,
     Sparkles,
+    Cake,
+    PartyPopper,
+    Award
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -26,6 +29,8 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const [employeeCount, setEmployeeCount] = useState<number>(0);
     const [teamCount, setTeamCount] = useState<number>(0);
+    const [newHiresCount, setNewHiresCount] = useState<number>(0);
+    const [highlights, setHighlights] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     const role: RoleType =
@@ -35,7 +40,7 @@ const Dashboard = () => {
                 ? 'manager'
                 : 'employee';
 
-    const firstName = user?.firstName || user?.name?.split(' ')[0] || 'User';
+    const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name || 'User';
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -46,21 +51,73 @@ const Dashboard = () => {
 
         const fetchStats = async () => {
             try {
-                if (role === 'admin') {
-                    const res = await fetch(api.employees, {
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        setEmployeeCount(Array.isArray(data) ? data.length : 0);
-                    }
-                } else if (role === 'manager') {
-                    const res = await fetch(api.employees, {
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        setTeamCount(Array.isArray(data) ? data.length : 0);
+                const res = await fetch(api.employees, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        if (role === 'admin') {
+                            setEmployeeCount(data.length);
+                        } else if (role === 'manager') {
+                            setTeamCount(data.length);
+                        }
+
+                        // Calculate New Hires count (Last 30 days)
+                        const thirtyDaysAgo = new Date();
+                        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                        const newHires = data.filter(e => {
+                            if (!e.jobInfo?.joiningDate) return false;
+                            return new Date(e.jobInfo.joiningDate) > thirtyDaysAgo;
+                        }).length;
+                        setNewHiresCount(newHires);
+
+                        // Generate Dynamic Highlights
+                        const today = new Date();
+                        const tomorrow = new Date();
+                        tomorrow.setDate(today.getDate() + 1);
+
+                        const items: any[] = [];
+                        data.forEach((emp: any) => {
+                            const firstName = emp.firstName || '';
+                            const lastName = emp.lastName || '';
+                            const fullName = `${firstName} ${lastName}`.trim();
+
+                            // 1. Birthdays
+                            if (emp.dateOfBirth) {
+                                const dob = new Date(emp.dateOfBirth);
+                                if (dob.getMonth() === today.getMonth() && dob.getDate() === today.getDate()) {
+                                    items.push({ id: `b-${emp._id}`, type: 'birthday', name: fullName, date: 'Today', icon: Cake, color: 'text-rose-500', bg: 'bg-rose-50' });
+                                } else if (dob.getMonth() === tomorrow.getMonth() && dob.getDate() === tomorrow.getDate()) {
+                                    items.push({ id: `b-${emp._id}`, type: 'birthday', name: fullName, date: 'Tomorrow', icon: Cake, color: 'text-rose-500', bg: 'bg-rose-50' });
+                                }
+                            }
+
+                            // 2. Anniversaries
+                            if (emp.jobInfo?.joiningDate) {
+                                const joinDate = new Date(emp.jobInfo.joiningDate);
+                                const years = today.getFullYear() - joinDate.getFullYear();
+                                if (years > 0 && joinDate.getMonth() === today.getMonth() && joinDate.getDate() === today.getDate()) {
+                                    items.push({ id: `a-${emp._id}`, type: 'anniversary', name: fullName, years: `${years} Year${years > 1 ? 's' : ''}`, date: 'Today', icon: Award, color: 'text-amber-500', bg: 'bg-amber-50' });
+                                }
+                            }
+
+                            // 3. New Joiners (Joined in last 7 days or joining tomorrow)
+                            if (emp.jobInfo?.joiningDate) {
+                                const joinDate = new Date(emp.jobInfo.joiningDate);
+                                const diffDays = Math.ceil((today.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24));
+                                if (diffDays >= 0 && diffDays <= 7) {
+                                    items.push({ id: `n-${emp._id}`, type: 'new-joiner', name: fullName, role: emp.jobInfo?.designation || 'New Member', date: diffDays === 0 ? 'Today' : `${diffDays}d ago`, icon: UserPlus, color: 'text-indigo-500', bg: 'bg-indigo-50' });
+                                }
+                            }
+                        });
+
+                        // Fallback if no highlights
+                        if (items.length === 0) {
+                            items.push({ id: 'empty', type: 'info', name: 'No events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                        }
+
+                        setHighlights(items.slice(0, 3)); // Show top 3
                     }
                 }
             } catch (err) {
@@ -86,7 +143,7 @@ const Dashboard = () => {
         },
         {
             title: 'New Hires (This Month)',
-            value: '—',
+            value: loading ? '...' : String(newHiresCount),
             icon: UserPlus,
             color: 'text-emerald-600',
             bg: 'bg-emerald-50',
@@ -198,21 +255,21 @@ const Dashboard = () => {
 
     const welcomeByRole = {
         admin: {
-            title: `Welcome back, ${firstName}! 👋`,
+            title: `Welcome back, ${fullName}! 👋`,
             subtitle: "Here's the current overview of your organization. Review pending requests and key metrics.",
             gradient: 'from-violet-600 via-purple-600 to-indigo-700',
             badge: 'Admin',
             badgeIcon: Shield,
         },
         manager: {
-            title: `Welcome back, ${firstName}! 👋`,
+            title: `Welcome back, ${fullName}! 👋`,
             subtitle: "Here's your team overview. Approve leave requests and track your direct reports.",
             gradient: 'from-indigo-600 via-purple-600 to-violet-600',
             badge: 'Manager',
             badgeIcon: Users,
         },
         employee: {
-            title: `Welcome back, ${firstName}! 👋`,
+            title: `Welcome back, ${fullName}! 👋`,
             subtitle: "Here is your personal overview. Check your schedule, leaves, and requests.",
             gradient: 'from-indigo-600 to-purple-600',
             badge: 'Employee',
@@ -248,6 +305,7 @@ const Dashboard = () => {
     const quickLinks = quickLinksByRole[role];
     const BadgeIcon = welcome.badgeIcon;
 
+
     return (
         <div className="space-y-6 animate-fadeIn">
             {/* Welcome Banner */}
@@ -268,6 +326,54 @@ const Dashboard = () => {
                             {welcome.badge}
                         </span>
                     </div>
+                </div>
+            </div>
+
+            {/* Today's Highlights Section */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+                    <PartyPopper size={120} className="text-indigo-600 rotate-12" />
+                </div>
+
+                <div className="flex items-center justify-between mb-6 relative z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
+                            <Sparkles size={20} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 tracking-tight">Today's Highlights</h2>
+                            <p className="text-sm text-slate-500 font-medium">Don't forget to celebrate with your team!</p>
+                        </div>
+                    </div>
+                    <div className="hidden sm:block">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                            {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
+                    {highlights.map((item) => (
+                        <div
+                            key={item.id}
+                            className="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:border-indigo-100 hover:bg-slate-50/50 transition-all group cursor-pointer"
+                        >
+                            <div className={`p-3 rounded-xl ${item.bg} ${item.color} group-hover:scale-110 transition-transform`}>
+                                <item.icon size={22} />
+                            </div>
+                            <div className="min-w-0">
+                                <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
+                                <p className="text-xs text-slate-500 font-medium capitalize">
+                                    {item.type === 'anniversary' ? `Work Anniversary • ${item.years}` :
+                                        item.type === 'birthday' ? 'Happy Birthday! 🎂' :
+                                            `${item.role} • New Joiner`}
+                                </p>
+                            </div>
+                            <div className="ml-auto text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md uppercase">
+                                {item.date}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 

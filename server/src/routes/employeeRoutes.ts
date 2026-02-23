@@ -201,11 +201,15 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         employee.attachments.push(attachment as any);
         await employee.save();
 
-        // If this is a profile picture, update the User model
-        if (attachment.fileType === 'Profile Picture' && employee.userId) {
-            // we'll update with a special API URL instead of a static file path
+        // If this is a profile picture, update the User and Employee model
+        if (attachment.fileType === 'Profile Picture') {
             const newAvatarUrl = `/api/employees/attachments/raw/${employee.attachments[employee.attachments.length - 1]._id}`;
-            await User.findByIdAndUpdate(employee.userId, { avatar: newAvatarUrl });
+            employee.avatar = newAvatarUrl;
+            await employee.save();
+
+            if (employee.userId) {
+                await User.findByIdAndUpdate(employee.userId, { avatar: newAvatarUrl });
+            }
         }
 
         await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: req.file.originalname });

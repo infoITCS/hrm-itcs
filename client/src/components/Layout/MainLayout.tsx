@@ -25,7 +25,10 @@ const MainLayout = () => {
                 onClose={() => setSidebarOpen(false)}
             />
             <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300">
-                <Header title={title} onMenuClick={() => setSidebarOpen(true)} />
+                <Header
+                    title={title}
+                    onMenuClick={() => setSidebarOpen(true)}
+                />
                 <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
                     <Outlet />
                 </main>

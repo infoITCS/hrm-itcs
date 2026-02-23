@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
+import { getAvatarUrl } from '../../utils/avatar';
 
 const MyInfo = () => {
     const navigate = useNavigate();
@@ -24,6 +25,7 @@ const MyInfo = () => {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
+    const hasFetched = useRef(false);
 
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
@@ -103,13 +105,12 @@ const MyInfo = () => {
             designation: '',
             department: '',
             reportingManager: '',
-            employmentType: '',
             workLocation: '',
             joiningDate: ''
         },
 
         // Status
-        employmentStatus: { status: 'Probation', autoUpdated: false },
+        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '' },
 
         // Files
         files: [] as { file: File; type: string }[],
@@ -134,9 +135,10 @@ const MyInfo = () => {
     // Fetch employee data linked to current user
     useEffect(() => {
         const fetchEmployeeData = async () => {
-            if (!user?.id) return;
+            if (!user?.id || hasFetched.current) return;
 
             setLoading(true);
+            hasFetched.current = true;
             try {
                 const token = localStorage.getItem('token');
 
@@ -245,11 +247,16 @@ const MyInfo = () => {
                                 designation: employee.jobInfo?.designation || '',
                                 department: employee.jobInfo?.department || '',
                                 reportingManager: employee.jobInfo?.reportingManager || '',
-                                employmentType: employee.jobInfo?.employmentType || '',
                                 workLocation: employee.jobInfo?.workLocation || '',
                                 joiningDate: formatDate(employee.jobInfo?.joiningDate)
                             },
-                            employmentStatus: employee.employmentStatus || { status: 'Probation', autoUpdated: false },
+                            employmentStatus: typeof employee.employmentStatus === 'string'
+                                ? { status: employee.employmentStatus, autoUpdated: false, probationEndDate: '' }
+                                : {
+                                    status: employee.employmentStatus?.status || 'Probation',
+                                    autoUpdated: employee.employmentStatus?.autoUpdated || false,
+                                    probationEndDate: formatDate(employee.employmentStatus?.probationEndDate)
+                                },
                             files: []
                         } as any);
 
@@ -281,7 +288,7 @@ const MyInfo = () => {
         };
 
         fetchEmployeeData();
-    }, [user]); // Refresh on success
+    }, [user?.id]); // Refresh on ID change
 
     const handleChange = (e: any, section?: string, index?: number, subfield?: string) => {
         const { name, value } = e.target;
@@ -400,7 +407,34 @@ const MyInfo = () => {
                 });
             } else {
                 // Create new employee record
-                employeeData.employeeId = `EMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                // Attempt to find next sequential ID
+                let nextSequentialId = `itcs-${Math.floor(100 + Math.random() * 899)}`;
+                try {
+                    const idRes = await fetch(api.employees, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (idRes.ok) {
+                        const allEmp = await idRes.json();
+                        let maxNum = 0;
+                        if (Array.isArray(allEmp)) {
+                            allEmp.forEach((emp: any) => {
+                                if (emp.employeeId && emp.employeeId.toLowerCase().startsWith('itcs-')) {
+                                    const parts = emp.employeeId.split('-');
+                                    const numPart = parts[parts.length - 1];
+                                    const num = parseInt(numPart);
+                                    if (!isNaN(num) && num > maxNum) {
+                                        maxNum = num;
+                                    }
+                                }
+                            });
+                        }
+                        nextSequentialId = `itcs-${(maxNum + 1).toString().padStart(3, '0')}`;
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch sequence for employee ID, using random.');
+                }
+
+                employeeData.employeeId = nextSequentialId;
                 employeeData.jobInfo = {
                     designation: 'Employee',
                     department: 'General',
@@ -589,26 +623,7 @@ const MyInfo = () => {
             return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
         };
 
-        const getAvatarUrl = () => {
-            if (!rawEmployee) return user?.avatar || null;
-
-            // Get all profile pictures and pick the latest one (at the end of the array)
-            const profilePics = rawEmployee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
-
-            if (profilePics.length > 0) {
-                const latestPic = profilePics[profilePics.length - 1];
-                // Use the new MongoDB raw attachment endpoint (uses _id)
-                if (latestPic._id) return apiHelpers.attachmentRaw(latestPic._id);
-                // Legacy fallback for old local file paths
-                if (latestPic.filePath?.startsWith('http')) return latestPic.filePath;
-                if (latestPic.filePath?.startsWith('/uploads')) return `${api.baseURL}${latestPic.filePath}`;
-            }
-
-            // Fallback to user avatar from AuthContext
-            return user?.avatar || null;
-        };
-
-        const avatarUrl = getAvatarUrl();
+        const avatarUrl = getAvatarUrl(rawEmployee) || user?.avatar;
 
         return (
             <div className="space-y-6 animate-fadeIn pb-10">
@@ -636,7 +651,9 @@ const MyInfo = () => {
                         )}
                     </div>
                     <div className="flex-1">
-                        <h1 className="text-2xl font-bold text-gray-800">{rawEmployee.firstName} {rawEmployee.lastName}</h1>
+                        <h1 className="text-2xl font-bold text-gray-800">
+                            {rawEmployee.firstName} {rawEmployee.middleName ? `${rawEmployee.middleName} ` : ''}{rawEmployee.lastName}
+                        </h1>
                         <p className="text-gray-500 font-medium">{rawEmployee.jobInfo?.designation || 'Employee'} • {rawEmployee.jobInfo?.department || 'Member'}</p>
                         <div className="flex flex-wrap gap-4 mt-2">
                             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
@@ -786,7 +803,6 @@ const MyInfo = () => {
                                 <Field label="Designation" value={rawEmployee.jobInfo?.designation} />
                                 <Field label="Department" value={rawEmployee.jobInfo?.department} />
                                 <Field label="Reporting Manager" value={rawEmployee.jobInfo?.reportingManager} />
-                                <Field label="Employment Type" value={rawEmployee.jobInfo?.employmentType} />
                                 <Field label="Work Location" value={rawEmployee.jobInfo?.workLocation} />
                                 <Field label="Joining Date" value={formatDate(rawEmployee.jobInfo?.joiningDate)} />
                             </div>
@@ -1394,18 +1410,11 @@ const MyInfo = () => {
                                     <label className="block text-sm font-medium text-gray-600">Reporting Manager</label>
                                     <input
                                         type="text"
+                                        name="reportingManager"
                                         value={formData.jobInfo.reportingManager}
+                                        onChange={(e) => handleChange(e, 'jobInfo')}
                                         disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Employment Type</label>
-                                    <input
-                                        type="text"
-                                        value={formData.jobInfo.employmentType}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm ${user?.role !== 'admin' && user?.role !== 'superadmin' ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -1435,6 +1444,17 @@ const MyInfo = () => {
                                         className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
                                     />
                                 </div>
+                                {formData.employmentStatus.status === 'Probation' && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-600">Probation End Date</label>
+                                        <input
+                                            type="date"
+                                            value={formData.employmentStatus.probationEndDate}
+                                            disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
+                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        />
+                                    </div>
+                                )}
                                 <div className="md:col-span-2 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3 mt-4">
                                     <Shield size={20} className="text-indigo-600 mt-0.5" />
                                     <p className="text-sm text-indigo-700">

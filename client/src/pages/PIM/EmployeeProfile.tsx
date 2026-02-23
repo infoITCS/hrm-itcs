@@ -1,9 +1,10 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X, CreditCard, DollarSign, Banknote, Globe, Trash2 } from 'lucide-react';
+import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X, CreditCard, DollarSign, Banknote, Globe, Trash2, Camera } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
+import { getAvatarUrl } from '../../utils/avatar';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
@@ -13,6 +14,7 @@ const EmployeeProfile = () => {
     const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -53,6 +55,41 @@ const EmployeeProfile = () => {
     if (loading) return <div className="p-8 text-center">Loading Profile...</div>;
     if (!employee) return <div className="p-8 text-center">Employee Not Found</div>;
 
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !employee) return;
+
+        setUploadingAvatar(true);
+        try {
+            const token = localStorage.getItem('token');
+            const fileData = new FormData();
+            fileData.append('file', file);
+            fileData.append('fileType', 'Profile Picture');
+
+            const response = await fetch(`${api.employees}/${employee.employeeId}/attachments`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: fileData
+            });
+
+            if (!response.ok) throw new Error('Failed to upload profile picture');
+
+            // Re-fetch employee data
+            const refreshRes = await fetch(`${api.employees}/${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (refreshRes.ok) {
+                const refreshedEmployee = await refreshRes.json();
+                setEmployee(refreshedEmployee);
+            }
+        } catch (err: any) {
+            console.error('Error uploading avatar:', err);
+            alert('Failed to upload profile picture.');
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
+
     const tabs = [
         { id: 'personal', label: 'Personal', icon: User },
         { id: 'contact', label: 'Contact', icon: Phone },
@@ -68,12 +105,39 @@ const EmployeeProfile = () => {
     return (
         <div className="space-y-6 animate-fadeIn">
             {/* Header / Banner */}
-            <div className="flex items-center gap-4 animate-slide-up">
-                <button onClick={() => navigate('/pim')} className="p-2 hover:bg-primary-50 rounded-xl text-gray-500 hover:text-primary-600 transition-all">
+            <div className="flex items-center gap-6 animate-slide-up bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <button onClick={() => navigate('/pim')} className="p-2 hover:bg-slate-100 rounded-xl text-gray-400 hover:text-indigo-600 transition-all">
                     <ChevronLeft size={24} />
                 </button>
+
+                <div className="relative group">
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
+                        {getAvatarUrl(employee) ? (
+                            <img src={getAvatarUrl(employee)!} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                            `${employee.firstName[0]}${employee.lastName[0]}`
+                        )}
+
+                        {canEditSensitiveData() && (
+                            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px] text-white">
+                                <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
+                                <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+                            </label>
+                        )}
+
+                        {uploadingAvatar && (
+                            <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                                <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 <div className="flex-1">
-                    <h1 className="text-2xl font-bold text-gray-800">{employee.firstName} {employee.lastName}</h1>
+                    <h1 className="text-2xl font-bold text-gray-800">
+                        {employee.firstName} {employee.middleName ? `${employee.middleName} ` : ''}{employee.lastName}
+                    </h1>
                     <p className="text-gray-500">{employee.jobInfo?.designation} • {employee.jobInfo?.department}</p>
                 </div>
                 {canEditSensitiveData() && (
@@ -283,7 +347,6 @@ const EmployeeProfile = () => {
                         <Field label="Designation" value={employee.jobInfo?.designation} />
                         <Field label="Department" value={employee.jobInfo?.department} />
                         <Field label="Reporting Manager" value={employee.jobInfo?.reportingManager} />
-                        <Field label="Employment Type" value={employee.jobInfo?.employmentType} />
                         <Field label="Work Location" value={employee.jobInfo?.workLocation} />
                         <Field label="Joining Date" value={formatDate(employee.jobInfo?.joiningDate)} />
 
@@ -299,7 +362,10 @@ const EmployeeProfile = () => {
                                     value={formatDate(typeof employee.employmentStatus === 'string' ? '' : employee.employmentStatus?.startDate)}
                                 />
                                 {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.status === 'Probation' && (
-                                    <Field label="Probation Ends" value={formatDate(employee.employmentStatus?.probationEndDate)} />
+                                    <Field
+                                        label="Probation End Date"
+                                        value={formatDate(employee.employmentStatus?.probationEndDate)}
+                                    />
                                 )}
                             </div>
                         </div>

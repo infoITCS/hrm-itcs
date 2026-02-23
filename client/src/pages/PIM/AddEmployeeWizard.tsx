@@ -56,6 +56,46 @@ const AddEmployeeWizard = () => {
         }
     }, [isEditMode, canCreateUser, navigate]);
 
+    // Auto-generate employee ID for new records
+    useEffect(() => {
+        if (!isEditMode && !formData.employeeId) {
+            const fetchNextId = async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const response = await fetch(api.employees, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const employees = await response.json();
+                        // Find the highest number in itcs-XXX format
+                        let maxNum = 0;
+                        if (Array.isArray(employees)) {
+                            employees.forEach((emp: any) => {
+                                if (emp.employeeId && emp.employeeId.toLowerCase().startsWith('itcs-')) {
+                                    const parts = emp.employeeId.split('-');
+                                    const numPart = parts[parts.length - 1];
+                                    const num = parseInt(numPart);
+                                    if (!isNaN(num) && num > maxNum) {
+                                        maxNum = num;
+                                    }
+                                }
+                            });
+                        }
+                        const nextId = `itcs-${(maxNum + 1).toString().padStart(3, '0')}`;
+                        setFormData(prev => ({ ...prev, employeeId: nextId }));
+                    } else {
+                        const randomId = Math.floor(100 + Math.random() * 899);
+                        setFormData(prev => ({ ...prev, employeeId: `itcs-${randomId}` }));
+                    }
+                } catch (err) {
+                    const randomId = Math.floor(100 + Math.random() * 899);
+                    setFormData(prev => ({ ...prev, employeeId: `itcs-${randomId}` }));
+                }
+            };
+            fetchNextId();
+        }
+    }, [isEditMode]);
+
     // Initial State including Nested Objects
     const [formData, setFormData] = useState({
         // Personal
@@ -69,11 +109,11 @@ const AddEmployeeWizard = () => {
 
         // Job
         jobInfo: {
-            designation: '', department: '', reportingManager: '', employmentType: '', workLocation: '', joiningDate: ''
+            designation: '', department: '', reportingManager: '', workLocation: '', joiningDate: ''
         },
 
         // Status
-        employmentStatus: { status: 'Probation', autoUpdated: false },
+        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '' },
 
         // Emergency Contacts (Array)
         emergencyContacts: [{ name: '', relation: '', phone: '' }],
@@ -176,15 +216,18 @@ const AddEmployeeWizard = () => {
                                 designation: found.jobInfo?.designation || '',
                                 department: found.jobInfo?.department || '',
                                 reportingManager: found.jobInfo?.reportingManager || '',
-                                employmentType: found.jobInfo?.employmentType || '',
                                 workLocation: found.jobInfo?.workLocation || '',
                                 joiningDate: formatDate(found.jobInfo?.joiningDate)
                             },
 
                             // Employment Status
                             employmentStatus: typeof found.employmentStatus === 'string'
-                                ? { status: found.employmentStatus, autoUpdated: false }
-                                : (found.employmentStatus || { status: 'Probation', autoUpdated: false }),
+                                ? { status: found.employmentStatus, autoUpdated: false, probationEndDate: '' }
+                                : {
+                                    status: found.employmentStatus?.status || 'Probation',
+                                    autoUpdated: found.employmentStatus?.autoUpdated || false,
+                                    probationEndDate: formatDate(found.employmentStatus?.probationEndDate)
+                                },
 
                             // Emergency Contacts
                             emergencyContacts: found.emergencyContacts?.length
@@ -882,9 +925,28 @@ const AddEmployeeWizard = () => {
                             <div className="space-y-2">
                                 <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={['Internship', 'Probation', 'Permanent', 'Contract', 'Part-time']} />
                             </div>
+                            {formData.employmentStatus.status === 'Probation' && (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Probation End Date</label>
+                                    <input
+                                        type="date"
+                                        value={formData.employmentStatus.probationEndDate}
+                                        onChange={(e) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, probationEndDate: e.target.value } }))}
+                                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
+                                    />
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-600">Joining Date</label>
                                 <input type="date" name="joiningDate" value={formData.jobInfo.joiningDate} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-600">Reporting Manager</label>
+                                <input type="text" name="reportingManager" value={formData.jobInfo.reportingManager} onChange={(e) => handleChange(e, 'jobInfo')} placeholder="Name of reporting manager" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-600">Work Location</label>
+                                <input type="text" name="workLocation" value={formData.jobInfo.workLocation} onChange={(e) => handleChange(e, 'jobInfo')} placeholder="e.g. Remote, On-site" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                             </div>
                             <div className="space-y-2 col-span-1 md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-600 mb-2">Employment Contract</label>

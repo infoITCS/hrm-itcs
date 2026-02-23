@@ -32,7 +32,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
     const handleMicrosoftLogin = (forceAccountSelection: boolean = false) => {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-        const url = forceAccountSelection 
+        const url = forceAccountSelection
             ? `${apiUrl}/auth/microsoft?prompt=select_account`
             : `${apiUrl}/auth/microsoft`;
         console.log('Redirecting to Microsoft OAuth:', url);
@@ -49,9 +49,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
             const user: User = {
                 id: response.data.user._id || response.data.user.id,
-                name: (response.data.user.firstName && response.data.user.lastName)
-                    ? `${response.data.user.firstName} ${response.data.user.lastName}`
-                    : response.data.user.email.split('@')[0],
+                name: [response.data.user.firstName, response.data.user.lastName].filter(Boolean).join(' ') || response.data.user.email.split('@')[0],
                 email: response.data.user.email,
                 role: response.data.user.role as UserRole,
                 avatar: response.data.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(response.data.user.firstName || response.data.user.email)}`,

@@ -40,9 +40,7 @@ export const AuthCallback: React.FC = () => {
 
                 const user: User = {
                     id: userData.id || userData._id,
-                    name: (userData.firstName && userData.lastName)
-                        ? `${userData.firstName} ${userData.lastName}`
-                        : userData.email.split('@')[0],
+                    name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
                     email: userData.email,
                     role: userData.role as UserRole,
                     avatar: userData.avatar || 'https://ui-avatars.com/api/?name=' + (userData.firstName || 'User'),
