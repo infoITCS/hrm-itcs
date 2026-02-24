@@ -91,6 +91,12 @@ app.get('/', (req, res) => {
     res.send('HRM API is running');
 });
 
+// Global Error Handler to catch and display 500 errors instead of generic message
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error('🔥 Global unhandled error:', err);
+    res.status(500).send(`<h2>Internal Server Error Details:</h2><pre>${err.message}</pre><pre>${err.stack}</pre>`);
+});
+
 // For Vercel serverless, export the app instead of listening
 // Vercel will handle the serverless function
 export default app;
