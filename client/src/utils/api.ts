@@ -5,6 +5,7 @@ export const api = {
     baseURL: API_BASE_URL,
     employees: `${API_BASE_URL}/api/employees`,
     auditLogs: `${API_BASE_URL}/api/audit-logs`,
+    auth: `${API_BASE_URL}/api/auth`,
 
     // Helper function to build employee-specific URLs
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,

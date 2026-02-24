@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { User, UserRole } from '../types';
 import APIService from '../services/api';
+import { api } from '../utils/api';
 import itcsLogo from '../assets/logo.png'
 interface SignInProps {
     onLogin: (user: User) => void;
@@ -31,10 +32,9 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     }, []);
 
     const handleMicrosoftLogin = (forceAccountSelection: boolean = false) => {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const url = forceAccountSelection
-            ? `${apiUrl}/auth/microsoft?prompt=select_account`
-            : `${apiUrl}/auth/microsoft`;
+            ? `${api.auth}/microsoft?prompt=select_account`
+            : `${api.auth}/microsoft`;
         console.log('Redirecting to Microsoft OAuth:', url);
         window.location.href = url;
     };
