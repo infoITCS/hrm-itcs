@@ -105,10 +105,37 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
     try {
         let employeeData = req.body;
 
-        // If coming from FormData, nested objects might be JSON strings or dot notation keys
-        // Assuming the frontend sends a structured JSON payload for now primarily. 
-        // If we strictly used JSON content-type, req.files would be empty (unless using a mixed parser).
-        // Let's support standard JSON creation first as per original code, allowing 'attachments' to be URLs if already uploaded.
+        // Prevent duplicate employee records for the same user
+        if (employeeData.userId) {
+            const existingEmp = await Employee.findOne({ userId: employeeData.userId });
+            if (existingEmp) {
+                return res.status(400).json({ 
+                    message: 'An employee record already exists for this user.',
+                    employeeId: existingEmp.employeeId 
+                });
+            }
+        }
+
+        // Auto-generate employeeId if not provided (standard for new creations)
+        if (!employeeData.employeeId) {
+            // Find ALL itcs- ids, sort them, and get the highest numeric value
+            const allItcsEmployees = await Employee.find({ 
+                employeeId: { $regex: /^itcs-/i } 
+            });
+
+            let nextNum = 1;
+            if (allItcsEmployees.length > 0) {
+                const nums = allItcsEmployees.map(emp => {
+                    const parts = emp.employeeId.split('-');
+                    return parseInt(parts[parts.length - 1]);
+                }).filter(n => !isNaN(n));
+                
+                if (nums.length > 0) {
+                    nextNum = Math.max(...nums) + 1;
+                }
+            }
+            employeeData.employeeId = `itcs-${nextNum.toString().padStart(3, '0')}`;
+        }
 
         const employee = new Employee({
             ...employeeData,
@@ -133,6 +160,10 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         res.status(201).json(newEmployee);
     } catch (err: any) {
+        // Handle Mongolian Duplicate Key Error Specifically
+        if (err.code === 11000) {
+            return res.status(400).json({ message: 'Employee ID or record already exists. Please try again.' });
+        }
         res.status(400).json({ message: err.message });
     }
 });

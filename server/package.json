@@ -13,6 +13,7 @@
     "author": "",
     "license": "ISC",
     "dependencies": {
+        "@google/generative-ai": "^0.24.1",
         "@types/express-session": "^1.18.2",
         "@types/jsonwebtoken": "^9.0.10",
         "@types/passport": "^1.0.17",
@@ -27,7 +28,8 @@
         "multer-storage-cloudinary": "^4.0.0",
         "node-cron": "^4.2.1",
         "passport": "^0.7.0",
-        "passport-microsoft": "^2.1.0"
+        "passport-microsoft": "^2.1.0",
+        "pdf-parse": "^2.4.5"
     },
     "devDependencies": {
         "@types/cors": "^2.8.17",
