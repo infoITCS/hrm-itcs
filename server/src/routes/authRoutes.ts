@@ -55,7 +55,13 @@ router.get(
         passport.authenticate('microsoft', {
             failureRedirect: `${process.env.CLIENT_URL}/login?error=login_failed`,
             session: false // We use JWT, so no session needed
-        })(req, res, next);
+        })(req, res, (err: any) => {
+            if (err) {
+                console.error('Passport Auth Error:', err);
+                return res.redirect(`${process.env.CLIENT_URL}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`);
+            }
+            next();
+        });
     },
     async (req: Request, res: Response) => {
         try {
