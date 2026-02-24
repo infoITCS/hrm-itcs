@@ -2,6 +2,18 @@ import dotenv from 'dotenv';
 // Load environment variables FIRST before any other imports
 dotenv.config();
 
+// Defensive Sanitization: Trim all critical environment variables to remove accidental newlines/whitespace
+const criticalEnvVars = [
+    'MONGODB_URI', 'JWT_SECRET', 'MICROSOFT_CLIENT_ID', 
+    'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID', 
+    'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL'
+];
+criticalEnvVars.forEach(key => {
+    if (process.env[key]) {
+        process.env[key] = process.env[key]?.trim();
+    }
+});
+
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
