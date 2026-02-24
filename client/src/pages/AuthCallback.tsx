@@ -11,10 +11,13 @@ export const AuthCallback: React.FC = () => {
     useEffect(() => {
         const handleCallback = async () => {
             try {
-                // Get token from URL hash
-                const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search.split('?')[1]);
-                const token = params.get('token');
-                const error = params.get('error');
+                // Get token from URL
+                // Check standard search params first, fallback to hash splitting if needed
+                const searchParams = new URLSearchParams(window.location.search);
+                const hashParams = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+                
+                const token = searchParams.get('token') || hashParams.get('token');
+                const error = searchParams.get('error') || hashParams.get('error');
 
                 if (error) {
                     console.error('Auth error:', error);

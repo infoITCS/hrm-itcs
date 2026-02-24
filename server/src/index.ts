@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 5000;
 
 // CORS Configuration for Production
 const corsOptions = {
-    origin: process.env.FRONTEND_URL || '*',
+    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : '*',
     credentials: true,
     optionsSuccessStatus: 200
 };
