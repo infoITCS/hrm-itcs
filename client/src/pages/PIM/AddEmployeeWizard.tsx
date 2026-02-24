@@ -393,6 +393,8 @@ const AddEmployeeWizard = () => {
                         // Continue with other files even if one fails
                     }
                 }
+                // Clear files array after successful upload so they aren't uploaded again on next save
+                setFormData(prev => ({ ...prev, files: [] }));
             }
 
 
@@ -575,8 +577,8 @@ const AddEmployeeWizard = () => {
                 {step === 1 && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-slide-up pb-20">
                         {/* New Upload Fields for Step 1 */}
-                        <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-                            {['Profile Picture', 'Resume/CV', 'ID Proof'].map((label) => (
+                        <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+                            {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => (
                                 <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
                                     <input
                                         type="file"
