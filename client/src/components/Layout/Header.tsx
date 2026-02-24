@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronDown, LogOut, User as UserIcon, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -7,6 +8,7 @@ const Header = ({ title, onMenuClick }: {
     onMenuClick?: () => void;
 }) => {
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
     const [showUserMenu, setShowUserMenu] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -104,7 +106,7 @@ const Header = ({ title, onMenuClick }: {
                                     <button
                                         onClick={() => {
                                             setShowUserMenu(false);
-                                            // Navigate to profile page if you have one
+                                            navigate('/my-info');
                                         }}
                                         className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
                                     >
