@@ -18,6 +18,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import session from 'express-session';
+import MongoStore from 'connect-mongo';
 import path from 'path';
 import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
@@ -45,12 +46,17 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'hrm-itcs-secure-session-secret-2024',
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: process.env.MONGODB_URI,
+        collectionName: 'sessions'
+    }),
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
+
 
 // Initialize Scheduler (only in production with proper environment)
 if (process.env.NODE_ENV === 'production' && process.env.ENABLE_SCHEDULER !== 'false') {
