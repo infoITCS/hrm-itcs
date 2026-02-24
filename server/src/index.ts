@@ -30,6 +30,8 @@ import configurePassport from './config/passport';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+app.set('trust proxy', 1);
+
 // CORS Configuration for Production
 const corsOptions = {
     origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : '*',
@@ -52,6 +54,7 @@ app.use(session({
     }),
     cookie: {
         secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Must be 'none' for OAuth to work across domains/redirects from Vercel
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
