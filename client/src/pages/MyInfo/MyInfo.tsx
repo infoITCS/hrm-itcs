@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -123,7 +123,10 @@ const MyInfo = () => {
             { platform: 'GitHub', link: '' },
             { platform: 'Portfolio', link: '' }
         ],
-        salaryComponents: [] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
+        salaryComponents: [
+            { component: 'Basic Salary', amount: 0, type: 'fixed' },
+            { component: 'Medical Allowance', amount: 0, type: 'fixed' }
+        ] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
         bankDetails: {
             bankName: '',
             accountName: '',
@@ -237,7 +240,22 @@ const MyInfo = () => {
                                 { platform: 'GitHub', link: '' },
                                 { platform: 'Portfolio', link: '' }
                             ],
-                            salaryComponents: employee.salaryComponents || [],
+                            salaryComponents: (() => {
+                                const standard = [
+                                    { component: 'Basic Salary', amount: 0, type: 'fixed' },
+                                    { component: 'Medical Allowance', amount: 0, type: 'fixed' }
+                                ];
+                                if (!employee.salaryComponents || employee.salaryComponents.length === 0) return standard;
+                                
+                                // Ensure standard components exist in the loaded list
+                                const merged = [...employee.salaryComponents];
+                                standard.forEach(s => {
+                                    if (!merged.find(m => m.component === s.component)) {
+                                        merged.unshift(s);
+                                    }
+                                });
+                                return merged;
+                            })(),
                             bankDetails: employee.bankDetails || {
                                 bankName: '',
                                 accountName: '',
@@ -275,7 +293,8 @@ const MyInfo = () => {
                         setIsEditing(true); // Default to editing if no record exists
                         setFormData(prev => ({
                             ...prev,
-                            email: user.email || '',
+                            email: '',
+                            workEmail: user.email || '',
                             firstName: user.firstName || '',
                             lastName: user.lastName || ''
                         }));
@@ -564,7 +583,7 @@ const MyInfo = () => {
         { id: 3, title: 'Immigration', icon: Globe },
         { id: 4, title: 'Job & Status', icon: Briefcase },
         { id: 5, title: 'History & Education', icon: GraduationCap },
-        { id: 6, title: 'Finance & Assets', icon: CreditCard },
+        { id: 6, title: 'Finance', icon: CreditCard },
         { id: 7, title: 'Documents', icon: FileText }
     ];
 
@@ -828,6 +847,22 @@ const MyInfo = () => {
                                             </div>
                                         ))
                                     ) : <p className="text-gray-400 italic">No salary components recorded</p>}
+                                    {rawEmployee.salaryComponents?.length > 0 && (
+                                        <div className="p-4 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl border border-indigo-400 shadow-lg text-white">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="p-2 bg-white/20 rounded-lg">
+                                                    <CreditCard size={16} />
+                                                </div>
+                                                <span className="text-xs font-bold text-indigo-100 uppercase">Gross Monthly</span>
+                                            </div>
+                                            <p className="text-sm font-bold opacity-90">Total Payable Salary</p>
+                                            <p className="text-2xl font-black mt-1">
+                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(
+                                                    rawEmployee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
+                                                ).replace('PKR', 'Rs.')}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -1545,6 +1580,41 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Score / GPA</label>
                                                     <input type="text" placeholder="e.g., 3.5/4.0 or 85%" value={edu.score} onChange={(e) => handleChange(e, 'education', idx, 'score')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
+                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
+                                                    <div className="flex items-center gap-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full">
+                                                            <Upload size={14} />
+                                                            <span className="truncate flex-1">
+                                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
+                                                                    ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
+                                                                    : 'Upload Degree/Certificate (PDF, Image)'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        const typeKey = `Degree - ${edu.level || idx}`;
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
+                                                            <button
+                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                                title="Remove File"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -1624,80 +1694,115 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Step 6: Finance & Assets */}
+                        {/* Step 6: Finance */}
                         {step === 6 && (
                             <div className="space-y-8 animate-slide-up pb-20">
-                                {/* Salary Components */}
+                                {/* Salary Structure */}
                                 <div>
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-lg font-medium text-gray-700">Salary Components</h3>
+                                    <div className="flex justify-between items-end mb-6">
+                                        <div>
+                                            <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>
+                                            <p className="text-sm text-gray-500">Define the monthly salary breakdown</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Monthly (Gross)</p>
+                                            <p className="text-2xl font-bold text-indigo-600">
+                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
+                                                    formData.salaryComponents.reduce((sum, c) => sum + (c.amount || 0), 0)
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                        {formData.salaryComponents.map((comp, idx) => {
+                                            const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
+                                            const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
+                                            
+                                            return (
+                                                <div key={idx} className="space-y-3 relative group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex-1 space-y-2">
+                                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Component Type</label>
+                                                            <select
+                                                                value={commonOptions.includes(comp.component) ? comp.component : (comp.component === '' ? '' : 'Other')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].component = val === 'Other' ? '' : val;
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-slate-50/50 font-medium text-slate-700"
+                                                            >
+                                                                <option value="">Select Component</option>
+                                                                {commonOptions.map(opt => (
+                                                                    <option key={opt} value={opt}>{opt}</option>
+                                                                ))}
+                                                                <option value="Other">Other (Custom Naming)</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="pt-6 pl-2">
+                                                            <button
+                                                                onClick={() => setFormData(p => ({
+                                                                    ...p,
+                                                                    salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
+                                                                }))}
+                                                                className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                                                                title="Remove Component"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {(showCustomInput || (comp.component === '' && !commonOptions.includes(comp.component))) && (
+                                                        <div className="space-y-1 animate-fadeIn">
+                                                            <label className="text-[10px] font-bold text-indigo-400 uppercase">Custom Name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={comp.component}
+                                                                onChange={(e) => {
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].component = e.target.value;
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border-b border-indigo-100 focus:border-indigo-400 px-0 py-1 text-sm outline-none bg-transparent placeholder:text-slate-300 font-medium"
+                                                                placeholder="e.g. Fuel Allowance"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="space-y-2">
+                                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount (Monthly)</label>
+                                                        <div className="relative">
+                                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300">PKR</div>
+                                                            <input
+                                                                type="number"
+                                                                value={comp.amount || ''}
+                                                                onChange={(e) => {
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].amount = Number(e.target.value);
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border-none bg-slate-50 rounded-xl pl-12 pr-4 py-3 text-lg font-black text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all shadow-inner"
+                                                                placeholder="0"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        
                                         <button
                                             onClick={() => setFormData(p => ({
                                                 ...p,
-                                                salaryComponents: [...p.salaryComponents, { component: '', amount: 0, type: 'fixed' }]
+                                                salaryComponents: [...p.salaryComponents, { component: 'Other Allowance', amount: 0, type: 'fixed' }]
                                             }))}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-all shadow-sm"
+                                            className="md:col-span-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-sm font-medium flex items-center justify-center gap-2"
                                         >
-                                            + Add Component
+                                            <Plus size={16} />
+                                            Add Other Component
                                         </button>
-                                    </div>
-                                    <div className="space-y-4">
-                                        {formData.salaryComponents.map((comp, idx) => (
-                                            <div key={idx} className="flex flex-col md:flex-row gap-4 p-4 bg-white border border-gray-100 rounded-xl shadow-sm relative group">
-                                                <div className="flex-1 space-y-1">
-                                                    <label className="text-xs font-medium text-gray-500">Component Name</label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g. Basic Salary"
-                                                        value={comp.component}
-                                                        onChange={(e) => {
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].component = e.target.value;
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                                    />
-                                                </div>
-                                                <div className="w-full md:w-32 space-y-1">
-                                                    <label className="text-xs font-medium text-gray-500">Amount</label>
-                                                    <input
-                                                        type="number"
-                                                        placeholder="0.00"
-                                                        value={comp.amount}
-                                                        onChange={(e) => {
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].amount = Number(e.target.value);
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                                    />
-                                                </div>
-                                                <div className="w-full md:w-40 space-y-1">
-                                                    <label className="text-xs font-medium text-gray-500">Type</label>
-                                                    <select
-                                                        value={comp.type}
-                                                        onChange={(e) => {
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].type = e.target.value as 'fixed' | 'variable';
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
-                                                    >
-                                                        <option value="fixed">Fixed</option>
-                                                        <option value="variable">Variable</option>
-                                                    </select>
-                                                </div>
-                                                <button
-                                                    onClick={() => setFormData(p => ({
-                                                        ...p,
-                                                        salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
-                                                    }))}
-                                                    className="self-end md:self-center p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        ))}
                                     </div>
                                 </div>
 
