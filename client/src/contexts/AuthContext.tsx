@@ -35,7 +35,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             ? (userData.avatar.startsWith('http') ? userData.avatar : `${api.baseURL}${userData.avatar}`)
                             : `https://ui-avatars.com/api/?name=${encodeURIComponent([userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0])}&background=random`,
                         firstName: userData.firstName,
-                        lastName: userData.lastName
+                        lastName: userData.lastName,
+                        hasProfile: userData.hasProfile
                     };
                     setUser(user);
                 } catch (error) {

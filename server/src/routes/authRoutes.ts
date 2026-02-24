@@ -91,33 +91,35 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
+        const employee = await Employee.findOne({ userId: user._id });
+        
         // Auto-sync from Employee record if names or avatar are missing
-        if (!user.firstName || !user.lastName || !user.avatar) {
-            const employee = await Employee.findOne({ userId: user._id });
-            if (employee) {
-                let updated = false;
-                if (!user.firstName && employee.firstName) {
-                    user.firstName = employee.firstName;
-                    updated = true;
-                }
-                if (!user.lastName && employee.lastName) {
-                    user.lastName = employee.lastName;
-                    updated = true;
-                }
-                // Check if there's a profile picture attachment
-                const profilePic = employee.attachments?.find((att: any) => att.fileType === 'Profile Picture');
-                if (!user.avatar && profilePic) {
-                    user.avatar = `/uploads/${profilePic.filePath}`;
-                    updated = true;
-                }
+        if (employee && (!user.firstName || !user.lastName || !user.avatar)) {
+            let updated = false;
+            if (!user.firstName && employee.firstName) {
+                user.firstName = employee.firstName;
+                updated = true;
+            }
+            if (!user.lastName && employee.lastName) {
+                user.lastName = employee.lastName;
+                updated = true;
+            }
+            // Check if there's a profile picture attachment
+            const profilePic = employee.attachments?.find((att: any) => att.fileType === 'Profile Picture');
+            if (!user.avatar && profilePic) {
+                user.avatar = `/api/employees/attachments/raw/${profilePic._id}`;
+                updated = true;
+            }
 
-                if (updated) {
-                    await user.save();
-                }
+            if (updated) {
+                await user.save();
             }
         }
 
-        res.json(user);
+        res.json({
+            ...user.toObject(),
+            hasProfile: !!employee
+        });
     } catch (error: any) {
         console.error('Error fetching user:', error);
         res.status(500).json({ message: error.message || 'Internal server error' });

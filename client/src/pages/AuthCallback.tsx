@@ -32,8 +32,8 @@ export const AuthCallback: React.FC = () => {
                 // The original request code used sessionStorage. Let's stick to localStorage for better UX or match the request.
                 // Wait, the request specifically used `sessionStorage.setItem('itcs_token', token);`. I should respect that, but `api.ts` uses `localStorage.getItem('token')`.
                 // Let's fix that inconsistency. I'll use localStorage to match api.ts.
-
-                localStorage.setItem('token', token); // Key must match what api.ts looks for
+                // Save token to localStorage immediately so APIService can use it in interceptors
+                localStorage.setItem('token', token);
 
                 // Fetch user details
                 const userData = await APIService.getMe();
@@ -45,7 +45,8 @@ export const AuthCallback: React.FC = () => {
                     role: userData.role as UserRole,
                     avatar: userData.avatar || 'https://ui-avatars.com/api/?name=' + (userData.firstName || 'User'),
                     firstName: userData.firstName,
-                    lastName: userData.lastName
+                    lastName: userData.lastName,
+                    hasProfile: userData.hasProfile
                 };
 
                 // User requested session storage keys, I'll add them too just in case other parts need them
@@ -54,7 +55,13 @@ export const AuthCallback: React.FC = () => {
                 sessionStorage.setItem('itcs_auth', 'true');
 
                 login(user);
-                navigate('/dashboard'); // standard dashboard route
+
+                // Redirect based on profile status
+                if (!user.hasProfile) {
+                    navigate('/onboarding');
+                } else {
+                    navigate('/dashboard');
+                }
             } catch (error) {
                 console.error('Failed to complete authentication:', error);
                 navigate('/login');

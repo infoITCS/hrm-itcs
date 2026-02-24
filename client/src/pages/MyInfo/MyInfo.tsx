@@ -26,6 +26,7 @@ const MyInfo = () => {
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
     const hasFetched = useRef(false);
+    const onboarding = new URLSearchParams(window.location.search).get('onboarding') === 'true';
 
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
@@ -139,6 +140,7 @@ const MyInfo = () => {
 
             setLoading(true);
             hasFetched.current = true;
+            if (onboarding) setIsEditing(true);
             try {
                 const token = localStorage.getItem('token');
 
@@ -406,35 +408,7 @@ const MyInfo = () => {
                     body: JSON.stringify(employeeData)
                 });
             } else {
-                // Create new employee record
-                // Attempt to find next sequential ID
-                let nextSequentialId = `itcs-${Math.floor(100 + Math.random() * 899)}`;
-                try {
-                    const idRes = await fetch(api.employees, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (idRes.ok) {
-                        const allEmp = await idRes.json();
-                        let maxNum = 0;
-                        if (Array.isArray(allEmp)) {
-                            allEmp.forEach((emp: any) => {
-                                if (emp.employeeId && emp.employeeId.toLowerCase().startsWith('itcs-')) {
-                                    const parts = emp.employeeId.split('-');
-                                    const numPart = parts[parts.length - 1];
-                                    const num = parseInt(numPart);
-                                    if (!isNaN(num) && num > maxNum) {
-                                        maxNum = num;
-                                    }
-                                }
-                            });
-                        }
-                        nextSequentialId = `itcs-${(maxNum + 1).toString().padStart(3, '0')}`;
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch sequence for employee ID, using random.');
-                }
-
-                employeeData.employeeId = nextSequentialId;
+                // employeeId is omitted to allow server-side generation
                 employeeData.jobInfo = {
                     designation: 'Employee',
                     department: 'General',
@@ -500,7 +474,13 @@ const MyInfo = () => {
             setSuccess(true);
             setTimeout(() => {
                 setSuccess(false);
-                if (shouldNavigate) setIsEditing(false); // Only exit editing mode if we are navigating away
+                if (shouldNavigate) {
+                    if (onboarding) {
+                        navigate('/dashboard');
+                    } else {
+                        setIsEditing(false);
+                    }
+                }
             }, 3000);
             return savedEmployee;
         } catch (err: any) {

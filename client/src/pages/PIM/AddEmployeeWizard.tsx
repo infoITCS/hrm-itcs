@@ -407,7 +407,12 @@ const AddEmployeeWizard = () => {
 
             // Success - navigate if requested
             if (shouldNavigate) {
-                navigate('/pim');
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('onboarding') === 'true') {
+                    navigate('/dashboard');
+                } else {
+                    navigate('/pim');
+                }
             }
             return savedEmp;
         } catch (error: any) {
@@ -443,7 +448,9 @@ const AddEmployeeWizard = () => {
             if (!savedEmp) return;
 
             if (!isEditMode && savedEmp.employeeId) {
-                navigate(`/pim/edit/${savedEmp.employeeId}`, { replace: true });
+                const params = new URLSearchParams(window.location.search);
+                const query = params.get('onboarding') === 'true' ? '?onboarding=true' : '';
+                navigate(`/pim/edit/${savedEmp.employeeId}${query}`, { replace: true });
             }
         }
 

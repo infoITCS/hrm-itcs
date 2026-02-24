@@ -11,6 +11,7 @@ import MyInfo from './pages/MyInfo/MyInfo';
 import Dashboard from './pages/Dashboard/Dashboard';
 import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
+import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -50,6 +51,14 @@ function AppRoutes() {
       <Route
         path="/auth/callback"
         element={<AuthCallback />}
+      />
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <OnboardingWelcome />
+          </ProtectedRoute>
+        }
       />
       <Route
         path="/"
