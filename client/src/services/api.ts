@@ -1,11 +1,11 @@
 import axios from 'axios';
 
-// Base URL must end with /api so GET /auth/me hits /api/auth/me (backend mounts auth at /api/auth)
+// Origin only (no /api): backend routes are /api/auth/me, /api/auth/login, etc.
 const rawBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
-const API_BASE_URL = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
+const API_ORIGIN = rawBase.endsWith('/api') ? rawBase.slice(0, -4) : rawBase;
 
 const apiClient = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: API_ORIGIN,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -24,12 +24,10 @@ apiClient.interceptors.request.use(
 
 const APIService = {
     login: async (email: string, password: string) => {
-        return apiClient.post('/auth/login', { email, password });
+        return apiClient.post('/api/auth/login', { email, password });
     },
     getMe: async () => {
-        // Assuming the backend has an endpoint to get current user details
-        // Adjust endpoint if strictly different, e.g. /users/me or /auth/me
-        const response = await apiClient.get('/auth/me');
+        const response = await apiClient.get('/api/auth/me');
         return response.data;
     },
 };
