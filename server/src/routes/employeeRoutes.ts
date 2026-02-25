@@ -317,12 +317,20 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
 router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
-        if (!canApproveDocuments(authReq.user?.role || '')) {
+        const employeeId = req.params.id;
+        const role = authReq.user?.role || '';
+        const userId = authReq.user?.userId;
+
+        const employee = await Employee.findOne({ employeeId });
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        // Check permission: Admin can delete any, Employee can delete their own
+        const isAdmin = role === 'super-admin' || role === 'admin';
+        const isOwner = employee.userId === userId;
+
+        if (!isAdmin && !isOwner) {
             return res.status(403).json({ message: 'You do not have permission to delete documents' });
         }
-
-        const employee = await Employee.findOne({ employeeId: req.params.id });
-        if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         if (!employee.attachments) return res.status(404).json({ message: 'No attachments found' });
 

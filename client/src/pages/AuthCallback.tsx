@@ -49,6 +49,7 @@ export const AuthCallback: React.FC = () => {
                     avatar: userData.avatar || 'https://ui-avatars.com/api/?name=' + (userData.firstName || 'User'),
                     firstName: userData.firstName,
                     lastName: userData.lastName,
+                    microsoftId: userData.microsoftId,
                     hasProfile: userData.hasProfile
                 };
 

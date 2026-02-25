@@ -9,5 +9,6 @@ export interface User {
     _id?: string; // To support _id as well
     firstName?: string;
     lastName?: string;
+    microsoftId?: string;
     hasProfile?: boolean;
 }

@@ -7,7 +7,7 @@ import { api } from '../utils/api';
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    login: (user: User) => void;
+    login: (userData: User | ((prev: User | null) => User)) => void;
     logout: () => void;
     isAuthenticated: boolean;
 }
@@ -50,8 +50,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         checkAuth();
     }, []);
 
-    const login = (userData: User) => {
-        setUser(userData);
+    const login = (userData: User | ((prev: User | null) => User)) => {
+        setUser(prev => {
+            const newUser = typeof userData === 'function' ? userData(prev) : userData;
+            // Persist to sessionStorage matching the app's pattern
+            sessionStorage.setItem('itcs_user', JSON.stringify(newUser));
+            sessionStorage.setItem('itcs_auth', 'true');
+            return newUser;
+        });
     };
 
     const logout = () => {

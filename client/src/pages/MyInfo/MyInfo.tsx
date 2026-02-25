@@ -6,6 +6,7 @@ import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
+import type { User as UserType } from '../../types';
 
 const MyInfo = () => {
     const navigate = useNavigate();
@@ -25,6 +26,12 @@ const MyInfo = () => {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
+    const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; attachmentId: string | null; fileName: string | null }>({
+        isOpen: false,
+        attachmentId: null,
+        fileName: null
+    });
+
     const hasFetched = useRef(false);
     const onboarding = new URLSearchParams(window.location.search).get('onboarding') === 'true';
 
@@ -173,7 +180,7 @@ const MyInfo = () => {
                             firstName: employee.firstName || '',
                             lastName: employee.lastName || '',
                             middleName: employee.middleName || '',
-                            email: employee.email || user.email || '',
+                            email: (employee.email === user?.email && user?.microsoftId) ? '' : (employee.email || ''),
                             phone: employee.phone || '',
                             dateOfBirth: formatDate(employee.dateOfBirth),
                             gender: employee.gender || '',
@@ -185,7 +192,7 @@ const MyInfo = () => {
                             religion: employee.religion || '',
                             licenseNumber: employee.licenseNumber || '',
                             simNumber: employee.simNumber || '',
-                            workEmail: employee.workEmail || '',
+                            workEmail: employee.workEmail || (user?.microsoftId ? user?.email : '') || '',
                             otherEmail: employee.otherEmail || '',
                             address: {
                                 street: employee.address?.street || '',
@@ -294,9 +301,9 @@ const MyInfo = () => {
                         setFormData(prev => ({
                             ...prev,
                             email: '',
-                            workEmail: user.email || '',
-                            firstName: user.firstName || '',
-                            lastName: user.lastName || ''
+                            workEmail: user?.email || '',
+                            firstName: user?.firstName || '',
+                            lastName: user?.lastName || ''
                         }));
                     }
                 }
@@ -310,6 +317,11 @@ const MyInfo = () => {
 
         fetchEmployeeData();
     }, [user?.id]); // Refresh on ID change
+
+    // Scroll to top when step changes
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [step]);
 
     const handleChange = (e: any, section?: string, index?: number, subfield?: string) => {
         const { name, value } = e.target;
@@ -363,20 +375,41 @@ const MyInfo = () => {
             if (!result) return;
         }
 
-        if (step < steps.length) {
+        const currentIndex = steps.findIndex(s => s.id === step);
+        if (currentIndex < steps.length - 1) {
+            const nextStep = steps[currentIndex + 1];
             if (!completedSteps.includes(step)) {
                 setCompletedSteps([...completedSteps, step]);
                 setShowCompletion(step);
                 setTimeout(() => setShowCompletion(null), 2000);
             }
-            setStep(step + 1);
+            setStep(nextStep.id);
         }
     };
 
-    const handlePrev = () => {
-        if (step > 1) {
+    const handleStepClick = async (targetStepId: number) => {
+        // If clicking the current step, do nothing
+        if (targetStepId === step) return;
+
+        // If jumping forward from step 1, validate it first
+        if (step === 1 && targetStepId > 1) {
+            if (!isStep1RequiredValid()) {
+                setStepErrors(getStep1RequiredErrors());
+                return;
+            }
             setStepErrors([]);
-            setStep(step - 1);
+            const result = await handleSubmit(false);
+            if (!result) return;
+        }
+
+        setStep(targetStepId);
+    };
+
+    const handlePrev = () => {
+        const currentIndex = steps.findIndex(s => s.id === step);
+        if (currentIndex > 0) {
+            setStepErrors([]);
+            setStep(steps[currentIndex - 1].id);
         }
     };
 
@@ -403,7 +436,8 @@ const MyInfo = () => {
             const employeeData: any = {
                 ...formData,
                 userId: user?.id,
-                email: formData.email || user?.email,
+                email: (formData.email === user?.email && user?.microsoftId) ? '' : (formData.email || ''),
+                workEmail: formData.workEmail || (user?.microsoftId ? user?.email : '') || '',
                 firstName: formData.firstName || user?.firstName || '',
                 lastName: formData.lastName || user?.lastName || ''
             };
@@ -524,6 +558,42 @@ const MyInfo = () => {
         document.body.removeChild(link);
     };
 
+    const handleDeleteDocument = async (attachmentId: string, fileName: string) => {
+        setDeleteModal({ isOpen: true, attachmentId, fileName });
+    };
+
+    const confirmDeleteDocument = async () => {
+        const { attachmentId } = deleteModal;
+        if (!attachmentId || !employeeId) return;
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${api.employees}/${employeeId}/attachments/${attachmentId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to delete document' }));
+                throw new Error(errorData.message || 'Failed to delete document');
+            }
+
+            // Refresh data
+            setRawEmployee((prev: any) => ({
+                ...prev,
+                attachments: prev.attachments.filter((att: any) => att._id !== attachmentId)
+            }));
+
+            setDeleteModal({ isOpen: false, attachmentId: null, fileName: null });
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 2000);
+        } catch (err: any) {
+            console.error('Error deleting document:', err);
+            setError(err.message || 'Failed to delete document.');
+            setDeleteModal({ isOpen: false, attachmentId: null, fileName: null });
+        }
+    };
+
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !employeeId) return;
@@ -562,10 +632,11 @@ const MyInfo = () => {
 
                     // Sync with AuthContext for Header/Sidebar using new MongoDB raw endpoint
                     const profilePics = employee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
-                    if (profilePics.length > 0 && user) {
+                    if (profilePics.length > 0) {
                         const latestPic = profilePics[profilePics.length - 1];
-                        const newAvatar = apiHelpers.attachmentRaw(latestPic._id);
-                        login({ ...user, avatar: newAvatar });
+                        // Add cache buster to force re-render/re-fetch of the image
+                        const newAvatar = `${apiHelpers.attachmentRaw(latestPic._id)}?t=${Date.now()}`;
+                        login((prev: UserType | null) => prev ? { ...prev, avatar: newAvatar } : prev as any);
                     }
                 }
             }
@@ -577,15 +648,18 @@ const MyInfo = () => {
         }
     };
 
-    const steps = [
+    const allSteps = [
         { id: 1, title: 'Personal', icon: User },
         { id: 2, title: 'Contact & Dependents', icon: Users },
         { id: 3, title: 'Immigration', icon: Globe },
-        { id: 4, title: 'Job & Status', icon: Briefcase },
+        { id: 4, title: 'Job & Status', icon: Briefcase, roleRestricted: true },
         { id: 5, title: 'History & Education', icon: GraduationCap },
         { id: 6, title: 'Finance', icon: CreditCard },
         { id: 7, title: 'Documents', icon: FileText }
     ];
+
+    const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
+    const steps = allSteps.filter(s => !s.roleRestricted || isAdmin);
 
     if (loading) {
         return (
@@ -598,7 +672,7 @@ const MyInfo = () => {
         );
     }
 
-    const ProfileView = () => {
+    const renderProfileView = () => {
         if (!rawEmployee) return null;
 
         const tabs = [
@@ -612,8 +686,8 @@ const MyInfo = () => {
             { id: 'documents', label: 'Documents', icon: FileText },
         ];
 
-        const Field = ({ label, value }: { label: string, value: any }) => (
-            <div className="space-y-1">
+        const renderField = (label: string, value: any) => (
+            <div key={label} className="space-y-1">
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</label>
                 <p className="text-gray-800 font-medium">{value || '-'}</p>
             </div>
@@ -622,6 +696,12 @@ const MyInfo = () => {
         const formatDate = (dateString: string) => {
             if (!dateString) return '-';
             return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        };
+
+        const getInitials = () => {
+            const first = rawEmployee.firstName?.charAt(0) || '';
+            const last = rawEmployee.lastName?.charAt(0) || '';
+            return (first + last).toUpperCase() || '?';
         };
 
         const avatarUrl = getAvatarUrl(rawEmployee) || user?.avatar;
@@ -636,10 +716,15 @@ const MyInfo = () => {
                                 src={avatarUrl}
                                 alt="Avatar"
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                onError={(e: any) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'flex';
+                                }}
                             />
-                        ) : (
-                            <User size={40} />
-                        )}
+                        ) : null}
+                        <div className={`w-full h-full flex items-center justify-center font-bold text-2xl tracking-tighter ${avatarUrl ? 'hidden' : ''}`}>
+                            {getInitials()}
+                        </div>
                         <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px]">
                             <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform" />
                             <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
@@ -698,19 +783,19 @@ const MyInfo = () => {
                     {activeTab === 'personal' && (
                         <div className="space-y-10 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-8 gap-x-12">
-                                <Field label="Full Name" value={`${rawEmployee.firstName} ${rawEmployee.middleName || ''} ${rawEmployee.lastName}`} />
-                                <Field label="Date of Birth" value={formatDate(rawEmployee.dateOfBirth)} />
-                                <Field label="Gender" value={rawEmployee.gender} />
-                                <Field label="Marital Status" value={rawEmployee.maritalStatus} />
-                                <Field label="Nationality" value={rawEmployee.nationality} />
-                                <Field label="Father Name" value={rawEmployee.fatherName} />
-                                <Field label="Blood Group" value={rawEmployee.bloodGroup} />
-                                <Field label="CNIC / Govt ID" value={rawEmployee.cnic} />
-                                <Field label="Religion" value={rawEmployee.religion} />
-                                <Field label="License Number" value={rawEmployee.licenseNumber} />
-                                <Field label="Work Email" value={rawEmployee.workEmail} />
-                                <Field label="Other Email" value={rawEmployee.otherEmail} />
-                                <Field label="SIM Number" value={rawEmployee.simNumber} />
+                                {renderField('Full Name', `${rawEmployee.firstName} ${rawEmployee.middleName || ''} ${rawEmployee.lastName}`)}
+                                {renderField('Date of Birth', formatDate(rawEmployee.dateOfBirth))}
+                                {renderField('Gender', rawEmployee.gender)}
+                                {renderField('Marital Status', rawEmployee.maritalStatus)}
+                                {renderField('Nationality', rawEmployee.nationality)}
+                                {renderField('Father Name', rawEmployee.fatherName)}
+                                {renderField('Blood Group', rawEmployee.bloodGroup)}
+                                {renderField('CNIC / Govt ID', rawEmployee.cnic)}
+                                {renderField('Religion', rawEmployee.religion)}
+                                {renderField('License Number', rawEmployee.licenseNumber)}
+                                {renderField('Work Email', rawEmployee.workEmail)}
+                                {renderField('Other Email', rawEmployee.otherEmail)}
+                                {renderField('SIM Number', rawEmployee.simNumber)}
                             </div>
 
                             {/* Skills Section */}
@@ -765,17 +850,17 @@ const MyInfo = () => {
                     {activeTab === 'contact' && (
                         <div className="space-y-10 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                <Field label="Email" value={rawEmployee.email} />
-                                <Field label="Phone" value={rawEmployee.phone} />
+                                {renderField('Personal Email', rawEmployee.email)}
+                                {renderField('Phone', rawEmployee.phone)}
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                                     <Globe size={16} /> Current Address
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <Field label="Street" value={rawEmployee.address?.street} />
-                                    <Field label="City" value={rawEmployee.address?.city} />
-                                    <Field label="Country" value={rawEmployee.address?.country} />
+                                    {renderField('Street', rawEmployee.address?.street)}
+                                    {renderField('City', rawEmployee.address?.city)}
+                                    {renderField('Country', rawEmployee.address?.country)}
                                 </div>
                             </div>
                             <div>
@@ -783,8 +868,8 @@ const MyInfo = () => {
                                     <Users size={16} /> Emergency Contacts
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {rawEmployee.emergencyContacts?.map((c: any, i: number) => (
-                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-colors group">
+                                    {rawEmployee.emergencyContacts?.map((c: any) => (
+                                        <div key={c._id || c.phone} className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-colors group">
                                             <p className="font-bold text-gray-800">{c.name}</p>
                                             <div className="flex items-center gap-4 mt-2">
                                                 <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg">{c.relation}</span>
@@ -801,11 +886,15 @@ const MyInfo = () => {
                     {activeTab === 'job' && (
                         <div className="space-y-10 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                <Field label="Designation" value={rawEmployee.jobInfo?.designation} />
-                                <Field label="Department" value={rawEmployee.jobInfo?.department} />
-                                <Field label="Reporting Manager" value={rawEmployee.jobInfo?.reportingManager} />
-                                <Field label="Work Location" value={rawEmployee.jobInfo?.workLocation} />
-                                <Field label="Joining Date" value={formatDate(rawEmployee.jobInfo?.joiningDate)} />
+                                {renderField('Designation', rawEmployee.jobInfo?.designation)}
+                                {renderField('Department', rawEmployee.jobInfo?.department)}
+                                {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManager)}
+                                {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
+                                {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
+                                {renderField('Status', rawEmployee.employmentStatus?.status || rawEmployee.employmentStatus || '-')}
+                                {rawEmployee.employmentStatus?.status === 'Probation' && (
+                                    renderField('Probation End Date', formatDate(rawEmployee.employmentStatus?.probationEndDate))
+                                )}
                             </div>
                             <div className="p-8 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl text-white shadow-xl shadow-indigo-200">
                                 <h4 className="text-sm font-bold text-indigo-100 uppercase tracking-widest mb-4">Current Employment Status</h4>
@@ -869,11 +958,11 @@ const MyInfo = () => {
                             <div className="pt-8 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Bank Account Details</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
-                                    <Field label="Bank Name" value={rawEmployee.bankDetails?.bankName} />
-                                    <Field label="Account Holder" value={rawEmployee.bankDetails?.accountName} />
-                                    <Field label="Account Number" value={rawEmployee.bankDetails?.accountNumber} />
-                                    <Field label="IBAN" value={rawEmployee.bankDetails?.iban} />
-                                    <Field label="Swift Code" value={rawEmployee.bankDetails?.swiftCode} />
+                                    {renderField('Bank Name', rawEmployee.bankDetails?.bankName)}
+                                    {renderField('Account Holder', rawEmployee.bankDetails?.accountName)}
+                                    {renderField('Account Number', rawEmployee.bankDetails?.accountNumber)}
+                                    {renderField('IBAN', rawEmployee.bankDetails?.iban)}
+                                    {renderField('Swift Code', rawEmployee.bankDetails?.swiftCode)}
                                 </div>
                             </div>
                         </div>
@@ -927,18 +1016,18 @@ const MyInfo = () => {
                     {/* Dependents Tab */}
                     {activeTab === 'dependents' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
-                            {rawEmployee.dependents?.map((dep: any, i: number) => (
-                                <div key={i} className="p-6 bg-white rounded-2xl border border-slate-200 flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                                        <User size={24} />
+                                {rawEmployee.dependents?.map((dep: any) => (
+                                    <div key={dep._id || dep.name} className="p-6 bg-white rounded-2xl border border-slate-200 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                            <User size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-gray-800">{dep.name}</p>
+                                            <p className="text-sm text-indigo-600 font-medium">{dep.relation}</p>
+                                            <p className="text-xs text-gray-400 mt-1">Born: {formatDate(dep.dateOfBirth)}</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="font-bold text-gray-800">{dep.name}</p>
-                                        <p className="text-sm text-indigo-600 font-medium">{dep.relation}</p>
-                                        <p className="text-xs text-gray-400 mt-1">Born: {formatDate(dep.dateOfBirth)}</p>
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
                         </div>
                     )}
 
@@ -947,8 +1036,8 @@ const MyInfo = () => {
                         <div className="space-y-4 animate-fadeIn">
                             {rawEmployee.attachments?.length > 0 ? (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    {rawEmployee.attachments.map((file: any, i: number) => (
-                                        <div key={i} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all">
+                                    {rawEmployee.attachments.map((file: any) => (
+                                        <div key={file._id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-3 bg-slate-50 text-slate-400 rounded-xl">
                                                     <FileText size={20} />
@@ -966,13 +1055,22 @@ const MyInfo = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleDownload(file._id, file.fileName)}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
-                                                title="Download"
-                                            >
-                                                <Download size={20} />
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleDownload(file._id, file.fileName)}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
+                                                    title="Download"
+                                                >
+                                                    <Download size={20} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteDocument(file._id, file.fileName)}
+                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 size={20} />
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -992,7 +1090,7 @@ const MyInfo = () => {
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {!isEditing ? (
-                <ProfileView />
+                renderProfileView()
             ) : (
                 <div className="space-y-6">
                     {/* Header */}
@@ -1007,7 +1105,9 @@ const MyInfo = () => {
                             <h2 className="text-xl font-semibold text-gray-700">
                                 {employeeId ? 'Edit Your Information' : 'Complete Your Profile'}
                             </h2>
-                            <p className="text-sm text-gray-500">Step {step} of {steps.length}: {steps[step - 1].title}</p>
+                            <p className="text-sm text-gray-500">
+                                Step {steps.findIndex(s => s.id === step) + 1} of {steps.length}: {steps.find(s => s.id === step)?.title}
+                            </p>
                         </div>
                         {employeeId && (
                             <button
@@ -1025,7 +1125,7 @@ const MyInfo = () => {
                         <div className="absolute top-7 left-8 right-8 h-1.5 bg-slate-200 rounded-full -z-0 overflow-hidden">
                             <div
                                 className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full transition-all duration-1000 ease-out relative"
-                                style={{ width: `${((step - 1) / (steps.length - 1)) * 100}%` }}
+                                style={{ width: `${(steps.findIndex(s => s.id === step) / (steps.length - 1)) * 100}%` }}
                             >
                                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
                             </div>
@@ -1035,12 +1135,16 @@ const MyInfo = () => {
                             const isCompleted = step > s.id;
                             const isCurrent = step === s.id;
                             return (
-                                <div key={s.id} className="flex flex-col items-center relative z-10">
-                                    <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-md relative ${isCompleted
+                                <div
+                                    key={s.id}
+                                    className="flex flex-col items-center relative z-10 cursor-pointer group"
+                                    onClick={() => handleStepClick(s.id)}
+                                >
+                                    <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-md relative group-hover:shadow-lg group-hover:scale-105 active:scale-95 ${isCompleted
                                         ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white scale-110 ring-4 ring-emerald-200'
                                         : isCurrent
                                             ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white scale-110 ring-4 ring-indigo-200'
-                                            : 'bg-slate-200 text-slate-500 scale-100'
+                                            : 'bg-slate-200 text-slate-500 scale-100 hover:bg-slate-300'
                                         }`}>
                                         {isCompleted ? (
                                             <div className="relative">
@@ -1162,14 +1266,7 @@ const MyInfo = () => {
                                     <label className="block text-sm font-medium text-gray-600">Middle Name</label>
                                     <input type="text" name="middleName" value={formData.middleName} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Email *</label>
-                                    <input type="email" name="email" value={formData.email} onChange={handleChange} required className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Phone</label>
-                                    <input type="tel" name="phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                </div>
+
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">CNIC / Govt ID *</label>
                                     <input
@@ -1266,11 +1363,26 @@ const MyInfo = () => {
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-4">Contact Info</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <input type="email" name="email" placeholder="Personal Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="email" name="workEmail" placeholder="Work Email" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="email" name="otherEmail" placeholder="Other Email" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="phone" placeholder="Personal Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="simNumber" placeholder="Company SIM Number" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-medium text-gray-600">Personal Email</label>
+                                            <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-medium text-gray-600">Work Email</label>
+                                            <input type="email" name="workEmail" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-medium text-gray-600">Other Email</label>
+                                            <input type="email" name="otherEmail" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-medium text-gray-600">Personal Phone</label>
+                                            <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-medium text-gray-600">Company SIM Number</label>
+                                            <input type="text" name="simNumber" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1698,113 +1810,115 @@ const MyInfo = () => {
                         {step === 6 && (
                             <div className="space-y-8 animate-slide-up pb-20">
                                 {/* Salary Structure */}
-                                <div>
-                                    <div className="flex justify-between items-end mb-6">
-                                        <div>
-                                            <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>
-                                            <p className="text-sm text-gray-500">Define the monthly salary breakdown</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Monthly (Gross)</p>
-                                            <p className="text-2xl font-bold text-indigo-600">
-                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
-                                                    formData.salaryComponents.reduce((sum, c) => sum + (c.amount || 0), 0)
-                                                )}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                        {formData.salaryComponents.map((comp, idx) => {
-                                            const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
-                                            const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
-                                            
-                                            return (
-                                                <div key={idx} className="space-y-3 relative group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
-                                                    <div className="flex justify-between items-center">
-                                                        <div className="flex-1 space-y-2">
-                                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Component Type</label>
-                                                            <select
-                                                                value={commonOptions.includes(comp.component) ? comp.component : (comp.component === '' ? '' : 'Other')}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    const newComps = [...formData.salaryComponents];
-                                                                    newComps[idx].component = val === 'Other' ? '' : val;
-                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                                }}
-                                                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-slate-50/50 font-medium text-slate-700"
-                                                            >
-                                                                <option value="">Select Component</option>
-                                                                {commonOptions.map(opt => (
-                                                                    <option key={opt} value={opt}>{opt}</option>
-                                                                ))}
-                                                                <option value="Other">Other (Custom Naming)</option>
-                                                            </select>
-                                                        </div>
-                                                        <div className="pt-6 pl-2">
-                                                            <button
-                                                                onClick={() => setFormData(p => ({
-                                                                    ...p,
-                                                                    salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
-                                                                }))}
-                                                                className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                                                                title="Remove Component"
-                                                            >
-                                                                <Trash2 size={16} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    {(showCustomInput || (comp.component === '' && !commonOptions.includes(comp.component))) && (
-                                                        <div className="space-y-1 animate-fadeIn">
-                                                            <label className="text-[10px] font-bold text-indigo-400 uppercase">Custom Name</label>
-                                                            <input
-                                                                type="text"
-                                                                value={comp.component}
-                                                                onChange={(e) => {
-                                                                    const newComps = [...formData.salaryComponents];
-                                                                    newComps[idx].component = e.target.value;
-                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                                }}
-                                                                className="w-full border-b border-indigo-100 focus:border-indigo-400 px-0 py-1 text-sm outline-none bg-transparent placeholder:text-slate-300 font-medium"
-                                                                placeholder="e.g. Fuel Allowance"
-                                                            />
-                                                        </div>
+                                {isAdmin && (
+                                    <div>
+                                        <div className="flex justify-between items-end mb-6">
+                                            <div>
+                                                <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>
+                                                <p className="text-sm text-gray-500">Define the monthly salary breakdown</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Monthly (Gross)</p>
+                                                <p className="text-2xl font-bold text-indigo-600">
+                                                    {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
+                                                        formData.salaryComponents.reduce((sum, c) => sum + (c.amount || 0), 0)
                                                     )}
+                                                </p>
+                                            </div>
+                                        </div>
 
-                                                    <div className="space-y-2">
-                                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount (Monthly)</label>
-                                                        <div className="relative">
-                                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300">PKR</div>
-                                                            <input
-                                                                type="number"
-                                                                value={comp.amount || ''}
-                                                                onChange={(e) => {
-                                                                    const newComps = [...formData.salaryComponents];
-                                                                    newComps[idx].amount = Number(e.target.value);
-                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                                }}
-                                                                className="w-full border-none bg-slate-50 rounded-xl pl-12 pr-4 py-3 text-lg font-black text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all shadow-inner"
-                                                                placeholder="0"
-                                                            />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                            {formData.salaryComponents.map((comp, idx) => {
+                                                const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
+                                                const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
+                                                
+                                                return (
+                                                    <div key={idx} className="space-y-3 relative group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                                                        <div className="flex justify-between items-center">
+                                                            <div className="flex-1 space-y-2">
+                                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Component Type</label>
+                                                                <select
+                                                                    value={commonOptions.includes(comp.component) ? comp.component : (comp.component === '' ? '' : 'Other')}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        const newComps = [...formData.salaryComponents];
+                                                                        newComps[idx].component = val === 'Other' ? '' : val;
+                                                                        setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                    }}
+                                                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-slate-50/50 font-medium text-slate-700"
+                                                                >
+                                                                    <option value="">Select Component</option>
+                                                                    {commonOptions.map(opt => (
+                                                                        <option key={opt} value={opt}>{opt}</option>
+                                                                    ))}
+                                                                    <option value="Other">Other (Custom Naming)</option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="pt-6 pl-2">
+                                                                <button
+                                                                    onClick={() => setFormData(p => ({
+                                                                        ...p,
+                                                                        salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
+                                                                    }))}
+                                                                    className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                                                                    title="Remove Component"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {(showCustomInput || (comp.component === '' && !commonOptions.includes(comp.component))) && (
+                                                            <div className="space-y-1 animate-fadeIn">
+                                                                <label className="text-[10px] font-bold text-indigo-400 uppercase">Custom Name</label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={comp.component}
+                                                                    onChange={(e) => {
+                                                                        const newComps = [...formData.salaryComponents];
+                                                                        newComps[idx].component = e.target.value;
+                                                                        setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                    }}
+                                                                    className="w-full border-b border-indigo-100 focus:border-indigo-400 px-0 py-1 text-sm outline-none bg-transparent placeholder:text-slate-300 font-medium"
+                                                                    placeholder="e.g. Fuel Allowance"
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        <div className="space-y-2">
+                                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount (Monthly)</label>
+                                                            <div className="relative">
+                                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300">PKR</div>
+                                                                <input
+                                                                    type="number"
+                                                                    value={comp.amount || ''}
+                                                                    onChange={(e) => {
+                                                                        const newComps = [...formData.salaryComponents];
+                                                                        newComps[idx].amount = Number(e.target.value);
+                                                                        setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                    }}
+                                                                    className="w-full border-none bg-slate-50 rounded-xl pl-12 pr-4 py-3 text-lg font-black text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all shadow-inner"
+                                                                    placeholder="0"
+                                                                />
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
-                                        
-                                        <button
-                                            onClick={() => setFormData(p => ({
-                                                ...p,
-                                                salaryComponents: [...p.salaryComponents, { component: 'Other Allowance', amount: 0, type: 'fixed' }]
-                                            }))}
-                                            className="md:col-span-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-sm font-medium flex items-center justify-center gap-2"
-                                        >
-                                            <Plus size={16} />
-                                            Add Other Component
-                                        </button>
+                                                );
+                                            })}
+                                            
+                                            <button
+                                                onClick={() => setFormData(p => ({
+                                                    ...p,
+                                                    salaryComponents: [...p.salaryComponents, { component: 'Other Allowance', amount: 0, type: 'fixed' }]
+                                                }))}
+                                                className="md:col-span-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-sm font-medium flex items-center justify-center gap-2"
+                                            >
+                                                <Plus size={16} />
+                                                Add Other Component
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* Bank Details */}
                                 <div className="pt-8 border-t border-gray-100">
@@ -1920,7 +2034,7 @@ const MyInfo = () => {
                             >
                                 <ChevronLeft size={16} /> Previous
                             </button>
-                            {step < steps.length ? (
+                            {step !== steps[steps.length - 1].id ? (
                                 <button
                                     onClick={handleNext}
                                     disabled={step === 1 && !isStep1RequiredValid()}
@@ -1937,6 +2051,36 @@ const MyInfo = () => {
                                     <Save size={18} /> {saving ? 'Saving...' : 'Save Information'}
                                 </button>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Delete Confirmation Modal */}
+            {deleteModal.isOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                <AlertCircle size={40} />
+                            </div>
+                            <h3 className="text-2xl font-bold text-gray-800 mb-2">Are you sure?</h3>
+                            <p className="text-gray-500 leading-relaxed mb-8">
+                                You are about to delete <span className="font-semibold text-gray-700 italic">"{deleteModal.fileName}"</span>. This action cannot be undone.
+                            </p>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={confirmDeleteDocument}
+                                    className="w-full py-4 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-2xl font-bold shadow-lg shadow-red-200 hover:shadow-xl hover:shadow-red-300 transition-all active:scale-95"
+                                >
+                                    Yes, Delete Document
+                                </button>
+                                <button
+                                    onClick={() => setDeleteModal({ isOpen: false, attachmentId: null, fileName: null })}
+                                    className="w-full py-4 bg-slate-50 text-slate-600 border border-slate-200 rounded-2xl font-bold hover:bg-slate-100 transition-all active:scale-95"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

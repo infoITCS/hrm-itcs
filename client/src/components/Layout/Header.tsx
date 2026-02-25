@@ -23,6 +23,13 @@ const Header = ({ title, onMenuClick }: {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    const getInitials = () => {
+        if (!user) return '?';
+        const first = user.firstName?.charAt(0) || user.name?.charAt(0) || '';
+        const last = user.lastName?.charAt(0) || '';
+        return (first + last).toUpperCase() || '?';
+    };
+
 
 
     return (
@@ -64,10 +71,19 @@ const Header = ({ title, onMenuClick }: {
                             {/* Avatar */}
                             <div className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 overflow-hidden flex items-center justify-center ring-2 ring-transparent group-hover:ring-white/20 transition-all">
                                 {user.avatar ? (
-                                    <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="text-sm font-semibold">{user.name.charAt(0).toUpperCase()}</div>
-                                )}
+                                    <img 
+                                        src={user.avatar} 
+                                        alt="User" 
+                                        className="w-full h-full object-cover" 
+                                        onError={(e: any) => {
+                                            e.target.style.display = 'none';
+                                            e.target.nextSibling.style.display = 'flex';
+                                        }}
+                                    />
+                                ) : null}
+                                <div className={`text-sm font-semibold ${user.avatar ? 'hidden' : 'flex'}`}>
+                                    {getInitials()}
+                                </div>
                             </div>
                             <div className="hidden md:flex flex-col">
                                 <span className="text-sm font-semibold leading-none mb-1">
@@ -88,10 +104,19 @@ const Header = ({ title, onMenuClick }: {
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-indigo-100 overflow-hidden flex items-center justify-center">
                                             {user.avatar ? (
-                                                <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="text-sm font-semibold text-indigo-600">{user.name.charAt(0).toUpperCase()}</div>
-                                            )}
+                                                <img 
+                                                    src={user.avatar} 
+                                                    alt="User" 
+                                                    className="w-full h-full object-cover" 
+                                                    onError={(e: any) => {
+                                                        e.target.style.display = 'none';
+                                                        e.target.nextSibling.style.display = 'flex';
+                                                    }}
+                                                />
+                                            ) : null}
+                                            <div className={`text-sm font-semibold text-indigo-600 ${user.avatar ? 'hidden' : 'flex'}`}>
+                                                {getInitials()}
+                                            </div>
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-gray-900 truncate">
