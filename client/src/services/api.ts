@@ -1,8 +1,12 @@
 import axios from 'axios';
 
-// Origin only (no /api): backend routes are /api/auth/me, /api/auth/login, etc.
+// Origin only: strip trailing slashes and /api so env can be with or without /api
 const rawBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const API_ORIGIN = rawBase.endsWith('/api') ? rawBase.slice(0, -4) : rawBase;
+
+// Explicit full URLs for auth so we always hit /api/auth/... (no dependency on baseURL)
+const AUTH_ME_URL = `${API_ORIGIN}/api/auth/me`;
+const AUTH_LOGIN_URL = `${API_ORIGIN}/api/auth/login`;
 
 const apiClient = axios.create({
     baseURL: API_ORIGIN,
@@ -24,10 +28,11 @@ apiClient.interceptors.request.use(
 
 const APIService = {
     login: async (email: string, password: string) => {
-        return apiClient.post('/api/auth/login', { email, password });
+        const response = await apiClient.post(AUTH_LOGIN_URL, { email, password });
+        return response;
     },
     getMe: async () => {
-        const response = await apiClient.get('/api/auth/me');
+        const response = await apiClient.get(AUTH_ME_URL);
         return response.data;
     },
 };
