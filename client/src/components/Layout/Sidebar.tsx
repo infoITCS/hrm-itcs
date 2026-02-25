@@ -11,6 +11,7 @@ import {
     BookOpen,
     Settings,
     DollarSign,
+    Shield,
     X,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
@@ -26,8 +27,9 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const { role } = usePermissions();
 
     const allMenuItems = [
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Admin', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'] },
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
+        { name: 'Admin', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], end: true },
+        { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin', 'admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin'] },
@@ -90,6 +92,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                             <NavLink
                                 key={item.name}
                                 to={item.path}
+                                end={item.end}
                                 onClick={onClose}
                                 className={({ isActive, isPending }) =>
                                     `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
