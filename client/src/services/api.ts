@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Ensure base URL always ends with /api so /auth/me and /auth/login resolve to /api/auth/me and /api/auth/login
+// Base URL must end with /api so GET /auth/me hits /api/auth/me (backend mounts auth at /api/auth)
 const rawBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const API_BASE_URL = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
 
