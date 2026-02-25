@@ -16,7 +16,9 @@ import {
     Sparkles,
     Cake,
     PartyPopper,
-    Award
+    Award,
+    Rocket,
+    Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -42,6 +44,26 @@ const Dashboard = () => {
 
     const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name || 'User';
 
+    const [onboardingData, setOnboardingData] = useState<any>(null);
+
+    const calculateOnboardingProgress = (emp: any) => {
+        if (!emp) return { percent: 0, steps: [] };
+
+        const steps = [
+            { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.length > 0 && emp.emergencyContacts[0].phone) },
+            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'ID Card' || a.fileType === 'Passport')) },
+            { id: 'employment', label: 'Work & Education', completed: !!(emp.education?.length > 0) }
+        ];
+
+        const completedCount = steps.filter(s => s.completed).length;
+        const percent = Math.round((completedCount / steps.length) * 100);
+
+        return { percent, steps };
+    };
+
+    const onboarding = user?.role === 'employee' ? calculateOnboardingProgress(onboardingData) : null;
+
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token || !user) {
@@ -51,6 +73,16 @@ const Dashboard = () => {
 
         const fetchStats = async () => {
             try {
+                // Fetch current user's employee record for onboarding check
+                const empRes = await fetch(`${api.employees}?userId=${user.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (empRes.ok) {
+                    const empData = await empRes.json();
+                    const emp = Array.isArray(empData) ? empData[0] : empData;
+                    if (emp) setOnboardingData(emp);
+                }
+
                 const res = await fetch(api.employees, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
@@ -250,10 +282,10 @@ const Dashboard = () => {
         },
     ];
 
-    const statsByRole = { admin: adminStats, manager: managerStats, employee: employeeStats };
-    const statsToDisplay = statsByRole[role];
+    const statsByRole: Record<string, any[]> = { admin: adminStats, manager: managerStats, employee: employeeStats };
+    const statsToDisplay = statsByRole[role] || employeeStats;
 
-    const welcomeByRole = {
+    const welcomeByRole: Record<string, any> = {
         admin: {
             title: `Welcome back, ${fullName}! 👋`,
             subtitle: "Here's the current overview of your organization. Review pending requests and key metrics.",
@@ -277,15 +309,15 @@ const Dashboard = () => {
         },
     };
 
-    const welcome = welcomeByRole[role];
+    const welcome = welcomeByRole[role] || welcomeByRole.employee;
 
-    const activityTitleByRole = {
+    const activityTitleByRole: Record<string, string> = {
         admin: 'Organizational Activity',
         manager: 'Team Activity',
         employee: 'My Recent Activity',
     };
 
-    const quickLinksByRole = {
+    const quickLinksByRole: Record<string, any[]> = {
         admin: [
             { title: 'Employee Directory', desc: 'View and manage all employees', icon: Users, path: '/pim' },
             { title: 'Recruitment', desc: 'New hires and open positions', icon: UserPlus, path: '/recruitment' },
@@ -302,12 +334,69 @@ const Dashboard = () => {
         ],
     };
 
-    const quickLinks = quickLinksByRole[role];
+    const quickLinks = quickLinksByRole[role] || quickLinksByRole.employee;
     const BadgeIcon = welcome.badgeIcon;
 
 
     return (
         <div className="space-y-6 animate-fadeIn">
+            {/* Onboarding Progress Card (Only for New Hires) */}
+            {onboarding && onboarding.percent < 100 && (
+                <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-xl shadow-indigo-100/50 overflow-hidden relative group">
+                    <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                        <Rocket size={160} className="text-indigo-600 -rotate-12" />
+                    </div>
+                    
+                    <div className="p-6 sm:p-8 flex flex-col lg:flex-row gap-8 items-center">
+                        <div className="flex-1 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
+                                    <Rocket size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-800 tracking-tight">Onboarding in Progress</h2>
+                                    <p className="text-sm text-slate-500 font-medium">Complete your profile to unlock all enterprise features.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-end mb-1">
+                                    <span className="text-sm font-bold text-indigo-600">{onboarding.percent}% Completed</span>
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{onboarding.steps.filter(s => s.completed).length} of {onboarding.steps.length} Steps</span>
+                                </div>
+                                <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-50">
+                                    <div 
+                                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000 ease-out shadow-sm"
+                                        style={{ width: `${onboarding.percent}%` }}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                                {onboarding.steps.map((s, idx) => (
+                                    <div key={idx} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${s.completed ? 'bg-emerald-50/50 border-emerald-100 text-emerald-700' : 'bg-slate-50/50 border-slate-100 text-slate-400'}`}>
+                                        <div className={`p-1 rounded-full ${s.completed ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                                            <Check size={12} strokeWidth={3} />
+                                        </div>
+                                        <span className="text-xs font-bold">{s.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="shrink-0">
+                            <button 
+                                onClick={() => navigate('/my-info?onboarding=true')}
+                                className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2 group"
+                            >
+                                Continue Onboarding
+                                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Welcome Banner */}
             <div
                 className={`rounded-xl min-[992px]:rounded-2xl p-5 sm:p-6 min-[992px]:p-8 text-white shadow-xl relative overflow-hidden bg-gradient-to-r ${welcome.gradient}`}
@@ -408,7 +497,7 @@ const Dashboard = () => {
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                 <Sparkles size={20} className="text-indigo-500" />
-                                {activityTitleByRole[role]}
+                                {activityTitleByRole[role] || 'Recent Activity'}
                             </h3>
                             <button
                                 onClick={() => (role === 'admin' ? navigate('/pim') : role === 'manager' ? navigate('/leave') : navigate('/my-info'))}

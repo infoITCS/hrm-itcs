@@ -60,12 +60,8 @@ export const AuthCallback: React.FC = () => {
 
                 login(user);
 
-                // Redirect based on profile status
-                if (!user.hasProfile) {
-                    navigate('/onboarding');
-                } else {
-                    navigate('/dashboard');
-                }
+                // Navigate to dashboard - onboarding progress will be shown there
+                navigate('/dashboard');
             } catch (error) {
                 console.error('Failed to complete authentication:', error);
                 navigate('/login');

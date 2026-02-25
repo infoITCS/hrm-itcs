@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1983,13 +1983,52 @@ const MyInfo = () => {
                         )}
 
                         {/* Step 7: Documents */}
+                        {/* Step 7: Documents */}
                         {step === 7 && (
                             <div className="animate-slide-up pb-20">
                                 <div>
-                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Additional Documents</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {['Contract', 'Certificates', 'Other Documents'].map((label) => (
-                                            <div key={label} className="border border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+                                    <h3 className="text-lg font-medium text-gray-700 mb-6">Documents & Attachments</h3>
+                                    
+                                    {/* Existing Documents From Server */}
+                                    {rawEmployee?.attachments?.length > 0 && (
+                                        <div className="mb-12">
+                                            <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Your Documents</h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {rawEmployee.attachments.map((file: any, i: number) => (
+                                                    <div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm group hover:border-indigo-200 transition-all">
+                                                        <div className="flex items-center gap-3 overflow-hidden">
+                                                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                                                                <FileText size={20} />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-bold text-gray-700 truncate">{file.fileName}</p>
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="text-[10px] font-bold text-gray-400 uppercase">{file.fileType}</p>
+                                                                    {file.status === 'approved' && <span className="text-[10px] text-emerald-600 font-bold px-1.5 bg-emerald-50 rounded italic">Approved</span>}
+                                                                    {file.status === 'pending' && <span className="text-[10px] text-amber-600 font-bold px-1.5 bg-amber-50 rounded italic">Pending Review</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <a 
+                                                            href={apiHelpers.attachmentRaw(file._id)} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                            title="Download"
+                                                        >
+                                                            <Download size={18} />
+                                                        </a>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Upload Grid */}
+                                    <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {['Contract', 'Certificates', 'Degree', 'Other Documents'].map((label) => (
+                                            <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"
                                                     accept=".pdf,.doc,.docx,.jpg,.png"
@@ -2004,16 +2043,28 @@ const MyInfo = () => {
                                                         }
                                                     }}
                                                 />
-                                                <div className="p-3 bg-white rounded-full shadow-sm mb-3 text-indigo-500 group-hover:scale-110 transition-transform">
-                                                    <Upload size={24} />
+                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all">
+                                                    <Upload size={28} />
                                                 </div>
-                                                <span className="text-sm font-medium text-gray-600">{label}</span>
+                                                <span className="text-sm font-bold text-gray-700">{label}</span>
+                                                
                                                 {formData.files.some(f => f.type === label) ? (
-                                                    <span className="text-xs text-emerald-600 font-medium mt-2 truncate max-w-full px-2">
-                                                        {formData.files.find(f => f.type === label)?.file.name}
-                                                    </span>
+                                                    <div className="mt-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold max-w-full">
+                                                        <Check size={12} />
+                                                        <span className="truncate">{formData.files.find(f => f.type === label)?.file.name}</span>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
+                                                            }}
+                                                            className="hover:text-red-500"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </div>
                                                 ) : (
-                                                    <span className="text-xs text-gray-400 mt-2">Click to upload</span>
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Click to upload</span>
                                                 )}
                                             </div>
                                         ))}

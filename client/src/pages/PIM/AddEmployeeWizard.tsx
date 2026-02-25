@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -98,6 +98,7 @@ const AddEmployeeWizard = () => {
 
         // Attachments
         files: [] as { file: File; type: string }[],
+        existingAttachments: [] as any[],
 
         // Phase 2: Supplemental
         skills: [] as string[],
@@ -248,9 +249,9 @@ const AddEmployeeWizard = () => {
                                 }))
                                 : [{ level: '', institute: '', year: '', score: '' }],
 
-                            // Files - Note: We can't load actual File objects from server, so we'll keep this empty
-                            // The attachments are shown separately in the employee profile
+                            // Files 
                             files: [],
+                            existingAttachments: found.attachments || [],
 
                             // Supplemental info
                             skills: found.skills || [],
@@ -485,6 +486,24 @@ const AddEmployeeWizard = () => {
         }
     };
 
+    const handleStepClick = async (targetStepId: number) => {
+        // If clicking the current step, do nothing
+        if (targetStepId === step) return;
+
+        // If jumping forward from step 1, validate it first
+        if (step === 1 && targetStepId > 1) {
+            if (!isStep1RequiredValid()) {
+                setStepErrors(getStep1RequiredErrors());
+                return;
+            }
+            setStepErrors([]);
+            const result = await handleSubmit(false);
+            if (!result) return;
+        }
+
+        setStep(targetStepId);
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -511,17 +530,17 @@ const AddEmployeeWizard = () => {
                     </div>
                 </div>
 
-                {steps.map((s, i) => {
+                {steps.map((s) => {
                     const isCompleted = step > s.id;
                     const isCurrent = step === s.id;
                     return (
-                        <div key={s.id} className="flex flex-col items-center relative z-10">
+                        <div key={s.id} className="flex flex-col items-center relative z-10 cursor-pointer group" onClick={() => handleStepClick(s.id)}>
                             {/* Step Circle with Completion Animation */}
-                            <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-md relative ${isCompleted
+                            <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-md relative group-hover:shadow-lg group-hover:scale-105 active:scale-95 ${isCompleted
                                 ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white scale-110 ring-4 ring-emerald-200'
                                 : isCurrent
                                     ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white scale-110 ring-4 ring-indigo-200'
-                                    : 'bg-slate-200 text-slate-500 scale-100'
+                                    : 'bg-slate-200 text-slate-500 scale-100 hover:bg-slate-300'
                                 }`}>
                                 {isCompleted ? (
                                     <div className="relative">
@@ -557,23 +576,6 @@ const AddEmployeeWizard = () => {
                                 {s.title}
                             </span>
 
-                            {/* Connecting Line */}
-                            {i !== steps.length - 1 && (
-                                <div className="absolute top-7 left-[60%] w-[calc(100%-4rem)] h-0.5 -z-0">
-                                    <div
-                                        className={`h-full transition-all duration-1000 ease-out ${isCompleted
-                                            ? 'bg-gradient-to-r from-emerald-500 to-green-500'
-                                            : step > s.id
-                                                ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500'
-                                                : 'bg-slate-200'
-                                            }`}
-                                        style={{
-                                            width: step > s.id ? '100%' : '0%',
-                                            transition: 'width 1s ease-out'
-                                        }}
-                                    />
-                                </div>
-                            )}
                         </div>
                     );
                 })}
@@ -589,6 +591,20 @@ const AddEmployeeWizard = () => {
                                 {isEditMode ? 'Loading employee data...' : 'Saving...'}
                             </p>
                         </div>
+                    </div>
+                )}
+
+                {stepErrors.length > 0 && (
+                    <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl animate-fadeIn">
+                        <p className="font-medium mb-2">Please fill all required fields in Step 1 (Personal) before continuing:</p>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                            {stepErrors.map((err, i) => (
+                                <li key={i}>{err}</li>
+                            ))}
+                        </ul>
+                        <button type="button" onClick={() => setStepErrors([])} className="mt-2 text-amber-600 hover:text-amber-800 text-sm font-medium">
+                            Dismiss
+                        </button>
                     </div>
                 )}
 
@@ -988,6 +1004,12 @@ const AddEmployeeWizard = () => {
                             </div>
                         </div>
 
+                    </div>
+                )}
+
+                {/* Step 5: History & Education */}
+                {step === 5 && (
+                    <div className="space-y-12 animate-slide-up pb-20">
                         {/* Employment History */}
                         <div>
                             <div className="flex justify-between items-center mb-4">
@@ -1066,7 +1088,6 @@ const AddEmployeeWizard = () => {
                                                         className="hidden"
                                                         onChange={(e) => {
                                                             if (e.target.files && e.target.files.length > 0) {
-                                                                // Use a unique type key for this specific history entry
                                                                 const typeKey = `Experience Letter - ${history.companyName || idx}`;
                                                                 setFormData(prev => ({
                                                                     ...prev,
@@ -1091,12 +1112,8 @@ const AddEmployeeWizard = () => {
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
 
-                {/* Step 5: Education */}
-                {step === 5 && (
-                    <div className="space-y-8 animate-slide-up pb-20">
+                        <div className="pt-8 border-t border-gray-100">
                         <div>
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-medium text-gray-700">Education</h3>
@@ -1189,6 +1206,7 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 </div>
                             ))}
+                        </div>
 
                             {/* Skills & Social Profiles */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 pt-8 border-t border-gray-100">
@@ -1441,59 +1459,110 @@ const AddEmployeeWizard = () => {
 
                 {/* Step 7: Additional Documents */}
                 {step === 7 && (
-                    <div className="space-y-6 animate-slide-up">
-                        <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 text-center">
-                            <div className="border-2 border-dashed border-indigo-300 rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 transition-all relative group">
-                                <input
-                                    type="file"
-                                    multiple
-                                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                                    onChange={(e) => {
-                                        if (e.target.files && e.target.files.length > 0) {
-                                            const newFiles = Array.from(e.target.files).map(f => ({ file: f, type: 'Other Document' }));
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                files: [...prev.files, ...newFiles]
-                                            }));
-                                        }
-                                    }}
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                />
-                                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                                    <Upload size={32} className="text-indigo-600" />
-                                </div>
-                                <h4 className="text-lg font-semibold text-gray-700">Upload Additional Files</h4>
-                                <p className="text-sm text-gray-500 mt-2">Drag & drop files or <span className="text-indigo-600 font-medium">Browse</span></p>
-                                <p className="text-xs text-gray-400 mt-1">Supports PDF, JPG, PNG, DOC (Max 10MB)</p>
-                            </div>
-                        </div>
-
-                        {formData.files.length > 0 && (
-                            <div className="space-y-3">
-                                <h4 className="font-medium text-gray-700">Attached Documents ({formData.files.length})</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    {formData.files.map((fileObj, i) => (
-                                        <div key={i} className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="p-2 bg-gray-100 rounded-lg">
-                                                    <FileText size={20} className="text-gray-500" />
+                    <div className="animate-slide-up pb-20">
+                        <div>
+                            <h3 className="text-lg font-medium text-gray-700 mb-6">Documents & Attachments</h3>
+                            
+                            {/* Existing Documents From Server */}
+                            {formData.existingAttachments?.length > 0 && (
+                                <div className="mb-12">
+                                    <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Uploaded Documents</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {formData.existingAttachments.map((file: any, i: number) => (
+                                            <div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm group hover:border-indigo-200 transition-all">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                                                        <FileText size={20} />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-bold text-gray-700 truncate">{file.fileName}</p>
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase">{file.fileType}</p>
+                                                    </div>
                                                 </div>
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-gray-700 truncate">{fileObj.file.name}</p>
-                                                    <p className="text-xs text-gray-500">{fileObj.type} • {(fileObj.file.size / 1024).toFixed(1)} KB</p>
+                                                <div className="flex items-center gap-1">
+                                                    <a 
+                                                        href={api.attachmentRaw(file._id)} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                        title="Download"
+                                                    >
+                                                        <Download size={18} />
+                                                    </a>
+                                                    <button 
+                                                        onClick={async () => {
+                                                            if (window.confirm('Delete this document?')) {
+                                                                const token = localStorage.getItem('token');
+                                                                const res = await fetch(`${api.employees}/${id}/attachments/${file._id}`, {
+                                                                    method: 'DELETE',
+                                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                                });
+                                                                if (res.ok) {
+                                                                    setFormData(p => ({
+                                                                        ...p,
+                                                                        existingAttachments: p.existingAttachments.filter((a: any) => a._id !== file._id)
+                                                                    }));
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter((_, idx) => idx !== i) }))}
-                                                className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
+                            )}
+
+                            {/* Upload Grid */}
+                            <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {['Contract', 'Certificates', 'Degree', 'Other Documents'].map((label) => (
+                                    <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.doc,.docx,.jpg,.png"
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            onChange={(e) => {
+                                                if (e.target.files && e.target.files.length > 0) {
+                                                    const file = e.target.files[0];
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        files: [...prev.files, { file, type: label }]
+                                                    }));
+                                                }
+                                            }}
+                                        />
+                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all">
+                                            <Upload size={28} />
+                                        </div>
+                                        <span className="text-sm font-bold text-gray-700">{label}</span>
+                                        
+                                        {formData.files.some(f => f.type === label) ? (
+                                            <div className="mt-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold max-w-full">
+                                                <Check size={12} />
+                                                <span className="truncate">{formData.files.find(f => f.type === label)?.file.name}</span>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
+                                                    }}
+                                                    className="hover:text-red-500"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Click to upload</span>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
-                        )}
+                        </div>
                     </div>
                 )}
 
@@ -1511,20 +1580,6 @@ const AddEmployeeWizard = () => {
                     </div>
                 )}
 
-                {/* Step 1 required fields validation */}
-                {step === 1 && stepErrors.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">
-                        <p className="font-medium mb-2">Please fill all required fields before continuing:</p>
-                        <ul className="list-disc list-inside text-sm space-y-1">
-                            {stepErrors.map((err, i) => (
-                                <li key={i}>{err}</li>
-                            ))}
-                        </ul>
-                        <button type="button" onClick={() => setStepErrors([])} className="mt-2 text-amber-600 hover:text-amber-800 text-sm font-medium">
-                            Dismiss
-                        </button>
-                    </div>
-                )}
 
                 {/* Navigation Buttons */}
                 <div className="flex justify-between pt-6 border-t border-gray-100">
