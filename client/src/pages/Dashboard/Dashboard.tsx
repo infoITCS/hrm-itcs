@@ -53,9 +53,12 @@ const Dashboard = () => {
 
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.length > 0 && emp.emergencyContacts[0].phone) },
-            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'ID Card' || a.fileType === 'Passport')) },
-            { id: 'employment', label: 'Work & Education', completed: !!(emp.education?.length > 0) }
+            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.length > 0) },
+            { id: 'immigration', label: 'Passport & Travel', completed: !!(emp.immigrationHistory?.length > 0) },
+            { id: 'job', label: 'Work Information', completed: !!(emp.jobInfo?.designation && emp.jobInfo?.department) },
+            { id: 'history', label: 'Employment & Education', completed: !!(emp.education?.length > 0 || emp.employmentHistory?.length > 0) },
+            { id: 'finance', label: 'Bank Details', completed: !!(emp.bankDetails?.bankName && emp.bankDetails?.accountNumber) },
+            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'ID Card' || a.fileType === 'Passport' || a.fileType === 'CNIC Front')) }
         ];
 
         const completedCount = steps.filter(s => s.completed).length;
@@ -414,8 +417,12 @@ const Dashboard = () => {
                                     const firstIncomplete = onboarding.steps.find((s: any) => !s.completed);
                                     let stepNum = 1;
                                     if (firstIncomplete) {
+                                        if (firstIncomplete.id === 'personal') stepNum = 1;
                                         if (firstIncomplete.id === 'contact') stepNum = 2;
-                                        if (firstIncomplete.id === 'employment') stepNum = 5;
+                                        if (firstIncomplete.id === 'immigration') stepNum = 3;
+                                        if (firstIncomplete.id === 'job') stepNum = 4;
+                                        if (firstIncomplete.id === 'history') stepNum = 5;
+                                        if (firstIncomplete.id === 'finance') stepNum = 6;
                                         if (firstIncomplete.id === 'documents') stepNum = 7;
                                     }
                                     navigate(`/my-info?onboarding=true&step=${stepNum}`);
