@@ -31,6 +31,8 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const [employeeCount, setEmployeeCount] = useState<number>(0);
     const [teamCount, setTeamCount] = useState<number>(0);
+    const [teamMembers, setTeamMembers] = useState<any[]>([]);
+    const [pendingTasks, setPendingTasks] = useState<any[]>([]);
     const [newHiresCount, setNewHiresCount] = useState<number>(0);
     const [highlights, setHighlights] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -92,7 +94,29 @@ const Dashboard = () => {
                         if (role === 'admin') {
                             setEmployeeCount(data.length);
                         } else if (role === 'manager') {
-                            setTeamCount(data.length);
+                            const managerEmp = data.find((e: any) => e.userId === user.id);
+                            const myTeam = managerEmp ? data.filter((e: any) => e.jobInfo?.reportingManager === managerEmp.employeeId) : [];
+                            // Ensure we count team members, excluding themselves
+                            setTeamCount(myTeam.filter((e: any) => e.userId !== user.id).length);
+                            setTeamMembers(myTeam);
+
+                            // Calculate pending document approvals for team members
+                            const pendingDocs: any[] = [];
+                            myTeam.forEach((member: any) => {
+                                member.attachments?.forEach((doc: any) => {
+                                    if (doc.status === 'Pending' || doc.status === 'PENDING') {
+                                        pendingDocs.push({
+                                            id: doc._id || doc.id,
+                                            type: 'document',
+                                            title: `Document Approval: ${doc.fileType}`,
+                                            employeeName: `${member.firstName} ${member.lastName}`,
+                                            employeeId: member._id,
+                                            date: new Date(doc.uploadDate || Date.now()).toLocaleDateString()
+                                        });
+                                    }
+                                });
+                            });
+                            setPendingTasks(pendingDocs);
                         }
 
                         // Calculate New Hires count (Last 30 days)
@@ -341,7 +365,7 @@ const Dashboard = () => {
     return (
         <div className="space-y-6 animate-fadeIn">
             {/* Onboarding Progress Card (Only for New Hires) */}
-            {onboarding && onboarding.percent < 100 && (
+            {!loading && onboarding && onboarding.percent < 100 && (
                 <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-xl shadow-indigo-100/50 overflow-hidden relative group">
                     <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
                         <Rocket size={160} className="text-indigo-600 -rotate-12" />
@@ -386,7 +410,16 @@ const Dashboard = () => {
 
                         <div className="shrink-0">
                             <button 
-                                onClick={() => navigate('/my-info?onboarding=true')}
+                                onClick={() => {
+                                    const firstIncomplete = onboarding.steps.find((s: any) => !s.completed);
+                                    let stepNum = 1;
+                                    if (firstIncomplete) {
+                                        if (firstIncomplete.id === 'contact') stepNum = 2;
+                                        if (firstIncomplete.id === 'employment') stepNum = 5;
+                                        if (firstIncomplete.id === 'documents') stepNum = 7;
+                                    }
+                                    navigate(`/my-info?onboarding=true&step=${stepNum}`);
+                                }}
                                 className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2 group"
                             >
                                 Continue Onboarding
@@ -492,28 +525,128 @@ const Dashboard = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Activity */}
-                <div className="lg:col-span-2">
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-full">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                <Sparkles size={20} className="text-indigo-500" />
-                                {activityTitleByRole[role] || 'Recent Activity'}
-                            </h3>
-                            <button
-                                onClick={() => (role === 'admin' ? navigate('/pim') : role === 'manager' ? navigate('/leave') : navigate('/my-info'))}
-                                className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                            >
-                                View All
-                            </button>
-                        </div>
-                        <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                            <div className="p-4 rounded-2xl bg-slate-50 mb-4">
-                                <Clock size={48} className="text-slate-300" />
+                {/* Activity or Manager Widgets */}
+                <div className="lg:col-span-2 flex flex-col gap-6">
+                    {role === 'manager' && (
+                        <>
+                            {/* Pending Approvals Widget */}
+                            <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                                    <FileCheck size={100} className="text-rose-500 -rotate-12" />
+                                </div>
+                                <div className="flex items-center justify-between mb-5 relative z-10">
+                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
+                                            <FileCheck size={18} />
+                                        </div>
+                                        Pending Approvals
+                                        {pendingTasks.length > 0 && (
+                                            <span className="bg-rose-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold inline-flex items-center justify-center min-w-[24px] h-[24px] ml-1 shadow-sm">{pendingTasks.length}</span>
+                                        )}
+                                    </h3>
+                                </div>
+                                {pendingTasks.length > 0 ? (
+                                    <div className="space-y-3 relative z-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {pendingTasks.map((task, idx) => (
+                                            <div key={idx} onClick={() => navigate(`/pim/view/${task.employeeId}?tab=documents`)} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-white hover:border-rose-200 hover:shadow-md hover:shadow-rose-100/50 transition-all cursor-pointer group">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-100 group-hover:bg-rose-50 group-hover:border-rose-100 transition-colors">
+                                                        <FileCheck size={20} className="text-rose-500 group-hover:scale-110 transition-transform" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800 group-hover:text-rose-700 transition-colors">{task.title}</p>
+                                                        <p className="text-xs text-slate-500 font-medium mt-0.5">Requested by <span className="text-slate-700 font-bold">{task.employeeName}</span> • {task.date}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100/50">Pending</span>
+                                                    <ArrowRight size={16} className="text-slate-300 group-hover:text-rose-500 transition-all group-hover:translate-x-1" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8 pb-4 relative z-10 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                                        <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3 border border-emerald-100">
+                                            <Check size={28} className="text-emerald-500" />
+                                        </div>
+                                        <p className="font-bold text-slate-700">All caught up!</p>
+                                        <p className="text-sm text-slate-500 mt-1">You have no pending approvals for your team at this time.</p>
+                                    </div>
+                                )}
                             </div>
-                            <p className="font-medium text-slate-500">Activity feed will appear here</p>
-                            <span className="text-xs mt-2 text-slate-400">New feature coming soon</span>
+
+                            {/* My Team Details Widget */}
+                            <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm shadow-indigo-100/30 p-6 flex-1 flex flex-col relative overflow-hidden">
+                                <div className="absolute bottom-0 right-0 p-6 opacity-[0.02] pointer-events-none">
+                                    <Users size={120} className="text-indigo-600 -translate-x-8" />
+                                </div>
+                                <div className="flex items-center justify-between mb-5 relative z-10">
+                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
+                                            <Users size={18} />
+                                        </div>
+                                        My Team
+                                        <span className="bg-indigo-50 text-indigo-600 px-2.5 py-0.5 rounded-full text-xs font-bold border border-indigo-100 ml-1">{teamMembers.length}</span>
+                                    </h3>
+                                    <button onClick={() => navigate('/pim')} className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors">
+                                        View Dashboard
+                                    </button>
+                                </div>
+                                
+                                {teamMembers.length > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar relative z-10">
+                                        {teamMembers.map((member, idx) => (
+                                            <div key={idx} onClick={() => navigate(`/pim/view/${member._id}`)} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-md shadow-sm transition-all cursor-pointer group hover:bg-slate-50/50">
+                                                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold shrink-0 border border-indigo-100 group-hover:scale-105 transition-transform">
+                                                    {member.firstName ? `${member.firstName[0]}${member.lastName ? member.lastName[0] : ''}` : <User size={16} />}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">{member.firstName} {member.lastName}</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 truncate tracking-wider uppercase mt-0.5">{member.jobInfo?.designation || 'No Designation'}</p>
+                                                </div>
+                                                <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100 group-hover:border-indigo-200 group-hover:bg-indigo-50 shrink-0">
+                                                    <ArrowRight size={12} className="text-slate-400 group-hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0" />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col items-center justify-center py-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200 relative z-10">
+                                        <div className="p-4 bg-white rounded-full shadow-sm border border-slate-100 mb-3">
+                                            <Users size={28} className="text-slate-300" />
+                                        </div>
+                                        <p className="font-bold text-slate-600">No Direct Reports</p>
+                                        <p className="text-xs text-slate-400 mt-1 max-w-[200px]">You currently do not have any employees assigned to you in the system.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {role !== 'manager' && (
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-full flex flex-col">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <Sparkles size={20} className="text-indigo-500" />
+                                    {activityTitleByRole[role] || 'Recent Activity'}
+                                </h3>
+                                <button
+                                    onClick={() => (role === 'admin' ? navigate('/pim') : navigate('/my-info'))}
+                                    className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                                >
+                                    View All
+                                </button>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center justify-center py-12 text-slate-400 min-h-[300px]">
+                                <div className="p-4 rounded-2xl bg-slate-50 mb-4 shadow-inner">
+                                    <Clock size={48} className="text-slate-300" />
+                                </div>
+                                <p className="font-medium text-slate-500">Activity feed will appear here</p>
+                                <span className="text-xs mt-2 text-slate-400">New feature coming soon</span>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Quick Links */}

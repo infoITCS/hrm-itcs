@@ -4,8 +4,197 @@ import { AuthUtils } from "../middleware/auth.utils";
 import { User, IUser } from "../models/User.model";
 import Employee from "../models/Employee";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import crypto from "crypto";
+import { sendPasswordResetEmail } from "../utils/email";
 
 const router = Router();
+
+/**
+ * @route   POST /api/auth/login
+ * @desc    Login with email and password
+ * @access  Public
+ */
+router.post("/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Please provide both email and password" });
+    }
+
+    const user = await User.findOne({ email });
+    
+    // Check if user exists and has a password
+    if (!user || !user.password) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Use our new compare method
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = AuthUtils.generateToken({
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role,
+    });
+
+    // Also fetch associated employee to return similar data shape to /me
+    const employee = await Employee.findOne({ userId: user._id });
+
+    let avatarUrl = user.avatar;
+    if (!avatarUrl && employee) {
+      const profilePic = employee.attachments?.find(
+        (att: any) => att.fileType === "Profile Picture"
+      );
+      if (profilePic) {
+        avatarUrl = `/api/employees/attachments/raw/${profilePic._id}`;
+      }
+    }
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        _id: user._id, // Adding both just in case frontend relies on either
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName || employee?.firstName,
+        lastName: user.lastName || employee?.lastName,
+        avatar: avatarUrl,
+        hasProfile: !!employee,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error during login" });
+  }
+});
+
+/**
+ * @route   POST /api/auth/change-password
+ * @desc    Change user password (authenticated)
+ * @access  Private
+ */
+router.post("/change-password", authenticate, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+
+    const user = await User.findById(authReq.user?.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // If user has a dummy password (from SSO, not beginning with $2 meaning it wasn't hashed)
+    // or if they have a real password, verify current password first if provided
+    if (user.password && user.password.startsWith('$2')) {
+        if (!currentPassword) {
+            return res.status(400).json({ message: "Please provide your current password" });
+        }
+        const isMatch = await user.comparePassword(currentPassword);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Incorrect current password" });
+        }
+    }
+
+    user.password = newPassword;
+    await user.save(); // pre-save hook will hash it
+
+    res.json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Request password reset link
+ * @access  Public
+ */
+router.post("/forgot-password", async (req: Request, res: Response) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ message: "Please provide your email address" });
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            // Return success even if user not found to prevent email enumeration
+            return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+        }
+
+        // Generate a reset token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        
+        // Save token and expiry (1 hour)
+        user.resetPasswordToken = resetToken;
+        user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
+        await user.save();
+
+        // Send email
+        const emailSent = await sendPasswordResetEmail(user.email, resetToken);
+
+        if (!emailSent) {
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpires = undefined;
+            await user.save();
+            return res.status(500).json({ message: "Error sending email. Please try again later." });
+        }
+
+        return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+
+    } catch (error) {
+        console.error("Forgot password error:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using a valid token
+ * @access  Public
+ */
+router.post("/reset-password", async (req: Request, res: Response) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: "Invalid request or password too short (min 6 characters)" });
+        }
+
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpires: { $gt: Date.now() } // Ensure token is not expired
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: "Password reset token is invalid or has expired." });
+        }
+
+        // Update password and clear reset token fields
+        user.password = newPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+
+        await user.save(); // Pre-save hook will hash the password
+
+        // Optional: you could email them to say password was successfully changed
+
+        res.json({ message: "Your password has been successfully reset. You can now log in." });
+    } catch (error) {
+        console.error("Reset password error:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
 
 /**
  * @route   GET /api/auth/microsoft

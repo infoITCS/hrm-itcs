@@ -52,10 +52,18 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 name: [response.data.user.firstName, response.data.user.lastName].filter(Boolean).join(' ') || response.data.user.email.split('@')[0],
                 email: response.data.user.email,
                 role: response.data.user.role as UserRole,
-                avatar: response.data.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(response.data.user.firstName || response.data.user.email)}`,
+                avatar: response.data.user.avatar 
+                    ? (response.data.user.avatar.startsWith('http') ? response.data.user.avatar : `${api.baseURL.replace(/\/$/, '')}${response.data.user.avatar}`)
+                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(response.data.user.firstName || response.data.user.email)}`,
                 firstName: response.data.user.firstName,
-                lastName: response.data.user.lastName
+                lastName: response.data.user.lastName,
+                hasProfile: response.data.user.hasProfile
             };
+
+            // Save the token to local storage so page refresh doesn't log the user out
+            if (response.data.token) {
+                localStorage.setItem('token', response.data.token);
+            }
 
             onLogin(user);
         } catch (err: any) {
@@ -206,7 +214,21 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                         <div className="space-y-1">
                                             <div className="flex justify-between items-center ml-1">
                                                 <label className="text-sm font-semibold text-gray-700">Password</label>
-                                                <a href="#" className="text-xs font-semibold text-primary hover:text-primary/80">Forgot password?</a>
+                                                <a 
+                                                   href="#" 
+                                                   className="text-xs font-semibold text-primary hover:text-primary/80"
+                                                   onClick={(e) => {
+                                                       e.preventDefault();
+                                                       const resetEmail = prompt("Please enter your email to reset your password:");
+                                                       if (resetEmail) {
+                                                           APIService.forgotPassword(resetEmail)
+                                                               .then(res => alert(res.message))
+                                                               .catch(() => alert("Error requesting password reset"));
+                                                       }
+                                                   }}
+                                                >
+                                                   Forgot password?
+                                                </a>
                                             </div>
                                             <input
                                                 type="password"

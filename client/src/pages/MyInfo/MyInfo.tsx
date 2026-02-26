@@ -12,8 +12,7 @@ const MyInfo = () => {
     const navigate = useNavigate();
     const { user, login } = useAuth();
     const { canEditSensitiveData } = usePermissions();
-    const [step, setStep] = useState(1);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
@@ -33,8 +32,12 @@ const MyInfo = () => {
     });
 
     const hasFetched = useRef(false);
-    const onboarding = new URLSearchParams(window.location.search).get('onboarding') === 'true';
+    const searchParams = new URLSearchParams(window.location.search);
+    const onboarding = searchParams.get('onboarding') === 'true';
+    const targetStep = parseInt(searchParams.get('step') || '1', 10);
 
+    const [step, setStep] = useState(targetStep);
+    
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
         return !!(
@@ -306,10 +309,14 @@ const MyInfo = () => {
                             lastName: user?.lastName || ''
                         }));
                     }
+                } else {
+                    // response not ok (e.g. 401 Unauthorized, 404)
+                    setIsEditing(true);
                 }
             } catch (err: any) {
                 console.error('Error fetching employee data:', err);
-                setError('Failed to load your profile information.');
+                setError('Failed to load your profile information. Please complete your profile to continue.');
+                setIsEditing(true);
             } finally {
                 setLoading(false);
             }
@@ -713,12 +720,13 @@ const MyInfo = () => {
                     <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200/50 relative group overflow-hidden">
                         {avatarUrl ? (
                             <img
+                                key={avatarUrl}
                                 src={avatarUrl}
                                 alt="Avatar"
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                 onError={(e: any) => {
                                     e.target.style.display = 'none';
-                                    e.target.nextSibling.style.display = 'flex';
+                                    if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
                                 }}
                             />
                         ) : null}

@@ -39,7 +39,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         if (queryUserId) {
             // If userId query parameter is provided, return that specific employee
             // Only allow if user is querying their own userId or is admin
-            if (queryUserId === userId || role === 'super-admin' || role === 'admin') {
+            if (queryUserId === userId || role === 'super-admin' || role === 'admin' || role === 'manager') {
                 const employee = await Employee.findOne({ userId: queryUserId });
                 employees = employee ? [employee] : [];
             } else {
@@ -49,12 +49,17 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
             // Super-admin and Admin can see all employees
             employees = await Employee.find();
         } else if (role === 'manager') {
-            // Manager can only see direct reports
+            // Manager can only see direct reports and themselves
             const managerEmployee = await Employee.findOne({ userId });
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
-            employees = await Employee.find({ 'jobInfo.reportingManager': managerEmployee.employeeId });
+            employees = await Employee.find({ 
+                $or: [
+                    { 'jobInfo.reportingManager': managerEmployee.employeeId },
+                    { userId: userId }
+                ]
+            });
         } else {
             // Employee can only see their own profile
             const employee = await Employee.findOne({ userId });

@@ -22,6 +22,7 @@ import MongoStore from 'connect-mongo';
 import path from 'path';
 import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
+import adminRoutes from './routes/adminRoutes';
 import { initScheduler } from './services/scheduler';
 
 import passport from 'passport';
@@ -85,6 +86,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Routes
 app.use('/api/employees', employeeRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 
 app.get('/', (req, res) => {

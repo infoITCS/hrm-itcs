@@ -13,6 +13,8 @@ import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
 import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 import AuditLogs from './pages/Admin/AuditLogs';
+import UserManagement from './pages/Admin/UserManagement';
+import ResetPassword from './pages/ResetPassword';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -46,6 +48,14 @@ function AppRoutes() {
         element={
           <PublicRoute>
             <SignIn onLogin={login} />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <PublicRoute>
+            <ResetPassword />
           </PublicRoute>
         }
       />
@@ -89,9 +99,13 @@ function AppRoutes() {
           </Route>
         </Route>
 
+        {/* Restricted to Super Admins only */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin']} />}>
+          <Route path="admin" element={<UserManagement />} />
+        </Route>
+
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
-          <Route path="admin" element={<div className="p-4">Admin Module Placeholder</div>} />
           <Route path="admin/audit" element={<AuditLogs />} />
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
           <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} />

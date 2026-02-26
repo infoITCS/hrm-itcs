@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import APIService from '../services/api';
 import type { User, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../utils/api';
 
 export const AuthCallback: React.FC = () => {
     const navigate = useNavigate();
@@ -46,7 +47,9 @@ export const AuthCallback: React.FC = () => {
                     name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
                     email: userData.email,
                     role: userData.role as UserRole,
-                    avatar: userData.avatar || 'https://ui-avatars.com/api/?name=' + (userData.firstName || 'User'),
+                    avatar: userData.avatar 
+                        ? (userData.avatar.startsWith('http') ? userData.avatar : `${api.baseURL.replace(/\/$/, '')}${userData.avatar}`)
+                        : 'https://ui-avatars.com/api/?name=' + (userData.firstName || 'User'),
                     firstName: userData.firstName,
                     lastName: userData.lastName,
                     microsoftId: userData.microsoftId,

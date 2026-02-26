@@ -19,6 +19,28 @@ const AddEmployeeWizard = () => {
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
+    const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
+
+    useEffect(() => {
+        const fetchEmployees = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(api.employees, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        setEmployeesList(data.map((emp: any) => ({
+                            value: emp.employeeId,
+                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`
+                        })));
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch employees list for dropdown', err);
+            }
+        };
+        fetchEmployees();
+    }, []);
 
     // Required fields on step 1 (Personal) – must be filled before Next
     const isStep1RequiredValid = () => {
@@ -708,14 +730,22 @@ const AddEmployeeWizard = () => {
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Nationality *</label>
-                            <input
-                                type="text"
-                                name="nationality"
-                                value={formData.nationality}
-                                onChange={handleChange}
-                                disabled={initialLockedFields.nationality && !canEditSensitiveData()}
-                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
-                            />
+                            {initialLockedFields.nationality && !canEditSensitiveData() ? (
+                                <input
+                                    type="text"
+                                    name="nationality"
+                                    value={formData.nationality}
+                                    disabled
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 cursor-not-allowed"
+                                />
+                            ) : (
+                                <CustomSelect
+                                    label=""
+                                    value={formData.nationality}
+                                    onChange={(val) => setFormData({ ...formData, nationality: val })}
+                                    options={['Pakistani', 'Indian', 'Bangladeshi', 'American', 'British', 'Canadian', 'Australian', 'Other']}
+                                />
+                            )}
                             {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
                             {initialLockedFields.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
@@ -741,8 +771,12 @@ const AddEmployeeWizard = () => {
                             {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Religion *</label>
-                            <input type="text" name="religion" value={formData.religion} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                            <CustomSelect 
+                                label="Religion *" 
+                                value={formData.religion} 
+                                onChange={(val) => setFormData({ ...formData, religion: val })} 
+                                options={['Islam', 'Christianity', 'Hinduism', 'Buddhism', 'Sikhism', 'Other']} 
+                            />
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">License Number</label>
@@ -940,8 +974,12 @@ const AddEmployeeWizard = () => {
                         {/* Job Information */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-600">Job Title</label>
-                                <input type="text" name="designation" value={formData.jobInfo.designation} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <CustomSelect 
+                                    label="Job Title" 
+                                    value={formData.jobInfo.designation} 
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, designation: val } }))} 
+                                    options={['Software Engineer', 'Senior Software Engineer', 'QA Engineer', 'Product Manager', 'HR Manager', 'Sales Manager', 'Sales Executive', 'UI/UX Designer', 'Director', 'Data Analyst', 'DevOps Engineer', 'Other']} 
+                                />
                             </div>
                             <div className="space-y-2">
                                 <CustomSelect label="Department" value={formData.jobInfo.department} onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, department: val } }))} options={['Technical', 'Development', 'Administration', 'Marketing', 'Sales', 'Finance']} />
@@ -965,12 +1003,22 @@ const AddEmployeeWizard = () => {
                                 <input type="date" name="joiningDate" value={formData.jobInfo.joiningDate} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-600">Reporting Manager</label>
-                                <input type="text" name="reportingManager" value={formData.jobInfo.reportingManager} onChange={(e) => handleChange(e, 'jobInfo')} placeholder="Name of reporting manager" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <CustomSelect 
+                                    label="Reporting Manager" 
+                                    value={formData.jobInfo.reportingManager} 
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, reportingManager: val } }))} 
+                                    options={employeesList} 
+                                    placeholder="Select Manager"
+                                />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-600">Work Location</label>
-                                <input type="text" name="workLocation" value={formData.jobInfo.workLocation} onChange={(e) => handleChange(e, 'jobInfo')} placeholder="e.g. Remote, On-site" className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <CustomSelect 
+                                    label="Work Location" 
+                                    value={formData.jobInfo.workLocation} 
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, workLocation: val } }))} 
+                                    options={['On-site', 'Remote', 'Hybrid']} 
+                                    placeholder="Select Location"
+                                />
                             </div>
                             <div className="space-y-2 col-span-1 md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-600 mb-2">Employment Contract</label>
