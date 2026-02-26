@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserCog, Search, Shield, User, MoreVertical, Check, X, Building2, Phone, Briefcase, Plus, Edit2, ShieldAlert } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 

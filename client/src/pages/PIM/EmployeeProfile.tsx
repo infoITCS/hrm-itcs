@@ -10,7 +10,12 @@ const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { canEditSensitiveData, canApproveDocuments } = usePermissions();
-    const [activeTab, setActiveTab] = useState('personal');
+    
+    // Read the query parameter 'tab' from URL
+    const queryParams = new URLSearchParams(window.location.search);
+    const initialTab = queryParams.get('tab') || 'personal';
+    
+    const [activeTab, setActiveTab] = useState(initialTab);
     const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
