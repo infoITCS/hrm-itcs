@@ -635,14 +635,16 @@ const MyInfo = () => {
                 const employee = employeeList.find((emp: any) => emp.userId === user?.id || emp._id === employeeId || emp.id === employeeId);
 
                 if (employee) {
+                    // Update local employee state so MyInfo page shows new avatar instantly
                     setRawEmployee(employee);
 
-                    // Sync with AuthContext for Header/Sidebar using new MongoDB raw endpoint
+                    // Sync avatar with AuthContext so the header updates instantly too
                     const profilePics = employee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
                     if (profilePics.length > 0) {
                         const latestPic = profilePics[profilePics.length - 1];
-                        // Add cache buster to force re-render/re-fetch of the image
-                        const newAvatar = `${apiHelpers.attachmentRaw(latestPic._id)}?t=${Date.now()}`;
+                        const token = localStorage.getItem('token');
+                        // Use & for cache buster since ?token= is already in the URL
+                        const newAvatar = `${api.baseURL}/api/employees/attachments/raw/${latestPic._id}?token=${token}&t=${Date.now()}`;
                         login((prev: UserType | null) => prev ? { ...prev, avatar: newAvatar } : prev as any);
                     }
                 }

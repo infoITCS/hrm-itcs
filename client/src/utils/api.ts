@@ -12,7 +12,11 @@ export const api = {
 
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,
-    attachmentRaw: (id: string) => `${API_BASE_URL}/api/employees/attachments/raw/${id}`,
+    // Appends ?token= so browser <img> tags can authenticate (they can't send headers)
+    attachmentRaw: (id: string) => {
+        const token = localStorage.getItem('token');
+        return `${API_BASE_URL}/api/employees/attachments/raw/${id}${token ? `?token=${token}` : ''}`;
+    },
 };
 
 export default api;

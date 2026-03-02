@@ -4,7 +4,7 @@ import express, { Request, Response } from 'express';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, authenticateFile } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 import { getDiff } from '../utils/diff';
@@ -327,8 +327,8 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
     }
 });
 
-// Route to serve raw file from MongoDB
-router.get('/attachments/raw/:attachmentId', authenticate, async (req: Request, res: Response) => {
+// Route to serve raw file from MongoDB — uses authenticateFile which also accepts ?token= for <img> tags
+router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response) => {
     try {
         const employee = await Employee.findOne({ 'attachments._id': req.params.attachmentId });
         if (!employee) return res.status(404).send('File not found');

@@ -42,6 +42,45 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     next();
 };
 
+/**
+ * Special middleware for file/image endpoints.
+ * Accepts token from Authorization header OR ?token= query param.
+ * Needed because browser <img> tags cannot send custom headers.
+ */
+export const authenticateFile = (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+
+    // Try Authorization header first (API calls)
+    const authHeader = authReq.header('Authorization');
+    let token: string | undefined;
+
+    if (authHeader) {
+        token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+    }
+
+    // Fall back to ?token= query parameter (browser <img src="...?token=...">)
+    if (!token && req.query.token) {
+        token = req.query.token as string;
+    }
+
+    if (!token) {
+        return res.status(401).json({ message: 'No authorization token provided' });
+    }
+
+    const decoded = AuthUtils.verifyToken(token);
+
+    if (!decoded || !decoded.userId) {
+        return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+
+    authReq.user = {
+        userId: decoded.userId,
+        role: decoded.role || 'employee'
+    };
+
+    next();
+};
+
 export const authorize = (roles: string[]) => {
     return (req: Request, res: Response, next: NextFunction) => {
         const authReq = req as AuthRequest;
