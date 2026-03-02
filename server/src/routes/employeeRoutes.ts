@@ -1,4 +1,4 @@
-
+import * as _ from 'lodash';
 import fs from 'fs';
 import express, { Request, Response } from 'express';
 import Employee from '../models/Employee';
@@ -8,12 +8,66 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 import { getDiff } from '../utils/diff';
+import { sendHRNotificationEmail } from '../utils/email';
 
 const router = express.Router();
 
 // Helper to create audit log
 const createAuditLog = async (action: string, targetId: string, performedBy: string, details: any) => {
     try {
+        if (action === 'UPDATE' && details.diff) {
+            // Find recent UPDATE log for this target within the last 10 minutes
+            const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+            const recentLog = await AuditLog.findOne({
+                action: 'UPDATE',
+                targetId,
+                performedBy,
+                timestamp: { $gte: tenMinutesAgo }
+            }).sort({ timestamp: -1 });
+
+            if (recentLog && recentLog.details?.diff) {
+                // Merge diffs
+                const mergedDiff = { ...recentLog.details.diff };
+
+                for (const key in details.diff) {
+                    if (mergedDiff[key]) {
+                        // Inherit original old value, but use latest new value
+                        // Handle nested object diffs recursively if needed, but for simplicity:
+                        if (typeof mergedDiff[key].old !== 'undefined' && typeof details.diff[key].new !== 'undefined') {
+                            mergedDiff[key] = {
+                                old: mergedDiff[key].old,
+                                new: details.diff[key].new
+                            };
+                        } else {
+                            // If it's a nested diff object structure, just overwrite for now to prevent deep nesting bugs
+                            mergedDiff[key] = details.diff[key];
+                        }
+
+                        // If the change was reverted back to original, remove it from log
+                        if (_.isEqual(mergedDiff[key].old, mergedDiff[key].new)) {
+                            delete mergedDiff[key];
+                        }
+                    } else {
+                        // Completely new field modification inside the 10-minute window
+                        mergedDiff[key] = details.diff[key];
+                    }
+                }
+
+                // If all changes were reverted and the diff is functionally empty, destroy the log entirely
+                if (Object.keys(mergedDiff).length === 0) {
+                    await AuditLog.findByIdAndDelete(recentLog._id);
+                    return;
+                }
+
+                // Push merged diff to DB
+                await AuditLog.findByIdAndUpdate(recentLog._id, {
+                    details: { diff: mergedDiff },
+                    timestamp: new Date() // reset window clock to allow continuous editing sessions 
+                });
+                return; // Prevent creating a new duplicate log
+            }
+        }
+
         await AuditLog.create({
             action,
             targetResource: 'Employee',
@@ -412,11 +466,33 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
             updates.employmentStatus.probationEndDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
         }
 
-        // Calculate diff before saving
-        const diff = getDiff(employee.toObject(), updates);
+        // Strip completely empty arrays from frontend defaults so they don't overwrite DB
+        const stripEmptyWizardArrays = (arr: any[], defaultKey: string) => {
+            if (!Array.isArray(arr)) return arr;
+            return arr.filter(item => {
+                if (!item || typeof item !== 'object') return true;
+                return Object.entries(item).some(([k, v]) => 
+                    k !== defaultKey && k !== '_id' && k !== 'id' && v !== '' && v !== null && v !== undefined
+                );
+            });
+        };
+
+        if (updates.immigrationHistory) updates.immigrationHistory = stripEmptyWizardArrays(updates.immigrationHistory, 'documentType');
+        if (updates.employmentHistory) updates.employmentHistory = stripEmptyWizardArrays(updates.employmentHistory, '');
+        if (updates.education) updates.education = stripEmptyWizardArrays(updates.education, '');
+        if (updates.emergencyContacts) updates.emergencyContacts = stripEmptyWizardArrays(updates.emergencyContacts, '');
+        if (updates.dependents) updates.dependents = stripEmptyWizardArrays(updates.dependents, '');
+        if (updates.socialProfiles) updates.socialProfiles = stripEmptyWizardArrays(updates.socialProfiles, 'platform');
+        if (updates.salaryComponents) updates.salaryComponents = stripEmptyWizardArrays(updates.salaryComponents, 'type');
+
+        // Capture original state
+        const originalEmployeeObj = employee.toObject();
 
         Object.assign(employee, updates);
         const updatedEmployee = await employee.save();
+
+        // Calculate diff STRICTLY between original DB vs new DB (ignoring partial frontend updates)
+        const diff = getDiff(originalEmployeeObj, updatedEmployee.toObject());
 
         // Sync names to User model if userId exists
         if (employee.userId && (updates.firstName || updates.lastName)) {
@@ -429,9 +505,19 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         // Log detailed diff if there are changes
         if (Object.keys(diff).length > 0) {
             await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { diff });
-        } else {
-            // Fallback for actions that might not have a clean object diff (e.g. nested array updates if not fully handled)
-            await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { updates: Object.keys(updates) });
+            
+            const hrEmail = process.env.HR_EMAIL || 'hr@itcs.com';
+
+            // Notify HR if employee updated their own profile
+            if (role === 'employee' || role === '') {
+                await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, 'updated their profile');
+            }
+            
+            // Notify HR if employment status changes to Terminated or Resigned
+            if (diff.employmentStatus?.status?.new && 
+                ['Terminated', 'Resigned'].includes(diff.employmentStatus.status.new)) {
+                await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, `left the company (${diff.employmentStatus.status.new})`);
+            }
         }
 
         res.json(updatedEmployee);

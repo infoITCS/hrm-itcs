@@ -24,6 +24,7 @@ const AuditLogs = () => {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalLogs, setTotalLogs] = useState(0);
+    const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
     const LIMIT = 25;
 
@@ -185,7 +186,7 @@ const AuditLogs = () => {
                                 ))
                             ) : filteredLogs.length > 0 ? (
                                 filteredLogs.map((log) => (
-                                    <tr key={log._id} className="hover:bg-indigo-50/30 transition-colors group">
+                                    <tr key={log._id} onClick={() => setSelectedLog(log)} className="cursor-pointer hover:bg-indigo-50/30 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2 text-gray-500 whitespace-nowrap">
                                                 <Clock size={14} />
@@ -265,6 +266,61 @@ const AuditLogs = () => {
                     </div>
                 )}
             </div>
+
+            {/* Diff Viewer Modal */}
+            {selectedLog && (
+                <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-gray-900/40 backdrop-blur-sm px-4 pb-4 animate-fadeIn overflow-y-auto" onClick={() => setSelectedLog(null)}>
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden mb-auto" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-slate-50 shrink-0">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                    <FileText className="text-indigo-600" size={20} /> Action Details
+                                </h3>
+                                <p className="text-xs font-bold text-gray-400 mt-0.5">
+                                    {selectedLog.action} on {selectedLog.targetResource} ({selectedLog.targetId})
+                                </p>
+                            </div>
+                            <button onClick={() => setSelectedLog(null)} className="p-2 bg-white border border-gray-200 rounded-full hover:bg-gray-100 transition-colors text-gray-500">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+                            {selectedLog.details?.diff ? (
+                                <div className="space-y-4">
+                                    {Object.entries(selectedLog.details.diff).map(([key, val]: any) => (
+                                        <div key={key} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                                            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                                                <p className="font-bold text-slate-800 text-sm capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</p>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                                                <div className="p-4 bg-rose-50/30">
+                                                    <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><X size={12}/> Old Value</p>
+                                                    <pre className="text-xs text-rose-900 font-mono whitespace-pre-wrap break-all bg-rose-100/50 p-3 rounded-xl border border-rose-100">
+                                                        {val.old === null || val.old === undefined ? 'Empty' : typeof val.old === 'object' ? JSON.stringify(val.old, null, 2) : String(val.old)}
+                                                    </pre>
+                                                </div>
+                                                <div className="p-4 bg-emerald-50/30">
+                                                    <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Check size={12}/> New Value</p>
+                                                    <pre className="text-xs text-emerald-900 font-mono whitespace-pre-wrap break-all bg-emerald-100/50 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                                                        {val.new === null || val.new === undefined ? 'Empty' : typeof val.new === 'object' ? JSON.stringify(val.new, null, 2) : String(val.new)}
+                                                    </pre>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
+                                    <pre className="text-xs text-slate-700 font-mono whitespace-pre-wrap break-all">
+                                        {JSON.stringify(selectedLog.details, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
