@@ -5,6 +5,7 @@ import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
 import { AuthRequest } from '../middleware/auth';
 import crypto from 'crypto';
+import { sendWelcomeEmail } from '../utils/email';
 
 const router = Router();
 
@@ -69,15 +70,19 @@ router.post('/users', authenticate, requireAdmin, async (req, res) => {
             return res.status(400).json({ message: 'User already exists with this email' });
         }
 
+        const userPassword = password || crypto.randomBytes(12).toString('hex');
         const newUser = new User({
             email,
             firstName,
             lastName,
             role: role || 'employee',
-            password: password || crypto.randomBytes(12).toString('hex') // Assign random password if none provided
+            password: userPassword // Assign random password if none provided
         });
 
         await newUser.save();
+
+        // Send Welcome Email
+        await sendWelcomeEmail(email, userPassword);
 
         await AuditLog.create({
             action: 'CREATE',

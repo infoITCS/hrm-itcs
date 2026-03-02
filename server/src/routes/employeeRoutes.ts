@@ -177,23 +177,29 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
-            // Find ALL itcs- ids, sort them, and get the highest numeric value
-            const allItcsEmployees = await Employee.find({ 
-                employeeId: { $regex: /^itcs-/i } 
-            });
-
+            // Retry logic to handle concurrent creation (race condition safe)
             let nextNum = 1;
-            if (allItcsEmployees.length > 0) {
-                const nums = allItcsEmployees.map(emp => {
-                    const parts = emp.employeeId.split('-');
-                    return parseInt(parts[parts.length - 1]);
-                }).filter(n => !isNaN(n));
-                
-                if (nums.length > 0) {
-                    nextNum = Math.max(...nums) + 1;
+            let retries = 3;
+            while (retries > 0) {
+                const lastEmployee = await Employee.findOne({ 
+                    employeeId: { $regex: /^itcs-/i } 
+                }).sort({ createdAt: -1 });
+
+                if (lastEmployee) {
+                    const parts = lastEmployee.employeeId.split('-');
+                    const lastNum = parseInt(parts[parts.length - 1]);
+                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
                 }
+                
+                employeeData.employeeId = `itcs-${nextNum.toString().padStart(3, '0')}`;
+                
+                // Check if ID already exists before inserting
+                const exists = await Employee.findOne({ employeeId: employeeData.employeeId });
+                if (!exists) break;
+                
+                nextNum++;
+                retries--;
             }
-            employeeData.employeeId = `itcs-${nextNum.toString().padStart(3, '0')}`;
         }
 
         const employee = new Employee({
@@ -322,7 +328,7 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 });
 
 // Route to serve raw file from MongoDB
-router.get('/attachments/raw/:attachmentId', async (req: Request, res: Response) => {
+router.get('/attachments/raw/:attachmentId', authenticate, async (req: Request, res: Response) => {
     try {
         const employee = await Employee.findOne({ 'attachments._id': req.params.attachmentId });
         if (!employee) return res.status(404).send('File not found');
@@ -385,7 +391,7 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
 
         // Check permission: Admin can delete any, Employee can delete their own
         const isAdmin = role === 'super-admin' || role === 'admin';
-        const isOwner = employee.userId === userId;
+        const isOwner = employee.userId?.toString() === userId?.toString();
 
         if (!isAdmin && !isOwner) {
             return res.status(403).json({ message: 'You do not have permission to delete documents' });

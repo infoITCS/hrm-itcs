@@ -20,6 +20,7 @@ const EmployeeList = () => {
         dept: '',
         manager: ''
     });
+    const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
 
     const handleDeleteClick = (id: string) => {
         setEmployeeToDelete(id);
@@ -77,6 +78,12 @@ const EmployeeList = () => {
 
     const filteredEmployees = React.useMemo(() => {
         return employees.filter(emp => {
+            const status = emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent';
+            const isPast = ['Terminated', 'Resigned'].includes(status);
+            
+            if (statusFilter === 'active' && isPast) return false;
+            if (statusFilter === 'past' && !isPast) return false;
+
             const fullName = `${emp.firstName} ${emp.middleName ? emp.middleName + ' ' : ''}${emp.lastName}`.toLowerCase();
             const matchesName = fullName.includes(filters.name.toLowerCase());
             const matchesId = emp.employeeId.toLowerCase().includes(filters.id.toLowerCase());
@@ -86,7 +93,7 @@ const EmployeeList = () => {
 
             return matchesName && matchesId && matchesPost && matchesDept && matchesManager;
         });
-    }, [employees, filters]);
+    }, [employees, filters, statusFilter]);
 
     // Analytics Calculations
     const stats = React.useMemo(() => {
@@ -139,6 +146,20 @@ const EmployeeList = () => {
 
             {/* 2. Sleek Filter Bar */}
             <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-slate-200/60 sticky top-20 z-20">
+                <div className="flex border-b border-slate-200 mb-5 pb-1 gap-6">
+                    <button 
+                        onClick={() => setStatusFilter('active')}
+                        className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'active' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                    >
+                        Active Employees
+                    </button>
+                    <button 
+                        onClick={() => setStatusFilter('past')}
+                        className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'past' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                    >
+                        Past Employees (Offboarded)
+                    </button>
+                </div>
                 <div className="flex flex-col xl:flex-row gap-6 items-start xl:items-center justify-between">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 flex-1 w-full">
                         {/* Name Search */}

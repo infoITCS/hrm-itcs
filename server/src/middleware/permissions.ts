@@ -37,20 +37,24 @@ export const canViewEmployee = async (
             return false;
         }
         
-        // Check if the employee is a direct report
+        // Get the target employee record
         const employee = targetEmployee || await Employee.findOne({ employeeId: targetEmployeeId });
         if (!employee) return false;
 
-        // Get manager's employee record to find their employeeId
+        // Get manager's own employee record via userId (DB lookup — not trusting free-text input)
         const managerEmployee = await Employee.findOne({ userId });
         if (!managerEmployee) return false;
 
-        // Check if target employee's reportingManager matches manager's employeeId
+        // Allow viewing own record
+        if (managerEmployee.employeeId === employee.employeeId) return true;
+
+        // Check if the target employee's reportingManager matches manager's employeeId (from DB)
+        // This prevents spoofing by comparing against actual DB record, not user input
         return employee.jobInfo?.reportingManager === managerEmployee.employeeId;
     }
 
     if (role === 'employee') {
-        // Can only view own profile
+        // Can only view own profile — use userId.toString() for ObjectId compat
         const employee = await Employee.findOne({ userId });
         if (!employee) return false;
         

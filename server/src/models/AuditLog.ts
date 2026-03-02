@@ -19,4 +19,9 @@ const AuditLogSchema: Schema = new Schema({
     timestamp: { type: Date, default: Date.now }
 });
 
+// Performance indexes
+AuditLogSchema.index({ targetId: 1, performedBy: 1, timestamp: -1 });
+AuditLogSchema.index({ action: 1, timestamp: -1 });
+AuditLogSchema.index({ targetResource: 1 });
+
 export default mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);

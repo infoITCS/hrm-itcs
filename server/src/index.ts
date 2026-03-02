@@ -17,6 +17,8 @@ criticalEnvVars.forEach(key => {
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import path from 'path';
@@ -33,20 +35,37 @@ const PORT = process.env.PORT || 5000;
 
 app.set('trust proxy', 1);
 
-// CORS Configuration for Production
+// CORS Configuration — never default to wildcard in production
 const corsOptions = {
-    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : '*',
+    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : 'http://localhost:5173',
     credentials: true,
     optionsSuccessStatus: 200
 };
 
+// Security middleware
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })); // Allow cross-origin for API
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Rate limiting — protect auth endpoints from brute force
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 15, // 15 attempts per window
+    message: { message: 'Too many attempts. Please try again after 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+const generalLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // 100 requests per minute per IP
+    message: { message: 'Too many requests. Please slow down.' },
+});
+app.use('/api/', generalLimiter); // General rate limit for all API routes
+
 // Session configuration (required for OAuth state/PKCE)
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'hrm-itcs-secure-session-secret-2024',
+    secret: process.env.SESSION_SECRET || (() => { console.warn('⚠️ SESSION_SECRET not set, using random value. Sessions will not persist across restarts.'); return require('crypto').randomBytes(32).toString('hex'); })(),
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({
@@ -87,7 +106,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/employees', employeeRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limit on auth
 
 app.get('/', (req, res) => {
     res.send('HRM API is running');
@@ -96,7 +115,10 @@ app.get('/', (req, res) => {
 // Global Error Handler to catch and display 500 errors instead of generic message
 app.use((err: any, req: any, res: any, next: any) => {
     console.error('🔥 Global unhandled error:', err);
-    res.status(500).send(`<h2>Internal Server Error Details:</h2><pre>${err.message}</pre><pre>${err.stack}</pre>`);
+    if (process.env.NODE_ENV === 'production') {
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+    res.status(500).json({ message: err.message, stack: err.stack });
 });
 
 // For Vercel serverless, export the app instead of listening

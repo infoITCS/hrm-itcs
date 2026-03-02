@@ -15,6 +15,7 @@ import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import ResetPassword from './pages/ResetPassword';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -118,11 +119,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

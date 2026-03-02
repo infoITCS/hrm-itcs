@@ -1,6 +1,7 @@
-
 import cron from 'node-cron';
 import Employee from '../models/Employee';
+import User from '../models/User.model';
+import { sendProfileReminderEmail } from '../utils/email';
 
 // Run every day at midnight
 // Note: Vercel serverless functions have execution time limits
@@ -17,7 +18,6 @@ export const initScheduler = () => {
         try {
             const today = new Date();
             // Find employees whose probation ends today or has passed, AND are still in "Probation"
-            // Note: In real app, you might want to match "Probation" exact string or ID
             const result = await Employee.updateMany(
                 {
                     'employmentStatus.probationEndDate': { $lte: today },
@@ -37,6 +37,38 @@ export const initScheduler = () => {
             }
         } catch (error) {
             console.error('Error in probation scheduler:', error);
+        }
+    });
+
+    // Reminder Scheduler: Run every day at 10 AM
+    cron.schedule('0 10 * * *', async () => {
+        console.log('Running daily onboarding profile completion reminder check...');
+        try {
+            // Get all actual users with 'employee' or higher roles who haven't finished their profile
+            const users = await User.find({ isActive: true });
+            const employees = await Employee.find();
+
+            for (const user of users) {
+                const emp = employees.find(e => e.userId?.toString() === user._id.toString());
+                let isComplete = false;
+
+                if (emp) {
+                    const personalComplete = !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth);
+                    const jobComplete = !!(emp.jobInfo && emp.jobInfo.designation !== "Employee" && emp.jobInfo.department !== "General");
+                    const bankComplete = !!(emp.bankDetails?.bankName && emp.bankDetails?.accountNumber);
+
+                    // Simplistic check. You could refine to match exactly the frontend
+                    isComplete = personalComplete && jobComplete && bankComplete;
+                }
+
+                // If not complete, send email
+                if (!isComplete && user.email) {
+                    console.log(`Sending profile reminder to: ${user.email}`);
+                    await sendProfileReminderEmail(user.email, user.firstName || 'Employee');
+                }
+            }
+        } catch (error) {
+            console.error('Error in profile reminder scheduler:', error);
         }
     });
 };

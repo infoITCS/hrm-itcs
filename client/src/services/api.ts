@@ -26,6 +26,22 @@ apiClient.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
+// Auto-logout on expired/invalid token
+apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('token');
+            sessionStorage.clear();
+            // Only redirect if not already on login page
+            if (!window.location.pathname.includes('/login')) {
+                window.location.href = '/login?expired=true';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 const APIService = {
     login: async (email: string, password: string) => {
         const response = await apiClient.post(AUTH_LOGIN_URL, { email, password });

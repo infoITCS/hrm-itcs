@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X, CreditCard, DollarSign, Banknote, Globe, Trash2, Camera } from 'lucide-react';
+import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X, CreditCard, DollarSign, Banknote, Globe, Trash2, Camera, Gift } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
@@ -100,6 +100,7 @@ const EmployeeProfile = () => {
         { id: 'contact', label: 'Contact', icon: Phone },
         { id: 'job', label: 'Job', icon: Briefcase },
         { id: 'finance', label: 'Finance', icon: CreditCard },
+        { id: 'benefits', label: 'Benefits', icon: Gift },
         { id: 'history', label: 'Employment History', icon: History },
         { id: 'education', label: 'Education', icon: GraduationCap },
         { id: 'dependents', label: 'Dependents', icon: Users },
@@ -415,6 +416,49 @@ const EmployeeProfile = () => {
                                 <Field label="IBAN" value={employee.bankDetails?.iban} />
                                 <Field label="Swift Code" value={employee.bankDetails?.swiftCode} />
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Benefits Tab */}
+                {activeTab === 'benefits' && (
+                    <div className="space-y-6 animate-fadeIn">
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2 flex items-center gap-2">
+                                <Gift size={20} className="text-indigo-600" /> Company Benefits
+                            </h3>
+                            {employee.benefits?.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {employee.benefits.map((benefit: any, i: number) => (
+                                        <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                                            <div className="flex justify-between items-start mb-3">
+                                                <h4 className="font-bold text-gray-800 text-lg">{benefit.name}</h4>
+                                                <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${
+                                                    benefit.status === 'Active' ? 'bg-emerald-100 text-emerald-700' :
+                                                    benefit.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+                                                    'bg-red-100 text-red-700'
+                                                }`}>
+                                                    {benefit.status || 'Active'}
+                                                </span>
+                                            </div>
+                                            {benefit.description && (
+                                                <p className="text-gray-500 text-sm mb-4 line-clamp-2">{benefit.description}</p>
+                                            )}
+                                            <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs text-gray-400">
+                                                <span className="font-medium">Eligible Since</span>
+                                                <span className="font-bold text-gray-600">{formatDate(benefit.eligibleDate)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-12 text-gray-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                                    <Gift size={48} className="mx-auto mb-4 opacity-20" />
+                                    <p>No benefits assigned yet</p>
+                                    <p className="text-sm mt-1">HR can assign benefits through the edit profile section.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

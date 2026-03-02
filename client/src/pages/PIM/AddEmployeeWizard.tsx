@@ -139,7 +139,8 @@ const AddEmployeeWizard = () => {
             accountNumber: '',
             iban: '',
             swiftCode: ''
-        }
+        },
+        benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[]
     });
 
     // Fetch Data for Edit Mode
@@ -292,7 +293,15 @@ const AddEmployeeWizard = () => {
                                 accountNumber: '',
                                 iban: '',
                                 swiftCode: ''
-                            }
+                            },
+                            benefits: found.benefits?.length
+                                ? found.benefits.map((b: any) => ({
+                                    name: b.name || '',
+                                    description: b.description || '',
+                                    eligibleDate: formatDate(b.eligibleDate),
+                                    status: b.status || 'Active'
+                                }))
+                                : []
                         });
 
                         // Track fields that were already filled to lock them for non-admins
@@ -985,7 +994,7 @@ const AddEmployeeWizard = () => {
                                 <CustomSelect label="Department" value={formData.jobInfo.department} onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, department: val } }))} options={['Technical', 'Development', 'Administration', 'Marketing', 'Sales', 'Finance']} />
                             </div>
                             <div className="space-y-2">
-                                <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={['Internship', 'Probation', 'Permanent', 'Contract', 'Part-time']} />
+                                <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={['Internship', 'Probation', 'Permanent', 'Contract', 'Part-time', 'Resigned', 'Terminated']} />
                             </div>
                             {formData.employmentStatus.status === 'Probation' && (
                                 <div className="space-y-2">
@@ -1502,6 +1511,103 @@ const AddEmployeeWizard = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Benefits Section */}
+                        <div className="pt-8 border-t border-slate-100">
+                            <div className="flex justify-between items-center mb-6 mt-8">
+                                <h3 className="text-lg font-bold text-gray-700">Company Benefits</h3>
+                                <button
+                                    onClick={() => setFormData(p => ({
+                                        ...p,
+                                        benefits: [...p.benefits, { name: '', description: '', eligibleDate: '', status: 'Active' }]
+                                    }))}
+                                    className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                                >
+                                    + Add Benefit
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {formData.benefits.map((benefit, index) => (
+                                    <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
+                                        
+                                        <div className="space-y-1 col-span-1 md:col-span-1 border-r border-slate-200 pr-4">
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Benefit Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Health Insurance"
+                                                value={benefit.name}
+                                                onChange={(e) => {
+                                                    const newBenefits = [...formData.benefits];
+                                                    newBenefits[index].name = e.target.value;
+                                                    setFormData({ ...formData, benefits: newBenefits });
+                                                }}
+                                                className="w-full bg-transparent border-none text-indigo-900 font-bold focus:ring-0 p-0 text-lg placeholder-indigo-200"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1 col-span-1 md:col-span-2">
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Description</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Benefit details..."
+                                                value={benefit.description}
+                                                onChange={(e) => {
+                                                    const newBenefits = [...formData.benefits];
+                                                    newBenefits[index].description = e.target.value;
+                                                    setFormData({ ...formData, benefits: newBenefits });
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1 col-span-1 md:col-span-1">
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Eligible Date</label>
+                                            <input
+                                                type="date"
+                                                value={benefit.eligibleDate}
+                                                onChange={(e) => {
+                                                    const newBenefits = [...formData.benefits];
+                                                    newBenefits[index].eligibleDate = e.target.value;
+                                                    setFormData({ ...formData, benefits: newBenefits });
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none"
+                                            />
+                                        </div>
+                                        
+                                        <div className="space-y-1 col-span-1 md:col-span-1 relative pr-10">
+                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Status</label>
+                                            <select
+                                                value={benefit.status}
+                                                onChange={(e: any) => {
+                                                    const newBenefits = [...formData.benefits];
+                                                    newBenefits[index].status = e.target.value;
+                                                    setFormData({ ...formData, benefits: newBenefits });
+                                                }}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none"
+                                            >
+                                                <option value="Active">Active</option>
+                                                <option value="Pending">Pending</option>
+                                                <option value="Expired">Expired</option>
+                                            </select>
+
+                                            <button
+                                                onClick={() => {
+                                                    const newBenefits = formData.benefits.filter((_, i) => i !== index);
+                                                    setFormData({ ...formData, benefits: newBenefits });
+                                                }}
+                                                className="absolute top-1/2 -translate-y-1/2 right-0 p-2 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 hover:scale-110 transition-all shadow-sm border border-red-200"
+                                                aria-label="Remove Benefit"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                     </div>
                 )}
 

@@ -18,7 +18,8 @@ import {
     PartyPopper,
     Award,
     Rocket,
-    Check
+    Check,
+    AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -53,10 +54,12 @@ const Dashboard = () => {
 
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.length > 0) },
-            { id: 'immigration', label: 'Passport & Travel', completed: !!(emp.immigrationHistory?.length > 0) },
-            { id: 'job', label: 'Work Information', completed: !!(emp.jobInfo?.designation && emp.jobInfo?.department) },
-            { id: 'history', label: 'Employment & Education', completed: !!(emp.education?.length > 0 || emp.employmentHistory?.length > 0) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
+            { id: 'immigration', label: 'Passport & Travel', completed: !!(
+                emp.immigrationHistory?.some((imm: any) => imm.documentNumber) ||
+                emp.attachments?.some((a: any) => ['Passport', 'Visa', 'Work Permit'].includes(a.fileType))
+            ) },            { id: 'job', label: 'Work Information', completed: !!(emp.jobInfo?.designation && emp.jobInfo?.department && emp.jobInfo?.designation !== 'Employee' && emp.jobInfo?.department !== 'General') },
+            { id: 'history', label: 'Employment & Education', completed: !!(emp.education?.some((edu: any) => edu.level) || emp.employmentHistory?.some((eh: any) => eh.companyName)) },
             { id: 'finance', label: 'Bank Details', completed: !!(emp.bankDetails?.bankName && emp.bankDetails?.accountNumber) },
             { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'ID Card' || a.fileType === 'Passport' || a.fileType === 'CNIC Front')) }
         ];
@@ -583,6 +586,53 @@ const Dashboard = () => {
                                 )}
                             </div>
 
+                            {/* Probation Alerts Widget */}
+                            {teamMembers.some((m) => {
+                                if (m.employmentStatus?.status === 'Probation' && m.employmentStatus?.probationEndDate) {
+                                    const endDate = new Date(m.employmentStatus.probationEndDate);
+                                    const today = new Date();
+                                    const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                    return diffDays >= 0 && diffDays <= 14; // Within 14 days
+                                }
+                                return false;
+                            }) && (
+                                <div className="bg-white rounded-2xl border border-amber-100 shadow-sm shadow-amber-100/50 p-6 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none transition-transform duration-700 transform hover:scale-110">
+                                        <AlertCircle size={100} className="text-amber-500 -rotate-12" />
+                                    </div>
+                                    <div className="flex items-center justify-between mb-4 relative z-10">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                            <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg">
+                                                <AlertCircle size={18} />
+                                            </div>
+                                            Action Needed: Probation Ending
+                                        </h3>
+                                    </div>
+                                    <div className="space-y-3 relative z-10">
+                                        {teamMembers.filter((m) => {
+                                            if (m.employmentStatus?.status === 'Probation' && m.employmentStatus?.probationEndDate) {
+                                                const endDate = new Date(m.employmentStatus.probationEndDate);
+                                                const today = new Date();
+                                                const diffDays = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                                return diffDays >= 0 && diffDays <= 14;
+                                            }
+                                            return false;
+                                        }).map((member, idx) => {
+                                            const daysLeft = Math.ceil((new Date(member.employmentStatus.probationEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                            return (
+                                                <div key={idx} onClick={() => navigate(`/pim/view/${member._id}?tab=job`)} className="p-3 bg-amber-50/50 border border-amber-200 hover:bg-white hover:shadow-md rounded-xl flex items-center justify-between cursor-pointer transition-all group">
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800 group-hover:text-amber-700 transition-colors">{member.firstName} {member.lastName}</p>
+                                                        <p className="text-xs text-slate-500 font-medium mt-0.5">Probation ends in <span className="font-bold text-amber-600">{daysLeft === 0 ? 'Today' : `${daysLeft} days`}</span></p>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest bg-amber-100 border border-amber-200 text-amber-700 px-2.5 py-1 rounded">Review</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* My Team Details Widget */}
                             <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm shadow-indigo-100/30 p-6 flex-1 flex flex-col relative overflow-hidden">
                                 <div className="absolute bottom-0 right-0 p-6 opacity-[0.02] pointer-events-none">
@@ -610,7 +660,15 @@ const Dashboard = () => {
                                                 </div>
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">{member.firstName} {member.lastName}</p>
-                                                    <p className="text-[10px] font-bold text-slate-400 truncate tracking-wider uppercase mt-0.5">{member.jobInfo?.designation || 'No Designation'}</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 truncate tracking-wider uppercase mt-0.5 mb-1.5">{member.jobInfo?.designation || 'No Designation'}</p>
+                                                    
+                                                    {/* Onboarding Progress Bar */}
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden shadow-inner">
+                                                            <div className={`h-full rounded-full transition-all ${calculateOnboardingProgress(member).percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${calculateOnboardingProgress(member).percent}%` }}></div>
+                                                        </div>
+                                                        <span className="text-[9px] font-bold text-slate-400">Onboarding: {calculateOnboardingProgress(member).percent}%</span>
+                                                    </div>
                                                 </div>
                                                 <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100 group-hover:border-indigo-200 group-hover:bg-indigo-50 shrink-0">
                                                     <ArrowRight size={12} className="text-slate-400 group-hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0" />

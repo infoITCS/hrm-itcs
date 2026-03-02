@@ -9,6 +9,15 @@ import { sendPasswordResetEmail } from "../utils/email";
 
 const router = Router();
 
+// Password strength validator
+const validatePassword = (password: string): string | null => {
+    if (!password || password.length < 8) return 'Password must be at least 8 characters';
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter';
+    if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter';
+    if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
+    return null; // valid
+};
+
 /**
  * @route   POST /api/auth/login
  * @desc    Login with email and password
@@ -27,6 +36,11 @@ router.post("/login", async (req: Request, res: Response) => {
     // Check if user exists and has a password
     if (!user || !user.password) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Check if user account is active
+    if (user.isActive === false) {
+      return res.status(403).json({ message: "Your account has been suspended. Please contact your administrator." });
     }
 
     // Use our new compare method
@@ -83,8 +97,9 @@ router.post("/change-password", authenticate, async (req: Request, res: Response
     const authReq = req as AuthRequest;
     const { currentPassword, newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
     }
 
     const user = await User.findById(authReq.user?.userId);
@@ -132,15 +147,16 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
             return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
         }
 
-        // Generate a reset token
+        // Generate a reset token — send plain token in email, store only SHA-256 hash in DB
         const resetToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
         
-        // Save token and expiry (1 hour)
-        user.resetPasswordToken = resetToken;
+        // Save hashed token and expiry (1 hour)
+        user.resetPasswordToken = hashedToken;
         user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
         await user.save();
 
-        // Send email
+        // Send plain (unhashed) token in the email link
         const emailSent = await sendPasswordResetEmail(user.email, resetToken);
 
         if (!emailSent) {
@@ -167,12 +183,16 @@ router.post("/reset-password", async (req: Request, res: Response) => {
     try {
         const { token, newPassword } = req.body;
 
-        if (!token || !newPassword || newPassword.length < 6) {
-            return res.status(400).json({ message: "Invalid request or password too short (min 6 characters)" });
+        const passwordError = validatePassword(newPassword);
+        if (!token || passwordError) {
+            return res.status(400).json({ message: passwordError || 'Invalid request' });
         }
 
+        // Hash the incoming token to compare against the stored hash
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
         const user = await User.findOne({
-            resetPasswordToken: token,
+            resetPasswordToken: hashedToken,
             resetPasswordExpires: { $gt: Date.now() } // Ensure token is not expired
         });
 

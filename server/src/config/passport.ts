@@ -83,6 +83,9 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                             lastName: profile.name?.familyName || 'User',
                             microsoftId: profile.id
                         });
+                    } else if (!user.isActive) {
+                        // Block suspended users from SSO login
+                        return done(null, false, { message: 'Your account has been suspended.' });
                     } else if (!user.microsoftId) {
                         // Link if exists by email but not microsoftId
                         user.microsoftId = profile.id;

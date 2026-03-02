@@ -11,6 +11,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ message: 'Method not allowed' });
     }
 
+    // Protect cron endpoint — only Vercel's scheduler should call this
+    // Set CRON_SECRET in Vercel env vars and it will be sent automatically by Vercel
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && req.headers['authorization'] !== `Bearer ${cronSecret}`) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     try {
         // Connect to MongoDB
         if (!mongoose.connections[0].readyState) {
@@ -36,6 +43,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
         );
 
+        console.log(`[Cron] Probation check: updated ${result.modifiedCount} employees`);
+
         return res.status(200).json({ 
             message: 'Probation check completed',
             updated: result.modifiedCount 
@@ -45,4 +54,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ message: error.message });
     }
 }
+
 

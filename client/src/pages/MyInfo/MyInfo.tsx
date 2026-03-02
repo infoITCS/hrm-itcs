@@ -666,6 +666,8 @@ const MyInfo = () => {
     ];
 
     const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
+    const canEditJob = user?.role === 'admin' || user?.role === 'super-admin';
+    const disabledJobClass = !canEditJob ? 'bg-gray-50 cursor-not-allowed' : 'bg-white';
     const steps = allSteps.filter(s => !s.roleRestricted || isAdmin);
 
     if (loading) {
@@ -1520,16 +1522,18 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Step 4: Job & Status (Read-only for employees) */}
+                        {/* Step 4: Job & Status (Read-only for employees, editable for admins) */}
                         {step === 4 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up pb-20">
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Designation</label>
                                     <input
                                         type="text"
+                                        name="designation"
                                         value={formData.jobInfo.designation}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, designation: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                         placeholder="e.g. Software Engineer"
                                     />
                                 </div>
@@ -1537,9 +1541,11 @@ const MyInfo = () => {
                                     <label className="block text-sm font-medium text-gray-600">Department</label>
                                     <input
                                         type="text"
+                                        name="department"
                                         value={formData.jobInfo.department}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, department: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                         placeholder="e.g. IT"
                                     />
                                 </div>
@@ -1549,37 +1555,48 @@ const MyInfo = () => {
                                         type="text"
                                         name="reportingManager"
                                         value={formData.jobInfo.reportingManager}
-                                        onChange={(e) => handleChange(e, 'jobInfo')}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm ${user?.role !== 'admin' && user?.role !== 'superadmin' ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, reportingManager: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Work Location</label>
                                     <input
                                         type="text"
+                                        name="workLocation"
                                         value={formData.jobInfo.workLocation}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, workLocation: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Joining Date</label>
                                     <input
                                         type="date"
+                                        name="joiningDate"
                                         value={formData.jobInfo.joiningDate}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, joiningDate: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Status</label>
-                                    <input
-                                        type="text"
+                                    <select
                                         value={formData.employmentStatus.status}
-                                        disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
-                                    />
+                                        onChange={(e) => setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, status: e.target.value } }))}
+                                        disabled={!canEditJob}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
+                                    >
+                                        <option value="Probation">Probation</option>
+                                        <option value="Permanent">Permanent</option>
+                                        <option value="Internship">Internship</option>
+                                        <option value="Contract">Contract</option>
+                                        <option value="Terminated">Terminated</option>
+                                        <option value="Resigned">Resigned</option>
+                                    </select>
                                 </div>
                                 {formData.employmentStatus.status === 'Probation' && (
                                     <div className="space-y-2">
@@ -1587,15 +1604,18 @@ const MyInfo = () => {
                                         <input
                                             type="date"
                                             value={formData.employmentStatus.probationEndDate}
-                                            disabled={user?.role !== 'admin' && user?.role !== 'superadmin'}
-                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                            onChange={(e) => setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, probationEndDate: e.target.value } }))}
+                                            disabled={!canEditJob}
+                                            className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                         />
                                     </div>
                                 )}
                                 <div className="md:col-span-2 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3 mt-4">
                                     <Shield size={20} className="text-indigo-600 mt-0.5" />
                                     <p className="text-sm text-indigo-700">
-                                        Note: Job and Status information can only be updated by the HR Department or an Administrator. Please contact HR if you believe this information is incorrect.
+                                        {canEditJob
+                                            ? 'Admin: You have permission to edit Job & Status information.'
+                                            : 'Note: Job and Status information can only be updated by the HR Department or an Administrator. Please contact HR if you believe this information is incorrect.'}
                                     </p>
                                 </div>
                             </div>

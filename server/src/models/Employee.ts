@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IEmployee extends Document {
     employeeId: string;
-    userId?: string;
+    userId?: mongoose.Types.ObjectId | string; // ObjectId ref to User
     firstName: string;
     middleName?: string;
     lastName: string;
@@ -58,6 +58,12 @@ export interface IEmployee extends Document {
         platform: string;
         link: string;
     }[];
+    benefits?: {
+        name: string;
+        description?: string;
+        eligibleDate?: Date;
+        status: 'Active' | 'Pending' | 'Expired';
+    }[];
     // [NEW] Sub-documents
     emergencyContacts?: {
         name: string;
@@ -99,23 +105,23 @@ export interface IEmployee extends Document {
 
 const EmployeeSchema: Schema = new Schema({
     employeeId: { type: String, required: true, unique: true },
-    userId: { type: String },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },
     avatar: { type: String },
-    email: { type: String },
+    email: { type: String, match: /^\S+@\S+\.\S+$/ },
     phone: { type: String },
     dateOfBirth: { type: Date },
-    gender: { type: String },
-    maritalStatus: { type: String },
+    gender: { type: String, enum: ['Male', 'Female', 'Other', ''] },
+    maritalStatus: { type: String, enum: ['Single', 'Married', 'Divorced', 'Widowed', ''] },
     nationality: { type: String },
     cnic: { type: String },
     fatherName: { type: String },
-    bloodGroup: { type: String },
+    bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', ''] },
     religion: { type: String },
     licenseNumber: { type: String },
-    workEmail: { type: String },
+    workEmail: { type: String, match: [/^\S+@\S+\.\S+$/, 'Invalid email format'] },
     otherEmail: { type: String },
     simNumber: { type: String },
     skills: [{ type: String }],
@@ -127,7 +133,7 @@ const EmployeeSchema: Schema = new Schema({
         country: { type: String }
     },
     employmentStatus: {
-        status: { type: String },
+        status: { type: String, enum: ['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned', ''] },
         startDate: { type: Date },
         probationEndDate: { type: Date },
         autoUpdated: { type: Boolean, default: false }
@@ -165,6 +171,12 @@ const EmployeeSchema: Schema = new Schema({
         relation: { type: String },
         dateOfBirth: { type: Date }
     }],
+    benefits: [{
+        name: { type: String },
+        description: { type: String },
+        eligibleDate: { type: Date },
+        status: { type: String, enum: ['Active', 'Pending', 'Expired'], default: 'Active' }
+    }],
     education: [{
         level: { type: String },
         institute: { type: String },
@@ -190,5 +202,10 @@ const EmployeeSchema: Schema = new Schema({
         reviewedAt: { type: Date }
     }]
 }, { timestamps: true });
+
+// Performance indexes
+EmployeeSchema.index({ userId: 1 });
+EmployeeSchema.index({ 'jobInfo.reportingManager': 1 });
+EmployeeSchema.index({ 'employmentStatus.status': 1 });
 
 export default mongoose.model<IEmployee>('Employee', EmployeeSchema);

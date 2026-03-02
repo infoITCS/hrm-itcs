@@ -75,8 +75,8 @@ export const getDiff = (oldData: any, newData: any): any => {
     const keys = new Set([...Object.keys(oldNorm), ...Object.keys(newNorm)]);
 
     for (const key of keys) {
-        if (['createdAt', 'updatedAt', 'userId', 'employeeId', 'employmentStatus'].includes(key) && key === 'employeeId') continue; // keep employmentStatus diffs
-        if (['createdAt', 'updatedAt'].includes(key)) continue;
+        // Skip internal/meta fields from diff
+        if (['createdAt', 'updatedAt', 'employeeId', 'userId'].includes(key)) continue;
 
         const oldValue = oldNorm[key];
         const newValue = newNorm[key];
