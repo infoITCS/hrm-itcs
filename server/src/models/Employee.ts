@@ -105,7 +105,7 @@ export interface IEmployee extends Document {
 
 const EmployeeSchema: Schema = new Schema({
     employeeId: { type: String, required: true, unique: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User' },
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },
