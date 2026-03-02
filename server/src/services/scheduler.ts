@@ -49,7 +49,7 @@ export const initScheduler = () => {
             const employees = await Employee.find();
 
             for (const user of users) {
-                const emp = employees.find(e => e.userId?.toString() === user._id.toString());
+                const emp = employees.find(e => e.userId === user._id.toString());
                 let isComplete = false;
 
                 if (emp) {

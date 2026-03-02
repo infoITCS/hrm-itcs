@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IEmployee extends Document {
     employeeId: string;
-    userId?: mongoose.Types.ObjectId | string; // ObjectId ref to User
+    userId?: string; // Stored as string (matches User._id.toString())
     firstName: string;
     middleName?: string;
     lastName: string;
@@ -105,7 +105,7 @@ export interface IEmployee extends Document {
 
 const EmployeeSchema: Schema = new Schema({
     employeeId: { type: String, required: true, unique: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User' },
+    userId: { type: String }, // Stored as string ID referencing User._id
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },
