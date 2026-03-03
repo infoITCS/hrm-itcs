@@ -373,15 +373,18 @@ const MyInfo = () => {
     };
 
     const handleNext = async () => {
+        // Step 1 has required field validation before saving
         if (step === 1) {
             if (!isStep1RequiredValid()) {
                 setStepErrors(getStep1RequiredErrors());
                 return;
             }
             setStepErrors([]);
-            const result = await handleSubmit(false);
-            if (!result) return;
         }
+
+        // Save current step's data before advancing (all steps)
+        const result = await handleSubmit(false);
+        if (!result) return; // Stop if save failed
 
         const currentIndex = steps.findIndex(s => s.id === step);
         if (currentIndex < steps.length - 1) {
@@ -399,15 +402,21 @@ const MyInfo = () => {
         // If clicking the current step, do nothing
         if (targetStepId === step) return;
 
-        // If jumping forward from step 1, validate it first
+        // Step 1 requires valid fields before leaving
         if (step === 1 && targetStepId > 1) {
             if (!isStep1RequiredValid()) {
                 setStepErrors(getStep1RequiredErrors());
                 return;
             }
             setStepErrors([]);
-            const result = await handleSubmit(false);
-            if (!result) return;
+        }
+
+        // Auto-save current step before jumping to another
+        await handleSubmit(false);
+
+        // Mark current step as completed if jumping forward
+        if (targetStepId > step && !completedSteps.includes(step)) {
+            setCompletedSteps(prev => [...prev, step]);
         }
 
         setStep(targetStepId);
@@ -2124,10 +2133,23 @@ const MyInfo = () => {
                             {step !== steps[steps.length - 1].id ? (
                                 <button
                                     onClick={handleNext}
-                                    disabled={step === 1 && !isStep1RequiredValid()}
-                                    className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${step === 1 && !isStep1RequiredValid() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
+                                    disabled={saving || (step === 1 && !isStep1RequiredValid())}
+                                    className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${
+                                        saving
+                                            ? 'bg-indigo-400 text-white cursor-wait'
+                                            : step === 1 && !isStep1RequiredValid()
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'
+                                    }`}
                                 >
-                                    Next <ChevronRight size={16} />
+                                    {saving ? (
+                                        <>
+                                            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                            Saving…
+                                        </>
+                                    ) : (
+                                        <>Next <ChevronRight size={16} /></>
+                                    )}
                                 </button>
                             ) : (
                                 <button
