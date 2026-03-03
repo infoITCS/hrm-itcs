@@ -130,6 +130,37 @@ router.post("/change-password", authenticate, async (req: Request, res: Response
 });
 
 /**
+ * @route   POST /api/auth/setup-password
+ * @desc    Set password for first-time Microsoft SSO users (no current password needed)
+ * @access  Private
+ */
+router.post("/setup-password", authenticate, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { newPassword } = req.body;
+
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
+    }
+
+    const user = await User.findById(authReq.user?.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.password = newPassword;
+    user.needsPasswordSetup = false;
+    await user.save(); // pre-save hook will hash it
+
+    res.json({ message: "Password set successfully" });
+  } catch (error) {
+    console.error("Setup password error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
  * @route   POST /api/auth/forgot-password
  * @desc    Request password reset link
  * @access  Public
@@ -347,6 +378,7 @@ router.get("/me", authenticate, async (req: Request, res: Response) => {
     res.json({
       ...user.toObject(),
       hasProfile: !!employee,
+      needsPasswordSetup: user.needsPasswordSetup ?? false,
     });
   } catch (error: any) {
     console.error("Error fetching user:", error);

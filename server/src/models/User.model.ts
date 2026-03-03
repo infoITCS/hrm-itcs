@@ -18,6 +18,7 @@ export interface IUser extends Document {
     microsoftId?: string;
     password?: string;
     isActive?: boolean;
+    needsPasswordSetup?: boolean;
     resetPasswordToken?: string;
     resetPasswordExpires?: Date;
     comparePassword(candidatePassword: string): Promise<boolean>;
@@ -32,6 +33,7 @@ const UserSchema: Schema = new Schema({
     microsoftId: { type: String },
     password: { type: String }, // For SSO users, this will be random
     isActive: { type: Boolean, default: true },
+    needsPasswordSetup: { type: Boolean, default: false },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
 }, { timestamps: true });

@@ -11,4 +11,5 @@ export interface User {
     lastName?: string;
     microsoftId?: string;
     hasProfile?: boolean;
+    needsPasswordSetup?: boolean;
 }

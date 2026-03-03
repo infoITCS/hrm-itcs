@@ -62,6 +62,10 @@ const APIService = {
     resetPassword: async (token: string, newPassword: string) => {
         const response = await apiClient.post(`${API_ORIGIN}/api/auth/reset-password`, { token, newPassword });
         return response.data;
+    },
+    setupPassword: async (newPassword: string) => {
+        const response = await apiClient.post(`${API_ORIGIN}/api/auth/setup-password`, { newPassword });
+        return response.data;
     }
 };
 

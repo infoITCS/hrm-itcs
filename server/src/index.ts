@@ -51,7 +51,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Rate limiting — protect auth endpoints from brute force
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 15, // 15 attempts per window
+    max: 50, // 50 attempts per window — enough for OAuth flow + normal usage
     message: { message: 'Too many attempts. Please try again after 15 minutes.' },
     standardHeaders: true,
     legacyHeaders: false,

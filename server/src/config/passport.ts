@@ -81,15 +81,31 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                             isActive: true, // Default to active for SSO
                             firstName: profile.name?.givenName || 'Unknown',
                             lastName: profile.name?.familyName || 'User',
-                            microsoftId: profile.id
+                            microsoftId: profile.id,
+                            needsPasswordSetup: true // Prompt user to set a password on first login
                         });
                     } else if (!user.isActive) {
                         // Block suspended users from SSO login
                         return done(null, false, { message: 'Your account has been suspended.' });
-                    } else if (!user.microsoftId) {
-                        // Link if exists by email but not microsoftId
-                        user.microsoftId = profile.id;
-                        await user.save();
+                    } else {
+                        let changed = false;
+
+                        // Link Microsoft ID if not yet linked
+                        if (!user.microsoftId) {
+                            user.microsoftId = profile.id;
+                            changed = true;
+                        }
+
+                        // If the user has no real bcrypt password yet, flag them for password setup.
+                        // This handles existing accounts created before the feature was added,
+                        // so you DON'T need to delete any users — they'll get the popup on next login.
+                        const hasRealPassword = user.password && user.password.startsWith('$2') && user.password.length === 60;
+                        if (!hasRealPassword && !user.needsPasswordSetup) {
+                            user.needsPasswordSetup = true;
+                            changed = true;
+                        }
+
+                        if (changed) await user.save();
                     }
 
                     return done(null, user);

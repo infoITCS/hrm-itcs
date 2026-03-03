@@ -1,4 +1,5 @@
 import { useAuth } from '../../contexts/AuthContext';
+import SetPasswordModal from '../../components/SetPasswordModal';
 import {
     Users,
     UserPlus,
@@ -37,6 +38,17 @@ const Dashboard = () => {
     const [newHiresCount, setNewHiresCount] = useState<number>(0);
     const [highlights, setHighlights] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showSetPassword, setShowSetPassword] = useState(false);
+
+    // Detect ?setup-password=1 injected by AuthCallback for first-time Microsoft users
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('setup-password') === '1') {
+            setShowSetPassword(true);
+            // Clean URL so refreshing doesn't re-show the modal
+            window.history.replaceState({}, '', '/dashboard');
+        }
+    }, []);
 
     const role: RoleType =
         user?.role === 'super-admin' || user?.role === 'admin'
@@ -50,7 +62,7 @@ const Dashboard = () => {
     const [onboardingData, setOnboardingData] = useState<any>(null);
 
     const calculateOnboardingProgress = (emp: any) => {
-        if (!emp) return { percent: 0, steps: [] };
+        if (!emp) return null; // No employee record yet — don't show card at all
 
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
@@ -70,7 +82,8 @@ const Dashboard = () => {
         return { percent, steps };
     };
 
-    const onboarding = user?.role === 'employee' ? calculateOnboardingProgress(onboardingData) : null;
+    // Only show onboarding for employees who have an employee record with actual steps
+    const onboarding = user?.role === 'employee' && onboardingData ? calculateOnboardingProgress(onboardingData) : null;
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -370,8 +383,16 @@ const Dashboard = () => {
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            {/* Onboarding Progress Card (Only for New Hires) */}
-            {!loading && onboarding && onboarding.percent < 100 && (
+            {/* Password Setup Modal for first-time Microsoft users */}
+            {showSetPassword && (
+                <SetPasswordModal
+                    userName={user?.firstName || user?.name}
+                    onSuccess={() => setShowSetPassword(false)}
+                    onSkip={() => setShowSetPassword(false)}
+                />
+            )}
+            {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}
+            {!loading && onboarding && onboarding.steps.length > 0 && onboarding.percent < 100 && (
                 <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-xl shadow-indigo-100/50 overflow-hidden relative group">
                     <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
                         <Rocket size={160} className="text-indigo-600 -rotate-12" />
@@ -665,9 +686,9 @@ const Dashboard = () => {
                                                     {/* Onboarding Progress Bar */}
                                                     <div className="flex items-center gap-2">
                                                         <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden shadow-inner">
-                                                            <div className={`h-full rounded-full transition-all ${calculateOnboardingProgress(member).percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${calculateOnboardingProgress(member).percent}%` }}></div>
+                                                            <div className={`h-full rounded-full transition-all ${(calculateOnboardingProgress(member)?.percent ?? 0) === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${calculateOnboardingProgress(member)?.percent ?? 0}%` }}></div>
                                                         </div>
-                                                        <span className="text-[9px] font-bold text-slate-400">Onboarding: {calculateOnboardingProgress(member).percent}%</span>
+                                                        <span className="text-[9px] font-bold text-slate-400">Onboarding: {calculateOnboardingProgress(member)?.percent ?? 0}%</span>
                                                     </div>
                                                 </div>
                                                 <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100 group-hover:border-indigo-200 group-hover:bg-indigo-50 shrink-0">

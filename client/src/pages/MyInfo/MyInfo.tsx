@@ -13,6 +13,7 @@ const MyInfo = () => {
     const { user, login } = useAuth();
     const { canEditSensitiveData } = usePermissions();
     const [loading, setLoading] = useState(true);
+    const [avatarCache, setAvatarCache] = useState<string>('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
@@ -643,9 +644,11 @@ const MyInfo = () => {
                     if (profilePics.length > 0) {
                         const latestPic = profilePics[profilePics.length - 1];
                         const token = localStorage.getItem('token');
-                        // Use & for cache buster since ?token= is already in the URL
                         const newAvatar = `${api.baseURL}/api/employees/attachments/raw/${latestPic._id}?token=${token}&t=${Date.now()}`;
                         login((prev: UserType | null) => prev ? { ...prev, avatar: newAvatar } : prev as any);
+                        
+                        // Also force component-level image refresh for MyInfo
+                        setAvatarCache(`&t=${Date.now()}`);
                     }
                 }
             }
@@ -715,7 +718,10 @@ const MyInfo = () => {
             return (first + last).toUpperCase() || '?';
         };
 
-        const avatarUrl = getAvatarUrl(rawEmployee) || user?.avatar;
+        let avatarUrl = getAvatarUrl(rawEmployee) || user?.avatar;
+        if (avatarUrl && avatarCache) {
+            avatarUrl += avatarUrl.includes('?') ? avatarCache : `?${avatarCache.substring(1)}`;
+        }
 
         return (
             <div className="space-y-6 animate-fadeIn pb-10">
