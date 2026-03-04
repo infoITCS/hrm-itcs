@@ -1,64 +1,107 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History, GraduationCap, Users, Shield, AlertCircle, Check, X, CreditCard, DollarSign, Banknote, Globe, Trash2, Camera, Gift } from 'lucide-react';
+import {
+    ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
+    GraduationCap, Users, Shield, AlertCircle, Check, X,
+    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut
+} from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 
+
 const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { canEditSensitiveData, canApproveDocuments } = usePermissions();
-    
+    const { canEditSensitiveData, canApproveDocuments, role } = usePermissions();
+
     // Read the query parameter 'tab' from URL
     const queryParams = new URLSearchParams(window.location.search);
     const initialTab = queryParams.get('tab') || 'personal';
-    
+
     const [activeTab, setActiveTab] = useState(initialTab);
     const [employee, setEmployee] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-    useEffect(() => {
+    // All employees list — used to resolve reporting manager name
+    const [allEmployees, setAllEmployees] = useState<any[]>([]);
+
+    // Offboard modal state
+    const [showOffboardModal, setShowOffboardModal] = useState(false);
+    const [offboardStatus, setOffboardStatus] = useState<'Terminated' | 'Resigned'>('Terminated');
+    const [offboardLoading, setOffboardLoading] = useState(false);
+
+    const isAdmin = role === 'super-admin' || role === 'admin';
+
+    const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
-
-        // Fetch employee data using the new endpoint
-        fetch(`${api.employees}/${id}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-            .then(res => {
-                if (!res.ok) {
-                    throw new Error('Failed to fetch employee');
-                }
-                return res.json();
-            })
-            .then(data => {
-                setEmployee(data);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error(err);
-                setLoading(false);
+        try {
+            const res = await fetch(`${api.employees}/${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
-
-        // Fetch audit logs
-        const auditToken = localStorage.getItem('token');
-        fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`, {
-            headers: {
-                'Authorization': `Bearer ${auditToken}`
-            }
-        })
-            .then(res => res.json())
-            .then(data => setAuditLogs(data || []))
-            .catch(err => console.error('Error fetching audit logs:', err));
+            if (!res.ok) throw new Error('Failed to fetch employee');
+            const data = await res.json();
+            setEmployee(data);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     }, [id]);
+
+    const fetchAuditLogs = useCallback(async () => {
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            // Support both old array response and new { logs } shape
+            setAuditLogs(Array.isArray(data) ? data : (data.logs || []));
+        } catch (err) {
+            console.error('Error fetching audit logs:', err);
+        }
+    }, [id]);
+
+    const fetchAllEmployees = useCallback(async () => {
+        if (!isAdmin) return; // only admins need the full list for name resolution
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(api.employees, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) setAllEmployees(data);
+            }
+        } catch (err) {
+            console.error('Error fetching employees list:', err);
+        }
+    }, [isAdmin]);
+
+    useEffect(() => {
+        fetchEmployee();
+        fetchAuditLogs();
+        fetchAllEmployees();
+    }, [id, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
 
     if (loading) return <div className="p-8 text-center">Loading Profile...</div>;
     if (!employee) return <div className="p-8 text-center">Employee Not Found</div>;
+
+    // Resolve manager ID/name to a display name
+    const resolveManagerName = (managerValue: string) => {
+        if (!managerValue) return '-';
+        // Check if value looks like an employee ID (itcs-xxx format) or a name
+        const found = allEmployees.find(
+            e => e.employeeId === managerValue || 
+                 `${e.firstName} ${e.lastName}`.toLowerCase() === managerValue.toLowerCase()
+        );
+        if (found) return `${found.firstName} ${found.lastName} (${found.employeeId})`;
+        return managerValue; // Return as-is if we can't resolve
+    };
 
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -78,15 +121,7 @@ const EmployeeProfile = () => {
             });
 
             if (!response.ok) throw new Error('Failed to upload profile picture');
-
-            // Re-fetch employee data
-            const refreshRes = await fetch(`${api.employees}/${id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (refreshRes.ok) {
-                const refreshedEmployee = await refreshRes.json();
-                setEmployee(refreshedEmployee);
-            }
+            await fetchEmployee();
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
             alert('Failed to upload profile picture.');
@@ -95,11 +130,45 @@ const EmployeeProfile = () => {
         }
     };
 
+    const handleOffboard = async () => {
+        setOffboardLoading(true);
+        const token = localStorage.getItem('token');
+        try {
+            const response = await fetch(`${api.employees}/${employee.employeeId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    employmentStatus: { status: offboardStatus, autoUpdated: false }
+                })
+            });
+            if (response.ok) {
+                await fetchEmployee();
+                await fetchAuditLogs();
+                setShowOffboardModal(false);
+            } else {
+                const err = await response.json();
+                alert(err.message || 'Failed to update status');
+            }
+        } catch (err) {
+            console.error('Error offboarding employee:', err);
+        } finally {
+            setOffboardLoading(false);
+        }
+    };
+
+    const isOffboarded = ['Terminated', 'Resigned'].includes(
+        employee.employmentStatus?.status || employee.employmentStatus || ''
+    );
+
     const tabs = [
         { id: 'personal', label: 'Personal', icon: User },
         { id: 'contact', label: 'Contact', icon: Phone },
         { id: 'job', label: 'Job', icon: Briefcase },
-        { id: 'finance', label: 'Finance', icon: CreditCard },
+        { id: 'immigration', label: 'Immigration', icon: Globe },
+        ...(isAdmin ? [{ id: 'finance', label: 'Finance', icon: Banknote }] : []),
         { id: 'benefits', label: 'Benefits', icon: Gift },
         { id: 'history', label: 'Employment History', icon: History },
         { id: 'education', label: 'Education', icon: GraduationCap },
@@ -145,24 +214,44 @@ const EmployeeProfile = () => {
                         {employee.firstName} {employee.middleName ? `${employee.middleName} ` : ''}{employee.lastName}
                     </h1>
                     <p className="text-gray-500">{employee.jobInfo?.designation} • {employee.jobInfo?.department}</p>
+                    {/* Offboard status badge */}
+                    {isOffboarded && (
+                        <span className="inline-flex items-center gap-1.5 mt-1 px-3 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                            <AlertTriangle size={12} />
+                            {employee.employmentStatus?.status || employee.employmentStatus}
+                        </span>
+                    )}
                 </div>
-                {canEditSensitiveData() && (
-                    <button
-                        onClick={() => navigate(`/pim/edit/${employee.employeeId}`)}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all font-medium shadow-sm hover:shadow-md"
-                    >
-                        <Edit2 size={16} /> Edit Profile
-                    </button>
-                )}
+
+                <div className="flex items-center gap-3">
+                    {/* Quick Offboard Button — admin only, only if not already offboarded */}
+                    {isAdmin && !isOffboarded && (
+                        <button
+                            onClick={() => setShowOffboardModal(true)}
+                            className="flex items-center gap-2 px-4 py-2.5 border border-rose-200 text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 hover:border-rose-300 transition-all font-medium text-sm"
+                        >
+                            <LogOut size={16} /> Offboard
+                        </button>
+                    )}
+
+                    {canEditSensitiveData() && (
+                        <button
+                            onClick={() => navigate(`/pim/edit/${employee.employeeId}`)}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all font-medium shadow-sm hover:shadow-md"
+                        >
+                            <Edit2 size={16} /> Edit Profile
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200">
+            <div className="flex border-b border-gray-200 overflow-x-auto">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-6 py-3 font-medium text-sm transition-all border-b-2 ${activeTab === tab.id
+                        className={`flex items-center gap-2 px-5 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${activeTab === tab.id
                             ? 'border-indigo-600 text-indigo-600 bg-gradient-to-r from-indigo-50 to-purple-50'
                             : 'border-transparent text-slate-500 hover:text-indigo-600 hover:bg-indigo-50/50'
                             }`}
@@ -221,7 +310,7 @@ const EmployeeProfile = () => {
                                         profile.link && (
                                             <a
                                                 key={idx}
-                                                href={profile.link}
+                                                href={profile.link?.startsWith('http') ? profile.link : `https://${profile.link}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-white transition-all group"
@@ -352,7 +441,8 @@ const EmployeeProfile = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8 animate-fadeIn">
                         <Field label="Designation" value={employee.jobInfo?.designation} />
                         <Field label="Department" value={employee.jobInfo?.department} />
-                        <Field label="Reporting Manager" value={employee.jobInfo?.reportingManager} />
+                        {/* #2 FIX: Resolve manager name instead of showing raw ID */}
+                        <Field label="Reporting Manager" value={resolveManagerName(employee.jobInfo?.reportingManager)} />
                         <Field label="Work Location" value={employee.jobInfo?.workLocation} />
                         <Field label="Joining Date" value={formatDate(employee.jobInfo?.joiningDate)} />
 
@@ -378,8 +468,58 @@ const EmployeeProfile = () => {
                     </div>
                 )}
 
-                {/* Finance Tab */}
-                {activeTab === 'finance' && (
+                {/* Immigration Tab — #1 FIX: New tab */}
+                {activeTab === 'immigration' && (
+                    <div className="space-y-6 animate-fadeIn">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2 flex items-center gap-2">
+                            <Globe size={20} className="text-indigo-600" />
+                            Immigration & Travel Documents
+                        </h3>
+                        {employee.immigrationHistory?.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {employee.immigrationHistory.map((doc: any, i: number) => (
+                                    <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold uppercase tracking-wider mb-2">
+                                                    {doc.documentType}
+                                                </span>
+                                                <p className="text-lg font-bold text-gray-800 font-mono">{doc.documentNumber || '—'}</p>
+                                            </div>
+                                            <Globe size={24} className="text-slate-200 group-hover:text-indigo-200 transition-colors" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issue Date</p>
+                                                <p className="text-sm font-semibold text-slate-700">{formatDate(doc.issueDate)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expiry Date</p>
+                                                <p className={`text-sm font-semibold ${doc.expiryDate && new Date(doc.expiryDate) < new Date() ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                    {formatDate(doc.expiryDate)}
+                                                </p>
+                                            </div>
+                                            <div className="col-span-2">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issuing Country</p>
+                                                <p className="text-sm font-semibold text-slate-700">{doc.issuingCountry || '—'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-12 text-gray-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                                <Globe size={48} className="mx-auto mb-4 opacity-20" />
+                                <p>No immigration documents recorded</p>
+                                <p className="text-sm mt-1">Add documents through the Edit Profile section.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Finance Tab — #10 FIX: only shown in tabs for admins */}
+                {activeTab === 'finance' && isAdmin && (
                     <div className="space-y-8 animate-fadeIn">
                         <div>
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -389,13 +529,21 @@ const EmployeeProfile = () => {
                                 {employee.salaryComponents?.length > 0 ? (
                                     employee.salaryComponents.map((comp: any, i: number) => (
                                         <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                                                    <DollarSign size={16} />
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                                        <DollarSign size={16} />
+                                                    </div>
+                                                    <p className="text-sm font-bold text-gray-800">{comp.component}</p>
                                                 </div>
-                                                <span className="text-xs font-bold text-slate-400 uppercase">{comp.type}</span>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                                    comp.type === 'variable'
+                                                        ? 'bg-purple-100 text-purple-700'
+                                                        : 'bg-emerald-100 text-emerald-700'
+                                                }`}>
+                                                    {comp.type || 'fixed'}
+                                                </span>
                                             </div>
-                                            <p className="text-sm font-bold text-gray-800">{comp.component}</p>
                                             <p className="text-2xl font-black text-indigo-600 mt-1">
                                                 {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
                                             </p>
@@ -403,6 +551,17 @@ const EmployeeProfile = () => {
                                     ))
                                 ) : <p className="text-gray-400 italic text-sm">No salary components recorded</p>}
                             </div>
+                            {/* Total gross */}
+                            {employee.salaryComponents?.length > 0 && (
+                                <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                                    <p className="text-sm font-bold text-indigo-700">Total Monthly Gross</p>
+                                    <p className="text-xl font-black text-indigo-700">
+                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
+                                            employee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
+                                        )}
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="pt-8 border-t border-slate-100">
@@ -469,72 +628,40 @@ const EmployeeProfile = () => {
                         {employee.attachments?.length > 0 ? (
                             <div className="space-y-4">
                                 {employee.attachments.map((file: any, i: number) => {
-                                    const getFileTypeColor = (type: string) => {
-                                        const colors: any = {
-                                            'ID': 'from-blue-600 to-cyan-600',
-                                            'Contract': 'from-green-600 to-emerald-600',
-                                            'Certificate': 'from-purple-600 to-pink-600',
-                                            'Degree': 'from-orange-600 to-amber-600',
-                                            'Experience Letter': 'from-indigo-600 to-purple-600',
-                                            'Document': 'from-gray-600 to-slate-600'
-                                        };
-                                        return colors[type] || colors['Document'];
+                                    const colorMap: any = {
+                                        'ID': 'from-blue-600 to-cyan-600',
+                                        'Contract': 'from-green-600 to-emerald-600',
+                                        'Certificate': 'from-purple-600 to-pink-600',
+                                        'Degree': 'from-orange-600 to-amber-600',
+                                        'Experience Letter': 'from-indigo-600 to-purple-600',
+                                        'Document': 'from-gray-600 to-slate-600'
                                     };
+                                    const color = colorMap[file.fileType] || colorMap['Document'];
 
                                     const getStatusBadge = (status: string) => {
-                                        if (status === 'approved') {
-                                            return <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Check size={12} /> Approved</span>;
-                                        } else if (status === 'rejected') {
-                                            return <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded flex items-center gap-1"><X size={12} /> Rejected</span>;
-                                        } else {
-                                            return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Pending</span>;
-                                        }
+                                        if (status === 'approved') return <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Check size={12} /> Approved</span>;
+                                        if (status === 'rejected') return <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded flex items-center gap-1"><X size={12} /> Rejected</span>;
+                                        return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Pending</span>;
                                     };
 
                                     const handleApprove = async (attachmentId: string) => {
                                         const token = localStorage.getItem('token');
-                                        try {
-                                            const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                                method: 'PATCH',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'Authorization': `Bearer ${token}`
-                                                },
-                                                body: JSON.stringify({ status: 'approved' })
-                                            });
-                                            if (response.ok) {
-                                                // Refresh employee data
-                                                const updated = await fetch(`${api.employees}/${id}`, {
-                                                    headers: { 'Authorization': `Bearer ${token}` }
-                                                }).then(r => r.json());
-                                                setEmployee(updated);
-                                            }
-                                        } catch (err) {
-                                            console.error('Error approving document:', err);
-                                        }
+                                        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                            body: JSON.stringify({ status: 'approved' })
+                                        });
+                                        await fetchEmployee();
                                     };
 
                                     const handleReject = async (attachmentId: string) => {
                                         const token = localStorage.getItem('token');
-                                        try {
-                                            const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                                method: 'PATCH',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'Authorization': `Bearer ${token}`
-                                                },
-                                                body: JSON.stringify({ status: 'rejected' })
-                                            });
-                                            if (response.ok) {
-                                                // Refresh employee data
-                                                const updated = await fetch(`${api.employees}/${id}`, {
-                                                    headers: { 'Authorization': `Bearer ${token}` }
-                                                }).then(r => r.json());
-                                                setEmployee(updated);
-                                            }
-                                        } catch (err) {
-                                            console.error('Error rejecting document:', err);
-                                        }
+                                        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                            body: JSON.stringify({ status: 'rejected' })
+                                        });
+                                        await fetchEmployee();
                                     };
 
                                     const handleDownload = (attachmentId: string, fileName: string) => {
@@ -552,29 +679,17 @@ const EmployeeProfile = () => {
                                     const handleDelete = async (attachmentId: string) => {
                                         if (!window.confirm('Are you sure you want to delete this document?')) return;
                                         const token = localStorage.getItem('token');
-                                        try {
-                                            const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                                method: 'DELETE',
-                                                headers: {
-                                                    'Authorization': `Bearer ${token}`
-                                                }
-                                            });
-                                            if (response.ok) {
-                                                // Refresh employee data
-                                                const updated = await fetch(`${api.employees}/${id}`, {
-                                                    headers: { 'Authorization': `Bearer ${token}` }
-                                                }).then(r => r.json());
-                                                setEmployee(updated);
-                                            }
-                                        } catch (err) {
-                                            console.error('Error deleting document:', err);
-                                        }
+                                        const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+                                            method: 'DELETE',
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                        });
+                                        if (response.ok) await fetchEmployee();
                                     };
 
                                     return (
                                         <div key={i} className="flex items-center justify-between p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 hover:bg-gradient-to-br hover:from-indigo-100 hover:to-purple-100 transition-colors">
                                             <div className="flex items-center gap-3 flex-1">
-                                                <div className={`p-2 bg-gradient-to-r ${getFileTypeColor(file.fileType)} rounded-lg shadow-sm text-white`}>
+                                                <div className={`p-2 bg-gradient-to-r ${color} rounded-lg shadow-sm text-white`}>
                                                     <FileText size={20} />
                                                 </div>
                                                 <div className="flex-1">
@@ -589,38 +704,14 @@ const EmployeeProfile = () => {
                                             <div className="flex items-center gap-2">
                                                 {canApproveDocuments() && file.status !== 'approved' && file.status !== 'rejected' && (
                                                     <>
-                                                        <button
-                                                            onClick={() => handleApprove(file._id)}
-                                                            className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-all"
-                                                            title="Approve"
-                                                        >
-                                                            <Check size={18} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleReject(file._id)}
-                                                            className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
-                                                            title="Reject"
-                                                        >
-                                                            <X size={18} />
-                                                        </button>
+                                                        <button onClick={() => handleApprove(file._id)} className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-all" title="Approve"><Check size={18} /></button>
+                                                        <button onClick={() => handleReject(file._id)} className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all" title="Reject"><X size={18} /></button>
                                                     </>
                                                 )}
                                                 {canApproveDocuments() && (
-                                                    <button
-                                                        onClick={() => handleDelete(file._id)}
-                                                        className="p-2 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                        title="Delete permanently"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
+                                                    <button onClick={() => handleDelete(file._id)} className="p-2 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Delete permanently"><Trash2 size={18} /></button>
                                                 )}
-                                                <button
-                                                    onClick={() => handleDownload(file._id, file.fileName)}
-                                                    className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all"
-                                                    title="Download"
-                                                >
-                                                    <Download size={20} />
-                                                </button>
+                                                <button onClick={() => handleDownload(file._id, file.fileName)} className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all" title="Download"><Download size={20} /></button>
                                             </div>
                                         </div>
                                     );
@@ -657,7 +748,10 @@ const EmployeeProfile = () => {
                                                     }`}>
                                                     {log.action.replace('_', ' ')}
                                                 </span>
-                                                <p className="text-xs text-gray-500 mt-2 font-medium">By: <span className="text-indigo-600 font-bold">{log.performedBy}</span></p>
+                                                {/* #15 FIX: Show resolved performer name */}
+                                                <p className="text-xs text-gray-500 mt-2 font-medium">
+                                                    By: <span className="text-indigo-600 font-bold">{log.performerName || log.performedBy}</span>
+                                                </p>
                                             </div>
                                             <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded-md border border-slate-100">{formatDate(log.timestamp)}</span>
                                         </div>
@@ -699,6 +793,68 @@ const EmployeeProfile = () => {
                 )}
 
             </div>
+
+            {/* Offboard Confirmation Modal — #5 FIX */}
+            {showOffboardModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-rose-100 p-8 max-w-md w-full mx-4 animate-slide-up">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-3 bg-rose-100 rounded-xl text-rose-600">
+                                <LogOut size={24} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800">Offboard Employee</h2>
+                                <p className="text-sm text-gray-500">This will update the employment status immediately.</p>
+                            </div>
+                        </div>
+
+                        <div className="my-6 p-4 bg-rose-50 rounded-xl border border-rose-100 flex items-center gap-3">
+                            <AlertTriangle size={20} className="text-rose-500 flex-shrink-0" />
+                            <p className="text-sm text-rose-700">
+                                You are about to offboard <strong>{employee.firstName} {employee.lastName}</strong>. This action is logged and reversible via the edit profile.
+                            </p>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-sm font-semibold text-gray-600 mb-3">Select Offboarding Reason</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={() => setOffboardStatus('Terminated')}
+                                    className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${offboardStatus === 'Terminated' ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-200 text-slate-600 hover:border-rose-200'}`}
+                                >
+                                    🔴 Terminated
+                                </button>
+                                <button
+                                    onClick={() => setOffboardStatus('Resigned')}
+                                    className={`p-3 rounded-xl border-2 text-sm font-bold transition-all ${offboardStatus === 'Resigned' ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600 hover:border-amber-200'}`}
+                                >
+                                    🟡 Resigned
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowOffboardModal(false)}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleOffboard}
+                                disabled={offboardLoading}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                            >
+                                {offboardLoading ? (
+                                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
+                                ) : (
+                                    <><LogOut size={16} /> Confirm Offboard</>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -709,7 +865,6 @@ const DiffRows = ({ diff, prefix = '' }: { diff: any, prefix?: string }) => {
             {Object.entries(diff).map(([key, value]: [string, any]) => {
                 const label = prefix ? `${prefix}.${key}` : key;
 
-                // If value has 'old' and 'new' keys, it's a direct change
                 if (value && typeof value === 'object' && 'old' in value && 'new' in value) {
                     return (
                         <tr key={label} className="hover:bg-slate-50/50 transition-colors">
@@ -720,7 +875,6 @@ const DiffRows = ({ diff, prefix = '' }: { diff: any, prefix?: string }) => {
                     );
                 }
 
-                // Otherwise, it's a nested object (another diff object)
                 if (value && typeof value === 'object') {
                     return <DiffRows key={label} diff={value} prefix={label} />;
                 }

@@ -67,13 +67,9 @@ const Dashboard = () => {
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
             { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
-            { id: 'immigration', label: 'Passport & Travel', completed: !!(
-                emp.immigrationHistory?.some((imm: any) => imm.documentNumber) ||
-                emp.attachments?.some((a: any) => ['Passport', 'Visa', 'Work Permit'].includes(a.fileType))
-            ) },            { id: 'job', label: 'Work Information', completed: !!(emp.jobInfo?.designation && emp.jobInfo?.department && emp.jobInfo?.designation !== 'Employee' && emp.jobInfo?.department !== 'General') },
             { id: 'history', label: 'Employment & Education', completed: !!(emp.education?.some((edu: any) => edu.level) || emp.employmentHistory?.some((eh: any) => eh.companyName)) },
-            { id: 'finance', label: 'Bank Details', completed: !!(emp.bankDetails?.bankName && emp.bankDetails?.accountNumber) },
-            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'ID Card' || a.fileType === 'Passport' || a.fileType === 'CNIC Front')) }
+            { id: 'skills', label: 'Skills & Profiles', completed: !!(emp.skills?.length > 0 || emp.socialProfiles?.some((sp: any) => sp.link)) },
+            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'ID Card' || a.fileType === 'Passport' || a.fileType === 'CNIC Front' || a.fileType === 'Degree')) }
         ];
 
         const completedCount = steps.filter(s => s.completed).length;
@@ -392,32 +388,36 @@ const Dashboard = () => {
                 />
             )}
             {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}
-            {!loading && onboarding && onboarding.steps.length > 0 && onboarding.percent < 100 && (
-                <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-xl shadow-indigo-100/50 overflow-hidden relative group">
+            {!loading && onboarding && onboarding.steps.length > 0 && (
+                <div className={`bg-white rounded-2xl border-2 shadow-xl overflow-hidden relative group transition-all duration-500 ${onboarding.percent === 100 ? 'border-emerald-200 shadow-emerald-100/50' : 'border-indigo-100 shadow-indigo-100/50'}`}>
                     <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
-                        <Rocket size={160} className="text-indigo-600 -rotate-12" />
+                        {onboarding.percent === 100 ? <PartyPopper size={160} className="text-emerald-600 -rotate-12" /> : <Rocket size={160} className="text-indigo-600 -rotate-12" />}
                     </div>
                     
                     <div className="p-6 sm:p-8 flex flex-col lg:flex-row gap-8 items-center">
                         <div className="flex-1 space-y-4">
                             <div className="flex items-center gap-3">
-                                <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
-                                    <Rocket size={20} />
+                                <div className={`p-2.5 text-white rounded-xl shadow-lg ${onboarding.percent === 100 ? 'bg-emerald-500 shadow-emerald-200' : 'bg-indigo-600 shadow-indigo-200'}`}>
+                                    {onboarding.percent === 100 ? <Sparkles size={20} /> : <Rocket size={20} />}
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-800 tracking-tight">Onboarding in Progress</h2>
-                                    <p className="text-sm text-slate-500 font-medium">Complete your profile to unlock all enterprise features.</p>
+                                    <h2 className={`text-xl font-bold tracking-tight ${onboarding.percent === 100 ? 'text-emerald-700' : 'text-slate-800'}`}>
+                                        {onboarding.percent === 100 ? 'Onboarding Complete!' : 'Onboarding in Progress'}
+                                    </h2>
+                                    <p className="text-sm text-slate-500 font-medium">
+                                        {onboarding.percent === 100 ? 'You have successfully completed all required profile sections.' : 'Complete your profile to unlock all enterprise features.'}
+                                    </p>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
                                 <div className="flex justify-between items-end mb-1">
-                                    <span className="text-sm font-bold text-indigo-600">{onboarding.percent}% Completed</span>
+                                    <span className={`text-sm font-bold ${onboarding.percent === 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>{onboarding.percent}% Completed</span>
                                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{onboarding.steps.filter(s => s.completed).length} of {onboarding.steps.length} Steps</span>
                                 </div>
                                 <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-50">
                                     <div 
-                                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-1000 ease-out shadow-sm"
+                                        className={`h-full rounded-full transition-all duration-1000 ease-out shadow-sm ${onboarding.percent === 100 ? 'bg-gradient-to-r from-emerald-400 to-green-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`}
                                         style={{ width: `${onboarding.percent}%` }}
                                     />
                                 </div>
@@ -435,28 +435,29 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        <div className="shrink-0">
-                            <button 
-                                onClick={() => {
-                                    const firstIncomplete = onboarding.steps.find((s: any) => !s.completed);
-                                    let stepNum = 1;
-                                    if (firstIncomplete) {
-                                        if (firstIncomplete.id === 'personal') stepNum = 1;
-                                        if (firstIncomplete.id === 'contact') stepNum = 2;
-                                        if (firstIncomplete.id === 'immigration') stepNum = 3;
-                                        if (firstIncomplete.id === 'job') stepNum = 4;
-                                        if (firstIncomplete.id === 'history') stepNum = 5;
-                                        if (firstIncomplete.id === 'finance') stepNum = 6;
-                                        if (firstIncomplete.id === 'documents') stepNum = 7;
-                                    }
-                                    navigate(`/my-info?onboarding=true&step=${stepNum}`);
-                                }}
-                                className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2 group"
-                            >
-                                Continue Onboarding
-                                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                            </button>
-                        </div>
+                        {onboarding.percent < 100 && (
+                            <div className="shrink-0">
+                                <button 
+                                    onClick={() => {
+                                        const firstIncomplete = onboarding.steps.find((s: any) => !s.completed);
+                                        let stepNum = 1;
+                                        if (firstIncomplete) {
+                                            if (firstIncomplete.id === 'personal') stepNum = 1;
+                                            if (firstIncomplete.id === 'contact') stepNum = 2;
+                                            if (firstIncomplete.id === 'immigration') stepNum = 3;
+                                            if (firstIncomplete.id === 'history') stepNum = 5;
+                                            if (firstIncomplete.id === 'skills') stepNum = 6;
+                                            if (firstIncomplete.id === 'documents') stepNum = 8;
+                                        }
+                                        navigate(`/my-info?onboarding=true&step=${stepNum}`);
+                                    }}
+                                    className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 transition-all transform hover:-translate-y-1 active:scale-95 flex items-center gap-2 group"
+                                >
+                                    Continue Onboarding
+                                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

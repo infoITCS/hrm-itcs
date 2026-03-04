@@ -11,7 +11,8 @@ const AddEmployeeWizard = () => {
     const { id } = useParams();
     const isEditMode = !!id;
     const { user: authUser } = useAuth();
-    const { canEditSensitiveData, canCreateUser } = usePermissions();
+    const { canEditSensitiveData, canCreateUser, role } = usePermissions();
+    const isAdmin = role === 'super-admin' || role === 'admin';
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -20,6 +21,8 @@ const AddEmployeeWizard = () => {
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
     const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = useState(false);
 
     useEffect(() => {
         const fetchEmployees = async () => {
@@ -466,6 +469,9 @@ const AddEmployeeWizard = () => {
                 } else {
                     navigate('/pim');
                 }
+            } else {
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 2000);
             }
             return savedEmp;
         } catch (error: any) {
@@ -482,8 +488,11 @@ const AddEmployeeWizard = () => {
         { id: 3, title: 'Immigration', icon: Globe },
         { id: 4, title: 'Job & Status', icon: Briefcase },
         { id: 5, title: 'History & Education', icon: GraduationCap },
-        { id: 6, title: 'Finance', icon: CreditCard },
-        { id: 7, title: 'Documents', icon: FileText }
+        { id: 6, title: 'Skills & Profiles', icon: User },
+        ...(isAdmin ? [
+            { id: 7, title: 'Finance', icon: CreditCard },
+        ] : []),
+        { id: isAdmin ? 8 : 7, title: 'Documents', icon: FileText }
     ];
 
     const handleNext = async () => {
@@ -644,50 +653,71 @@ const AddEmployeeWizard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-slide-up pb-20">
                         {/* New Upload Fields for Step 1 */}
                         <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-                            {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => (
-                                <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
-                                    <input
-                                        type="file"
-                                        accept={label === 'Profile Picture' ? "image/*" : ".pdf,.doc,.docx,.jpg,.png"}
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                        onChange={(e) => {
-                                            if (e.target.files && e.target.files.length > 0) {
-                                                const file = e.target.files[0];
-                                                setFormData(prev => ({
-                                                    ...prev,
-                                                    files: [...prev.files, { file, type: label }]
-                                                }));
+                            {/* Profile Picture — with preview (#13) */}
+                        {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => (
+                            <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group cursor-pointer">
+                                <input
+                                    type="file"
+                                    accept={label === 'Profile Picture' ? 'image/*' : '.pdf,.doc,.docx,.jpg,.png'}
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    onChange={(e) => {
+                                        if (e.target.files && e.target.files.length > 0) {
+                                            const file = e.target.files[0];
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                files: [...prev.files.filter(f => f.type !== label), { file, type: label }]
+                                            }));
+                                            // Generate preview for profile picture
+                                            if (label === 'Profile Picture') {
+                                                const reader = new FileReader();
+                                                reader.onload = (ev) => setAvatarPreview(ev.target?.result as string);
+                                                reader.readAsDataURL(file);
                                             }
-                                        }}
-                                    />
+                                        }
+                                    }}
+                                />
+                                {/* Profile Picture shows image preview instead of icon */}
+                                {label === 'Profile Picture' && avatarPreview ? (
+                                    <div className="relative">
+                                        <img src={avatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
+                                        <button
+                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAvatarPreview(null); setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); }}
+                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                                            title="Remove"
+                                        >×</button>
+                                    </div>
+                                ) : (
                                     <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
                                         <Upload size={20} />
                                     </div>
-                                    <span className="text-sm font-medium text-gray-600">{label}</span>
-                                    {/* Display selected file if any */}
-                                    {formData.files.some(f => f.type === label) ? (
-                                        <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
-                                            {formData.files.find(f => f.type === label)?.file.name}
-                                        </span>
-                                    ) : (
-                                        <span className="text-xs text-gray-400 mt-1">Click to upload</span>
-                                    )}
-                                </div>
-                            ))}
+                                )}
+                                <span className="text-sm font-medium text-gray-600">{label}</span>
+                                {formData.files.some(f => f.type === label) && label !== 'Profile Picture' ? (
+                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
+                                        {formData.files.find(f => f.type === label)?.file.name}
+                                    </span>
+                                ) : !formData.files.some(f => f.type === label) ? (
+                                    <span className="text-xs text-gray-400 mt-1">Click to upload</span>
+                                ) : null}
+                            </div>
+                        ))}
                         </div>
+                        {/* Employee ID — #17: hide for non-admins in create mode */}
+                        {(isEditMode || isAdmin) && (
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Employee ID *</label>
-                            <input 
-                                type="text" 
-                                name="employeeId" 
-                                value={formData.employeeId} 
-                                onChange={handleChange} 
-                                placeholder={isEditMode ? "e.g. itcs-001" : "Auto-generated by system"}
+                            <input
+                                type="text"
+                                name="employeeId"
+                                value={formData.employeeId}
+                                onChange={handleChange}
+                                placeholder={isEditMode ? 'e.g. itcs-001' : 'Auto-generated by system'}
                                 className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${!isEditMode && !canEditSensitiveData() ? 'bg-gray-50' : 'bg-white'}`}
                                 readOnly={!isEditMode && !canEditSensitiveData()}
                             />
                             {!isEditMode && !canEditSensitiveData() && <p className="text-xs text-indigo-500">System will assign the next available ID</p>}
                         </div>
+                        )}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">First Name *</label>
                             <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
@@ -1265,72 +1295,109 @@ const AddEmployeeWizard = () => {
                             ))}
                         </div>
 
-                            {/* Skills & Social Profiles */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 pt-8 border-t border-gray-100">
-                                <div>
-                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Professional Skills</h3>
-                                    <div className="space-y-4">
-                                        <div className="flex flex-wrap gap-2 mb-2">
-                                            {formData.skills.map((skill, idx) => (
-                                                <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium group">
-                                                    {skill}
-                                                    <button onClick={() => setFormData(p => ({ ...p, skills: p.skills.filter((_, i) => i !== idx) }))} className="hover:text-red-500">
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Add a skill (e.g. React)"
-                                                id="skillInput"
-                                                className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        const val = (e.target as HTMLInputElement).value.trim();
-                                                        if (val && !formData.skills.includes(val)) {
-                                                            setFormData(p => ({ ...p, skills: [...p.skills, val] }));
-                                                            (e.target as HTMLInputElement).value = '';
-                                                        }
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    const input = document.getElementById('skillInput') as HTMLInputElement;
-                                                    const val = input.value.trim();
-                                                    if (val) {
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 6: Skills & Social Profiles (was at bottom of Step 5) */}
+                {step === 6 && (
+                    <div className="space-y-8 animate-slide-up pb-20">
+                        <div>
+                            <h3 className="text-xl font-semibold text-gray-700 mb-1">Skills & Digital Presence</h3>
+                            <p className="text-sm text-gray-400 mb-8">Add the employee's technical skills and online profiles.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="bg-slate-50/50 rounded-2xl border border-slate-100 p-6">
+                                    <h4 className="text-base font-semibold text-gray-700 mb-4">Professional Skills</h4>
+                                    <div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">
+                                        {formData.skills.map((skill, idx) => (
+                                            <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium">
+                                                {skill}
+                                                <button onClick={() => setFormData(p => ({ ...p, skills: p.skills.filter((_, i) => i !== idx) }))} className="hover:text-red-500 ml-1">
+                                                    <X size={12} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                        {formData.skills.length === 0 && <p className="text-sm text-gray-400">No skills added yet.</p>}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Add a skill (e.g. React, Python)"
+                                            id="skillInput"
+                                            className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    const val = (e.target as HTMLInputElement).value.trim();
+                                                    if (val && !formData.skills.includes(val)) {
                                                         setFormData(p => ({ ...p, skills: [...p.skills, val] }));
-                                                        input.value = '';
+                                                        (e.target as HTMLInputElement).value = '';
                                                     }
-                                                }}
-                                                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
-                                            >
-                                                Add
-                                            </button>
-                                        </div>
+                                                    e.preventDefault();
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                const input = document.getElementById('skillInput') as HTMLInputElement;
+                                                const val = input?.value.trim();
+                                                if (val && !formData.skills.includes(val)) {
+                                                    setFormData(p => ({ ...p, skills: [...p.skills, val] }));
+                                                    input.value = '';
+                                                }
+                                            }}
+                                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 flex items-center gap-1"
+                                        >
+                                            <Plus size={14} /> Add
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Digital Presence</h3>
+                                <div className="bg-slate-50/50 rounded-2xl border border-slate-100 p-6">
+                                    <h4 className="text-base font-semibold text-gray-700 mb-4">Digital Presence</h4>
                                     <div className="space-y-4">
                                         {formData.socialProfiles.map((profile, idx) => (
                                             <div key={idx} className="flex items-center gap-3">
                                                 <label className="text-xs font-semibold text-gray-400 w-20 uppercase tracking-wider">{profile.platform}</label>
-                                                <input
-                                                    type="url"
-                                                    placeholder={`${profile.platform} URL`}
-                                                    value={profile.link}
-                                                    onChange={(e) => {
-                                                        const newProfiles = [...formData.socialProfiles];
-                                                        newProfiles[idx].link = e.target.value;
-                                                        setFormData(p => ({ ...p, socialProfiles: newProfiles }));
-                                                    }}
-                                                    className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                                />
+                                                    <input
+                                                        type="text"
+                                                        placeholder={`${profile.platform} username or URL`}
+                                                        value={profile.link}
+                                                        onChange={(e) => {
+                                                            const newProfiles = [...formData.socialProfiles];
+                                                            newProfiles[idx].link = e.target.value;
+                                                            setFormData(p => ({ ...p, socialProfiles: newProfiles }));
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            let val = e.target.value.trim();
+                                                            if (!val) return;
+                                                            
+                                                            const platform = profile.platform.toLowerCase();
+                                                            
+                                                            // Auto-guess username to full url
+                                                            if (!val.includes('.') && !val.includes('/')) {
+                                                                if (platform === 'linkedin') val = `https://linkedin.com/in/${val}`;
+                                                                else if (platform === 'github') val = `https://github.com/${val}`;
+                                                                else val = `https://${val}.com`;
+                                                            } 
+                                                            else if (!val.startsWith('http')) {
+                                                                val = `https://${val}`;
+                                                            }
+                                                            
+                                                            // Strict context validation
+                                                            if (platform === 'linkedin' && !val.includes('linkedin.com')) {
+                                                                alert('Please provide a valid LinkedIn link or username.');
+                                                                val = '';
+                                                            } else if (platform === 'github' && !val.includes('github.com')) {
+                                                                alert('Please provide a valid GitHub link or username.');
+                                                                val = '';
+                                                            }
+                                                            
+                                                            const newProfiles = [...formData.socialProfiles];
+                                                            newProfiles[idx].link = val;
+                                                            setFormData(p => ({ ...p, socialProfiles: newProfiles }));
+                                                        }}
+                                                        className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
                                             </div>
                                         ))}
                                     </div>
@@ -1340,8 +1407,8 @@ const AddEmployeeWizard = () => {
                     </div>
                 )}
 
-                {/* Step 6: Finance */}
-                {step === 6 && (
+                {/* Step 7: Finance — admin only (#9) */}
+                {step === 7 && isAdmin && (
                     <div className="space-y-8 animate-slide-up pb-20">
                         {/* Salary Structure */}
                         <div>
@@ -1611,8 +1678,8 @@ const AddEmployeeWizard = () => {
                     </div>
                 )}
 
-                {/* Step 7: Additional Documents */}
-                {step === 7 && (
+                {/* Step 7: Documents — step 8 for admins, step 7 for non-admins */}
+                {step === (isAdmin ? 8 : 7) && (
                     <div className="animate-slide-up pb-20">
                         <div>
                             <h3 className="text-lg font-medium text-gray-700 mb-6">Documents & Attachments</h3>
@@ -1643,20 +1710,20 @@ const AddEmployeeWizard = () => {
                                                     >
                                                         <Download size={18} />
                                                     </a>
-                                                    <button 
+                                                    <button
                                                         onClick={async () => {
-                                                            if (window.confirm('Delete this document?')) {
-                                                                const token = localStorage.getItem('token');
-                                                                const res = await fetch(`${api.employees}/${id}/attachments/${file._id}`, {
-                                                                    method: 'DELETE',
-                                                                    headers: { 'Authorization': `Bearer ${token}` }
-                                                                });
-                                                                if (res.ok) {
-                                                                    setFormData(p => ({
-                                                                        ...p,
-                                                                        existingAttachments: p.existingAttachments.filter((a: any) => a._id !== file._id)
-                                                                    }));
-                                                                }
+                                                            const confirmed = window.confirm('Delete this document?');
+                                                            if (!confirmed) return;
+                                                            const token = localStorage.getItem('token');
+                                                            const res = await fetch(`${api.employees}/${id}/attachments/${file._id}`, {
+                                                                method: 'DELETE',
+                                                                headers: { 'Authorization': `Bearer ${token}` }
+                                                            });
+                                                            if (res.ok) {
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    existingAttachments: p.existingAttachments.filter((a: any) => a._id !== file._id)
+                                                                }));
                                                             }
                                                         }}
                                                         className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
@@ -1722,7 +1789,7 @@ const AddEmployeeWizard = () => {
 
                 {/* Error Message */}
                 {error && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2 mb-4">
                         <span className="text-red-500">⚠️</span>
                         <span>{error}</span>
                         <button
@@ -1734,34 +1801,56 @@ const AddEmployeeWizard = () => {
                     </div>
                 )}
 
+                {/* Success Message */}
+                {saveSuccess && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 flex items-center justify-between rounded-lg animate-fadeIn mb-4">
+                        <div className="flex items-center gap-2">
+                            <Check size={18} className="text-emerald-500" />
+                            <span className="font-medium">Progress saved successfully!</span>
+                        </div>
+                    </div>
+                )}
+
 
                 {/* Navigation Buttons */}
                 <div className="flex justify-between pt-6 border-t border-gray-100">
                     <button
                         onClick={() => { setStepErrors([]); setStep(s => Math.max(1, s - 1)); }}
-                        disabled={step === 1}
-                        className={`px-6 py-2.5 rounded-xl border border-gray-300 font-medium flex items-center gap-2 transition-all ${step === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-50 hover:border-primary-300 hover:text-primary-700'}`}
+                        disabled={step === 1 || loading}
+                        className={`px-6 py-2.5 rounded-xl border border-gray-300 font-medium flex items-center gap-2 transition-all ${step === 1 || loading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-50 hover:border-primary-300 hover:text-primary-700'}`}
                     >
                         <ChevronLeft size={16} /> Back
                     </button>
 
-                    {step < steps.length ? (
-                        <button
-                            onClick={handleNext}
-                            disabled={step === 1 && !isStep1RequiredValid()}
-                            className={`px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${step === 1 && !isStep1RequiredValid() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 hover:shadow-md'}`}
-                        >
-                            {loading && step === 1 ? 'Saving...' : 'Next'} <ChevronRight size={16} />
-                        </button>
-                    ) : (
-                        <button
-                            onClick={() => handleSubmit()}
-                            disabled={loading}
-                            className="px-8 py-2.5 rounded-lg bg-success text-white font-medium hover:bg-success/90 flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
-                        >
-                            <Save size={18} /> {loading ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update Employee' : 'Submit Employee')}
-                        </button>
-                    )}
+                    <div className="flex gap-3">
+                        {step > 1 && step < steps.length && formData.firstName && formData.lastName && (
+                            <button
+                                onClick={() => handleSubmit(false)}
+                                disabled={loading}
+                                className="px-6 py-2.5 rounded-lg border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50 transition-all flex items-center gap-2"
+                            >
+                                <Save size={16} /> Save Progress
+                            </button>
+                        )}
+                        {step < steps.length ? (
+                            <button
+                                onClick={handleNext}
+                                disabled={(step === 1 && !isStep1RequiredValid()) || loading}
+                                className={`px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${step === 1 && !isStep1RequiredValid() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 hover:shadow-md'}`}
+                            >
+                                {loading && step !== steps.length ? 'Saving...' : 'Save & Next'} 
+                                {loading && step !== steps.length ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <ChevronRight size={16} />}
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => handleSubmit(true)}
+                                disabled={loading}
+                                className="px-8 py-2.5 rounded-lg bg-success text-white font-medium hover:bg-success/90 flex items-center gap-2 shadow-sm hover:shadow-md transition-all"
+                            >
+                                <Save size={18} /> {loading ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update Employee' : 'Submit Employee')}
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

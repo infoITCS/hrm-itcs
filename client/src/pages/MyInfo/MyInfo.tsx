@@ -26,11 +26,40 @@ const MyInfo = () => {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; attachmentId: string | null; fileName: string | null }>({
         isOpen: false,
         attachmentId: null,
         fileName: null
     });
+
+    const validateField = (name: string, value: string): string => {
+        if (!value.trim()) return ''; // empty = no error
+        switch (name) {
+            case 'email':
+            case 'workEmail':
+            case 'otherEmail':
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Enter a valid email address (e.g. name@domain.com)';
+            case 'phone':
+            case 'simNumber':
+                return /^[\+]?[0-9 \-\(\)]{7,15}$/.test(value.replace(/\s/g, '')) ? '' : 'Enter a valid phone number (7-15 digits)';
+            case 'cnic':
+                return /^[0-9]{5}-[0-9]{7}-[0-9]$/.test(value) ? '' : 'CNIC must be in format 12345-1234567-1';
+            case 'iban':
+                return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{4,30}$/.test(value.replace(/\s/g, '').toUpperCase()) ? '' : 'Enter a valid IBAN (e.g. PK36SCBL0000001123456702)';
+            case 'accountNumber':
+                return /^[0-9]{8,16}$/.test(value.replace(/[-\s]/g, '')) ? '' : 'Account number must be 8-16 digits';
+            case 'swiftCode':
+                return /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(value.toUpperCase()) ? '' : 'Enter a valid SWIFT/BIC code (e.g. SCBLPKKA)';
+            default:
+                return '';
+        }
+    };
+
+    const handleFieldBlur = (name: string, value: string) => {
+        const err = validateField(name, value);
+        setFieldErrors(prev => ({ ...prev, [name]: err }));
+    };
 
     const hasFetched = useRef(false);
     const searchParams = new URLSearchParams(window.location.search);
@@ -372,7 +401,7 @@ const MyInfo = () => {
         }));
     };
 
-    const handleNext = async () => {
+    const handleNext = () => {
         // Step 1 has required field validation before saving
         if (step === 1) {
             if (!isStep1RequiredValid()) {
@@ -382,9 +411,8 @@ const MyInfo = () => {
             setStepErrors([]);
         }
 
-        // Save current step's data before advancing (all steps)
-        const result = await handleSubmit(false);
-        if (!result) return; // Stop if save failed
+        // Trigger background save without awaiting so UI is instant
+        handleSubmit(false);
 
         const currentIndex = steps.findIndex(s => s.id === step);
         if (currentIndex < steps.length - 1) {
@@ -398,7 +426,7 @@ const MyInfo = () => {
         }
     };
 
-    const handleStepClick = async (targetStepId: number) => {
+    const handleStepClick = (targetStepId: number) => {
         // If clicking the current step, do nothing
         if (targetStepId === step) return;
 
@@ -411,8 +439,8 @@ const MyInfo = () => {
             setStepErrors([]);
         }
 
-        // Auto-save current step before jumping to another
-        await handleSubmit(false);
+        // Fire off background save silently
+        handleSubmit(false);
 
         // Mark current step as completed if jumping forward
         if (targetStepId > step && !completedSteps.includes(step)) {
@@ -553,7 +581,7 @@ const MyInfo = () => {
                         setIsEditing(false);
                     }
                 }
-            }, 3000);
+            }, 600);
             return savedEmployee;
         } catch (err: any) {
             console.error('Error saving employee data:', err);
@@ -675,8 +703,9 @@ const MyInfo = () => {
         { id: 3, title: 'Immigration', icon: Globe },
         { id: 4, title: 'Job & Status', icon: Briefcase, roleRestricted: true },
         { id: 5, title: 'History & Education', icon: GraduationCap },
-        { id: 6, title: 'Finance', icon: CreditCard },
-        { id: 7, title: 'Documents', icon: FileText }
+        { id: 6, title: 'Skills & Profiles', icon: User },
+        { id: 7, title: 'Finance', icon: CreditCard, roleRestricted: true },
+        { id: 8, title: 'Documents', icon: FileText }
     ];
 
     const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
@@ -852,7 +881,7 @@ const MyInfo = () => {
                                             profile.link && (
                                                 <a
                                                     key={idx}
-                                                    href={profile.link}
+                                                    href={profile.link?.startsWith('http') ? profile.link : `https://${profile.link}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-white transition-all group"
@@ -1301,12 +1330,14 @@ const MyInfo = () => {
                                         name="cnic"
                                         value={formData.cnic || ''}
                                         onChange={handleChange}
+                                        onBlur={(e) => handleFieldBlur('cnic', e.target.value)}
                                         placeholder="e.g. 12345-1234567-1"
                                         disabled={initialLockedFields.cnic && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.cnic ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
-                                    {initialLockedFields.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
-                                    {initialLockedFields.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
+                                    {fieldErrors.cnic && <p className="text-xs text-red-500 mt-1">{fieldErrors.cnic}</p>}
+                                    {!fieldErrors.cnic && initialLockedFields.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {!fieldErrors.cnic && initialLockedFields.cnic && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Date of Birth *</label>
@@ -1392,23 +1423,28 @@ const MyInfo = () => {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Personal Email</label>
-                                            <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                            <input type="email" name="email" value={formData.email} onChange={handleChange} onBlur={(e) => handleFieldBlur('email', e.target.value)} className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.email ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Work Email</label>
-                                            <input type="email" name="workEmail" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                            <input type="email" name="workEmail" value={formData.workEmail} onChange={handleChange} onBlur={(e) => handleFieldBlur('workEmail', e.target.value)} className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.workEmail ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            {fieldErrors.workEmail && <p className="text-xs text-red-500 mt-1">{fieldErrors.workEmail}</p>}
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Other Email</label>
-                                            <input type="email" name="otherEmail" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                            <input type="email" name="otherEmail" value={formData.otherEmail} onChange={handleChange} onBlur={(e) => handleFieldBlur('otherEmail', e.target.value)} className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.otherEmail ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            {fieldErrors.otherEmail && <p className="text-xs text-red-500 mt-1">{fieldErrors.otherEmail}</p>}
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Personal Phone</label>
-                                            <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                            <input type="text" name="phone" value={formData.phone} onChange={handleChange} onBlur={(e) => handleFieldBlur('phone', e.target.value)} placeholder="e.g. +92 300 1234567" className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.phone ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Company SIM Number</label>
-                                            <input type="text" name="simNumber" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                            <input type="text" name="simNumber" value={formData.simNumber} onChange={handleChange} onBlur={(e) => handleFieldBlur('simNumber', e.target.value)} placeholder="e.g. +92 301 9876543" className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.simNumber ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            {fieldErrors.simNumber && <p className="text-xs text-red-500 mt-1">{fieldErrors.simNumber}</p>}
                                         </div>
                                     </div>
                                 </div>
@@ -1436,7 +1472,10 @@ const MyInfo = () => {
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
                                                 <input type="text" placeholder="Name" value={contact.name} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'name')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 <input type="text" placeholder="Relation" value={contact.relation} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'relation')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
-                                                <input type="text" placeholder="Phone" value={contact.phone} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'phone')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                                <div>
+                                                    <input type="tel" placeholder="e.g. +92 300 1234567" value={contact.phone} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'phone')} onBlur={(e) => { const err = validateField('phone', e.target.value); setFieldErrors(prev => ({ ...prev, [`ec_phone_${idx}`]: err })); }} className={`border rounded-lg px-3 py-2 text-sm focus:ring-2 outline-none transition-all w-full ${fieldErrors[`ec_phone_${idx}`] ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200 focus:border-indigo-400'}`} />
+                                                    {fieldErrors[`ec_phone_${idx}`] && <p className="text-xs text-red-500 mt-1">{fieldErrors[`ec_phone_${idx}`]}</p>}
+                                                </div>
                                             </div>
                                             <button onClick={() => removeEmergencyContact(idx)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Remove Contact">
                                                 <Trash2 size={18} />
@@ -1776,9 +1815,13 @@ const MyInfo = () => {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        )}
 
-                                {/* Skills & Social Profiles */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12 pt-8 border-t border-gray-100">
+                        {/* Step 6: Skills & Social Profiles */}
+                        {step === 6 && (
+                            <div className="space-y-8 animate-slide-up pb-20">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div>
                                         <h3 className="text-lg font-medium text-gray-700 mb-4">Professional Skills</h3>
                                         <div className="space-y-4">
@@ -1833,12 +1876,41 @@ const MyInfo = () => {
                                                 <div key={idx} className="flex items-center gap-3">
                                                     <label className="text-xs font-semibold text-gray-400 w-20 uppercase tracking-wider">{profile.platform}</label>
                                                     <input
-                                                        type="url"
-                                                        placeholder={`${profile.platform} URL`}
+                                                        type="text"
+                                                        placeholder={`${profile.platform} username or URL`}
                                                         value={profile.link}
                                                         onChange={(e) => {
                                                             const newProfiles = [...formData.socialProfiles];
                                                             newProfiles[idx].link = e.target.value;
+                                                            setFormData(p => ({ ...p, socialProfiles: newProfiles }));
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            let val = e.target.value.trim();
+                                                            if (!val) return;
+                                                            
+                                                            const platform = profile.platform.toLowerCase();
+                                                            
+                                                            // Auto-guess username to full url
+                                                            if (!val.includes('.') && !val.includes('/')) {
+                                                                if (platform === 'linkedin') val = `https://linkedin.com/in/${val}`;
+                                                                else if (platform === 'github') val = `https://github.com/${val}`;
+                                                                else val = `https://${val}.com`;
+                                                            } 
+                                                            else if (!val.startsWith('http')) {
+                                                                val = `https://${val}`;
+                                                            }
+                                                            
+                                                            // Strict context validation
+                                                            if (platform === 'linkedin' && !val.includes('linkedin.com')) {
+                                                                alert('Please provide a valid LinkedIn link or username.');
+                                                                val = '';
+                                                            } else if (platform === 'github' && !val.includes('github.com')) {
+                                                                alert('Please provide a valid GitHub link or username.');
+                                                                val = '';
+                                                            }
+                                                            
+                                                            const newProfiles = [...formData.socialProfiles];
+                                                            newProfiles[idx].link = val;
                                                             setFormData(p => ({ ...p, socialProfiles: newProfiles }));
                                                         }}
                                                         className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
@@ -1851,8 +1923,8 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Step 6: Finance */}
-                        {step === 6 && (
+                        {/* Step 7: Finance */}
+                        {step === 7 && (
                             <div className="space-y-8 animate-slide-up pb-20">
                                 {/* Salary Structure */}
                                 {isAdmin && (
@@ -1999,37 +2071,42 @@ const MyInfo = () => {
                                                 placeholder="Account Number"
                                                 value={formData.bankDetails.accountNumber}
                                                 onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
-                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                onBlur={(e) => handleFieldBlur('accountNumber', e.target.value)}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.accountNumber ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
                                             />
+                                            {fieldErrors.accountNumber && <p className="text-xs text-red-500 mt-1">{fieldErrors.accountNumber}</p>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">IBAN</label>
                                             <input
                                                 type="text"
-                                                placeholder="International Bank Account Number"
+                                                placeholder="e.g. PK36SCBL0000001123456702"
                                                 value={formData.bankDetails.iban}
                                                 onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
-                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                onBlur={(e) => handleFieldBlur('iban', e.target.value)}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.iban ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
                                             />
+                                            {fieldErrors.iban && <p className="text-xs text-red-500 mt-1">{fieldErrors.iban}</p>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Swift Code (BIC)</label>
                                             <input
                                                 type="text"
-                                                placeholder="Swift/BIC Code"
+                                                placeholder="e.g. SCBLPKKA"
                                                 value={formData.bankDetails.swiftCode}
                                                 onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
-                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                onBlur={(e) => handleFieldBlur('swiftCode', e.target.value)}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.swiftCode ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
                                             />
+                                            {fieldErrors.swiftCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.swiftCode}</p>}
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 7: Documents */}
-                        {/* Step 7: Documents */}
-                        {step === 7 && (
+                        {/* Step 8: Documents */}
+                        {step === 8 && (
                             <div className="animate-slide-up pb-20">
                                 <div>
                                     <h3 className="text-lg font-medium text-gray-700 mb-6">Documents & Attachments</h3>
@@ -2122,44 +2199,56 @@ const MyInfo = () => {
                         <div className="flex justify-between items-center pt-6 border-t border-gray-200 mt-8">
                             <button
                                 onClick={handlePrev}
-                                disabled={step === 1}
-                                className={`px-6 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 ${step === 1
+                                disabled={step === 1 || saving}
+                                className={`px-6 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 ${step === 1 || saving
                                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                     }`}
                             >
                                 <ChevronLeft size={16} /> Previous
                             </button>
-                            {step !== steps[steps.length - 1].id ? (
-                                <button
-                                    onClick={handleNext}
-                                    disabled={saving || (step === 1 && !isStep1RequiredValid())}
-                                    className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${
-                                        saving
-                                            ? 'bg-indigo-400 text-white cursor-wait'
-                                            : step === 1 && !isStep1RequiredValid()
-                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'
-                                    }`}
-                                >
-                                    {saving ? (
-                                        <>
-                                            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                                            Saving…
-                                        </>
-                                    ) : (
-                                        <>Next <ChevronRight size={16} /></>
-                                    )}
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={() => handleSubmit()}
-                                    disabled={saving || !isStep1RequiredValid()}
-                                    className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${saving || !isStep1RequiredValid() ? 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
-                                >
-                                    <Save size={18} /> {saving ? 'Saving...' : 'Save Information'}
-                                </button>
-                            )}
+
+                            <div className="flex gap-3">
+                                {step !== steps[0].id && step !== steps[steps.length - 1].id && formData.firstName && formData.lastName && (
+                                    <button
+                                        onClick={() => handleSubmit(false)}
+                                        disabled={saving}
+                                        className="px-6 py-2.5 rounded-lg border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50 transition-all flex items-center gap-2"
+                                    >
+                                        <Save size={16} /> Save Progress
+                                    </button>
+                                )}
+
+                                {step !== steps[steps.length - 1].id ? (
+                                    <button
+                                        onClick={handleNext}
+                                        disabled={saving || (step === 1 && !isStep1RequiredValid())}
+                                        className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${
+                                            saving
+                                                ? 'bg-indigo-400 text-white cursor-wait'
+                                                : step === 1 && !isStep1RequiredValid()
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                    : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'
+                                        }`}
+                                    >
+                                        {saving ? (
+                                            <>
+                                                Saving... <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                            </>
+                                        ) : (
+                                            <>Save & Next <ChevronRight size={16} /></>
+                                        )}
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => handleSubmit()}
+                                        disabled={saving || !isStep1RequiredValid()}
+                                        className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${saving || !isStep1RequiredValid() ? 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
+                                    >
+                                        <Save size={18} /> {saving ? 'Saving...' : 'Save Information'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

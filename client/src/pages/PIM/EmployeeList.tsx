@@ -6,13 +6,17 @@ import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 
+const ITEMS_PER_PAGE = 12;
+
 const EmployeeList = () => {
     const navigate = useNavigate();
     const { canCreateUser, canEditSensitiveData } = usePermissions();
     const [employees, setEmployees] = React.useState<any[]>([]);
+    const [loading, setLoading] = React.useState(true);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false);
     const [employeeToDelete, setEmployeeToDelete] = React.useState<string | null>(null);
     const [viewMode, setViewMode] = React.useState<'table' | 'grid'>('grid');
+    const [page, setPage] = React.useState(1);
     const [filters, setFilters] = React.useState({
         name: '',
         id: '',
@@ -51,15 +55,12 @@ const EmployeeList = () => {
 
     React.useEffect(() => {
         const token = localStorage.getItem('token');
+        setLoading(true);
         fetch(api.employees, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
+            headers: { 'Authorization': `Bearer ${token}` }
         })
             .then(res => {
-                if (!res.ok) {
-                    throw new Error('Failed to fetch employees');
-                }
+                if (!res.ok) throw new Error('Failed to fetch employees');
                 return res.json();
             })
             .then(data => {
@@ -73,14 +74,16 @@ const EmployeeList = () => {
             .catch(err => {
                 console.error('Error fetching employees:', err);
                 setEmployees([]);
-            });
+            })
+            .finally(() => setLoading(false));
     }, []);
 
     const filteredEmployees = React.useMemo(() => {
+        // Reset to page 1 whenever filters change
         return employees.filter(emp => {
             const status = emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent';
             const isPast = ['Terminated', 'Resigned'].includes(status);
-            
+
             if (statusFilter === 'active' && isPast) return false;
             if (statusFilter === 'past' && !isPast) return false;
 
@@ -94,6 +97,12 @@ const EmployeeList = () => {
             return matchesName && matchesId && matchesPost && matchesDept && matchesManager;
         });
     }, [employees, filters, statusFilter]);
+
+    const totalPages = Math.ceil(filteredEmployees.length / ITEMS_PER_PAGE);
+    const paginatedEmployees = filteredEmployees.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+    // Reset page when filters change
+    React.useEffect(() => { setPage(1); }, [filters, statusFilter]);
 
     // Analytics Calculations
     const stats = React.useMemo(() => {
@@ -118,6 +127,25 @@ const EmployeeList = () => {
         ];
     }, [employees]);
 
+
+    // Skeleton loader component
+    const SkeletonCard = () => (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/60 shadow-sm flex flex-col items-center animate-pulse">
+            <div className="w-24 h-24 rounded-2xl bg-slate-200 mb-4" />
+            <div className="h-4 bg-slate-200 rounded w-32 mb-2" />
+            <div className="h-3 bg-slate-100 rounded w-24 mb-1" />
+            <div className="h-3 bg-slate-100 rounded w-20 mb-6" />
+            <div className="grid grid-cols-2 w-full gap-2 mb-4">
+                <div className="h-10 bg-slate-100 rounded-2xl" />
+                <div className="h-10 bg-slate-100 rounded-2xl" />
+            </div>
+            <div className="flex gap-2 w-full pt-4 border-t border-slate-100">
+                <div className="h-8 bg-slate-100 rounded-xl flex-1" />
+                <div className="h-8 bg-slate-200 rounded-xl w-8" />
+                <div className="h-8 bg-slate-200 rounded-xl w-8" />
+            </div>
+        </div>
+    );
 
     return (
         <div className="space-y-8 animate-fadeIn pb-12 bg-slate-50/30 min-h-screen">
@@ -258,9 +286,13 @@ const EmployeeList = () => {
 
             {/* 3. Employee Display */}
             <div className="animate-slide-up">
-                {viewMode === 'grid' ? (
+                {loading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {filteredEmployees.map((emp) => (
+                        {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+                    </div>
+                ) : viewMode === 'grid' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {paginatedEmployees.map((emp) => (
                             <div key={emp.employeeId} className="bg-white rounded-3xl p-6 border border-slate-200/60 shadow-sm hover:shadow-xl hover:shadow-indigo-50 transition-all group relative overflow-hidden flex flex-col items-center text-center">
                                 {/* Decorative elements */}
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 -mr-10 -mt-10 rounded-full" />
@@ -279,7 +311,7 @@ const EmployeeList = () => {
                                 {/* Info */}
                                 <div className="space-y-1 mb-6">
                                     <h5 className="font-bold text-slate-800 text-lg group-hover:text-indigo-600 transition-colors">
-                                        {emp.firstName} {emp.lastName}
+                                        {emp.firstName} {emp.middleName ? `${emp.middleName} ` : ''}{emp.lastName}
                                     </h5>
                                     <p className="text-indigo-600 text-sm font-semibold tracking-tight">{emp.jobInfo?.designation || 'Software Engineer'}</p>
                                     <div className="flex items-center justify-center gap-1.5 text-slate-400 text-xs">
@@ -344,7 +376,7 @@ const EmployeeList = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {filteredEmployees.map((emp) => (
+                                    {paginatedEmployees.map((emp) => (
                                         <tr key={emp.employeeId} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -356,7 +388,7 @@ const EmployeeList = () => {
                                                         )}
                                                     </div>
                                                     <div>
-                                                        <p className="font-bold text-slate-800">{emp.firstName} {emp.lastName}</p>
+                                                        <p className="font-bold text-slate-800">{emp.firstName} {emp.middleName ? `${emp.middleName} ` : ''}{emp.lastName}</p>
                                                         <p className="text-[11px] text-slate-400 font-medium">#{emp.employeeId}</p>
                                                     </div>
                                                 </div>
@@ -395,22 +427,97 @@ const EmployeeList = () => {
                     </div>
                 )}
 
-                {filteredEmployees.length === 0 && (
+                {/* Pagination */}
+                {!loading && totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-6 bg-white rounded-2xl border border-slate-200/60 shadow-sm px-6 py-3">
+                        <p className="text-sm text-slate-500">
+                            Showing <span className="font-bold text-slate-700">{Math.min((page - 1) * ITEMS_PER_PAGE + 1, filteredEmployees.length)}</span> –{' '}
+                            <span className="font-bold text-slate-700">{Math.min(page * ITEMS_PER_PAGE, filteredEmployees.length)}</span> of{' '}
+                            <span className="font-bold text-slate-700">{filteredEmployees.length}</span> employees
+                        </p>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="px-3 py-1.5 rounded-lg text-sm font-bold text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                            >
+                                ← Prev
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                                .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                                    if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                                    acc.push(p);
+                                    return acc;
+                                }, [])
+                                .map((p, i) => p === '...' ? (
+                                    <span key={`dots-${i}`} className="px-2 text-slate-400">…</span>
+                                ) : (
+                                    <button
+                                        key={p}
+                                        onClick={() => setPage(p as number)}
+                                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-all ${
+                                            page === p
+                                                ? 'bg-indigo-600 text-white shadow-sm'
+                                                : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'
+                                        }`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))
+                            }
+                            <button
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages}
+                                className="px-3 py-1.5 rounded-lg text-sm font-bold text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                            >
+                                Next →
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {!loading && filteredEmployees.length === 0 && (
                     <div className="bg-white rounded-3xl p-20 text-center border border-slate-200/60 shadow-sm">
-                        <div className="flex flex-col items-center gap-4 max-w-xs mx-auto">
+                        <div className="flex flex-col items-center gap-4 max-w-sm mx-auto">
                             <div className="p-6 bg-slate-50 rounded-full text-slate-300">
                                 <Search size={48} />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-slate-800">No members found</h3>
-                                <p className="text-slate-500 text-sm mt-1">We couldn't find anyone matching those search criteria. Try adjusting your filters.</p>
+                                {Object.values(filters).some(Boolean) ? (
+                                    <>
+                                        <h3 className="text-lg font-bold text-slate-800">No matches found</h3>
+                                        <p className="text-slate-500 text-sm mt-1">We couldn't find anyone matching those criteria. Try adjusting your filters.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <h3 className="text-lg font-bold text-slate-800">
+                                            {statusFilter === 'active' ? 'No active employees yet' : 'No past employees'}
+                                        </h3>
+                                        <p className="text-slate-500 text-sm mt-1">
+                                            {statusFilter === 'active'
+                                                ? 'Click "Add New" to onboard your first employee.'
+                                                : 'Terminated or resigned employees will appear here.'}
+                                        </p>
+                                    </>
+                                )}
                             </div>
-                            <button
-                                onClick={() => setFilters({ name: '', id: '', post: '', dept: '', manager: '' })}
-                                className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all text-sm"
-                            >
-                                Clear all filters
-                            </button>
+                            {Object.values(filters).some(Boolean) && (
+                                <button
+                                    onClick={() => setFilters({ name: '', id: '', post: '', dept: '', manager: '' })}
+                                    className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all text-sm"
+                                >
+                                    Clear all filters
+                                </button>
+                            )}
+                            {!Object.values(filters).some(Boolean) && canCreateUser() && statusFilter === 'active' && (
+                                <button
+                                    onClick={() => navigate('/pim/add')}
+                                    className="mt-4 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all text-sm flex items-center gap-2"
+                                >
+                                    <Plus size={16} /> Add First Employee
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}

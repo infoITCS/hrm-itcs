@@ -81,8 +81,8 @@ app.use(session({
 }));
 
 
-// Initialize Scheduler (only in production with proper environment)
-if (process.env.NODE_ENV === 'production' && process.env.ENABLE_SCHEDULER !== 'false') {
+// Initialize Scheduler (runs in dev + production; Vercel guard is inside initScheduler)
+if (process.env.ENABLE_SCHEDULER !== 'false') {
     initScheduler();
 }
 
