@@ -1346,6 +1346,7 @@ const MyInfo = () => {
                                         name="dateOfBirth"
                                         value={formData.dateOfBirth}
                                         onChange={handleChange}
+                                        max={new Date().toISOString().split('T')[0]}
                                         disabled={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
                                         className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                                     />
@@ -1503,7 +1504,7 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Date of Birth</label>
-                                                    <input type="date" value={dep.dateOfBirth} onChange={(e) => handleChange(e, 'dependents', idx, 'dateOfBirth')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                                    <input type="date" value={dep.dateOfBirth} onChange={(e) => handleChange(e, 'dependents', idx, 'dateOfBirth')} max={new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
                                                 </div>
                                             </div>
                                             <button onClick={() => setFormData(p => ({ ...p, dependents: p.dependents.filter((_, i) => i !== idx) }))} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Remove Dependent">
@@ -1565,11 +1566,25 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Issue Date</label>
-                                                    <input type="date" name="issueDate" value={doc.issueDate} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issueDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                                    <input 
+                                                        type="date" 
+                                                        name="issueDate" 
+                                                        value={doc.issueDate} 
+                                                        onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issueDate')} 
+                                                        max={doc.expiryDate || new Date().toISOString().split('T')[0]}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" 
+                                                    />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Expiry Date</label>
-                                                    <input type="date" name="expiryDate" value={doc.expiryDate} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'expiryDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                                    <input 
+                                                        type="date" 
+                                                        name="expiryDate" 
+                                                        value={doc.expiryDate} 
+                                                        onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'expiryDate')} 
+                                                        min={doc.issueDate || new Date().toISOString().split('T')[0]}
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" 
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
@@ -1712,11 +1727,11 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Start Date</label>
-                                                    <input type="date" value={eh.startDate} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'startDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                                    <input type="date" value={eh.startDate} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'startDate')} max={eh.endDate || new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">End Date</label>
-                                                    <input type="date" value={eh.endDate} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'endDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                                    <input type="date" value={eh.endDate} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'endDate')} min={eh.startDate} max={new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
                                                 </div>
                                                 <div className="space-y-1 md:col-span-2">
                                                     <label className="text-xs font-medium text-gray-500">Reason for Leaving</label>
@@ -1776,41 +1791,6 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Score / GPA</label>
                                                     <input type="text" placeholder="e.g., 3.5/4.0 or 85%" value={edu.score} onChange={(e) => handleChange(e, 'education', idx, 'score')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
-                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                                    <div className="flex items-center gap-2">
-                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full">
-                                                            <Upload size={14} />
-                                                            <span className="truncate flex-1">
-                                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
-                                                                    ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
-                                                                    : 'Upload Degree/Certificate (PDF, Image)'}
-                                                            </span>
-                                                            <input
-                                                                type="file"
-                                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                                className="hidden"
-                                                                onChange={(e) => {
-                                                                    if (e.target.files && e.target.files.length > 0) {
-                                                                        const typeKey = `Degree - ${edu.level || idx}`;
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                        }));
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </label>
-                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
-                                                            <button
-                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
-                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                                                                title="Remove File"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -1838,7 +1818,7 @@ const MyInfo = () => {
                                             <div className="flex gap-2">
                                                 <input
                                                     type="text"
-                                                    placeholder="Add a skill (e.g. React)"
+                                                    placeholder="Add a professional skill"
                                                     id="skillInput"
                                                     className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
                                                     onKeyDown={(e) => {
@@ -2149,7 +2129,7 @@ const MyInfo = () => {
                                     {/* Upload Grid */}
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {['Contract', 'Certificates', 'Degree', 'Other Documents'].map((label) => (
+                                        {['Contract', 'Other Documents'].map((label) => (
                                             <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"

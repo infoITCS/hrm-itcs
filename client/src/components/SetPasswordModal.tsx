@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import APIService from '../services/api';
 
 interface SetPasswordModalProps {
@@ -114,7 +115,7 @@ export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, on
         }
     }, [password, confirm, allMet, passwordsMatch, onSuccess]);
 
-    return (
+    const modalContent = (
         <div style={styles.overlay}>
             <div style={styles.card}>
                 {/* Decorative top gradient bar */}
@@ -302,6 +303,8 @@ export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, on
             `}</style>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 };
 
 const styles: Record<string, React.CSSProperties> = {

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
-    GraduationCap, Users, Shield, AlertCircle, Check, X,
+    GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
     DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut
 } from 'lucide-react';
 import api from '../../utils/api';
@@ -34,6 +34,7 @@ const EmployeeProfile = () => {
     const [offboardStatus, setOffboardStatus] = useState<'Terminated' | 'Resigned'>('Terminated');
     const [offboardLoading, setOffboardLoading] = useState(false);
 
+    const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; type: string } | null>(null);
     const isAdmin = role === 'super-admin' || role === 'admin';
 
     const fetchEmployee = useCallback(async () => {
@@ -702,6 +703,17 @@ const EmployeeProfile = () => {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        const url = api.attachmentRaw(file._id);
+                                                        const ext = file.fileName?.split('.').pop()?.toLowerCase() || '';
+                                                        setPreviewDoc({ url, name: file.fileName, type: ext });
+                                                    }}
+                                                    className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-all"
+                                                    title="Preview Document"
+                                                >
+                                                    <Eye size={18} />
+                                                </button>
                                                 {canApproveDocuments() && file.status !== 'approved' && file.status !== 'rejected' && (
                                                     <>
                                                         <button onClick={() => handleApprove(file._id)} className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-all" title="Approve"><Check size={18} /></button>
@@ -851,6 +863,75 @@ const EmployeeProfile = () => {
                                     <><LogOut size={16} /> Confirm Offboard</>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Document Preview Modal */}
+            {previewDoc && (
+                <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-indigo-50">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                                    <FileText size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-gray-800">{previewDoc.name}</h3>
+                                    <p className="text-xs text-gray-400 uppercase">{previewDoc.type} file</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={previewDoc.url}
+                                    download={previewDoc.name}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
+                                >
+                                    <Download size={14} /> Download
+                                </a>
+                                <button
+                                    onClick={() => setPreviewDoc(null)}
+                                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center" style={{ minHeight: '500px' }}>
+                            {['pdf'].includes(previewDoc.type) ? (
+                                <iframe
+                                    src={previewDoc.url}
+                                    className="w-full h-full border-0"
+                                    style={{ minHeight: '500px' }}
+                                    title="Document Preview"
+                                />
+                            ) : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(previewDoc.type) ? (
+                                <img
+                                    src={previewDoc.url}
+                                    alt={previewDoc.name}
+                                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm m-4"
+                                />
+                            ) : (
+                                <div className="text-center p-12">
+                                    <FileText size={64} className="mx-auto text-gray-300 mb-4" />
+                                    <p className="text-gray-500 font-medium mb-2">Preview not available for .{previewDoc.type} files</p>
+                                    <p className="text-sm text-gray-400 mb-6">Please download the file to view it.</p>
+                                    <a
+                                        href={previewDoc.url}
+                                        download={previewDoc.name}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
+                                    >
+                                        <Download size={16} /> Download File
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

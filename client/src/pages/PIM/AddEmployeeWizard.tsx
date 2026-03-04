@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,9 @@ const AddEmployeeWizard = () => {
     const [error, setError] = useState<string | null>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
+    const [showMissingModal, setShowMissingModal] = useState(false);
+    const [missingFieldsList, setMissingFieldsList] = useState<string[]>([]);
+    const [pendingNextStep, setPendingNextStep] = useState<number | null>(null);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
     const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
@@ -59,6 +62,59 @@ const AddEmployeeWizard = () => {
             formData.gender &&
             formData.maritalStatus
         );
+    };
+
+    const getMissingFields = (s: number = step): string[] => {
+        const missing: string[] = [];
+        const check = (val: any, label: string) => { if (!val || (typeof val === 'string' && val.trim() === '')) missing.push(label); };
+        
+        switch (s) {
+            case 1:
+                check(formData.firstName, 'First Name');
+                check(formData.lastName, 'Last Name');
+                check(formData.cnic, 'CNIC / Govt ID');
+                check(formData.dateOfBirth, 'Date of Birth');
+                check(formData.fatherName, 'Father Name');
+                check(formData.gender, 'Gender');
+                check(formData.maritalStatus, 'Marital Status');
+                check(formData.religion, 'Religion');
+                check(formData.nationality, 'Nationality');
+                break;
+            case 2:
+                check(formData.phone, 'Phone Number');
+                check(formData.email, 'Email Address');
+                check(formData.address.street, 'Street Address');
+                check(formData.address.city, 'City');
+                check(formData.address.state, 'State');
+                check(formData.address.country, 'Country');
+                if (formData.emergencyContacts.some(c => !c.name || !c.phone || !c.relation)) missing.push('Complete Emergency Contacts');
+                if (formData.dependents.some(d => !d.name || !d.relation || !d.dateOfBirth)) missing.push('Complete Dependents Info');
+                break;
+            case 3:
+                if (formData.immigrationHistory.some(doc => !doc.documentNumber || !doc.issueDate || !doc.expiryDate)) missing.push('Complete Immigration Docs');
+                break;
+            case 4:
+                check(formData.jobInfo.designation, 'Designation');
+                check(formData.jobInfo.department, 'Department');
+                check(formData.jobInfo.joiningDate, 'Joining Date');
+                break;
+            case 5:
+                if (formData.employmentHistory.some(h => !h.companyName || !h.jobTitle || !h.startDate)) missing.push('Complete Employment History');
+                if (formData.education.some(e => !e.level || !e.institute || !e.year)) missing.push('Complete Education Info');
+                break;
+            case 6:
+                if (formData.skills.length === 0) missing.push('Professional Skills');
+                if (formData.socialProfiles.every(p => !p.link)) missing.push('At least one Social Profile');
+                break;
+            case 7:
+                if (isAdmin) {
+                    check(formData.bankDetails.bankName, 'Bank Name');
+                    check(formData.bankDetails.accountName, 'Account Name');
+                    check(formData.bankDetails.accountNumber, 'Account Number');
+                }
+                break;
+        }
+        return missing;
     };
 
     const getStep1RequiredErrors = (): string[] => {
@@ -517,13 +573,27 @@ const AddEmployeeWizard = () => {
         }
 
         if (step < steps.length) {
-            if (!completedSteps.includes(step)) {
-                setCompletedSteps([...completedSteps, step]);
-                setShowCompletion(step);
-                setTimeout(() => setShowCompletion(null), 2000);
+            const nextStep = Math.min(steps.length, step + 1);
+            const missing = getMissingFields(step);
+            if (missing.length > 0) {
+                setMissingFieldsList(missing);
+                setPendingNextStep(nextStep);
+                setShowMissingModal(true);
+                return;
             }
-            setStep(s => Math.min(steps.length, s + 1));
+            processNextStep(nextStep);
         }
+    };
+
+    const processNextStep = (targetStepId: number) => {
+        if (!completedSteps.includes(step)) {
+            setCompletedSteps([...completedSteps, step]);
+            setShowCompletion(step);
+            setTimeout(() => setShowCompletion(null), 2000);
+        }
+        setStep(targetStepId);
+        setShowMissingModal(false);
+        setPendingNextStep(null);
     };
 
     const handleStepClick = async (targetStepId: number) => {
@@ -541,7 +611,15 @@ const AddEmployeeWizard = () => {
             if (!result) return;
         }
 
-        setStep(targetStepId);
+        const missing = getMissingFields(step);
+        if (missing.length > 0 && targetStepId > step) {
+            setMissingFieldsList(missing);
+            setPendingNextStep(targetStepId);
+            setShowMissingModal(true);
+            return;
+        }
+
+        processNextStep(targetStepId);
     };
 
     return (
@@ -748,6 +826,7 @@ const AddEmployeeWizard = () => {
                                 name="dateOfBirth"
                                 value={formData.dateOfBirth}
                                 onChange={handleChange}
+                                max={new Date().toISOString().split('T')[0]}
                                 disabled={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
                                 className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                             />
@@ -895,7 +974,7 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Date of Birth</label>
-                                            <input type="date" value={dep.dateOfBirth ? dep.dateOfBirth.split('T')[0] : ''} onChange={(e) => handleChange(e, 'dependents', idx, 'dateOfBirth')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                            <input type="date" value={dep.dateOfBirth ? dep.dateOfBirth.split('T')[0] : ''} onChange={(e) => handleChange(e, 'dependents', idx, 'dateOfBirth')} max={new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
                                         </div>
                                     </div>
                                     <button onClick={() => setFormData(p => ({ ...p, dependents: p.dependents.filter((_, i) => i !== idx) }))} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Remove Dependent">
@@ -957,11 +1036,25 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Issue Date</label>
-                                            <input type="date" name="issueDate" value={doc.issueDate} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issueDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                            <input 
+                                                type="date" 
+                                                name="issueDate" 
+                                                value={doc.issueDate} 
+                                                onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issueDate')} 
+                                                max={doc.expiryDate || new Date().toISOString().split('T')[0]}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" 
+                                            />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Expiry Date</label>
-                                            <input type="date" name="expiryDate" value={doc.expiryDate} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'expiryDate')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" />
+                                            <input 
+                                                type="date" 
+                                                name="expiryDate" 
+                                                value={doc.expiryDate} 
+                                                onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'expiryDate')} 
+                                                min={doc.issueDate || new Date().toISOString().split('T')[0]}
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" 
+                                            />
                                         </div>
 
                                         {/* Document Upload */}
@@ -1142,7 +1235,7 @@ const AddEmployeeWizard = () => {
                                                 const newHistory = [...formData.employmentHistory];
                                                 newHistory[idx].startDate = e.target.value;
                                                 setFormData({ ...formData, employmentHistory: newHistory });
-                                            }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
+                                            }} max={history.endDate || new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">End Date</label>
@@ -1150,7 +1243,7 @@ const AddEmployeeWizard = () => {
                                                 const newHistory = [...formData.employmentHistory];
                                                 newHistory[idx].endDate = e.target.value;
                                                 setFormData({ ...formData, employmentHistory: newHistory });
-                                            }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
+                                            }} min={history.startDate} max={new Date().toISOString().split('T')[0]} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
                                         </div>
                                         <div className="md:col-span-2 space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Reason for Leaving</label>
@@ -1255,41 +1348,6 @@ const AddEmployeeWizard = () => {
                                                 setFormData({ ...formData, education: newEdu });
                                             }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
                                         </div>
-                                        <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                            <div className="flex items-center gap-2">
-                                                <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full">
-                                                    <Upload size={14} />
-                                                    <span className="truncate flex-1">
-                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
-                                                            ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
-                                                            : 'Upload Degree Document'}
-                                                    </span>
-                                                    <input
-                                                        type="file"
-                                                        accept=".pdf,.jpg,.png,.doc,.docx"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                const typeKey = `Degree - ${edu.level || idx}`;
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                }));
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
-                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
-                                                    <button
-                                                        onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                                                        title="Remove File"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -1322,7 +1380,7 @@ const AddEmployeeWizard = () => {
                                     <div className="flex gap-2">
                                         <input
                                             type="text"
-                                            placeholder="Add a skill (e.g. React, Python)"
+                                            placeholder="Add a professional skill"
                                             id="skillInput"
                                             className="flex-1 border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
                                             onKeyDown={(e) => {
@@ -1741,7 +1799,7 @@ const AddEmployeeWizard = () => {
                             {/* Upload Grid */}
                             <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {['Contract', 'Certificates', 'Degree', 'Other Documents'].map((label) => (
+                                {['Contract', 'Other Documents'].map((label) => (
                                     <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                         <input
                                             type="file"
@@ -1853,6 +1911,44 @@ const AddEmployeeWizard = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Missing Fields Modal */}
+            {showMissingModal && pendingNextStep !== null && (
+                <div className="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center animate-fadeIn p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-slide-up">
+                        <div className="p-6">
+                            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 mb-4">
+                                <AlertCircle size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-800 mb-2">Incomplete Step</h3>
+                            <p className="text-sm text-gray-500 mb-4">
+                                To reach 100% completion for this step, it is recommended to fill the following missing details before proceeding:
+                            </p>
+                            <ul className="mb-6 space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                                {missingFieldsList.map((f, i) => (
+                                    <li key={i} className="text-sm text-gray-700 flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> {f}
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowMissingModal(false)}
+                                    className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                    Complete Now
+                                </button>
+                                <button
+                                    onClick={() => pendingNextStep !== null && processNextStep(pendingNextStep)}
+                                    className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                                >
+                                    Skip & Continue
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
