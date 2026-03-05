@@ -114,7 +114,7 @@ const EmployeeSchema: Schema = new Schema({
     phone: { type: String },
     dateOfBirth: { type: Date },
     gender: { type: String, enum: ['Male', 'Female', 'Other', ''] },
-    maritalStatus: { type: String, enum: ['Single', 'Married', 'Divorced', 'Widowed', ''] },
+    maritalStatus: { type: String, enum: ['Single', 'Married', 'Divorced', 'Widowed', 'Other', ''] },
     nationality: { type: String },
     cnic: { type: String },
     fatherName: { type: String },

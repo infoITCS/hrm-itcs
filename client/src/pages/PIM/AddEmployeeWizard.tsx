@@ -904,7 +904,7 @@ const AddEmployeeWizard = () => {
                             <CustomSelect label="Gender *" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                         </div>
                         <div className="space-y-2">
-                            <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Other']} />
+                            <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Divorced', 'Widowed', 'Other']} />
                         </div>
                     </div>
                 )}

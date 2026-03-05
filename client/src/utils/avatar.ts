@@ -18,8 +18,9 @@ export const getAvatarUrl = (emp: any) => {
         return emp.avatar.includes('/attachments/raw/') ? `${url}${tokenSuffix}` : url;
     }
 
-    // 2. Check attachments array for "Profile Picture"
-    const profileAtt = emp.attachments?.find((a: any) => a.fileType === 'Profile Picture');
+    // 2. Check attachments array for "Profile Picture" – use the LAST one (most recently uploaded)
+    const profileAtts = emp.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
+    const profileAtt = profileAtts[profileAtts.length - 1];
     if (profileAtt) {
         return `${api.baseURL}/api/employees/attachments/raw/${profileAtt._id}${tokenSuffix}`;
     }

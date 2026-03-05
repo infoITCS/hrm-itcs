@@ -4,6 +4,7 @@ import { ChevronDown, LogOut, User as UserIcon, Menu, KeyRound, AlertCircle, Che
 import { useAuth } from '../../contexts/AuthContext';
 import APIService from '../../services/api';
 
+
 const Header = ({ title, onMenuClick }: {
     title: string;
     onMenuClick?: () => void;
@@ -14,7 +15,15 @@ const Header = ({ title, onMenuClick }: {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
     const [pwdStatus, setPwdStatus] = useState({ loading: false, error: '', success: '' });
+    const [headerImgError, setHeaderImgError] = useState(false);
+    const [menuImgError, setMenuImgError] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
+
+    // Reset image-error state whenever the avatar URL changes
+    useEffect(() => {
+        setHeaderImgError(false);
+        setMenuImgError(false);
+    }, [user?.avatar]);
 
     // Close profile menu when clicking outside
     useEffect(() => {
@@ -97,21 +106,19 @@ const Header = ({ title, onMenuClick }: {
                         >
                             {/* Avatar */}
                             <div className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 overflow-hidden flex items-center justify-center ring-2 ring-transparent group-hover:ring-white/20 transition-all">
-                                {user.avatar ? (
-                                    <img 
-                                        key={user.avatar} // Force remount if URL changes to reset display: none
-                                        src={user.avatar} 
-                                        alt="User" 
-                                        className="w-full h-full object-cover" 
-                                        onError={(e: any) => {
-                                            e.target.style.display = 'none';
-                                            if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
-                                        }}
+                                {user.avatar && !headerImgError ? (
+                                    <img
+                                        key={user.avatar}
+                                        src={user.avatar}
+                                        alt="User"
+                                        className="w-full h-full object-cover"
+                                        onError={() => setHeaderImgError(true)}
                                     />
-                                ) : null}
-                                <div className={`text-sm font-semibold ${user.avatar ? 'hidden' : 'flex'}`}>
-                                    {getInitials()}
-                                </div>
+                                ) : (
+                                    <div className="text-sm font-semibold flex items-center justify-center w-full h-full">
+                                        {getInitials()}
+                                    </div>
+                                )}
                             </div>
                             <div className="hidden md:flex flex-col">
                                 <span className="text-sm font-semibold leading-none mb-1">
@@ -131,21 +138,19 @@ const Header = ({ title, onMenuClick }: {
                                 <div className="p-4 border-b border-gray-100 bg-gray-50/80">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-indigo-100 overflow-hidden flex items-center justify-center">
-                                            {user.avatar ? (
-                                                <img 
+                                            {user.avatar && !menuImgError ? (
+                                                <img
                                                     key={user.avatar}
-                                                    src={user.avatar} 
-                                                    alt="User" 
-                                                    className="w-full h-full object-cover" 
-                                                    onError={(e: any) => {
-                                                        e.target.style.display = 'none';
-                                                        if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
-                                                    }}
+                                                    src={user.avatar}
+                                                    alt="User"
+                                                    className="w-full h-full object-cover"
+                                                    onError={() => setMenuImgError(true)}
                                                 />
-                                            ) : null}
-                                            <div className={`text-sm font-semibold text-indigo-600 ${user.avatar ? 'hidden' : 'flex'}`}>
-                                                {getInitials()}
-                                            </div>
+                                            ) : (
+                                                <div className="text-sm font-semibold text-indigo-600 flex items-center justify-center w-full h-full">
+                                                    {getInitials()}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-gray-900 truncate">

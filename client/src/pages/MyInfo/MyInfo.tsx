@@ -24,6 +24,8 @@ const MyInfo = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('personal');
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [avatarImgError, setAvatarImgError] = useState(false);
+    const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
     const [initialLockedFields, setInitialLockedFields] = useState<{ [key: string]: boolean }>({});
     const [stepErrors, setStepErrors] = useState<string[]>([]);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -643,7 +645,16 @@ const MyInfo = () => {
         const file = e.target.files?.[0];
         if (!file || !employeeId) return;
 
+        // ── Instant local preview — user sees the image the moment they pick it ──
+        const localPreviewUrl = URL.createObjectURL(file);
+        // Revoke the previous preview URL if one exists
+        setLocalAvatarPreview(prev => {
+            if (prev) URL.revokeObjectURL(prev);
+            return localPreviewUrl;
+        });
+        setAvatarImgError(false); // make sure preview img is attempted
         setUploadingAvatar(true);
+
         try {
             const token = localStorage.getItem('token');
             const fileData = new FormData();
@@ -658,40 +669,78 @@ const MyInfo = () => {
 
             if (!response.ok) throw new Error('Failed to upload profile picture');
 
-            // Refresh data to show new avatar
-            setSuccess(true);
-            setTimeout(() => setSuccess(false), 3000);
+            // The server returns the created attachment object (or the full employee)
+            const uploadResult = await response.json();
 
-            // Re-fetch employee data
-            const refreshRes = await fetch(`${api.employees}?userId=${user?.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (refreshRes.ok) {
-                const employees = await refreshRes.json();
-                // Ensure we handle both array and single object responses safely
-                const employeeList = Array.isArray(employees) ? employees : [employees];
-                const employee = employeeList.find((emp: any) => emp.userId === user?.id || emp._id === employeeId || emp.id === employeeId);
+            // Determine the new attachment ID from the response
+            // Some backends return the attachment directly, others return the updated employee
+            const newAttachment =
+                uploadResult._id && uploadResult.fileType
+                    ? uploadResult                                          // direct attachment object
+                    : uploadResult.attachments?.slice(-1)[0] ?? null;     // last attachment in employee doc
 
-                if (employee) {
-                    // Update local employee state so MyInfo page shows new avatar instantly
-                    setRawEmployee(employee);
+            if (newAttachment?._id) {
+                // 1. Instantly patch rawEmployee in local state (no re-fetch needed)
+                setRawEmployee((prev: any) => ({
+                    ...prev,
+                    attachments: [
+                        ...(prev?.attachments || []),
+                        { ...newAttachment, fileType: 'Profile Picture' }
+                    ]
+                }));
 
-                    // Sync avatar with AuthContext so the header updates instantly too
-                    const profilePics = employee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
-                    if (profilePics.length > 0) {
-                        const latestPic = profilePics[profilePics.length - 1];
-                        const token = localStorage.getItem('token');
-                        const newAvatar = `${api.baseURL}/api/employees/attachments/raw/${latestPic._id}?token=${token}&t=${Date.now()}`;
-                        login((prev: UserType | null) => prev ? { ...prev, avatar: newAvatar } : prev as any);
-                        
-                        // Also force component-level image refresh for MyInfo
-                        setAvatarCache(`&t=${Date.now()}`);
+                // 2. Build the authenticated URL for the new attachment
+                const newAvatarUrl = `${api.baseURL}/api/employees/attachments/raw/${newAttachment._id}?token=${token}&t=${Date.now()}`;
+
+                // 3. Push new avatar into AuthContext so the header icon refreshes instantly
+                login((prev: UserType | null) =>
+                    prev ? { ...prev, avatar: newAvatarUrl } : prev as any
+                );
+
+                // 4. Clear error state and cache-bust so component re-renders with new server URL
+                setAvatarImgError(false);
+                setAvatarCache(`&t=${Date.now()}`);
+            } else {
+                // Fallback: re-fetch employee to get the latest attachment list
+                const refreshRes = await fetch(`${api.employees}?userId=${user?.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (refreshRes.ok) {
+                    const employees = await refreshRes.json();
+                    const employeeList = Array.isArray(employees) ? employees : [employees];
+                    const employee = employeeList.find((emp: any) =>
+                        emp.userId === user?.id || emp._id === employeeId || emp.id === employeeId
+                    );
+                    if (employee) {
+                        setRawEmployee(employee);
+                        const profilePics = employee.attachments?.filter((a: any) => a.fileType === 'Profile Picture') || [];
+                        if (profilePics.length > 0) {
+                            const latestPic = profilePics[profilePics.length - 1];
+                            const newAvatarUrl = `${api.baseURL}/api/employees/attachments/raw/${latestPic._id}?token=${token}&t=${Date.now()}`;
+                            login((prev: UserType | null) => prev ? { ...prev, avatar: newAvatarUrl } : prev as any);
+                            setAvatarImgError(false);
+                            setAvatarCache(`&t=${Date.now()}`);
+                        }
                     }
                 }
             }
+
+            // Upload done — clear local preview; rawEmployee / AuthContext now has the real server URL
+            setLocalAvatarPreview(prev => {
+                if (prev) URL.revokeObjectURL(prev);
+                return null;
+            });
+
+            setSuccess(true);
+            setTimeout(() => setSuccess(false), 3000);
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
             setError('Failed to upload profile picture.');
+            // Revert preview on error
+            setLocalAvatarPreview(prev => {
+                if (prev) URL.revokeObjectURL(prev);
+                return null;
+            });
         } finally {
             setUploadingAvatar(false);
         }
@@ -756,8 +805,10 @@ const MyInfo = () => {
             return (first + last).toUpperCase() || '?';
         };
 
-        let avatarUrl = getAvatarUrl(rawEmployee) || user?.avatar;
-        if (avatarUrl && avatarCache) {
+        // localAvatarPreview is a blob URL set immediately on file pick — shows image BEFORE upload completes.
+        // Once the upload finishes it is cleared and the server URL takes over.
+        let avatarUrl = localAvatarPreview || getAvatarUrl(rawEmployee) || user?.avatar;
+        if (!localAvatarPreview && avatarUrl && avatarCache) {
             avatarUrl += avatarUrl.includes('?') ? avatarCache : `?${avatarCache.substring(1)}`;
         }
 
@@ -766,21 +817,19 @@ const MyInfo = () => {
                 {/* Header / Banner */}
                 <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200/50 shadow-sm animate-slide-up">
                     <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200/50 relative group overflow-hidden">
-                        {avatarUrl ? (
+                        {avatarUrl && !avatarImgError ? (
                             <img
                                 key={avatarUrl}
                                 src={avatarUrl}
                                 alt="Avatar"
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                onError={(e: any) => {
-                                    e.target.style.display = 'none';
-                                    if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
-                                }}
+                                onError={() => setAvatarImgError(true)}
                             />
-                        ) : null}
-                        <div className={`w-full h-full flex items-center justify-center font-bold text-2xl tracking-tighter ${avatarUrl ? 'hidden' : ''}`}>
-                            {getInitials()}
-                        </div>
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center font-bold text-2xl tracking-tighter">
+                                {getInitials()}
+                            </div>
+                        )}
                         <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px]">
                             <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform" />
                             <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
@@ -1411,7 +1460,7 @@ const MyInfo = () => {
                                     <CustomSelect label="Gender *" value={formData.gender} onChange={(val) => setFormData({ ...formData, gender: val })} options={['Male', 'Female', 'Other']} />
                                 </div>
                                 <div className="space-y-2">
-                                    <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Other']} />
+                                    <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Divorced', 'Widowed', 'Other']} />
                                 </div>
                             </div>
                         )}
