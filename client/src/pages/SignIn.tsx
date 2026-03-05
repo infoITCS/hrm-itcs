@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import type { User, UserRole } from '../types';
 import APIService from '../services/api';
 import { api } from '../utils/api';
-import itcsLogo from '../assets/logo.png'
+import itcsLogo from '../assets/logo.png';
+import { ForgotPasswordModal } from '../components/ForgotPasswordModal';
 interface SignInProps {
     onLogin: (user: User) => void;
 }
@@ -13,6 +14,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [showEmailForm, setShowEmailForm] = useState(false);
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
 
     // Check for error in URL (from SSO redirect)
     useEffect(() => {
@@ -74,6 +76,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     };
 
     return (
+        <>
         <div className="min-h-screen w-full flex font-sans bg-gray-50">
             {/* Left Panel - Branding & Visuals */}
             <div className="hidden lg:flex w-1/2 bg-slate-900 relative overflow-hidden flex-col justify-between p-16 text-white">
@@ -214,21 +217,13 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                         <div className="space-y-1">
                                             <div className="flex justify-between items-center ml-1">
                                                 <label className="text-sm font-semibold text-gray-700">Password</label>
-                                                <a 
-                                                   href="#" 
-                                                   className="text-xs font-semibold text-primary hover:text-primary/80"
-                                                   onClick={(e) => {
-                                                       e.preventDefault();
-                                                       const resetEmail = prompt("Please enter your email to reset your password:");
-                                                       if (resetEmail) {
-                                                           APIService.forgotPassword(resetEmail)
-                                                               .then(res => alert(res.message))
-                                                               .catch(() => alert("Error requesting password reset"));
-                                                       }
-                                                   }}
+                                                <button 
+                                                   type="button"
+                                                   className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                                                   onClick={() => setShowForgotPassword(true)}
                                                 >
                                                    Forgot password?
-                                                </a>
+                                                </button>
                                             </div>
                                             <input
                                                 type="password"
@@ -270,5 +265,11 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 </div>
             </div>
         </div>
+
+        {showForgotPassword && (
+            <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />
+        )}
+    </>
     );
 };
+

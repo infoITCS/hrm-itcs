@@ -8,7 +8,7 @@ import { authenticate, authorize, AuthRequest, authenticateFile } from '../middl
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 import { getDiff } from '../utils/diff';
-import { sendHRNotificationEmail } from '../utils/email';
+// import { sendHRNotificationEmail } from '../utils/email'; // Commented out — uncomment to enable HR notifications
 
 const router = express.Router();
 
@@ -511,19 +511,21 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         // Log detailed diff if there are changes
         if (Object.keys(diff).length > 0) {
             await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { diff });
-            
-            const hrEmail = process.env.HR_EMAIL || 'hr@itcs.com';
 
-            // Notify HR if employee updated their own profile
-            if (role === 'employee' || role === '') {
-                await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, 'updated their profile');
-            }
-            
-            // Notify HR if employment status changes to Terminated or Resigned
-            if (diff.employmentStatus?.status?.new && 
-                ['Terminated', 'Resigned'].includes(diff.employmentStatus.status.new)) {
-                await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, `left the company (${diff.employmentStatus.status.new})`);
-            }
+            // ── HR Notification Emails (commented out — uncomment to enable) ──────────────
+            // const hrEmail = process.env.HR_EMAIL || 'hr@itcs.com';
+            //
+            // // Notify HR if employee updated their own profile
+            // if (role === 'employee' || role === '') {
+            //     await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, 'updated their profile');
+            // }
+            //
+            // // Notify HR if employment status changes to Terminated or Resigned
+            // if (diff.employmentStatus?.status?.new &&
+            //     ['Terminated', 'Resigned'].includes(diff.employmentStatus.status.new)) {
+            //     await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, `left the company (${diff.employmentStatus.status.new})`);
+            // }
+            // ─────────────────────────────────────────────────────────────────────────────
         }
 
         res.json(updatedEmployee);

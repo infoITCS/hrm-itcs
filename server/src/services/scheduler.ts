@@ -61,8 +61,9 @@ export const initScheduler = () => {
     cron.schedule('0 10 * * *', async () => {
         console.log('Running daily onboarding profile completion reminder check...');
         try {
-            // Get all actual users with 'employee' or higher roles who haven't finished their profile
-            const users = await User.find({ isActive: true });
+            // Only send reminders to active users with 'employee' role
+            // Admins, managers, and super-admins are excluded intentionally
+            const users = await User.find({ isActive: true, role: 'employee' });
             const employees = await Employee.find();
 
             for (const user of users) {
@@ -88,4 +89,5 @@ export const initScheduler = () => {
             console.error('Error in profile reminder scheduler:', error);
         }
     });
+
 };
