@@ -276,6 +276,7 @@ const EmployeeProfile = () => {
                             <Field label="Gender" value={employee.gender} />
                             <Field label="Marital Status" value={employee.maritalStatus} />
                             <Field label="Nationality" value={employee.nationality} />
+                            <Field label="Domicile" value={employee.domicile} />
                             <Field label="Father Name" value={employee.fatherName} />
                             <Field label="Blood Group" value={employee.bloodGroup} />
                             <Field label="CNIC / Govt ID" value={employee.cnic} />

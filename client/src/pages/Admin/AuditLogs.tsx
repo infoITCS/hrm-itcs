@@ -26,7 +26,7 @@ const AuditLogs = () => {
     const [totalLogs, setTotalLogs] = useState(0);
     const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-    const LIMIT = 25;
+    const LIMIT = 15;
 
     useEffect(() => {
         setPage(1); // Reset to first page when filters change

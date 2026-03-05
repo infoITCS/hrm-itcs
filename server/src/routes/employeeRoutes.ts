@@ -1,6 +1,7 @@
 import * as _ from 'lodash';
 import fs from 'fs';
 import express, { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
@@ -263,7 +264,8 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
     try {
         if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-        const employee = await Employee.findOne({ employeeId: req.params.id });
+        // Exclude fileData to prevent downloading hundreds of megabytes just to check permissions
+        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         // Check if user can view this employee (to upload for them)
@@ -277,13 +279,13 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             return res.status(403).json({ message: 'You do not have permission to upload documents for this employee' });
         }
 
-        if (!employee.attachments) employee.attachments = [];
-
         // Read file into buffer for MongoDB storage
         const filePath = req.file.path;
         const fileBuffer = fs.readFileSync(filePath);
 
+        const attachmentId = new mongoose.Types.ObjectId();
         const attachment = {
+            _id: attachmentId,
             fileType: req.body.fileType || 'Document',
             fileName: req.file.originalname,
             filePath: req.file.filename,
@@ -294,14 +296,17 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             uploadedBy: authReq.user?.userId
         };
 
-        employee.attachments.push(attachment as any);
-        await employee.save();
+        // Use updateOne to push attachment directly into MongoDB array.
+        // Doing this avoids Mongoose overwriting arrays when they are loaded partially (without fileData)
+        await Employee.updateOne(
+            { employeeId: req.params.id },
+            { $push: { attachments: attachment as any } }
+        );
 
         // If this is a profile picture, update the User and Employee model
         if (attachment.fileType === 'Profile Picture') {
-            const newAvatarUrl = `/api/employees/attachments/raw/${employee.attachments[employee.attachments.length - 1]._id}`;
-            employee.avatar = newAvatarUrl;
-            await employee.save();
+            const newAvatarUrl = `/api/employees/attachments/raw/${attachmentId}`;
+            await Employee.updateOne({ employeeId: req.params.id }, { avatar: newAvatarUrl });
 
             if (employee.userId) {
                 await User.findByIdAndUpdate(employee.userId, { avatar: newAvatarUrl });
@@ -330,12 +335,21 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 // Route to serve raw file from MongoDB — uses authenticateFile which also accepts ?token= for <img> tags
 router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response) => {
     try {
-        const employee = await Employee.findOne({ 'attachments._id': req.params.attachmentId });
-        if (!employee) return res.status(404).send('File not found');
+        // OPTIMIZATION: Use projection { 'attachments.$': 1 } to only fetch the EXACT attachment requested
+        // Previously, this fetched the entire employee record WITH all binary files, which was very slow.
+        const employee = await Employee.findOne(
+            { 'attachments._id': req.params.attachmentId },
+            { 'attachments.$': 1 }
+        );
+        if (!employee || !employee.attachments || employee.attachments.length === 0) {
+            return res.status(404).send('File not found');
+        }
 
-        const attachment = employee.attachments?.find((att: any) => att._id?.toString() === req.params.attachmentId);
+        const attachment = employee.attachments[0]; // Since we used projection, it's the only one returned
         if (!attachment || !attachment.fileData) return res.status(404).send('File content not found');
 
+        // Add caching headers so the browser doesn't re-download the same avatar/file on every page load
+        res.set('Cache-Control', 'public, max-age=86400, immutable'); // Cache for 24 hours
         res.set('Content-Type', attachment.contentType || 'application/octet-stream');
         res.set('Content-Disposition', `inline; filename="${attachment.fileName}"`);
         res.send(attachment.fileData);
@@ -352,27 +366,38 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
             return res.status(403).json({ message: 'You do not have permission to approve documents' });
         }
 
-        const employee = await Employee.findOne({ employeeId: req.params.id });
-        if (!employee) return res.status(404).json({ message: 'Employee not found' });
-
         const { status } = req.body; // 'approved' or 'rejected'
-        if (!employee.attachments) return res.status(404).json({ message: 'No attachments found' });
+        const employeeId = req.params.id;
+        const attachmentId = req.params.attachmentId;
 
-        const attachmentIndex = employee.attachments.findIndex((att: any) => att._id?.toString() === req.params.attachmentId);
-        if (attachmentIndex === -1) return res.status(404).json({ message: 'Attachment not found' });
+        // Efficient array update without pulling all 50MBs of files into Node.js
+        const result = await Employee.updateOne(
+            { employeeId, 'attachments._id': attachmentId },
+            {
+                $set: {
+                    'attachments.$.status': status,
+                    'attachments.$.reviewedBy': authReq.user?.userId,
+                    'attachments.$.reviewedAt': new Date()
+                }
+            }
+        );
 
-        (employee.attachments[attachmentIndex] as any).status = status;
-        (employee.attachments[attachmentIndex] as any).reviewedBy = authReq.user?.userId;
-        (employee.attachments[attachmentIndex] as any).reviewedAt = new Date();
-        employee.markModified('attachments');
-        await employee.save();
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ message: 'Attachment or Employee not found' });
+        }
 
-        await createAuditLog('DOC_APPROVAL', employee.employeeId, authReq.user?.userId || 'unknown', {
-            attachment: req.params.attachmentId,
+        await createAuditLog('DOC_APPROVAL', employeeId, authReq.user?.userId || 'unknown', {
+            attachment: attachmentId,
             status
         });
 
-        res.json(employee.attachments[attachmentIndex]);
+        // Fetch just the updated attachment metadata to return it
+        const updatedDoc = await Employee.findOne(
+            { employeeId, 'attachments._id': attachmentId },
+            { 'attachments.$': 1 }
+        ).select('-attachments.fileData');
+
+        res.json(updatedDoc?.attachments?.[0] || { message: 'Success' });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -386,8 +411,15 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
         const role = authReq.user?.role || '';
         const userId = authReq.user?.userId;
 
-        const employee = await Employee.findOne({ employeeId });
-        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+        // Extract attachment metadata before deleting, without loading the huge fileData Buffer
+        const employee = await Employee.findOne(
+            { employeeId, 'attachments._id': req.params.attachmentId },
+            { 'attachments.$': 1, userId: 1, employeeId: 1 }
+        ).select('-attachments.fileData');
+
+        if (!employee || !employee.attachments || employee.attachments.length === 0) {
+            return res.status(404).json({ message: 'Attachment or Employee not found' });
+        }
 
         // Check permission: Admin can delete any, Employee can delete their own
         const isAdmin = role === 'super-admin' || role === 'admin';
@@ -397,15 +429,13 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
             return res.status(403).json({ message: 'You do not have permission to delete documents' });
         }
 
-        if (!employee.attachments) return res.status(404).json({ message: 'No attachments found' });
+        const deletedAttachment = employee.attachments[0];
 
-        const attachmentIndex = employee.attachments.findIndex((att: any) => att._id?.toString() === req.params.attachmentId);
-        if (attachmentIndex === -1) return res.status(404).json({ message: 'Attachment not found' });
-
-        const deletedAttachment = employee.attachments[attachmentIndex];
-        employee.attachments.splice(attachmentIndex, 1);
-
-        await employee.save();
+        // Efficient array modification: Remove the attachment from Mongo without downloading/uploading 50MB
+        await Employee.updateOne(
+            { employeeId },
+            { $pull: { attachments: { _id: req.params.attachmentId } } }
+        );
 
         await createAuditLog('DOC_DELETE', employee.employeeId, authReq.user?.userId || 'unknown', {
             attachmentId: req.params.attachmentId,
@@ -422,7 +452,8 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
 router.put('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
-        const employee = await Employee.findOne({ employeeId: req.params.id });
+        // Exclude fileData to prevent pulling hundreds of megabytes into Node.js memory just to update a text field
+        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         // Check if user can view this employee
@@ -437,6 +468,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         }
 
         const updates = req.body;
+        // Never allow attachments array to be overwritten by standard profile updates (they use separate endpoints)
+        delete updates.attachments;
+
         const role = authReq.user?.role || '';
 
         // Fields that can only be set once and cannot be edited after being filled

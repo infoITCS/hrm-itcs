@@ -21,6 +21,7 @@ export interface IEmployee extends Document {
     workEmail?: string;
     otherEmail?: string;
     simNumber?: string;
+    domicile?: string;
     skills?: string[];
     address?: {
         street?: string;
@@ -117,6 +118,7 @@ const EmployeeSchema: Schema = new Schema({
     maritalStatus: { type: String, enum: ['Single', 'Married', 'Divorced', 'Widowed', 'Other', ''] },
     nationality: { type: String },
     cnic: { type: String },
+    domicile: { type: String },
     fatherName: { type: String },
     bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', ''] },
     religion: { type: String },

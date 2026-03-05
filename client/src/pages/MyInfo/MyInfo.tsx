@@ -72,6 +72,10 @@ const MyInfo = () => {
     
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
+        const hasProfilePicture = rawEmployee?.attachments?.some((a: any) => a.fileType === 'Profile Picture') || formData.files.some(f => f.type === 'Profile Picture') || !!localAvatarPreview;
+        const hasCNICFront = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Front') || formData.files.some(f => f.type === 'CNIC Front');
+        const hasCNICBack = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Back') || formData.files.some(f => f.type === 'CNIC Back');
+
         return !!(
             formData.firstName?.trim() &&
             formData.lastName?.trim() &&
@@ -81,12 +85,19 @@ const MyInfo = () => {
             formData.religion?.trim() &&
             formData.nationality?.trim() &&
             formData.gender &&
-            formData.maritalStatus
+            formData.maritalStatus &&
+            hasProfilePicture &&
+            hasCNICFront &&
+            hasCNICBack
         );
     };
 
     const getStep1RequiredErrors = (): string[] => {
         const err: string[] = [];
+        const hasProfilePicture = rawEmployee?.attachments?.some((a: any) => a.fileType === 'Profile Picture') || formData.files.some(f => f.type === 'Profile Picture') || !!localAvatarPreview;
+        const hasCNICFront = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Front') || formData.files.some(f => f.type === 'CNIC Front');
+        const hasCNICBack = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Back') || formData.files.some(f => f.type === 'CNIC Back');
+
         if (!formData.firstName?.trim()) err.push('First Name');
         if (!formData.lastName?.trim()) err.push('Last Name');
         if (!formData.cnic?.trim()) err.push('CNIC / Govt ID');
@@ -96,6 +107,9 @@ const MyInfo = () => {
         if (!formData.nationality?.trim()) err.push('Nationality');
         if (!formData.gender) err.push('Gender');
         if (!formData.maritalStatus) err.push('Marital Status');
+        if (!hasProfilePicture) err.push('Profile Picture');
+        if (!hasCNICFront) err.push('CNIC Front Image');
+        if (!hasCNICBack) err.push('CNIC Back Image');
         return err;
     };
 

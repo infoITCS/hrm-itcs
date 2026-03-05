@@ -50,7 +50,13 @@ const AddEmployeeWizard = () => {
 
     // Required fields on step 1 (Personal) – must be filled before Next
     const isStep1RequiredValid = () => {
-        return !!(
+        const hasProfilePicture = formData.files.some(f => f.type === 'Profile Picture') || formData.existingAttachments.some(a => a.fileType === 'Profile Picture') || !!avatarPreview;
+        const hasCNICFront = formData.files.some(f => f.type === 'CNIC Front') || formData.existingAttachments.some(a => a.fileType === 'CNIC Front');
+        const hasCNICBack = formData.files.some(f => f.type === 'CNIC Back') || formData.existingAttachments.some(a => a.fileType === 'CNIC Back');
+        const hasResume = formData.files.some(f => f.type === 'Resume/CV') || formData.existingAttachments.some(a => a.fileType === 'Resume/CV');
+
+        // Text fields required in both modes
+        const hasCoreFields = !!(
             formData.employeeId?.trim() &&
             formData.firstName?.trim() &&
             formData.lastName?.trim() &&
@@ -59,9 +65,17 @@ const AddEmployeeWizard = () => {
             formData.fatherName?.trim() &&
             formData.religion?.trim() &&
             formData.nationality?.trim() &&
+            formData.domicile?.trim() &&
             formData.gender &&
             formData.maritalStatus
         );
+
+        // Files are only rigidly required upon First Time creation, not during future edits
+        if (!isEditMode) {
+            return hasCoreFields && hasProfilePicture && hasCNICFront && hasCNICBack && hasResume;
+        }
+
+        return hasCoreFields;
     };
 
     const getMissingFields = (s: number = step): string[] => {
@@ -79,6 +93,7 @@ const AddEmployeeWizard = () => {
                 check(formData.maritalStatus, 'Marital Status');
                 check(formData.religion, 'Religion');
                 check(formData.nationality, 'Nationality');
+                check(formData.domicile, 'Domicile');
                 break;
             case 2:
                 check(formData.phone, 'Phone Number');
@@ -119,6 +134,11 @@ const AddEmployeeWizard = () => {
 
     const getStep1RequiredErrors = (): string[] => {
         const err: string[] = [];
+        const hasProfilePicture = formData.files.some(f => f.type === 'Profile Picture') || formData.existingAttachments.some(a => a.fileType === 'Profile Picture') || !!avatarPreview;
+        const hasCNICFront = formData.files.some(f => f.type === 'CNIC Front') || formData.existingAttachments.some(a => a.fileType === 'CNIC Front');
+        const hasCNICBack = formData.files.some(f => f.type === 'CNIC Back') || formData.existingAttachments.some(a => a.fileType === 'CNIC Back');
+        const hasResume = formData.files.some(f => f.type === 'Resume/CV') || formData.existingAttachments.some(a => a.fileType === 'Resume/CV');
+
         if (!formData.employeeId?.trim()) err.push('Employee ID');
         if (!formData.firstName?.trim()) err.push('First Name');
         if (!formData.lastName?.trim()) err.push('Last Name');
@@ -127,8 +147,17 @@ const AddEmployeeWizard = () => {
         if (!formData.fatherName?.trim()) err.push('Father Name');
         if (!formData.religion?.trim()) err.push('Religion');
         if (!formData.nationality?.trim()) err.push('Nationality');
+        if (!formData.domicile?.trim()) err.push('Domicile');
         if (!formData.gender) err.push('Gender');
         if (!formData.maritalStatus) err.push('Marital Status');
+
+        if (!isEditMode) {
+            if (!hasProfilePicture) err.push('Profile Picture');
+            if (!hasResume) err.push('Resume/CV');
+            if (!hasCNICFront) err.push('CNIC Front Image');
+            if (!hasCNICBack) err.push('CNIC Back Image');
+        }
+
         return err;
     };
 
@@ -148,7 +177,7 @@ const AddEmployeeWizard = () => {
         // Personal
         employeeId: '', firstName: '', lastName: '', middleName: '', cnic: '',
         email: '', phone: '', dateOfBirth: '', gender: '',
-        maritalStatus: '', nationality: '', fatherName: '', bloodGroup: '',
+        maritalStatus: '', nationality: '', domicile: '', fatherName: '', bloodGroup: '',
         religion: '', licenseNumber: '', simNumber: '', workEmail: '', otherEmail: '',
 
         // Address
@@ -246,6 +275,7 @@ const AddEmployeeWizard = () => {
                             gender: found.gender || '',
                             maritalStatus: found.maritalStatus || '',
                             nationality: found.nationality || '',
+                            domicile: found.domicile || '',
                             fatherName: found.fatherName || '',
                             bloodGroup: found.bloodGroup || '',
                             religion: found.religion || '',
@@ -369,6 +399,7 @@ const AddEmployeeWizard = () => {
                             dateOfBirth: !!found.dateOfBirth,
                             fatherName: !!found.fatherName,
                             nationality: !!found.nationality,
+                            domicile: !!found.domicile,
                             bloodGroup: !!found.bloodGroup
                         });
                     }
@@ -503,8 +534,19 @@ const AddEmployeeWizard = () => {
                         // Continue with other files even if one fails
                     }
                 }
-                // Clear files array after successful upload so they aren't uploaded again on next save
-                setFormData(prev => ({ ...prev, files: [] }));
+                
+                // Add the newly uploaded files to existing attachments so the UI instantly recognizes them and doesn't ask for them again
+                setFormData(prev => {
+                    const newExisting = [...prev.existingAttachments];
+                    prev.files.forEach(f => {
+                        newExisting.push({
+                            _id: 'temp-' + Date.now() + Math.random(),
+                            fileType: f.type,
+                            fileName: f.file.name
+                        });
+                    });
+                    return { ...prev, existingAttachments: newExisting, files: [] };
+                });
             }
 
 
@@ -514,6 +556,7 @@ const AddEmployeeWizard = () => {
                 dateOfBirth: !!employeeData.dateOfBirth,
                 fatherName: !!employeeData.fatherName,
                 nationality: !!employeeData.nationality,
+                domicile: !!employeeData.domicile,
                 bloodGroup: !!employeeData.bloodGroup
             });
 
@@ -732,7 +775,14 @@ const AddEmployeeWizard = () => {
                         {/* New Upload Fields for Step 1 */}
                         <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                             {/* Profile Picture — with preview (#13) */}
-                        {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => (
+                        {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => {
+                            const hasNewFile = formData.files.some(f => f.type === label);
+                            const existingFile = formData.existingAttachments.find(a => a.fileType === label);
+                            const displayFileName = hasNewFile 
+                                ? formData.files.find(f => f.type === label)?.file.name 
+                                : existingFile?.fileName;
+
+                            return (
                             <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group cursor-pointer">
                                 <input
                                     type="file"
@@ -760,9 +810,16 @@ const AddEmployeeWizard = () => {
                                         <img src={avatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
                                         <button
                                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAvatarPreview(null); setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); }}
-                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-10"
                                             title="Remove"
                                         >×</button>
+                                    </div>
+                                ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
+                                    <div className="relative">
+                                        <img src={existingFile.url || `/api/employees/attachments/raw/${existingFile._id}`} alt="Existing Profile" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
+                                        <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Upload className="text-white drop-shadow-md" size={24} />
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
@@ -770,32 +827,17 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 )}
                                 <span className="text-sm font-medium text-gray-600">{label}</span>
-                                {formData.files.some(f => f.type === label) && label !== 'Profile Picture' ? (
+                                {displayFileName && label !== 'Profile Picture' ? (
                                     <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
-                                        {formData.files.find(f => f.type === label)?.file.name}
+                                        {displayFileName}
                                     </span>
-                                ) : !formData.files.some(f => f.type === label) ? (
+                                ) : !displayFileName ? (
                                     <span className="text-xs text-gray-400 mt-1">Click to upload</span>
                                 ) : null}
                             </div>
-                        ))}
+                        )})}
                         </div>
-                        {/* Employee ID — #17: hide for non-admins in create mode */}
-                        {(isEditMode || isAdmin) && (
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Employee ID *</label>
-                            <input
-                                type="text"
-                                name="employeeId"
-                                value={formData.employeeId}
-                                onChange={handleChange}
-                                placeholder={isEditMode ? 'e.g. itcs-001' : 'Auto-generated by system'}
-                                className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${!isEditMode && !canEditSensitiveData() ? 'bg-gray-50' : 'bg-white'}`}
-                                readOnly={!isEditMode && !canEditSensitiveData()}
-                            />
-                            {!isEditMode && !canEditSensitiveData() && <p className="text-xs text-indigo-500">System will assign the next available ID</p>}
-                        </div>
-                        )}
+                        {/* Employee ID — System Auto Generates */}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">First Name *</label>
                             <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
@@ -866,6 +908,19 @@ const AddEmployeeWizard = () => {
                             )}
                             {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
                             {initialLockedFields.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
+                        </div>
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Domicile *</label>
+                            <input
+                                type="text"
+                                name="domicile"
+                                value={formData.domicile}
+                                onChange={handleChange}
+                                disabled={initialLockedFields.domicile && !canEditSensitiveData()}
+                                className={`w-full border border-gray-300 rounded px-3 py-2 text-sm ${initialLockedFields.domicile && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                            />
+                            {initialLockedFields.domicile && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
+                            {initialLockedFields.domicile && canEditSensitiveData() && <p className="text-xs text-indigo-500">Admin: This field can be edited</p>}
                         </div>
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">Blood Group</label>
