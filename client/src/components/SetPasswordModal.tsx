@@ -5,7 +5,6 @@ import APIService from '../services/api';
 interface SetPasswordModalProps {
     userName?: string;
     onSuccess: () => void;
-    onSkip?: () => void;
 }
 
 interface PasswordStrength {
@@ -69,7 +68,7 @@ const MicrosoftIcon = () => (
     </svg>
 );
 
-export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, onSuccess, onSkip }) => {
+export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, onSuccess }) => {
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
     const [showPw, setShowPw] = useState(false);
@@ -270,17 +269,6 @@ export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, on
                                         </span>
                                     ) : 'Set My Password'}
                                 </button>
-
-                                {onSkip && (
-                                    <button
-                                        id="spm-skip-btn"
-                                        type="button"
-                                        onClick={onSkip}
-                                        style={styles.skipBtn}
-                                    >
-                                        Skip for now
-                                    </button>
-                                )}
                             </div>
                         </form>
 

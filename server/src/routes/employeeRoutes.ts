@@ -94,17 +94,17 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
             // If userId query parameter is provided, return that specific employee
             // Only allow if user is querying their own userId or is admin
             if (queryUserId === userId || role === 'super-admin' || role === 'admin' || role === 'manager') {
-                const employee = await Employee.findOne({ userId: queryUserId });
+                const employee = await Employee.findOne({ userId: queryUserId }).select('-attachments.fileData');
                 employees = employee ? [employee] : [];
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
         } else if (role === 'super-admin' || role === 'admin') {
             // Super-admin and Admin can see all employees
-            employees = await Employee.find();
+            employees = await Employee.find().select('-attachments.fileData');
         } else if (role === 'manager') {
             // Manager can only see direct reports and themselves
-            const managerEmployee = await Employee.findOne({ userId });
+            const managerEmployee = await Employee.findOne({ userId }).select('-attachments.fileData');
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
@@ -113,10 +113,10 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
                     { 'jobInfo.reportingManager': managerEmployee.employeeId },
                     { userId: userId }
                 ]
-            });
+            }).select('-attachments.fileData');
         } else {
             // Employee can only see their own profile
-            const employee = await Employee.findOne({ userId });
+            const employee = await Employee.findOne({ userId }).select('-attachments.fileData');
             employees = employee ? [employee] : [];
         }
 
@@ -237,7 +237,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
-        const employee = await Employee.findOne({ employeeId: req.params.id });
+        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         // Check if user can view this employee

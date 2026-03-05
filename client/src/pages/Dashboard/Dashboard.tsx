@@ -62,14 +62,19 @@ const Dashboard = () => {
     const [onboardingData, setOnboardingData] = useState<any>(null);
 
     const calculateOnboardingProgress = (emp: any) => {
-        if (!emp) return null; // No employee record yet — don't show card at all
+        const empData = emp || {};
 
         const steps = [
-            { id: 'personal', label: 'Personal Information', completed: !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!(emp.address?.city && emp.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
-            { id: 'history', label: 'Employment & Education', completed: !!(emp.education?.some((edu: any) => edu.level) || emp.employmentHistory?.some((eh: any) => eh.companyName)) },
-            { id: 'skills', label: 'Skills & Profiles', completed: !!(emp.skills?.length > 0 || emp.socialProfiles?.some((sp: any) => sp.link)) },
-            { id: 'documents', label: 'Identity Documents', completed: !!(emp.attachments?.some((a: any) => a.fileType === 'ID Card' || a.fileType === 'Passport' || a.fileType === 'CNIC Front' || a.fileType === 'Degree')) }
+            { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && empData.cnic && empData.dateOfBirth) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!(empData.address?.city && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
+            { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level) || empData.employmentHistory?.some((eh: any) => eh.companyName)) },
+            { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link)) },
+            { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: !!(
+                empData.attachments?.some((a: any) => a.fileType === 'CNIC Front') &&
+                empData.attachments?.some((a: any) => a.fileType === 'CNIC Back') &&
+                empData.attachments?.some((a: any) => a.fileType === 'Degree') &&
+                empData.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture')
+            )}
         ];
 
         const completedCount = steps.filter(s => s.completed).length;
@@ -78,8 +83,8 @@ const Dashboard = () => {
         return { percent, steps };
     };
 
-    // Only show onboarding for employees who have an employee record with actual steps
-    const onboarding = user?.role === 'employee' && onboardingData ? calculateOnboardingProgress(onboardingData) : null;
+    // Show onboarding for employees even if they don't have an employee record yet
+    const onboarding = user?.role === 'employee' ? calculateOnboardingProgress(onboardingData) : null;
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -384,7 +389,6 @@ const Dashboard = () => {
                 <SetPasswordModal
                     userName={user?.firstName || user?.name}
                     onSuccess={() => setShowSetPassword(false)}
-                    onSkip={() => setShowSetPassword(false)}
                 />
             )}
             {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}

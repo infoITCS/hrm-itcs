@@ -236,7 +236,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                                 onChange={(e) => setPassword(e.target.value)}
                                                 required
                                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white outline-none transition-all duration-200"
-                                                placeholder="••••••••"
+                                                placeholder="Enter your password"
                                             />
                                         </div>
                                     </div>

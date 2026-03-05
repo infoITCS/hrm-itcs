@@ -56,7 +56,7 @@ router.post("/login", async (req: Request, res: Response) => {
     });
 
     // Also fetch associated employee to return similar data shape to /me
-    const employee = await Employee.findOne({ userId: user._id });
+    const employee = await Employee.findOne({ userId: user._id }).select('-attachments.fileData');
 
     let avatarUrl = user.avatar;
     if (!avatarUrl && employee) {
@@ -348,7 +348,7 @@ router.get("/me", authenticate, async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const employee = await Employee.findOne({ userId: user._id });
+    const employee = await Employee.findOne({ userId: user._id }).select('-attachments.fileData');
 
     // Auto-sync from Employee record if names or avatar are missing
     if (employee && (!user.firstName || !user.lastName || !user.avatar)) {

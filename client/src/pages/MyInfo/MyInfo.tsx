@@ -2129,7 +2129,7 @@ const MyInfo = () => {
                                     {/* Upload Grid */}
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {['Contract', 'Other Documents'].map((label) => (
+                                        {['CNIC Front', 'CNIC Back', 'Degree', 'Picture', 'Passport (Optional)', 'Contract', 'Other Documents'].map((label) => (
                                             <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"
