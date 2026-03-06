@@ -6,7 +6,7 @@
     "scripts": {
         "start": "node dist/index.js",
         "dev": "nodemon src/index.ts",
-        "build": "echo 'Vercel will handle the build automatically'"
+        "build": "mkdir -p public && echo 'API Server' > public/index.html"
     },
     "keywords": [],
     "author": "",
