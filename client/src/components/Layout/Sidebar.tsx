@@ -58,14 +58,13 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                 }`}
             />
 
-            {/* Sidebar panel */}
+            {/* Sidebar panel: below 992px slide in when isOpen, above 992px always visible */}
             <aside
                 className={`
                     w-64 max-w-[85vw] sm:max-w-none bg-white shadow-xl h-screen fixed left-0 top-0 overflow-y-auto flex flex-col z-40 border-r border-slate-200/50
                     transition-transform duration-300 ease-out
-                    max-[991px]:-translate-x-full
                     min-[992px]:translate-x-0
-                    ${isOpen ? 'max-[991px]:translate-x-0' : ''}
+                    ${isOpen ? 'translate-x-0' : 'max-[991px]:-translate-x-full'}
                 `}
             >
                 <div className="p-4 min-[992px]:p-6 border-b border-gray-100/50 flex items-center justify-between shrink-0">

@@ -123,9 +123,9 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
             {/* Right Panel - Login Form */}
             <div className="w-full lg:w-1/2 flex items-center justify-center p-8 lg:p-16 bg-white relative">
                 <div className="w-full max-w-md space-y-8 animate-fadeIn">
-                    {/* Mobile Logo (visible only on small screens) */}
+                    {/* Mobile Logo (visible only on small screens) - use same bundled asset as desktop */}
                     <div className="lg:hidden flex flex-col items-start gap-2 mb-8">
-                        <img src="/itcs-logo.webp" alt="ITCS Logo" className="h-12 w-auto" />
+                        <img src={itcsLogo} alt="ITCS Logo" className="h-12 w-auto object-contain" />
                         <span className="text-xs font-bold text-gray-500 tracking-widest uppercase">HRM Unified</span>
                     </div>
 

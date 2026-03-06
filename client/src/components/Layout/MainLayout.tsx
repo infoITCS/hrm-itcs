@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet, useLocation } from 'react-router-dom';
@@ -6,6 +6,8 @@ import { Outlet, useLocation } from 'react-router-dom';
 const MainLayout = () => {
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+    const openSidebar = useCallback(() => setSidebarOpen(true), []);
 
     let title = 'Dashboard';
     if (location.pathname.includes('pim')) title = 'PIM';
@@ -22,12 +24,12 @@ const MainLayout = () => {
         <div className="flex min-h-screen">
             <Sidebar
                 isOpen={sidebarOpen}
-                onClose={() => setSidebarOpen(false)}
+                onClose={closeSidebar}
             />
             <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300">
                 <Header
                     title={title}
-                    onMenuClick={() => setSidebarOpen(true)}
+                    onMenuClick={openSidebar}
                 />
                 <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
                     <Outlet />
