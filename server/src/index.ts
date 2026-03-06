@@ -64,21 +64,33 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter); // General rate limit for all API routes
 
 // Session configuration (required for OAuth state/PKCE)
-app.use(session({
-    secret: process.env.SESSION_SECRET || (() => { console.warn('⚠️ SESSION_SECRET not set, using random value. Sessions will not persist across restarts.'); return require('crypto').randomBytes(32).toString('hex'); })(),
+const sessionOptions: session.SessionOptions = {
+    secret: process.env.SESSION_SECRET || (() => { 
+        console.warn('⚠️ SESSION_SECRET not set, using temporary value.'); 
+        return 'temp-secret-key-12345'; 
+    })(),
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({
-        mongoUrl: process.env.MONGODB_URI,
-        collectionName: 'sessions'
-    }),
     cookie: {
         secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Must be 'none' for OAuth to work across domains/redirects from Vercel
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        maxAge: 24 * 60 * 60 * 1000
     }
-}));
+};
+
+// Only use MongoDB store if URI is available
+if (process.env.MONGODB_URI) {
+    sessionOptions.store = MongoStore.create({
+        mongoUrl: process.env.MONGODB_URI,
+        collectionName: 'sessions',
+        ttl: 24 * 60 * 60 // 1 day
+    });
+} else {
+    console.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
+}
+
+app.use(session(sessionOptions));
 
 
 // Initialize Scheduler (runs in dev + production; Vercel guard is inside initScheduler)
@@ -91,11 +103,19 @@ app.use(passport.session()); // Required for OAuth state/PKCE
 configurePassport();
 
 // Database Connection
-mongoose.connect(process.env.MONGODB_URI as string, {
-    dbName: 'hrm'
-})
-    .then(() => console.log('Connected to MongoDB (hrm)'))
-    .catch(err => console.error('Could not connect to MongoDB', err));
+if (process.env.MONGODB_URI) {
+    mongoose.connect(process.env.MONGODB_URI, {
+        dbName: 'hrm',
+        serverSelectionTimeoutMS: 5000 // 5 seconds timeout
+    })
+    .then(() => console.log('✅ Connected to MongoDB (hrm)'))
+    .catch(err => {
+        console.error('❌ MongoDB Connection Error:', err.message);
+        // Do not exit process in Vercel to allow seeing errors in logs
+    });
+} else {
+    console.error('❌ FATAL: MONGODB_URI is not defined.');
+}
 
 import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
@@ -109,6 +129,15 @@ app.use('/api/audit-logs', auditRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limit on auth
 app.use('/api/ai', aiRoutes);
+
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        env: process.env.NODE_ENV,
+        dbConnected: mongoose.connection.readyState === 1
+    });
+});
 
 app.get('/', (req, res) => {
     res.send('HRM API is running');
