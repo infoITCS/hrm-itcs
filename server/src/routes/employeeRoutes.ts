@@ -235,6 +235,36 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 });
 
 // Get single employee (Role-based access)
+// Check for duplicate employees (by CNIC or email)
+router.get('/check-duplicate', authenticate, async (req: Request, res: Response) => {
+    try {
+        const { cnic, email, employeeId } = req.query;
+        if (!cnic && !email) {
+            return res.status(400).json({ message: 'CNIC or email is required' });
+        }
+
+        const query: any = { $or: [] };
+        if (cnic) query.$or.push({ cnic: cnic as string });
+        if (email) query.$or.push({ email: email as string });
+        
+        const existing = await Employee.findOne(query).select('firstName lastName employeeId');
+        
+        // If we found a match, check if it's the same employee we are currently editing
+        if (existing && existing.employeeId !== employeeId) {
+            return res.json({ 
+                isDuplicate: true, 
+                message: `An employee with this ${cnic ? 'CNIC' : 'email'} already exists: ${existing.firstName} ${existing.lastName} (${existing.employeeId})`,
+                existingEmployee: existing
+            });
+        }
+
+        res.json({ isDuplicate: false });
+    } catch (err) {
+        console.error('Duplicate check error:', err);
+        res.status(500).json({ message: 'Error checking for duplicates' });
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {
@@ -296,7 +326,26 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             uploadedBy: authReq.user?.userId
         };
 
-        // Use updateOne to push attachment directly into MongoDB array.
+        // 1. Clear existing documents of the same type to prevent bloat (except for generic buckets like 'Other Documents')
+        const fileType = req.body.fileType || 'Document';
+        const additiveTypes = ['Other Documents']; 
+        
+        if (!additiveTypes.includes(fileType)) {
+            await Employee.updateOne(
+                { employeeId: req.params.id },
+                { $pull: { attachments: { fileType: fileType } } }
+            );
+        } else if (fileType === 'Other Documents') {
+            // Security: Limit "Other Documents" to 10 files to prevent database bloat/abuse
+            const docCount = (employee.attachments || []).filter(a => a.fileType === 'Other Documents').length;
+            if (docCount >= 10) {
+                // Clean up the uploaded temp file before returning error
+                try { fs.unlinkSync(req.file.path); } catch (e) {}
+                return res.status(400).json({ message: 'Maximum limit of 10 "Other Documents" reached. Please delete old ones before uploading new files.' });
+            }
+        }
+
+        // 2. Use updateOne to push attachment directly into MongoDB array.
         // Doing this avoids Mongoose overwriting arrays when they are loaded partially (without fileData)
         await Employee.updateOne(
             { employeeId: req.params.id },

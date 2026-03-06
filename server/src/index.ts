@@ -98,6 +98,7 @@ mongoose.connect(process.env.MONGODB_URI as string, {
     .catch(err => console.error('Could not connect to MongoDB', err));
 
 import authRoutes from './routes/authRoutes';
+import aiRoutes from './routes/aiRoutes';
 
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -107,6 +108,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limit on auth
+app.use('/api/ai', aiRoutes);
 
 app.get('/', (req, res) => {
     res.send('HRM API is running');

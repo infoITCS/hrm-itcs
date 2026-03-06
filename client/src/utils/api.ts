@@ -17,6 +17,27 @@ export const api = {
         const token = localStorage.getItem('token');
         return `${API_BASE_URL}/api/employees/attachments/raw/${id}${token ? `?token=${token}` : ''}`;
     },
+    checkDuplicate: (cnic?: string, email?: string, employeeId?: string) => {
+        const params = new URLSearchParams();
+        if (cnic) params.append('cnic', cnic);
+        if (email) params.append('email', email);
+        if (employeeId) params.append('employeeId', employeeId);
+        return `${API_BASE_URL}/api/employees/check-duplicate?${params.toString()}`;
+    },
+    extractFromDocument: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return fetch(`${API_BASE_URL}/api/ai/extract`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        }).then(res => {
+            if (!res.ok) throw new Error('AI Extraction failed');
+            return res.json();
+        });
+    }
 };
 
 export default api;

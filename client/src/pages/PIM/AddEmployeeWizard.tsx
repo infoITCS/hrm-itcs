@@ -816,7 +816,7 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
                                     <div className="relative">
-                                        <img src={existingFile.url || `/api/employees/attachments/raw/${existingFile._id}`} alt="Existing Profile" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
+                                        <img src={existingFile.url || api.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
                                         <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                             <Upload className="text-white drop-shadow-md" size={24} />
                                         </div>
@@ -1403,6 +1403,41 @@ const AddEmployeeWizard = () => {
                                                 setFormData({ ...formData, education: newEdu });
                                             }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
                                         </div>
+                                        <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
+                                            <div className="flex items-center gap-2">
+                                                <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
+                                                    <Upload size={14} />
+                                                    <span className="truncate">
+                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
+                                                            ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
+                                                            : 'Upload Degree/Transcript Scan'}
+                                                    </span>
+                                                    <input
+                                                        type="file"
+                                                        accept=".pdf,.jpg,.png"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            if (e.target.files && e.target.files.length > 0) {
+                                                                const typeKey = `Degree - ${edu.level || idx}`;
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                }));
+                                                            }
+                                                        }}
+                                                    />
+                                                </label>
+                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
+                                                    <button
+                                                        onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
+                                                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                        title="Remove File"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -1854,7 +1889,7 @@ const AddEmployeeWizard = () => {
                             {/* Upload Grid */}
                             <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {['CNIC Front', 'CNIC Back', 'Degree', 'Picture', 'Passport (Optional)', 'Contract', 'Other Documents'].map((label) => (
+                                {['Contract', 'Other Documents'].map((label) => (
                                     <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                         <input
                                             type="file"

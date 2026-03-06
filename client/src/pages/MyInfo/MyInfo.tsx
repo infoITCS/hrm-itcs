@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Sparkles, Wand2 } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,8 +16,37 @@ const MyInfo = () => {
     const [avatarCache, setAvatarCache] = useState<string>('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState(false);
+    const [success, setSuccess] = useState<string | null>(null);
     const [employeeId, setEmployeeId] = useState<string | null>(null);
+    const [extracting, setExtracting] = useState(false);
+
+    const handleAiExtract = async (file: File) => {
+        setExtracting(true);
+        setError(null);
+        try {
+            const data = await api.extractFromDocument(file);
+            
+            setFormData(prev => ({
+                ...prev,
+                firstName: data.firstName || prev.firstName,
+                lastName: data.lastName || prev.lastName,
+                fatherName: data.fatherName || prev.fatherName,
+                cnic: data.cnic || prev.cnic,
+                dateOfBirth: data.dateOfBirth ? data.dateOfBirth.split('T')[0] : prev.dateOfBirth,
+                gender: data.gender || prev.gender,
+                nationality: data.nationality || prev.nationality,
+                email: data.email || prev.email,
+                phone: data.phone || prev.phone
+            }));
+            
+            setSuccess('AI successfully extracted information from your document!');
+            setTimeout(() => setSuccess(null), 5000);
+        } catch (err: any) {
+            setError('AI Extraction failed: ' + err.message);
+        } finally {
+            setExtracting(false);
+        }
+    };
     const [rawEmployee, setRawEmployee] = useState<any>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
@@ -34,6 +63,7 @@ const MyInfo = () => {
         attachmentId: null,
         fileName: null
     });
+    const [duplicateError, setDuplicateError] = useState<{ field: string; message: string } | null>(null);
 
     const validateField = (name: string, value: string): string => {
         if (!value.trim()) return ''; // empty = no error
@@ -58,9 +88,32 @@ const MyInfo = () => {
         }
     };
 
+    const checkDuplicateData = async (name: string, value: string) => {
+        if (name !== 'cnic' && name !== 'email') return;
+        if (!value || validateField(name, value)) return; 
+
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(api.checkDuplicate(name === 'cnic' ? value : undefined, name === 'email' ? value : undefined, employeeId || undefined), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.isDuplicate) {
+                    setDuplicateError({ field: name, message: data.message });
+                } else {
+                    if (duplicateError?.field === name) setDuplicateError(null);
+                }
+            }
+        } catch (err) {
+            console.error('Check duplicate error:', err);
+        }
+    };
+
     const handleFieldBlur = (name: string, value: string) => {
         const err = validateField(name, value);
         setFieldErrors(prev => ({ ...prev, [name]: err }));
+        checkDuplicateData(name, value);
     };
 
     const hasFetched = useRef(false);
@@ -68,7 +121,7 @@ const MyInfo = () => {
     const onboarding = searchParams.get('onboarding') === 'true';
     const targetStep = parseInt(searchParams.get('step') || '1', 10);
 
-    const [step, setStep] = useState(targetStep);
+    const [step, setStep] = useState<number>(targetStep);
     
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
@@ -76,7 +129,7 @@ const MyInfo = () => {
         const hasCNICFront = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Front') || formData.files.some(f => f.type === 'CNIC Front');
         const hasCNICBack = rawEmployee?.attachments?.some((a: any) => a.fileType === 'CNIC Back') || formData.files.some(f => f.type === 'CNIC Back');
 
-        return !!(
+        const hasCoreFields = !!(
             formData.firstName?.trim() &&
             formData.lastName?.trim() &&
             formData.cnic?.trim() &&
@@ -85,11 +138,15 @@ const MyInfo = () => {
             formData.religion?.trim() &&
             formData.nationality?.trim() &&
             formData.gender &&
-            formData.maritalStatus &&
-            hasProfilePicture &&
-            hasCNICFront &&
-            hasCNICBack
+            formData.maritalStatus
         );
+
+        // Files are only rigidly required upon First Time creation, not during future edits
+        if (!employeeId) {
+            return hasCoreFields && hasProfilePicture && hasCNICFront && hasCNICBack;
+        }
+
+        return hasCoreFields;
     };
 
     const getStep1RequiredErrors = (): string[] => {
@@ -107,10 +164,46 @@ const MyInfo = () => {
         if (!formData.nationality?.trim()) err.push('Nationality');
         if (!formData.gender) err.push('Gender');
         if (!formData.maritalStatus) err.push('Marital Status');
-        if (!hasProfilePicture) err.push('Profile Picture');
-        if (!hasCNICFront) err.push('CNIC Front Image');
-        if (!hasCNICBack) err.push('CNIC Back Image');
+        
+        if (!employeeId) {
+            if (!hasProfilePicture) err.push('Profile Picture');
+            if (!hasCNICFront) err.push('CNIC Front Image');
+            if (!hasCNICBack) err.push('CNIC Back Image');
+        }
         return err;
+    };
+
+    const getMissingFields = () => {
+        const missing: { section: string; fields: string[] }[] = [];
+        
+        // Personal
+        const personal = [];
+        if (!formData.firstName) personal.push('First Name');
+        if (!formData.lastName) personal.push('Last Name');
+        if (!formData.cnic) personal.push('CNIC');
+        if (!formData.dateOfBirth) personal.push('Date of Birth');
+        if (!formData.fatherName) personal.push('Father Name');
+        if (!formData.nationality) personal.push('Nationality');
+        if (personal.length) missing.push({ section: 'Personal', fields: personal });
+
+        // Contact
+        const contact = [];
+        if (!formData.phone) contact.push('Phone Number');
+        if (!formData.address.city) contact.push('City');
+        if (!formData.address.street) contact.push('Address');
+        if (!formData.email) contact.push('Personal Email');
+        if (contact.length) missing.push({ section: 'Contact', fields: contact });
+
+        // Documents
+        const docs = [];
+        const attachments = rawEmployee?.attachments || [];
+        if (!attachments.some((a: any) => a.fileType === 'Profile Picture')) docs.push('Profile Picture');
+        if (!attachments.some((a: any) => a.fileType === 'CNIC Front')) docs.push('CNIC Front Image');
+        if (!attachments.some((a: any) => a.fileType === 'CNIC Back')) docs.push('CNIC Back Image');
+        if (!attachments.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - '))) docs.push('Degree/Qualification');
+        if (docs.length) missing.push({ section: 'Documents', fields: docs });
+
+        return missing;
     };
 
     const [formData, setFormData] = useState({
@@ -124,6 +217,7 @@ const MyInfo = () => {
         gender: '',
         maritalStatus: '',
         nationality: '',
+        domicile: '',
         fatherName: '',
         bloodGroup: '',
         cnic: '',
@@ -235,6 +329,7 @@ const MyInfo = () => {
                             gender: employee.gender || '',
                             maritalStatus: employee.maritalStatus || '',
                             nationality: employee.nationality || '',
+                            domicile: employee.domicile || '',
                             fatherName: employee.fatherName || '',
                             bloodGroup: employee.bloodGroup || '',
                             cnic: employee.cnic || '',
@@ -342,6 +437,7 @@ const MyInfo = () => {
                             dateOfBirth: !!employee.dateOfBirth,
                             fatherName: !!employee.fatherName,
                             nationality: !!employee.nationality,
+                            domicile: !!employee.domicile,
                             bloodGroup: !!employee.bloodGroup
                         });
                     } else {
@@ -479,11 +575,15 @@ const MyInfo = () => {
             setStepErrors(getStep1RequiredErrors());
             return;
         }
+        if (duplicateError) {
+            setError(duplicateError.message);
+            return;
+        }
         setStepErrors([]);
 
         setSaving(true);
         setError(null);
-        setSuccess(false);
+        setSuccess(null);
 
         try {
             const token = localStorage.getItem('token');
@@ -508,6 +608,7 @@ const MyInfo = () => {
             if (!employeeData.dateOfBirth) delete employeeData.dateOfBirth;
             if (!employeeData.fatherName) delete employeeData.fatherName;
             if (!employeeData.nationality) delete employeeData.nationality;
+            if (!employeeData.domicile) delete employeeData.domicile;
             if (!employeeData.bloodGroup) delete employeeData.bloodGroup;
 
             let response;
@@ -584,12 +685,13 @@ const MyInfo = () => {
                 dateOfBirth: !!employeeData.dateOfBirth,
                 fatherName: !!employeeData.fatherName,
                 nationality: !!employeeData.nationality,
+                domicile: !!employeeData.domicile,
                 bloodGroup: !!employeeData.bloodGroup
             });
 
-            setSuccess(true);
+            setSuccess('Profile saved successfully');
             setTimeout(() => {
-                setSuccess(false);
+                setSuccess(null);
                 if (shouldNavigate) {
                     if (onboarding) {
                         navigate('/dashboard');
@@ -646,8 +748,8 @@ const MyInfo = () => {
             }));
 
             setDeleteModal({ isOpen: false, attachmentId: null, fileName: null });
-            setSuccess(true);
-            setTimeout(() => setSuccess(false), 2000);
+            setSuccess('Document deleted successfully');
+            setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
             console.error('Error deleting document:', err);
             setError(err.message || 'Failed to delete document.');
@@ -745,8 +847,8 @@ const MyInfo = () => {
                 return null;
             });
 
-            setSuccess(true);
-            setTimeout(() => setSuccess(false), 3000);
+            setSuccess('Profile updated successfully');
+            setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
             setError('Failed to upload profile picture.');
@@ -1175,6 +1277,15 @@ const MyInfo = () => {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1">
+                                                <a 
+                                                    href={apiHelpers.attachmentRaw(file._id)} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
+                                                    title="View"
+                                                >
+                                                    <Eye size={20} />
+                                                </a>
                                                 <button
                                                     onClick={() => handleDownload(file._id, file.fileName)}
                                                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
@@ -1333,44 +1444,160 @@ const MyInfo = () => {
                         {success && (
                             <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl flex items-center gap-2">
                                 <Check size={18} className="text-green-500" />
-                                <span>Your information has been saved successfully!</span>
+                                <span>{success}</span>
+                            </div>
+                        )}
+
+                        {/* Profile Health Alert */}
+                        {getMissingFields().length > 0 && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-scale-in">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-amber-100 text-amber-600 rounded-xl">
+                                        <AlertCircle size={20} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-amber-800">Incomplete Profile</h4>
+                                        <p className="text-xs text-amber-600">Your profile is missing some important information. Completing it helps with HR processing.</p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    {getMissingFields().slice(0, 2).map((m, i) => (
+                                        <span key={i} className="text-[10px] font-bold uppercase bg-white border border-amber-100 text-amber-700 px-2 py-1 rounded shadow-sm">
+                                            Missing: {m.section}
+                                        </span>
+                                    ))}
+                                    {getMissingFields().length > 2 && <span className="text-[10px] font-bold text-amber-500 underline ml-1 cursor-pointer" onClick={() => setStep(8)}>+{getMissingFields().length - 2} more</span>}
+                                </div>
                             </div>
                         )}
 
                         {/* Step 1: Personal Details */}
                         {step === 1 && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-slide-up pb-20">
-                                {/* Upload Fields */}
-                                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-                                    {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => (
-                                        <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+                            <div className="animate-slide-up pb-20">
+                                {/* AI Magic Fill Section */}
+                                <div className="mb-8 p-6 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-200 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-6 animate-scale-in">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+                                            <Sparkles size={24} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-gray-800 font-bold">AI Magic Fill</h4>
+                                            <p className="text-sm text-gray-500">
+                                                {formData.files.some(f => f.type === 'Resume/CV') 
+                                                    ? "Ready to extract from your uploaded resume!" 
+                                                    : "Upload your resume to automatically fill this form using AI."}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {formData.files.some(f => f.type === 'Resume/CV') ? (
+                                        <button
+                                            onClick={() => {
+                                                const resume = formData.files.find(f => f.type === 'Resume/CV')?.file;
+                                                if (resume) handleAiExtract(resume);
+                                            }}
+                                            disabled={extracting}
+                                            className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap active:scale-95 disabled:opacity-50"
+                                        >
+                                            {extracting ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Wand2 size={18} />}
+                                            {extracting ? 'AI is reading...' : 'Extract Data'}
+                                        </button>
+                                    ) : (
+                                        <div className="relative overflow-hidden group">
                                             <input
                                                 type="file"
-                                                accept={label === 'Profile Picture' ? "image/*" : ".pdf,.doc,.docx,.jpg,.png"}
-                                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                                accept=".pdf,.doc,.docx,.jpg,.png"
+                                                className="absolute inset-0 opacity-0 cursor-pointer z-10"
                                                 onChange={(e) => {
                                                     if (e.target.files && e.target.files.length > 0) {
                                                         const file = e.target.files[0];
                                                         setFormData(prev => ({
                                                             ...prev,
-                                                            files: [...prev.files, { file, type: label }]
+                                                            files: [...prev.files, { file, type: 'Resume/CV' }]
                                                         }));
+                                                        handleAiExtract(file);
                                                     }
                                                 }}
                                             />
-                                            <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
-                                                <Upload size={20} />
-                                            </div>
-                                            <span className="text-sm font-medium text-gray-600">{label}</span>
-                                            {formData.files.some(f => f.type === label) ? (
-                                                <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
-                                                    {formData.files.find(f => f.type === label)?.file.name}
-                                                </span>
-                                            ) : (
-                                                <span className="text-xs text-gray-400 mt-1">Click to upload</span>
-                                            )}
+                                            <button className="px-6 py-3 bg-white text-indigo-600 border-2 border-indigo-100 rounded-2xl font-bold hover:border-indigo-600 transition-all flex items-center gap-2 whitespace-nowrap group-hover:bg-indigo-50">
+                                                <Upload size={18} />
+                                                Start with Resume
+                                            </button>
                                         </div>
-                                    ))}
+                                    )}
+                                </div>
+
+                                {/* Duplicate Alert */}
+                                {duplicateError && (
+                                    <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-700 animate-shake">
+                                        <AlertCircle size={20} className="shrink-0" />
+                                        <p className="text-sm font-bold">{duplicateError.message}</p>
+                                    </div>
+                                )}
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Upload Fields */}
+                                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+                                    {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => {
+                                        const existingFile = rawEmployee?.attachments?.find((a: any) => a.fileType === label);
+                                        const hasNewFile = formData.files.some(f => f.type === label);
+                                        const displayFileName = hasNewFile ? formData.files.find(f => f.type === label)?.file.name : (existingFile?.fileName || null);
+
+                                        return (
+                                            <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+                                                <input
+                                                    type="file"
+                                                    accept={label === 'Profile Picture' ? "image/*" : ".pdf,.doc,.docx,.jpg,.png"}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer z-20"
+                                                    onChange={(e) => {
+                                                        if (e.target.files && e.target.files.length > 0) {
+                                                            const file = e.target.files[0];
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                files: [...prev.files.filter(f => f.type !== label), { file, type: label }]
+                                                            }));
+                                                            // Generate preview for profile picture
+                                                            if (label === 'Profile Picture') {
+                                                                const reader = new FileReader();
+                                                                reader.onload = (ev) => setLocalAvatarPreview(ev.target?.result as string);
+                                                                reader.readAsDataURL(file);
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                                {/* Profile Picture shows image preview instead of icon */}
+                                                {label === 'Profile Picture' && localAvatarPreview ? (
+                                                    <div className="relative z-10">
+                                                        <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
+                                                        <button
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocalAvatarPreview(null); setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); }}
+                                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-30"
+                                                            title="Remove"
+                                                        >×</button>
+                                                    </div>
+                                                ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
+                                                    <div className="relative z-10">
+                                                        <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
+                                                        <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <Upload className="text-white drop-shadow-md" size={24} />
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
+                                                        <Upload size={20} />
+                                                    </div>
+                                                )}
+
+                                                <span className="text-sm font-medium text-gray-600">{label}</span>
+                                                {displayFileName && label !== 'Profile Picture' ? (
+                                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
+                                                        {displayFileName}
+                                                    </span>
+                                                ) : label !== 'Profile Picture' ? (
+                                                    <span className="text-xs text-gray-400 mt-1">Click to upload</span>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 <div className="space-y-2">
@@ -1431,16 +1658,37 @@ const MyInfo = () => {
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Nationality *</label>
-                                    <input
-                                        type="text"
-                                        name="nationality"
-                                        value={formData.nationality}
-                                        onChange={handleChange}
-                                        disabled={initialLockedFields.nationality && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.nationality && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
-                                    />
+                                    {initialLockedFields.nationality && !canEditSensitiveData() ? (
+                                        <input
+                                            type="text"
+                                            name="nationality"
+                                            value={formData.nationality}
+                                            disabled
+                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                        />
+                                    ) : (
+                                        <CustomSelect
+                                            label=""
+                                            value={formData.nationality}
+                                            onChange={(val) => setFormData({ ...formData, nationality: val })}
+                                            options={['Pakistani', 'Indian', 'Bangladeshi', 'American', 'British', 'Canadian', 'Australian', 'Other']}
+                                        />
+                                    )}
                                     {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
                                     {initialLockedFields.nationality && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600">Domicile *</label>
+                                    <input
+                                        type="text"
+                                        name="domicile"
+                                        value={formData.domicile}
+                                        onChange={handleChange}
+                                        disabled={initialLockedFields.domicile && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.domicile && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                    />
+                                    {initialLockedFields.domicile && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.domicile && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Blood Group</label>
@@ -1463,8 +1711,12 @@ const MyInfo = () => {
                                     {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Religion *</label>
-                                    <input type="text" name="religion" value={formData.religion} onChange={handleChange} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
+                                    <CustomSelect 
+                                        label="Religion *" 
+                                        value={formData.religion} 
+                                        onChange={(val) => setFormData({ ...formData, religion: val })} 
+                                        options={['Islam', 'Christianity', 'Hinduism', 'Buddhism', 'Sikhism', 'Other']} 
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">License Number</label>
@@ -1477,7 +1729,8 @@ const MyInfo = () => {
                                     <CustomSelect label="Marital Status *" value={formData.maritalStatus} onChange={(val) => setFormData({ ...formData, maritalStatus: val })} options={['Single', 'Married', 'Divorced', 'Widowed', 'Other']} />
                                 </div>
                             </div>
-                        )}
+                        </div>
+                    )}
 
                         {/* Step 2: Contact, Address, Dependents */}
                         {step === 2 && (
@@ -1854,6 +2107,41 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Score / GPA</label>
                                                     <input type="text" placeholder="e.g., 3.5/4.0 or 85%" value={edu.score} onChange={(e) => handleChange(e, 'education', idx, 'score')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
+                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
+                                                    <div className="flex items-center gap-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
+                                                            <Upload size={14} />
+                                                            <span className="truncate">
+                                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
+                                                                    ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
+                                                                    : 'Upload Degree/Transcript Scan'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        const typeKey = `Degree - ${edu.level || idx}`;
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
+                                                            <button
+                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                                title="Remove File"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -2179,10 +2467,26 @@ const MyInfo = () => {
                                                             target="_blank" 
                                                             rel="noopener noreferrer"
                                                             className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                            title="View"
+                                                        >
+                                                            <Eye size={18} />
+                                                        </a>
+                                                        <a 
+                                                            href={apiHelpers.attachmentRaw(file._id)} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
                                                             title="Download"
                                                         >
                                                             <Download size={18} />
                                                         </a>
+                                                        <button
+                                                            onClick={() => handleDeleteDocument(file._id, file.fileName)}
+                                                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
                                                     </div>
                                                 ))}
                                             </div>
@@ -2192,7 +2496,7 @@ const MyInfo = () => {
                                     {/* Upload Grid */}
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {['CNIC Front', 'CNIC Back', 'Degree', 'Picture', 'Passport (Optional)', 'Contract', 'Other Documents'].map((label) => (
+                                        {['Contract', 'Other Documents'].map((label) => (
                                             <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"

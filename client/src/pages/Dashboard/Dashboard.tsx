@@ -20,7 +20,8 @@ import {
     Award,
     Rocket,
     Check,
-    AlertCircle
+    AlertCircle,
+    X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -60,6 +61,9 @@ const Dashboard = () => {
     const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name || 'User';
 
     const [onboardingData, setOnboardingData] = useState<any>(null);
+    const [onboardingDismissed, setOnboardingDismissed] = useState(
+        localStorage.getItem(`onboarding_dismissed_${user?.id}`) === 'true'
+    );
 
     const calculateOnboardingProgress = (emp: any) => {
         const empData = emp || {};
@@ -72,7 +76,7 @@ const Dashboard = () => {
             { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: !!(
                 empData.attachments?.some((a: any) => a.fileType === 'CNIC Front') &&
                 empData.attachments?.some((a: any) => a.fileType === 'CNIC Back') &&
-                empData.attachments?.some((a: any) => a.fileType === 'Degree') &&
+                empData.attachments?.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - ')) &&
                 empData.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture')
             )}
         ];
@@ -392,8 +396,20 @@ const Dashboard = () => {
                 />
             )}
             {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}
-            {!loading && onboarding && onboarding.steps.length > 0 && (
+            {!loading && onboarding && onboarding.steps.length > 0 && !onboardingDismissed && (
                 <div className={`bg-white rounded-2xl border-2 shadow-xl overflow-hidden relative group transition-all duration-500 ${onboarding.percent === 100 ? 'border-emerald-200 shadow-emerald-100/50' : 'border-indigo-100 shadow-indigo-100/50'}`}>
+                    {onboarding.percent === 100 && (
+                        <button 
+                            onClick={() => {
+                                localStorage.setItem(`onboarding_dismissed_${user?.id}`, 'true');
+                                setOnboardingDismissed(true);
+                            }}
+                            className="absolute top-4 right-4 p-2 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-all z-30"
+                            title="Dismiss"
+                        >
+                            <X size={20} />
+                        </button>
+                    )}
                     <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
                         {onboarding.percent === 100 ? <PartyPopper size={160} className="text-emerald-600 -rotate-12" /> : <Rocket size={160} className="text-indigo-600 -rotate-12" />}
                     </div>
