@@ -33,8 +33,12 @@ export const api = {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
-        }).then(res => {
-            if (!res.ok) throw new Error('AI Extraction failed');
+        }).then(async res => {
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                console.error('[API] AI Extraction Failed:', res.status, errorData);
+                throw new Error(errorData.message || `Server error: ${res.status}`);
+            }
             return res.json();
         });
     }

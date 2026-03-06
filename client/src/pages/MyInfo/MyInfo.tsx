@@ -20,33 +20,7 @@ const MyInfo = () => {
     const [employeeId, setEmployeeId] = useState<string | null>(null);
     const [extracting, setExtracting] = useState(false);
 
-    const handleAiExtract = async (file: File) => {
-        setExtracting(true);
-        setError(null);
-        try {
-            const data = await api.extractFromDocument(file);
-            
-            setFormData(prev => ({
-                ...prev,
-                firstName: data.firstName || prev.firstName,
-                lastName: data.lastName || prev.lastName,
-                fatherName: data.fatherName || prev.fatherName,
-                cnic: data.cnic || prev.cnic,
-                dateOfBirth: data.dateOfBirth ? data.dateOfBirth.split('T')[0] : prev.dateOfBirth,
-                gender: data.gender || prev.gender,
-                nationality: data.nationality || prev.nationality,
-                email: data.email || prev.email,
-                phone: data.phone || prev.phone
-            }));
-            
-            setSuccess('AI successfully extracted information from your document!');
-            setTimeout(() => setSuccess(null), 5000);
-        } catch (err: any) {
-            setError('AI Extraction failed: ' + err.message);
-        } finally {
-            setExtracting(false);
-        }
-    };
+
     const [rawEmployee, setRawEmployee] = useState<any>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
@@ -285,6 +259,63 @@ const MyInfo = () => {
             swiftCode: ''
         }
     });
+
+    const handleAiExtract = async (file: File) => {
+        setExtracting(true);
+        setError(null);
+        try {
+            const data = await api.extractFromDocument(file);
+            
+            setFormData(prev => ({
+                ...prev,
+                firstName: data.firstName || prev.firstName,
+                lastName: data.lastName || prev.lastName,
+                middleName: data.middleName || prev.middleName,
+                fatherName: data.fatherName || prev.fatherName,
+                cnic: data.cnic || prev.cnic,
+                dateOfBirth: data.dateOfBirth ? data.dateOfBirth.split('T')[0] : prev.dateOfBirth,
+                gender: data.gender || prev.gender,
+                nationality: data.nationality || prev.nationality,
+                religion: data.religion || prev.religion,
+                maritalStatus: data.maritalStatus || prev.maritalStatus,
+                bloodGroup: data.bloodGroup || prev.bloodGroup,
+                domicile: data.domicile || prev.domicile,
+                email: data.email || prev.email,
+                phone: data.phone || prev.phone,
+                address: {
+                    ...prev.address,
+                    street: data.address?.street || prev.address.street,
+                    city: data.address?.city || prev.address.city,
+                    state: data.address?.state || prev.address.state,
+                    zipCode: data.address?.zipCode || prev.address.zipCode,
+                    country: data.address?.country || prev.address.country,
+                },
+                skills: data.skills?.length ? Array.from(new Set([...prev.skills, ...data.skills])) : prev.skills,
+                education: data.education?.length && (!prev.education[0]?.institute) ? data.education : prev.education,
+                employmentHistory: data.employmentHistory?.length && (!prev.employmentHistory[0]?.companyName) ? data.employmentHistory : prev.employmentHistory,
+                emergencyContacts: data.emergencyContacts?.length && (!prev.emergencyContacts[0]?.name) ? data.emergencyContacts : prev.emergencyContacts,
+                bankDetails: {
+                    ...prev.bankDetails,
+                    bankName: data.bankDetails?.bankName || prev.bankDetails.bankName,
+                    accountName: data.bankDetails?.accountName || prev.bankDetails.accountName,
+                    accountNumber: data.bankDetails?.accountNumber || prev.bankDetails.accountNumber,
+                    iban: data.bankDetails?.iban || prev.bankDetails.iban,
+                    swiftCode: data.bankDetails?.swiftCode || prev.bankDetails.swiftCode,
+                },
+                socialProfiles: prev.socialProfiles.map(p => {
+                    const extracted = data.socialProfiles?.find((ep: any) => ep.platform === p.platform);
+                    return extracted && !p.link ? { ...p, link: extracted.link } : p;
+                })
+            }));
+            
+            setSuccess('AI successfully extracted information from your document!');
+            setTimeout(() => setSuccess(null), 5000);
+        } catch (err: any) {
+            setError('AI Extraction failed: ' + err.message);
+        } finally {
+            setExtracting(false);
+        }
+    };
 
     // Fetch employee data linked to current user
     useEffect(() => {

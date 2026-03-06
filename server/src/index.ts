@@ -6,12 +6,21 @@ dotenv.config();
 const criticalEnvVars = [
     'MONGODB_URI', 'JWT_SECRET', 'MICROSOFT_CLIENT_ID', 
     'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID', 
-    'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL'
+    'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL',
+    'GEMINI_API_KEY'
 ];
 criticalEnvVars.forEach(key => {
     if (process.env[key]) {
         process.env[key] = process.env[key]?.trim();
     }
+});
+
+// CRASH LOGGING: Catch any deep server errors
+process.on('uncaughtException', (err) => {
+    console.error('❌ CRITICAL: Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 import express from 'express';
@@ -161,7 +170,8 @@ export default app;
 
 // For local development, listen on port
 if (!process.env.VERCEL) {
-    app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
+    const portNum = typeof PORT === 'string' ? parseInt(PORT) : PORT;
+    app.listen(portNum, '0.0.0.0', () => {
+        console.log(`Server is running on port ${portNum}`);
     });
 }
