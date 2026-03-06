@@ -25,6 +25,8 @@ import path from 'path';
 import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
 import adminRoutes from './routes/adminRoutes';
+import authRoutes from './routes/authRoutes';
+import aiRoutes from './routes/aiRoutes';
 import { initScheduler } from './services/scheduler';
 
 import passport from 'passport';
@@ -111,14 +113,10 @@ if (process.env.MONGODB_URI) {
     .then(() => console.log('✅ Connected to MongoDB (hrm)'))
     .catch(err => {
         console.error('❌ MongoDB Connection Error:', err.message);
-        // Do not exit process in Vercel to allow seeing errors in logs
     });
 } else {
     console.error('❌ FATAL: MONGODB_URI is not defined.');
 }
-
-import authRoutes from './routes/authRoutes';
-import aiRoutes from './routes/aiRoutes';
 
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
