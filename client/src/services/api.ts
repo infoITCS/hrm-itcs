@@ -26,16 +26,18 @@ apiClient.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// Auto-logout on expired/invalid token
+// Auto-logout on expired/invalid token (skip during OAuth callback so callback can handle 401)
 apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            sessionStorage.clear();
-            // Only redirect if not already on login page
-            if (!window.location.pathname.includes('/login')) {
-                window.location.href = '/login?expired=true';
+            const isAuthCallback = window.location.pathname.includes('/auth/callback');
+            if (!isAuthCallback) {
+                localStorage.removeItem('token');
+                sessionStorage.clear();
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login?expired=true';
+                }
             }
         }
         return Promise.reject(error);
@@ -47,8 +49,9 @@ const APIService = {
         const response = await apiClient.post(AUTH_LOGIN_URL, { email, password });
         return response;
     },
-    getMe: async () => {
-        const response = await apiClient.get(AUTH_ME_URL);
+    getMe: async (token?: string) => {
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        const response = await apiClient.get(AUTH_ME_URL, config);
         return response.data;
     },
     changePassword: async (currentPassword: string, newPassword: string) => {

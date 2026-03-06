@@ -329,8 +329,8 @@ router.get(
         role: user.role,
       });
 
-      // Redirect to frontend with token
-      res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+      // Use hash (#token=...) so long JWT isn't truncated by query string limits
+      res.redirect(`${process.env.CLIENT_URL}/auth/callback#token=${encodeURIComponent(token)}`);
     } catch (error: any) {
       console.error("❌ Microsoft callback error:", error.message);
       res.redirect(`${process.env.CLIENT_URL}/login?error=callback_error`);

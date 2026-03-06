@@ -14,13 +14,13 @@ export const AuthCallback: React.FC = () => {
 
         const handleCallback = async () => {
             try {
-                // Get token from URL
+                // Get token from query (?token=) or hash (#token=) — hash avoids truncation of long JWTs
                 const searchParams = new URLSearchParams(window.location.search);
-                const hashParams = new URLSearchParams(
-                    window.location.hash.includes('?') ? window.location.hash.split('?')[1] : ''
-                );
+                const hashPart = window.location.hash ? window.location.hash.slice(1) : '';
+                const hashParams = new URLSearchParams(hashPart);
 
-                const token = searchParams.get('token') || hashParams.get('token');
+                let token = searchParams.get('token') || hashParams.get('token');
+                if (token) token = decodeURIComponent(token);
                 const error = searchParams.get('error') || hashParams.get('error');
 
                 if (error) {
@@ -35,11 +35,11 @@ export const AuthCallback: React.FC = () => {
                     return;
                 }
 
-                // Save token so APIService interceptors can attach it
+                // Save token for future requests
                 localStorage.setItem('token', token);
 
-                // Fetch user details
-                const userData = await APIService.getMe();
+                // Fetch user details using this token explicitly (avoids race with interceptor)
+                const userData = await APIService.getMe(token);
 
                 if (cancelled) return; // StrictMode safety — ignore if effect was cleaned up
 
