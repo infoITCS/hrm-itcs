@@ -139,6 +139,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// Favicon handler to prevent 500 errors
+app.get(['/favicon.ico', '/favicon.png'], (req, res) => {
+    res.status(204).end();
+});
+
 app.get('/', (req, res) => {
     res.send('HRM API is running');
 });
