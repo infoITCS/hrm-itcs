@@ -10,7 +10,7 @@ const AddEmployeeWizard = () => {
     const navigate = useNavigate();
     const { id } = useParams();
     const isEditMode = !!id;
-    const { user: authUser } = useAuth();
+    const { user: authUser, login } = useAuth();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = role === 'super-admin' || role === 'admin';
     const [step, setStep] = useState(1);
@@ -528,6 +528,23 @@ const AddEmployeeWizard = () => {
 
                         if (!fileResponse.ok) {
                             console.warn(`Failed to upload file ${fileObj.file.name}`);
+                        } else {
+                            // If this was a profile picture, check if it's the current user and update header
+                            if (fileObj.type === 'Profile Picture') {
+                                const attachment = await fileResponse.json();
+                                
+                                // Robust check: Is this the logged in user?
+                                const isSelf = 
+                                    formData.userId === authUser?.id || 
+                                    formData.workEmail === authUser?.email || 
+                                    formData.email === authUser?.email ||
+                                    (savedEmp && (savedEmp.userId === authUser?.id || savedEmp.email === authUser?.email || savedEmp.workEmail === authUser?.email));
+
+                                if (isSelf) {
+                                    const newUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
+                                    login((prev: any) => prev ? { ...prev, avatar: newUrl } : prev as any);
+                                }
+                            }
                         }
                     } catch (fileError) {
                         console.error(`Error uploading file ${fileObj.file.name}:`, fileError);
@@ -797,9 +814,21 @@ const AddEmployeeWizard = () => {
                                             }));
                                             // Generate preview for profile picture
                                             if (label === 'Profile Picture') {
-                                                const reader = new FileReader();
-                                                reader.onload = (ev) => setAvatarPreview(ev.target?.result as string);
-                                                reader.readAsDataURL(file);
+                                                const previewUrl = URL.createObjectURL(file);
+                                                setAvatarPreview(prev => {
+                                                    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+                                                    return previewUrl;
+                                                });
+                                                
+                                                // Sync header instantly if editing self
+                                                const isSelf = 
+                                                    formData.userId === authUser?.id || 
+                                                    formData.workEmail === authUser?.email || 
+                                                    formData.email === authUser?.email;
+
+                                                if (isSelf) {
+                                                    login((prev: any) => prev ? { ...prev, avatar: previewUrl } : prev as any);
+                                                }
                                             }
                                         }
                                     }}
@@ -809,7 +838,26 @@ const AddEmployeeWizard = () => {
                                     <div className="relative">
                                         <img src={avatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
                                         <button
-                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAvatarPreview(null); setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); }}
+                                            onClick={(e) => { 
+                                                e.preventDefault(); 
+                                                e.stopPropagation(); 
+                                                if (avatarPreview && avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
+                                                setAvatarPreview(null); 
+                                                setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); 
+                                                
+                                                // Revert header if editing self
+                                                const isSelf = 
+                                                    formData.userId === authUser?.id || 
+                                                    formData.workEmail === authUser?.email || 
+                                                    formData.email === authUser?.email;
+
+                                                if (isSelf) {
+                                                    // Get the original avatar URL from existing attachments
+                                                    const existing = formData.existingAttachments.find(a => a.fileType === 'Profile Picture');
+                                                    const originalUrl = existing ? (existing.url || api.attachmentRaw(existing._id)) : `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.firstName + ' ' + formData.lastName)}&background=random`;
+                                                    login((prev: any) => prev ? { ...prev, avatar: originalUrl } : prev as any);
+                                                }
+                                            }}
                                             className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-10"
                                             title="Remove"
                                         >×</button>

@@ -7,6 +7,7 @@ import {
     DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut
 } from 'lucide-react';
 import api from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 
@@ -14,6 +15,7 @@ import { getAvatarUrl } from '../../utils/avatar';
 const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user, login } = useAuth();
     const { canEditSensitiveData, canApproveDocuments, role } = usePermissions();
 
     // Read the query parameter 'tab' from URL
@@ -122,6 +124,21 @@ const EmployeeProfile = () => {
             });
 
             if (!response.ok) throw new Error('Failed to upload profile picture');
+            
+            const attachment = await response.json();
+            
+            // Check if editing own profile - more robust check for all roles
+            const isSelf = 
+                employee.userId === user?.id || 
+                (employee.userId && typeof employee.userId === 'object' && (employee.userId as any)._id === user?.id) ||
+                employee.workEmail === user?.email ||
+                employee.email === user?.email;
+
+            if (isSelf) {
+                const newAvatarUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
+                login((prev: any) => prev ? { ...prev, avatar: newAvatarUrl } : prev as any);
+            }
+            
             await fetchEmployee();
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
