@@ -83,8 +83,9 @@ const sessionOptions: session.SessionOptions = {
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        // In Vercel/Production, we must use Secure and SameSite=None for cross-site SSO to work
+        secure: process.env.NODE_ENV === 'production' || !!process.env.VERCEL,
+        sameSite: (process.env.NODE_ENV === 'production' || !!process.env.VERCEL) ? 'none' : 'lax',
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000
     }
@@ -115,13 +116,18 @@ configurePassport();
 
 // Database Connection
 if (process.env.MONGODB_URI) {
+    // Optimization for Serverless (Vercel): Disable buffering so we don't hang if connection is down
+    mongoose.set('bufferCommands', false);
+
     mongoose.connect(process.env.MONGODB_URI, {
         dbName: 'hrm',
-        serverSelectionTimeoutMS: 5000 // 5 seconds timeout
+        serverSelectionTimeoutMS: 10000, // 10 seconds
+        socketTimeoutMS: 45000, // 45 seconds (standard for cloud DBs)
     })
     .then(() => console.log('✅ Connected to MongoDB (hrm)'))
     .catch(err => {
         console.error('❌ MongoDB Connection Error:', err.message);
+        console.error('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / MongoDB Atlas.');
     });
 } else {
     console.error('❌ FATAL: MONGODB_URI is not defined.');

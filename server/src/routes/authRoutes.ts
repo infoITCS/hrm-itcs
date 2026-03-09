@@ -188,7 +188,7 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
         await user.save();
 
         // Send plain (unhashed) token in the email link
-        const emailSent = await sendPasswordResetEmail(user.email, resetToken);
+        const emailSent = await sendPasswordResetEmail(user.email, resetToken, req.headers.origin);
 
         if (!emailSent) {
             user.resetPasswordToken = undefined;
@@ -296,17 +296,18 @@ router.get(
       !process.env.MICROSOFT_CLIENT_ID ||
       !process.env.MICROSOFT_CLIENT_SECRET
     ) {
-      const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
+      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       return res.redirect(`${clientUrl}/login?error=microsoft_not_configured`);
     }
     passport.authenticate("microsoft", {
-      failureRedirect: `${process.env.CLIENT_URL}/login?error=login_failed`,
+      failureRedirect: `${process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=login_failed`,
       session: false, // We use JWT, so no session needed
     })(req, res, (err: any) => {
       if (err) {
         console.error("Passport Auth Error:", err);
+        const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
         return res.redirect(
-          `${process.env.CLIENT_URL}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`,
+          `${clientUrl}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`,
         );
       }
       next();
@@ -316,9 +317,10 @@ router.get(
     try {
       const user = req.user as IUser;
 
+      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       if (!user) {
         return res.redirect(
-          `${process.env.CLIENT_URL}/login?error=user_not_found`,
+          `${clientUrl}/login?error=user_not_found`,
         );
       }
 
@@ -330,10 +332,11 @@ router.get(
       });
 
       // Use hash (#token=...) so long JWT isn't truncated by query string limits
-      res.redirect(`${process.env.CLIENT_URL}/auth/callback#token=${encodeURIComponent(token)}`);
+      res.redirect(`${clientUrl}/auth/callback#token=${encodeURIComponent(token)}`);
     } catch (error: any) {
       console.error("❌ Microsoft callback error:", error.message);
-      res.redirect(`${process.env.CLIENT_URL}/login?error=callback_error`);
+      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
+      res.redirect(`${clientUrl}/login?error=callback_error`);
     }
   },
 );

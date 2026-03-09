@@ -10,8 +10,21 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-export const sendPasswordResetEmail = async (to: string, resetToken: string) => {
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+/**
+ * Helper to determine the frontend URL.
+ * Priority: 
+ * 1. Provided URL (e.g. from request headers)
+ * 2. process.env.FRONTEND_URL
+ * 3. process.env.CLIENT_URL
+ * 4. Default localhost
+ */
+const getBaseUrl = (providedUrl?: string) => {
+    if (providedUrl) return providedUrl;
+    return process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+};
+
+export const sendPasswordResetEmail = async (to: string, resetToken: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
     const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
@@ -39,7 +52,6 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string) => 
         console.log(`To: ${to}`);
         console.log(`Reset URL: ${resetUrl}`);
         console.log(`==========================================================\n`);
-        // In production, fail loudly so the caller knows email was NOT sent
         return process.env.NODE_ENV !== 'production';
     }
 
@@ -52,8 +64,8 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string) => 
     }
 };
 
-export const sendWelcomeEmail = async (to: string, tempPassword?: string) => {
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
     const loginUrl = `${clientUrl}/login`;
 
     const credentialsSection = tempPassword ? `
@@ -87,6 +99,7 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string) => {
         console.log(`\n================= WELCOME EMAIL ===================`);
         console.log(`To: ${to}`);
         console.log(`Temp Password: ${tempPassword || 'N/A (SSO)'}`);
+        console.log(`Login URL: ${loginUrl}`);
         console.log(`====================================================\n`);
         return process.env.NODE_ENV !== 'production';
     }
@@ -100,8 +113,8 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string) => {
     }
 };
 
-export const sendHRNotificationEmail = async (to: string, employeeName: string, actionDesc: string) => {
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+export const sendHRNotificationEmail = async (to: string, employeeName: string, actionDesc: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
     
     const mailOptions = {
         from: `"ITCS HRM Alerts" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
@@ -135,8 +148,8 @@ export const sendHRNotificationEmail = async (to: string, employeeName: string, 
     }
 };
 
-export const sendProfileReminderEmail = async (to: string, userName: string) => {
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+export const sendProfileReminderEmail = async (to: string, userName: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
     
     const mailOptions = {
         from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,

@@ -82,7 +82,7 @@ router.post('/users', authenticate, requireAdmin, async (req, res) => {
         await newUser.save();
 
         // Send Welcome Email
-        await sendWelcomeEmail(email, userPassword);
+        await sendWelcomeEmail(email, userPassword, req.headers.origin);
 
         await AuditLog.create({
             action: 'CREATE',
