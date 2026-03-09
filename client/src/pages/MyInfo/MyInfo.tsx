@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Sparkles, Wand2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,7 +18,6 @@ const MyInfo = () => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [employeeId, setEmployeeId] = useState<string | null>(null);
-    const [extracting, setExtracting] = useState(false);
 
 
     const [rawEmployee, setRawEmployee] = useState<any>(null);
@@ -704,6 +703,32 @@ const MyInfo = () => {
 
                         if (!fileResponse.ok) {
                             console.warn(`Failed to upload file ${fileObj.file.name}`);
+                        } else {
+                            const attachment = await fileResponse.json();
+                            // If this was a profile picture, sync with AuthContext and rawEmployee
+                            if (fileObj.type === 'Profile Picture') {
+                                const newAvatarUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
+                                login((prev: any) => prev ? { ...prev, avatar: newAvatarUrl } : prev as any);
+                                
+                                setRawEmployee((prev: any) => ({
+                                    ...prev,
+                                    avatar: `/api/employees/attachments/raw/${attachment._id}`,
+                                    attachments: [
+                                        ...(prev?.attachments || []).filter((a: any) => a.fileType !== 'Profile Picture'),
+                                        { ...attachment, fileType: 'Profile Picture' }
+                                    ]
+                                }));
+                                setAvatarCache(`&t=${Date.now()}`);
+                            } else {
+                                // Sync other file types into local state so they show up in Documents tab instantly
+                                setRawEmployee((prev: any) => ({
+                                    ...prev,
+                                    attachments: [
+                                        ...(prev?.attachments || []).filter((a: any) => a.fileType !== fileObj.type),
+                                        attachment
+                                    ]
+                                }));
+                            }
                         }
                     } catch (fileError) {
                         console.error(`Error uploading file ${fileObj.file.name}:`, fileError);
@@ -832,8 +857,11 @@ const MyInfo = () => {
                 // 1. Instantly patch rawEmployee in local state (no re-fetch needed)
                 setRawEmployee((prev: any) => ({
                     ...prev,
+                    // Update main avatar field to point to new ID (server does this too)
+                    avatar: `/api/employees/attachments/raw/${newAttachment._id}`,
+                    // Filter out old profile pictures from attachments to match server-side pulling
                     attachments: [
-                        ...(prev?.attachments || []),
+                        ...(prev?.attachments || []).filter((a: any) => a.fileType !== 'Profile Picture'),
                         { ...newAttachment, fileType: 'Profile Picture' }
                     ]
                 }));
@@ -1591,9 +1619,14 @@ const MyInfo = () => {
                                                             }));
                                                             // Generate preview for profile picture
                                                             if (label === 'Profile Picture') {
-                                                                const reader = new FileReader();
-                                                                reader.onload = (ev) => setLocalAvatarPreview(ev.target?.result as string);
-                                                                reader.readAsDataURL(file);
+                                                                const previewUrl = URL.createObjectURL(file);
+                                                                setLocalAvatarPreview(prev => {
+                                                                    if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+                                                                    return previewUrl;
+                                                                });
+                                                                // Instant update to header for immediate feedback
+                                                                // Using Blob URL is safe for sessionStorage (it's a short string)
+                                                                login((prev: any) => prev ? { ...prev, avatar: previewUrl } : prev as any);
                                                             }
                                                         }
                                                     }}
@@ -1603,7 +1636,15 @@ const MyInfo = () => {
                                                     <div className="relative z-10">
                                                         <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
                                                         <button
-                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocalAvatarPreview(null); setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); }}
+                                                            onClick={(e) => { 
+                                                                e.preventDefault(); 
+                                                                e.stopPropagation(); 
+                                                                setLocalAvatarPreview(null); 
+                                                                setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); 
+                                                                // Revert header to whatever is in rawEmployee (server state)
+                                                                const originalUrl = getAvatarUrl(rawEmployee);
+                                                                login((prev: any) => prev ? { ...prev, avatar: originalUrl } : prev as any);
+                                                            }}
                                                             className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-30"
                                                             title="Remove"
                                                         >×</button>

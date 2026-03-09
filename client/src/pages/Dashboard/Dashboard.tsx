@@ -30,7 +30,7 @@ import api from '../../utils/api';
 type RoleType = 'admin' | 'manager' | 'employee';
 
 const Dashboard = () => {
-    const { user } = useAuth();
+    const { user, login } = useAuth();
     const navigate = useNavigate();
     const [employeeCount, setEmployeeCount] = useState<number>(0);
     const [teamCount, setTeamCount] = useState<number>(0);
@@ -41,15 +41,20 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [showSetPassword, setShowSetPassword] = useState(false);
 
-    // Detect ?setup-password=1 injected by AuthCallback for first-time Microsoft users
+    // Detect ?setup-password=1 injected by AuthCallback OR check user profile state
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('setup-password') === '1') {
+        const hasQueryParam = params.get('setup-password') === '1';
+        
+        if (hasQueryParam || user?.needsPasswordSetup) {
             setShowSetPassword(true);
-            // Clean URL so refreshing doesn't re-show the modal
-            window.history.replaceState({}, '', '/dashboard');
+            
+            // Clean URL query param if present
+            if (hasQueryParam) {
+                window.history.replaceState({}, '', '/dashboard');
+            }
         }
-    }, []);
+    }, [user?.needsPasswordSetup]);
 
     const role: RoleType =
         user?.role === 'super-admin' || user?.role === 'admin'
@@ -392,7 +397,11 @@ const Dashboard = () => {
             {showSetPassword && (
                 <SetPasswordModal
                     userName={user?.firstName || user?.name}
-                    onSuccess={() => setShowSetPassword(false)}
+                    onSuccess={() => {
+                        setShowSetPassword(false);
+                        // Update global user state so modal doesn't re-appear
+                        login((prev: any) => prev ? ({ ...prev, needsPasswordSetup: false }) : prev);
+                    }}
                 />
             )}
             {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}

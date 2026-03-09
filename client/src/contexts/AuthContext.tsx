@@ -38,7 +38,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             : `https://ui-avatars.com/api/?name=${encodeURIComponent([userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0])}&background=random`,
                         firstName: userData.firstName,
                         lastName: userData.lastName,
-                        hasProfile: userData.hasProfile
+                        hasProfile: userData.hasProfile,
+                        needsPasswordSetup: userData.needsPasswordSetup,
+                        microsoftId: userData.microsoftId
                     };
                     setUser(user);
                 } catch (error) {
@@ -52,12 +54,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         checkAuth();
     }, []);
 
+    const [storageError, setStorageError] = useState(false);
+
     const login = (userData: User | ((prev: User | null) => User)) => {
         setUser(prev => {
             const newUser = typeof userData === 'function' ? userData(prev) : userData;
+            
             // Persist to sessionStorage matching the app's pattern
-            sessionStorage.setItem('itcs_user', JSON.stringify(newUser));
-            sessionStorage.setItem('itcs_auth', 'true');
+            // Wrap in try-catch to prevent crash if quota exceeded
+            try {
+                // If the avatar is a massive base64 string, don't persist it to storage
+                // (keeps storage light and prevents QuotaExceededError)
+                let storageUser = newUser;
+                if (newUser?.avatar && newUser.avatar.startsWith('data:')) {
+                    storageUser = { ...newUser, avatar: prev?.avatar || '' };
+                }
+                
+                sessionStorage.setItem('itcs_user', JSON.stringify(storageUser));
+                sessionStorage.setItem('itcs_auth', 'true');
+                setStorageError(false);
+            } catch (e: any) {
+                console.warn('Failed to persist user to sessionStorage:', e);
+                // Specifically detect quota errors
+                if (e.name === 'QuotaExceededError' || e.code === 22) {
+                    setStorageError(true);
+                }
+            }
             return newUser;
         });
     };
@@ -66,11 +88,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('token');
         sessionStorage.clear();
         setUser(null);
+        setStorageError(false);
         navigate('/login');
     };
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user }}>
+            {storageError && (
+                <div className="fixed top-4 right-4 z-[9999] bg-amber-50 border border-amber-200 p-4 rounded-2xl shadow-xl max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="flex gap-3">
+                        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+                            <span className="text-amber-600 font-bold">!</span>
+                        </div>
+                        <div>
+                            <p className="font-bold text-amber-900 text-sm">Storage Warning</p>
+                            <p className="text-amber-700 text-xs mt-1">
+                                Your browser storage is full. Some profile changes might not persist after refreshing.
+                            </p>
+                            <button 
+                                onClick={() => setStorageError(false)}
+                                className="mt-2 text-[10px] font-bold text-amber-600 hover:text-amber-800 uppercase tracking-wider"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {children}
         </AuthContext.Provider>
     );
