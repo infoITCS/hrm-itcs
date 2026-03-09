@@ -179,6 +179,7 @@ const AddEmployeeWizard = () => {
         email: '', phone: '', dateOfBirth: '', gender: '',
         maritalStatus: '', nationality: '', domicile: '', fatherName: '', bloodGroup: '',
         religion: '', licenseNumber: '', simNumber: '', workEmail: '', otherEmail: '',
+        userId: '', // Link to the Auth User ID
 
         // Address
         address: { street: '', city: '', state: '', zipCode: '', country: '' },
@@ -283,6 +284,7 @@ const AddEmployeeWizard = () => {
                             simNumber: found.simNumber || '',
                             workEmail: found.workEmail || '',
                             otherEmail: found.otherEmail || '',
+                            userId: found.userId || '',
 
                             // Address
                             address: {
@@ -538,7 +540,7 @@ const AddEmployeeWizard = () => {
                                     formData.userId === authUser?.id || 
                                     formData.workEmail === authUser?.email || 
                                     formData.email === authUser?.email ||
-                                    (savedEmp && (savedEmp.userId === authUser?.id || savedEmp.email === authUser?.email || savedEmp.workEmail === authUser?.email));
+                                    (savedEmp && ((savedEmp as any).userId === authUser?.id || (savedEmp as any).email === authUser?.email || (savedEmp as any).workEmail === authUser?.email));
 
                                 if (isSelf) {
                                     const newUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
