@@ -7,6 +7,7 @@ import multer from 'multer';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+/*
 router.post('/extract', authenticate, upload.single('file'), async (req: Request, res: Response) => {
     try {
         if (!process.env.GEMINI_API_KEY) {
@@ -149,5 +150,6 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
         res.status(500).json({ message: 'AI Extraction failed: ' + err.message });
     }
 });
+*/
 
 export default router;

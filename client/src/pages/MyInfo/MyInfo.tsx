@@ -260,6 +260,7 @@ const MyInfo = () => {
         }
     });
 
+/*
     const handleAiExtract = async (file: File) => {
         setExtracting(true);
         setError(null);
@@ -297,8 +298,8 @@ const MyInfo = () => {
                 bankDetails: {
                     ...prev.bankDetails,
                     bankName: data.bankDetails?.bankName || prev.bankDetails.bankName,
-                    accountName: data.bankDetails?.accountName || prev.bankDetails.accountName,
                     accountNumber: data.bankDetails?.accountNumber || prev.bankDetails.accountNumber,
+                    accountName: data.bankDetails?.accountName || prev.bankDetails.accountName,
                     iban: data.bankDetails?.iban || prev.bankDetails.iban,
                     swiftCode: data.bankDetails?.swiftCode || prev.bankDetails.swiftCode,
                 },
@@ -316,6 +317,7 @@ const MyInfo = () => {
             setExtracting(false);
         }
     };
+    */
 
     // Fetch employee data linked to current user
     useEffect(() => {
@@ -1505,7 +1507,7 @@ const MyInfo = () => {
                         {/* Step 1: Personal Details */}
                         {step === 1 && (
                             <div className="animate-slide-up pb-20">
-                                {/* AI Magic Fill Section */}
+                                { /* AI Magic Fill Section - Temporarily Commented Out
                                 <div className="mb-8 p-6 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-200 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-6 animate-scale-in">
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shrink-0">
@@ -1556,6 +1558,7 @@ const MyInfo = () => {
                                         </div>
                                     )}
                                 </div>
+                                */ }
 
                                 {/* Duplicate Alert */}
                                 {duplicateError && (

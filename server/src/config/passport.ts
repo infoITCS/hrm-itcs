@@ -73,6 +73,24 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                     // Find existing user or create new one
                     let user = await User.findOne({ email });
 
+                    // Fetch user photo from Microsoft Graph
+                    let avatarDataUri = '';
+                    try {
+                        const photoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+                            headers: { 'Authorization': `Bearer ${accessToken}` }
+                        });
+                        
+                        if (photoResponse.ok) {
+                            const contentType = photoResponse.headers.get('content-type');
+                            const arrayBuffer = await photoResponse.arrayBuffer();
+                            const buffer = Buffer.from(arrayBuffer);
+                            avatarDataUri = `data:${contentType};base64,${buffer.toString('base64')}`;
+                            console.log('✅ Microsoft photo fetched successfully');
+                        }
+                    } catch (photoErr) {
+                        console.error('⚠️ Could not fetch Microsoft photo:', photoErr);
+                    }
+
                     if (!user) {
                         // Create new user with default Employee role
                         user = await User.create({
@@ -82,6 +100,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                             firstName: profile.name?.givenName || 'Unknown',
                             lastName: profile.name?.familyName || 'User',
                             microsoftId: profile.id,
+                            avatar: avatarDataUri || undefined,
                             needsPasswordSetup: true // Prompt user to set a password on first login
                         });
                     } else if (!user.isActive) {
@@ -96,9 +115,13 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
                             changed = true;
                         }
 
+                        // Update avatar if we got a new one from Microsoft and they don't have one or have an old one
+                        if (avatarDataUri && (!user.avatar || user.avatar.startsWith('data:'))) {
+                            user.avatar = avatarDataUri;
+                            changed = true;
+                        }
+
                         // If the user has no real bcrypt password yet, flag them for password setup.
-                        // This handles existing accounts created before the feature was added,
-                        // so you DON'T need to delete any users — they'll get the popup on next login.
                         const hasRealPassword = user.password && user.password.startsWith('$2') && user.password.length === 60;
                         if (!hasRealPassword && !user.needsPasswordSetup) {
                             user.needsPasswordSetup = true;

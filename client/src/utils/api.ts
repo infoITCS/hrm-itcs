@@ -24,6 +24,7 @@ export const api = {
         if (employeeId) params.append('employeeId', employeeId);
         return `${API_BASE_URL}/api/employees/check-duplicate?${params.toString()}`;
     },
+/*
     extractFromDocument: (file: File) => {
         const formData = new FormData();
         formData.append('file', file);
@@ -42,6 +43,7 @@ export const api = {
             return res.json();
         });
     }
+    */
 };
 
 export default api;
