@@ -91,6 +91,8 @@ const EmployeeProfile = () => {
         fetchAllEmployees();
     }, [id, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
 
+    const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
+
     if (loading) return <div className="p-8 text-center">Loading Profile...</div>;
     if (!employee) return <div className="p-8 text-center">Employee Not Found</div>;
 
@@ -105,8 +107,6 @@ const EmployeeProfile = () => {
         if (found) return `${found.firstName} ${found.lastName} (${found.employeeId})`;
         return managerValue; // Return as-is if we can't resolve
     };
-
-    const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
 
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -479,24 +479,18 @@ const EmployeeProfile = () => {
                         <Field label="Joining Date" value={formatDate(employee.jobInfo?.joiningDate)} />
 
                         <div className="col-span-full mt-4 p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 rounded-lg border border-indigo-200">
-                            <h4 className="font-medium text-purple-900 mb-2">Current Status</h4>
-                            <div className="flex gap-4">
+                            <h4 className="font-medium text-purple-900 mb-2">Employment Status</h4>
+                            <div className="flex gap-12">
                                 <Field
-                                    label="Status"
+                                    label="Current Status"
                                     value={typeof employee.employmentStatus === 'string' ? employee.employmentStatus : employee.employmentStatus?.status}
                                 />
-                                <Field
-                                    label="Start Date"
-                                    value={formatDate(typeof employee.employmentStatus === 'string' ? '' : employee.employmentStatus?.startDate)}
-                                />
-                                <Field
-                                    label="Onboarding Date"
-                                    value={formatDate(employee.employmentStatus?.onboardingDate)}
-                                />
-                                <Field
-                                    label="Offboarding Date"
-                                    value={formatDate(employee.employmentStatus?.offboardingDate)}
-                                />
+                                {employee.employmentStatus?.offboardingDate && (
+                                    <Field
+                                        label="Offboarding Date"
+                                        value={formatDate(employee.employmentStatus?.offboardingDate)}
+                                    />
+                                )}
                                 {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.status === 'Probation' && (
                                     <Field
                                         label="Probation End Date"

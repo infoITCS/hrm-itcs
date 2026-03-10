@@ -190,7 +190,7 @@ const AddEmployeeWizard = () => {
         },
 
         // Status
-        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '', onboardingDate: '', offboardingDate: '' },
+        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '', offboardingDate: '' },
 
         // Emergency Contacts (Array)
         emergencyContacts: [{ name: '', relation: '', phone: '' }],
@@ -306,12 +306,11 @@ const AddEmployeeWizard = () => {
 
                             // Employment Status
                             employmentStatus: typeof found.employmentStatus === 'string'
-                                ? { status: found.employmentStatus, autoUpdated: false, probationEndDate: '', onboardingDate: '', offboardingDate: '' }
+                                ? { status: found.employmentStatus, autoUpdated: false, probationEndDate: '', offboardingDate: '' }
                                 : {
                                     status: found.employmentStatus?.status || 'Probation',
                                     autoUpdated: found.employmentStatus?.autoUpdated || false,
                                     probationEndDate: formatDate(found.employmentStatus?.probationEndDate),
-                                    onboardingDate: formatDate(found.employmentStatus?.onboardingDate),
                                     offboardingDate: formatDate(found.employmentStatus?.offboardingDate)
                                 },
 
@@ -1232,11 +1231,14 @@ const AddEmployeeWizard = () => {
                         {/* Job Information */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <CustomSelect 
-                                    label="Job Title" 
+                                <label className="block text-sm font-medium text-gray-600">Job Title</label>
+                                <input 
+                                    type="text" 
+                                    name="designation" 
                                     value={formData.jobInfo.designation} 
-                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, designation: val } }))} 
-                                    options={['Software Engineer', 'Senior Software Engineer', 'QA Engineer', 'Product Manager', 'HR Manager', 'Sales Manager', 'Sales Executive', 'UI/UX Designer', 'Director', 'Data Analyst', 'DevOps Engineer', 'Other']} 
+                                    onChange={(e) => handleChange(e, 'jobInfo')} 
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none" 
+                                    placeholder="e.g. Software Engineer"
                                 />
                             </div>
                             <div className="space-y-2">
@@ -1259,15 +1261,6 @@ const AddEmployeeWizard = () => {
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-600">Joining Date</label>
                                 <input type="date" name="joiningDate" value={formData.jobInfo.joiningDate} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none" />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-600">Onboarding Date</label>
-                                <input
-                                    type="date"
-                                    value={formData.employmentStatus.onboardingDate}
-                                    onChange={(e) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, onboardingDate: e.target.value } }))}
-                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
-                                />
                             </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-600">Offboarding Date</label>

@@ -32,8 +32,6 @@ export interface IEmployee extends Document {
     };
     employmentStatus?: {
         status?: string;
-        startDate?: Date;
-        onboardingDate?: Date;
         offboardingDate?: Date;
         probationEndDate?: Date; // [NEW] For auto-update
         autoUpdated?: boolean;
@@ -138,8 +136,6 @@ const EmployeeSchema: Schema = new Schema({
     },
     employmentStatus: {
         status: { type: String, enum: ['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned', ''] },
-        startDate: { type: Date },
-        onboardingDate: { type: Date },
         offboardingDate: { type: Date },
         probationEndDate: { type: Date },
         autoUpdated: { type: Boolean, default: false }
