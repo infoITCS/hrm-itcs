@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
-import { sendProfileReminderEmail } from '../utils/email';
+import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
 
 // Run every day at midnight
 // Note: Vercel serverless functions have execution time limits
@@ -87,6 +87,72 @@ export const initScheduler = () => {
             }
         } catch (error) {
             console.error('Error in profile reminder scheduler:', error);
+        }
+    });
+
+    // Birthday & Anniversary Scheduler: Run every day at 8 AM
+    cron.schedule('0 8 * * *', async () => {
+        console.log('Running daily birthday and anniversary check...');
+        try {
+            const today = new Date();
+            const currentMonth = today.getMonth() + 1;
+            const currentDay = today.getDate();
+
+            const employees = await Employee.find({
+                $or: [
+                    {
+                        $expr: {
+                            $and: [
+                                { $eq: [{ $month: "$dateOfBirth" }, currentMonth] },
+                                { $eq: [{ $dayOfMonth: "$dateOfBirth" }, currentDay] }
+                            ]
+                        }
+                    },
+                    {
+                        $expr: {
+                            $and: [
+                                { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] },
+                                { $eq: [{ $dayOfMonth: "$jobInfo.joiningDate" }, currentDay] }
+                            ]
+                        }
+                    }
+                ]
+            });
+
+            const todayStr = `${currentMonth}-${currentDay}`;
+
+            for (const emp of employees) {
+                // Determine if it's birthday or anniversary
+                const isBirthday = emp.dateOfBirth && 
+                                 (emp.dateOfBirth.getMonth() + 1 === currentMonth) && 
+                                 (emp.dateOfBirth.getDate() === currentDay);
+                
+                const isAnniversary = emp.jobInfo?.joiningDate && 
+                                    (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth) && 
+                                    (emp.jobInfo.joiningDate.getDate() === currentDay);
+
+                // Use private/work email prefer work email
+                const email = emp.workEmail || (emp.email as string);
+                if (!email) continue;
+
+                if (isBirthday) {
+                    console.log(`Sending birthday email to: ${email}`);
+                    await sendBirthdayEmail(email, emp.firstName);
+                }
+
+                if (isAnniversary) {
+                    const joiningDate = emp.jobInfo?.joiningDate;
+                    if (joiningDate) {
+                        const years = today.getFullYear() - joiningDate.getFullYear();
+                        if (years > 0) {
+                            console.log(`Sending anniversary email to: ${email} for ${years} years`);
+                            await sendWorkAnniversaryEmail(email, emp.firstName, years);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error in birthday/anniversary scheduler:', error);
         }
     });
 

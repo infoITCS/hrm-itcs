@@ -146,38 +146,6 @@ const MyInfo = () => {
         return err;
     };
 
-    const getMissingFields = () => {
-        const missing: { section: string; fields: string[] }[] = [];
-        
-        // Personal
-        const personal = [];
-        if (!formData.firstName) personal.push('First Name');
-        if (!formData.lastName) personal.push('Last Name');
-        if (!formData.cnic) personal.push('CNIC');
-        if (!formData.dateOfBirth) personal.push('Date of Birth');
-        if (!formData.fatherName) personal.push('Father Name');
-        if (!formData.nationality) personal.push('Nationality');
-        if (personal.length) missing.push({ section: 'Personal', fields: personal });
-
-        // Contact
-        const contact = [];
-        if (!formData.phone) contact.push('Phone Number');
-        if (!formData.address.city) contact.push('City');
-        if (!formData.address.street) contact.push('Address');
-        if (!formData.email) contact.push('Personal Email');
-        if (contact.length) missing.push({ section: 'Contact', fields: contact });
-
-        // Documents
-        const docs = [];
-        const attachments = rawEmployee?.attachments || [];
-        if (!attachments.some((a: any) => a.fileType === 'Profile Picture')) docs.push('Profile Picture');
-        if (!attachments.some((a: any) => a.fileType === 'CNIC Front')) docs.push('CNIC Front Image');
-        if (!attachments.some((a: any) => a.fileType === 'CNIC Back')) docs.push('CNIC Back Image');
-        if (!attachments.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - '))) docs.push('Degree/Qualification');
-        if (docs.length) missing.push({ section: 'Documents', fields: docs });
-
-        return missing;
-    };
 
     const [formData, setFormData] = useState({
         // Personal
@@ -556,7 +524,7 @@ const MyInfo = () => {
         }
 
         // Trigger background save without awaiting so UI is instant
-        handleSubmit(false);
+        handleSubmit(false, true);
 
         const currentIndex = steps.findIndex(s => s.id === step);
         if (currentIndex < steps.length - 1) {
@@ -584,7 +552,7 @@ const MyInfo = () => {
         }
 
         // Fire off background save silently
-        handleSubmit(false);
+        handleSubmit(false, true);
 
         // Mark current step as completed if jumping forward
         if (targetStepId > step && !completedSteps.includes(step)) {
@@ -602,7 +570,7 @@ const MyInfo = () => {
         }
     };
 
-    const handleSubmit = async (shouldNavigate = true) => {
+    const handleSubmit = async (shouldNavigate = true, isBackground = false) => {
         if (!isStep1RequiredValid()) {
             setStepErrors(getStep1RequiredErrors());
             return;
@@ -613,7 +581,7 @@ const MyInfo = () => {
         }
         setStepErrors([]);
 
-        setSaving(true);
+        if (!isBackground) setSaving(true);
         setError(null);
         setSuccess(null);
 
@@ -621,7 +589,7 @@ const MyInfo = () => {
             const token = localStorage.getItem('token');
             if (!token) {
                 setError('You must be logged in to save your information.');
-                setSaving(false);
+                if (!isBackground) setSaving(false);
                 return;
             }
 
@@ -687,9 +655,9 @@ const MyInfo = () => {
                 setEmployeeId(savedEmployee.employeeId);
             }
 
-            // Upload files if any
+            // Upload files (Parallelize for speed)
             if (formData.files.length > 0 && savedEmployee.employeeId) {
-                for (const fileObj of formData.files) {
+                const uploadPromises = formData.files.map(async (fileObj) => {
                     try {
                         const fileData = new FormData();
                         fileData.append('file', fileObj.file);
@@ -701,9 +669,7 @@ const MyInfo = () => {
                             body: fileData
                         });
 
-                        if (!fileResponse.ok) {
-                            console.warn(`Failed to upload file ${fileObj.file.name}`);
-                        } else {
+                        if (fileResponse.ok) {
                             const attachment = await fileResponse.json();
                             // If this was a profile picture, sync with AuthContext and rawEmployee
                             if (fileObj.type === 'Profile Picture') {
@@ -725,7 +691,7 @@ const MyInfo = () => {
                                     ...prev,
                                     attachments: [
                                         ...(prev?.attachments || []).filter((a: any) => a.fileType !== fileObj.type),
-                                        attachment
+                                        { ...attachment, status: 'Pending' }
                                     ]
                                 }));
                             }
@@ -733,8 +699,19 @@ const MyInfo = () => {
                     } catch (fileError) {
                         console.error(`Error uploading file ${fileObj.file.name}:`, fileError);
                     }
+                });
+
+                if (isBackground) {
+                    Promise.all(uploadPromises).then(() => {
+                        console.log('BG Uploads complete');
+                        setSuccess('Files uploaded successfully');
+                        setTimeout(() => setSuccess(null), 2000);
+                    });
+                } else {
+                    await Promise.all(uploadPromises);
                 }
-                // Clear files array after successful upload so they aren't uploaded again on next save
+                
+                // Clear files array after successful upload
                 setFormData(prev => ({ ...prev, files: [] }));
             }
 
@@ -747,23 +724,29 @@ const MyInfo = () => {
                 bloodGroup: !!employeeData.bloodGroup
             });
 
-            setSuccess('Profile saved successfully');
-            setTimeout(() => {
-                setSuccess(null);
-                if (shouldNavigate) {
-                    if (onboarding) {
-                        navigate('/dashboard');
-                    } else {
-                        setIsEditing(false);
+            if (!isBackground) {
+                setSuccess('Profile saved successfully');
+                setTimeout(() => {
+                    setSuccess(null);
+                    if (shouldNavigate) {
+                        if (onboarding) {
+                            navigate('/dashboard');
+                        } else {
+                            setIsEditing(false);
+                        }
                     }
-                }
-            }, 600);
+                }, 600);
+            } else {
+                // Background success flash
+                setSuccess('Progress saved');
+                setTimeout(() => setSuccess(null), 1000);
+            }
             return savedEmployee;
         } catch (err: any) {
             console.error('Error saving employee data:', err);
             setError(err.message || 'Failed to save your information. Please try again.');
         } finally {
-            setSaving(false);
+            if (!isBackground) setSaving(false);
         }
     };
 
@@ -1509,28 +1492,6 @@ const MyInfo = () => {
                             </div>
                         )}
 
-                        {/* Profile Health Alert */}
-                        {getMissingFields().length > 0 && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-scale-in">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-amber-100 text-amber-600 rounded-xl">
-                                        <AlertCircle size={20} />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-amber-800">Incomplete Profile</h4>
-                                        <p className="text-xs text-amber-600">Your profile is missing some important information. Completing it helps with HR processing.</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {getMissingFields().slice(0, 2).map((m, i) => (
-                                        <span key={i} className="text-[10px] font-bold uppercase bg-white border border-amber-100 text-amber-700 px-2 py-1 rounded shadow-sm">
-                                            Missing: {m.section}
-                                        </span>
-                                    ))}
-                                    {getMissingFields().length > 2 && <span className="text-[10px] font-bold text-amber-500 underline ml-1 cursor-pointer" onClick={() => setStep(8)}>+{getMissingFields().length - 2} more</span>}
-                                </div>
-                            </div>
-                        )}
 
                         {/* Step 1: Personal Details */}
                         {step === 1 && (
@@ -2633,7 +2594,7 @@ const MyInfo = () => {
                             <div className="flex gap-3">
                                 {step !== steps[0].id && step !== steps[steps.length - 1].id && formData.firstName && formData.lastName && (
                                     <button
-                                        onClick={() => handleSubmit(false)}
+                                        onClick={() => handleSubmit(false, true)}
                                         disabled={saving}
                                         className="px-6 py-2.5 rounded-lg border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50 transition-all flex items-center gap-2"
                                     >
@@ -2663,7 +2624,7 @@ const MyInfo = () => {
                                     </button>
                                 ) : (
                                     <button
-                                        onClick={() => handleSubmit()}
+                                        onClick={() => handleSubmit(true, false)}
                                         disabled={saving || !isStep1RequiredValid()}
                                         className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${saving || !isStep1RequiredValid() ? 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
                                     >

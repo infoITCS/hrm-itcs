@@ -56,7 +56,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 role: response.data.user.role as UserRole,
                 avatar: response.data.user.avatar 
                     ? (response.data.user.avatar.startsWith('http') ? response.data.user.avatar : `${api.baseURL.replace(/\/$/, '')}${response.data.user.avatar}`)
-                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(response.data.user.firstName || response.data.user.email)}`,
+                    : null,
                 firstName: response.data.user.firstName,
                 lastName: response.data.user.lastName,
                 hasProfile: response.data.user.hasProfile

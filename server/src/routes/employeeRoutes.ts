@@ -265,6 +265,64 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response)
     }
 });
 
+// Get today's birthdays and anniversaries
+router.get('/today-specials', authenticate, async (req: Request, res: Response) => {
+    try {
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1; // 1-12
+        const currentDay = today.getDate();
+
+        // MongoDB aggregation to find employees with birthdays or joining today
+        const employees = await Employee.find({
+            $or: [
+                {
+                    $expr: {
+                        $and: [
+                            { $eq: [{ $month: "$dateOfBirth" }, currentMonth] },
+                            { $eq: [{ $dayOfMonth: "$dateOfBirth" }, currentDay] }
+                        ]
+                    }
+                },
+                {
+                    $expr: {
+                        $and: [
+                            { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] },
+                            { $eq: [{ $dayOfMonth: "$jobInfo.joiningDate" }, currentDay] }
+                        ]
+                    }
+                }
+            ]
+        }).select('firstName lastName employeeId avatar dateOfBirth jobInfo.joiningDate');
+
+        const specials = employees.map(emp => {
+            const isBirthday = emp.dateOfBirth && 
+                             (emp.dateOfBirth.getMonth() + 1 === currentMonth) && 
+                             (emp.dateOfBirth.getDate() === currentDay);
+            
+            const isAnniversary = emp.jobInfo?.joiningDate && 
+                                (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth) && 
+                                (emp.jobInfo.joiningDate.getDate() === currentDay);
+
+            let yearsCompleted = 0;
+            if (isAnniversary && emp.jobInfo?.joiningDate) {
+                yearsCompleted = today.getFullYear() - emp.jobInfo.joiningDate.getFullYear();
+            }
+
+            return {
+                id: emp.employeeId,
+                name: `${emp.firstName} ${emp.lastName}`,
+                avatar: emp.avatar,
+                type: isBirthday ? 'birthday' : 'anniversary',
+                yearsCompleted: isAnniversary ? yearsCompleted : undefined
+            };
+        });
+
+        res.json(specials.filter(s => s.type === 'birthday' || (s.type === 'anniversary' && s.yearsCompleted! > 0)));
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     try {

@@ -190,7 +190,7 @@ const AddEmployeeWizard = () => {
         },
 
         // Status
-        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '' },
+        employmentStatus: { status: 'Probation', autoUpdated: false, probationEndDate: '', onboardingDate: '', offboardingDate: '' },
 
         // Emergency Contacts (Array)
         emergencyContacts: [{ name: '', relation: '', phone: '' }],
@@ -306,11 +306,13 @@ const AddEmployeeWizard = () => {
 
                             // Employment Status
                             employmentStatus: typeof found.employmentStatus === 'string'
-                                ? { status: found.employmentStatus, autoUpdated: false, probationEndDate: '' }
+                                ? { status: found.employmentStatus, autoUpdated: false, probationEndDate: '', onboardingDate: '', offboardingDate: '' }
                                 : {
                                     status: found.employmentStatus?.status || 'Probation',
                                     autoUpdated: found.employmentStatus?.autoUpdated || false,
-                                    probationEndDate: formatDate(found.employmentStatus?.probationEndDate)
+                                    probationEndDate: formatDate(found.employmentStatus?.probationEndDate),
+                                    onboardingDate: formatDate(found.employmentStatus?.onboardingDate),
+                                    offboardingDate: formatDate(found.employmentStatus?.offboardingDate)
                                 },
 
                             // Emergency Contacts
@@ -467,22 +469,22 @@ const AddEmployeeWizard = () => {
         }));
     };
 
-    const handleSubmit = async (shouldNavigate = true) => {
-        setLoading(true);
+    const handleSubmit = async (shouldNavigate = true, isBackground = false) => {
+        if (!isBackground) setLoading(true);
         setError(null);
 
         try {
             const token = localStorage.getItem('token');
             if (!token) {
                 setError('You must be logged in to submit. Please log in and try again.');
-                setLoading(false);
+                if (!isBackground) setLoading(false);
                 return;
             }
 
             // Check permission to create employees
             if (!isEditMode && !canCreateUser()) {
                 setError('You do not have permission to create employees.');
-                setLoading(false);
+                if (!isBackground) setLoading(false);
                 return;
             }
 
@@ -514,9 +516,9 @@ const AddEmployeeWizard = () => {
             const savedEmp = await response.json();
             const employeeId = isEditMode ? id : savedEmp.employeeId;
 
-            // 2. Upload Files if any (only for new employees or new files)
+            // 2. Upload Files (Parallelize for speed)
             if (files.length > 0) {
-                for (const fileObj of files) {
+                const uploadPromises = files.map(async (fileObj) => {
                     try {
                         const fileData = new FormData();
                         fileData.append('file', fileObj.file);
@@ -528,33 +530,37 @@ const AddEmployeeWizard = () => {
                             body: fileData
                         });
 
-                        if (!fileResponse.ok) {
-                            console.warn(`Failed to upload file ${fileObj.file.name}`);
-                        } else {
-                            // If this was a profile picture, check if it's the current user and update header
-                            if (fileObj.type === 'Profile Picture') {
-                                const attachment = await fileResponse.json();
-                                
-                                // Robust check: Is this the logged in user?
-                                const isSelf = 
-                                    formData.userId === authUser?.id || 
-                                    formData.workEmail === authUser?.email || 
-                                    formData.email === authUser?.email ||
-                                    (savedEmp && ((savedEmp as any).userId === authUser?.id || (savedEmp as any).email === authUser?.email || (savedEmp as any).workEmail === authUser?.email));
+                        if (fileResponse.ok && fileObj.type === 'Profile Picture') {
+                            const attachment = await fileResponse.json();
+                            const isSelf = 
+                                formData.userId === authUser?.id || 
+                                formData.workEmail === authUser?.email || 
+                                formData.email === authUser?.email;
 
-                                if (isSelf) {
-                                    const newUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
-                                    login((prev: any) => prev ? { ...prev, avatar: newUrl } : prev as any);
-                                }
+                            if (isSelf) {
+                                const newUrl = `${api.baseURL}/api/employees/attachments/raw/${attachment._id}?token=${token}&t=${Date.now()}`;
+                                login((prev: any) => prev ? { ...prev, avatar: newUrl } : prev as any);
                             }
                         }
-                    } catch (fileError) {
-                        console.error(`Error uploading file ${fileObj.file.name}:`, fileError);
-                        // Continue with other files even if one fails
+                        return true;
+                    } catch (e) {
+                        console.error('File upload failed', e);
+                        return false;
                     }
+                });
+
+                if (isBackground) {
+                    // Don't await in background mode
+                    Promise.all(uploadPromises).then(() => {
+                        console.log('Background file uploads complete');
+                        setSaveSuccess(true);
+                        setTimeout(() => setSaveSuccess(false), 2000);
+                    });
+                } else {
+                    await Promise.all(uploadPromises);
                 }
                 
-                // Add the newly uploaded files to existing attachments so the UI instantly recognizes them and doesn't ask for them again
+                // Add the newly uploaded files to existing attachments locally
                 setFormData(prev => {
                     const newExisting = [...prev.existingAttachments];
                     prev.files.forEach(f => {
@@ -569,7 +575,7 @@ const AddEmployeeWizard = () => {
             }
 
 
-            // Update initialLockedFields after successful save to lock them on "Back"
+            // Update initialLockedFields after successful save
             setInitialLockedFields({
                 cnic: !!employeeData.cnic,
                 dateOfBirth: !!employeeData.dateOfBirth,
@@ -579,24 +585,28 @@ const AddEmployeeWizard = () => {
                 bloodGroup: !!employeeData.bloodGroup
             });
 
-            // Success - navigate if requested
-            if (shouldNavigate) {
+            // Success - navigate if requested and not in background
+            if (shouldNavigate && !isBackground) {
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('onboarding') === 'true') {
                     navigate('/dashboard');
                 } else {
                     navigate('/pim');
                 }
-            } else {
+            } else if (!isBackground) {
                 setSaveSuccess(true);
                 setTimeout(() => setSaveSuccess(false), 2000);
+            } else if (isBackground && files.length === 0) {
+                // Instantly show success if no files were pending
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 1500);
             }
             return savedEmp;
         } catch (error: any) {
             console.error('Error submitting form:', error);
             setError(error.message || 'Failed to submit employee. Please try again.');
         } finally {
-            setLoading(false);
+            if (!isBackground) setLoading(false);
         }
     };
 
@@ -614,7 +624,7 @@ const AddEmployeeWizard = () => {
     ];
 
     const handleNext = async () => {
-        // On step 1, require: Employee ID, First Name, Last Name, CNIC, Date of Birth, Father Name, Religion, Nationality, Gender, Marital Status
+        // On step 1, require essential fields
         if (step === 1) {
             if (!isStep1RequiredValid()) {
                 setStepErrors(getStep1RequiredErrors());
@@ -623,20 +633,31 @@ const AddEmployeeWizard = () => {
             setStepErrors([]);
         }
 
-        if (formData.firstName && formData.lastName) {
-            const savedEmp = await handleSubmit(false);
-            if (!savedEmp) return;
+        // Determine if we need to await the save (Creation on Step 1 needs the Returned ID)
+        const isCreationOnStep1 = !isEditMode && step === 1;
 
-            if (!isEditMode && savedEmp.employeeId) {
-                const params = new URLSearchParams(window.location.search);
-                const query = params.get('onboarding') === 'true' ? '?onboarding=true' : '';
-                navigate(`/pim/edit/${savedEmp.employeeId}${query}`, { replace: true });
+        if (formData.firstName && formData.lastName) {
+            if (isCreationOnStep1) {
+                // Must await for ID to continue
+                const savedEmp = await handleSubmit(false, false);
+                if (!savedEmp) return;
+
+                if (savedEmp.employeeId) {
+                    const params = new URLSearchParams(window.location.search);
+                    const query = params.get('onboarding') === 'true' ? '?onboarding=true' : '';
+                    navigate(`/pim/edit/${savedEmp.employeeId}${query}`, { replace: true });
+                }
+            } else {
+                // Background save - don't await, just fire and move on!
+                handleSubmit(false, true);
             }
         }
 
         if (step < steps.length) {
             const nextStep = Math.min(steps.length, step + 1);
             const missing = getMissingFields(step);
+            
+            // If there are missing fields, we show a modal but allow skipping
             if (missing.length > 0) {
                 setMissingFieldsList(missing);
                 setPendingNextStep(nextStep);
@@ -1237,7 +1258,25 @@ const AddEmployeeWizard = () => {
                             )}
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-600">Joining Date</label>
-                                <input type="date" name="joiningDate" value={formData.jobInfo.joiningDate} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="date" name="joiningDate" value={formData.jobInfo.joiningDate} onChange={(e) => handleChange(e, 'jobInfo')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none" />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-600">Onboarding Date</label>
+                                <input
+                                    type="date"
+                                    value={formData.employmentStatus.onboardingDate}
+                                    onChange={(e) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, onboardingDate: e.target.value } }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-600">Offboarding Date</label>
+                                <input
+                                    type="date"
+                                    value={formData.employmentStatus.offboardingDate}
+                                    onChange={(e) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, offboardingDate: e.target.value } }))}
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none"
+                                />
                             </div>
                             <div className="space-y-2">
                                 <CustomSelect 
@@ -2023,7 +2062,7 @@ const AddEmployeeWizard = () => {
                     <div className="flex gap-3">
                         {step > 1 && step < steps.length && formData.firstName && formData.lastName && (
                             <button
-                                onClick={() => handleSubmit(false)}
+                                onClick={() => handleSubmit(false, true)}
                                 disabled={loading}
                                 className="px-6 py-2.5 rounded-lg border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-50 transition-all flex items-center gap-2"
                             >

@@ -106,11 +106,17 @@ const EmployeeProfile = () => {
         return managerValue; // Return as-is if we can't resolve
     };
 
+    const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
+
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !employee) return;
 
+        // Instant local preview
+        const localUrl = URL.createObjectURL(file);
+        setLocalAvatarPreview(localUrl);
         setUploadingAvatar(true);
+        
         try {
             const token = localStorage.getItem('token');
             const fileData = new FormData();
@@ -127,7 +133,7 @@ const EmployeeProfile = () => {
             
             const attachment = await response.json();
             
-            // Check if editing own profile - more robust check for all roles
+            // Sync AuthContext if this is the current user
             const isSelf = 
                 employee.userId === user?.id || 
                 (employee.userId && typeof employee.userId === 'object' && (employee.userId as any)._id === user?.id) ||
@@ -143,8 +149,10 @@ const EmployeeProfile = () => {
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
             alert('Failed to upload profile picture.');
+            setLocalAvatarPreview(null);
         } finally {
             setUploadingAvatar(false);
+            // We keep the local preview for a few seconds or until fetchEmployee finishes if we want
         }
     };
 
@@ -159,7 +167,12 @@ const EmployeeProfile = () => {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    employmentStatus: { status: offboardStatus, autoUpdated: false }
+                    employmentStatus: { 
+                        ...employee.employmentStatus,
+                        status: offboardStatus, 
+                        autoUpdated: false,
+                        offboardingDate: new Date()
+                    }
                 })
             });
             if (response.ok) {
@@ -205,8 +218,8 @@ const EmployeeProfile = () => {
 
                 <div className="relative group">
                     <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
-                        {getAvatarUrl(employee) ? (
-                            <img src={getAvatarUrl(employee)!} alt="" className="w-full h-full object-cover" />
+                        {localAvatarPreview || getAvatarUrl(employee) ? (
+                            <img src={localAvatarPreview || getAvatarUrl(employee)!} alt="" className="w-full h-full object-cover" />
                         ) : (
                             `${employee.firstName[0]}${employee.lastName[0]}`
                         )}
@@ -475,6 +488,14 @@ const EmployeeProfile = () => {
                                 <Field
                                     label="Start Date"
                                     value={formatDate(typeof employee.employmentStatus === 'string' ? '' : employee.employmentStatus?.startDate)}
+                                />
+                                <Field
+                                    label="Onboarding Date"
+                                    value={formatDate(employee.employmentStatus?.onboardingDate)}
+                                />
+                                <Field
+                                    label="Offboarding Date"
+                                    value={formatDate(employee.employmentStatus?.offboardingDate)}
                                 />
                                 {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.status === 'Probation' && (
                                     <Field

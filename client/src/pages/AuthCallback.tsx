@@ -52,7 +52,7 @@ export const AuthCallback: React.FC = () => {
                         ? (userData.avatar.startsWith('http')
                             ? userData.avatar
                             : `${api.baseURL.replace(/\/$/, '')}${userData.avatar}${userData.avatar.includes('/attachments/raw/') ? `?token=${token}` : ''}`)
-                        : `https://ui-avatars.com/api/?name=${encodeURIComponent([userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0])}&background=random`,
+                        : null,
                     firstName: userData.firstName,
                     lastName: userData.lastName,
                     microsoftId: userData.microsoftId,

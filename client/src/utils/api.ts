@@ -6,6 +6,7 @@ const API_BASE_URL = rawBase.endsWith('/api') ? rawBase.slice(0, -4) : rawBase;
 export const api = {
     baseURL: API_BASE_URL,
     employees: `${API_BASE_URL}/api/employees`,
+    todaySpecials: `${API_BASE_URL}/api/employees/today-specials`,
     auditLogs: `${API_BASE_URL}/api/audit-logs`,
     auth: `${API_BASE_URL}/api/auth`,
     admin: `${API_BASE_URL}/api/admin`,

@@ -157,52 +157,29 @@ const Dashboard = () => {
                         }).length;
                         setNewHiresCount(newHires);
 
-                        // Generate Dynamic Highlights
-                        const today = new Date();
-                        const tomorrow = new Date();
-                        tomorrow.setDate(today.getDate() + 1);
+                // Fetch Organizational Highlights (Birthdays, Anniversaries)
+                // Everyone can see these names/types to celebrate together
+                const highlightsRes = await fetch(api.todaySpecials, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (highlightsRes.ok) {
+                    const specialData = await highlightsRes.json();
+                    const items = specialData.map((s: any) => ({
+                        id: s.id,
+                        type: s.type,
+                        name: s.name,
+                        years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
+                        date: 'Today',
+                        icon: s.type === 'birthday' ? Cake : Award,
+                        color: s.type === 'birthday' ? 'text-rose-500' : 'text-amber-500',
+                        bg: s.type === 'birthday' ? 'bg-rose-50' : 'bg-amber-50'
+                    }));
 
-                        const items: any[] = [];
-                        data.forEach((emp: any) => {
-                            const firstName = emp.firstName || '';
-                            const lastName = emp.lastName || '';
-                            const fullName = `${firstName} ${lastName}`.trim();
-
-                            // 1. Birthdays
-                            if (emp.dateOfBirth) {
-                                const dob = new Date(emp.dateOfBirth);
-                                if (dob.getMonth() === today.getMonth() && dob.getDate() === today.getDate()) {
-                                    items.push({ id: `b-${emp._id}`, type: 'birthday', name: fullName, date: 'Today', icon: Cake, color: 'text-rose-500', bg: 'bg-rose-50' });
-                                } else if (dob.getMonth() === tomorrow.getMonth() && dob.getDate() === tomorrow.getDate()) {
-                                    items.push({ id: `b-${emp._id}`, type: 'birthday', name: fullName, date: 'Tomorrow', icon: Cake, color: 'text-rose-500', bg: 'bg-rose-50' });
-                                }
-                            }
-
-                            // 2. Anniversaries
-                            if (emp.jobInfo?.joiningDate) {
-                                const joinDate = new Date(emp.jobInfo.joiningDate);
-                                const years = today.getFullYear() - joinDate.getFullYear();
-                                if (years > 0 && joinDate.getMonth() === today.getMonth() && joinDate.getDate() === today.getDate()) {
-                                    items.push({ id: `a-${emp._id}`, type: 'anniversary', name: fullName, years: `${years} Year${years > 1 ? 's' : ''}`, date: 'Today', icon: Award, color: 'text-amber-500', bg: 'bg-amber-50' });
-                                }
-                            }
-
-                            // 3. New Joiners (Joined in last 7 days or joining tomorrow)
-                            if (emp.jobInfo?.joiningDate) {
-                                const joinDate = new Date(emp.jobInfo.joiningDate);
-                                const diffDays = Math.ceil((today.getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24));
-                                if (diffDays >= 0 && diffDays <= 7) {
-                                    items.push({ id: `n-${emp._id}`, type: 'new-joiner', name: fullName, role: emp.jobInfo?.designation || 'New Member', date: diffDays === 0 ? 'Today' : `${diffDays}d ago`, icon: UserPlus, color: 'text-indigo-500', bg: 'bg-indigo-50' });
-                                }
-                            }
-                        });
-
-                        // Fallback if no highlights
-                        if (items.length === 0) {
-                            items.push({ id: 'empty', type: 'info', name: 'No events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
-                        }
-
-                        setHighlights(items.slice(0, 3)); // Show top 3
+                    if (items.length === 0) {
+                        items.push({ id: 'empty', type: 'info', name: 'No special events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                    }
+                    setHighlights(items.slice(0, 3));
+                }
                     }
                 }
             } catch (err) {

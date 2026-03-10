@@ -182,3 +182,73 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
         return false;
     }
 };
+
+export const sendBirthdayEmail = async (to: string, firstName: string) => {
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Happy Birthday, ${firstName}! 🎂`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #fdf2f8;">
+                <h2 style="color: #db2777; text-align: center;">Happy Birthday, ${firstName}! 🎂🎉</h2>
+                <div style="text-align: center; margin: 20px 0;">
+                    <span style="font-size: 60px;">🎈</span>
+                </div>
+                <p style="color: #4b5563; font-size: 16px; text-align: center;">Wishing you a wonderful day filled with joy and celebration! We're lucky to have you as part of our team.</p>
+                <div style="text-align: center; font-size: 14px; color: #9ca3af; margin-top: 30px;">
+                    Best regards,<br/>The ITCS HRM Team
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        console.log(`\n================= BIRTHDAY EMAIL ===================`);
+        console.log(`To: ${to}`);
+        console.log(`====================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Error sending birthday email:', error);
+        return false;
+    }
+};
+
+export const sendWorkAnniversaryEmail = async (to: string, firstName: string, years: number) => {
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Congratulations on ${years} Year${years > 1 ? 's' : ''} at ITCS! 🎊`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #f0f9ff;">
+                <h2 style="color: #0369a1; text-align: center;">Happy Work Anniversary! 🎊</h2>
+                <p style="color: #4b5563; font-size: 16px; text-align: center;">Congratulations ${firstName} on completing <strong>${years} year${years > 1 ? 's' : ''}</strong> with ITCS! Thank you for your continued dedication and contributions.</p>
+                <div style="text-align: center; margin: 20px 0;">
+                    <span style="font-size: 60px;">🏆</span>
+                </div>
+                <div style="text-align: center; font-size: 14px; color: #9ca3af; margin-top: 30px;">
+                    Best regards,<br/>The ITCS HRM Team
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        console.log(`\n================= ANNIVERSARY EMAIL ===================`);
+        console.log(`To: ${to} (${years} years)`);
+        console.log(`========================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Error sending anniversary email:', error);
+        return false;
+    }
+};
