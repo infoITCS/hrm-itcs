@@ -250,11 +250,12 @@ router.post("/reset-password", async (req: Request, res: Response, next: NextFun
 router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
   if (
     !process.env.MICROSOFT_CLIENT_ID ||
-    !process.env.MICROSOFT_CLIENT_SECRET
+    !process.env.MICROSOFT_CLIENT_SECRET ||
+    !process.env.MICROSOFT_CALLBACK_URL
   ) {
     return res.status(503).json({
       message:
-        "Microsoft OAuth is not configured. Please set MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET environment variables.",
+        "Microsoft OAuth is not fully configured. Please set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_CALLBACK_URL environment variables.",
     });
   }
 
@@ -269,14 +270,22 @@ router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
     req.query.prompt = prompt;
   }
 
-  // Create a wrapper that ensures prompt is passed
-  const authenticate = passport.authenticate("microsoft", {
-    session: false,
-    // Try to pass prompt through authenticate options
-    ...(prompt && { prompt }),
-  });
+  try {
+    // Create a wrapper that ensures prompt is passed
+    const authenticate = passport.authenticate("microsoft", {
+      session: false,
+      // Try to pass prompt through authenticate options
+      ...(prompt && { prompt }),
+    });
 
-  authenticate(req, res, next);
+    authenticate(req, res, next);
+  } catch (error: any) {
+    console.error("❌ Passport Microsoft authentication initialization failed:", error.message);
+    res.status(500).json({ 
+      message: "Failed to initiate Microsoft login", 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined 
+    });
+  }
 });
 
 /**

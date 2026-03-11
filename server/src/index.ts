@@ -4,7 +4,7 @@ dotenv.config();
 
 // Defensive Sanitization: Trim all critical environment variables to remove accidental newlines/whitespace
 const criticalEnvVars = [
-    'MONGODB_URI', 'JWT_SECRET', 'MICROSOFT_CLIENT_ID', 
+    'MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET', 'MICROSOFT_CLIENT_ID', 
     'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID', 
     'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL',
     'GEMINI_API_KEY'
@@ -95,10 +95,16 @@ app.use('/api/', generalLimiter); // General rate limit for all API routes
 const getSessionSecret = (): string => {
     const secret = process.env.SESSION_SECRET;
     if (!secret) {
-        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-            throw new Error('FATAL: SESSION_SECRET must be set in production! Set it as an environment variable.');
+        // Fallback to JWT_SECRET if session secret is missing to prevent crash
+        if (process.env.JWT_SECRET) {
+            console.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
+            return process.env.JWT_SECRET;
         }
-        console.warn('⚠️ SESSION_SECRET not set, using temporary value for development only.');
+        
+        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+            console.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
+            throw new Error('FATAL: At least JWT_SECRET must be set for the server to start.');
+        }
         return 'dev-only-temp-secret-not-for-production';
     }
     return secret;

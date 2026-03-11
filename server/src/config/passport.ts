@@ -20,7 +20,7 @@ passport.deserializeUser(async (id: string, done: any) => {
 
 // Microsoft OAuth Strategy configuration
 // Only initialize if required environment variables are present
-if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CALLBACK_URL) {
+if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && process.env.MICROSOFT_CALLBACK_URL) {
     // Use tenant-specific endpoint (required for single-tenant apps)
     // If MICROSOFT_TENANT_ID is not set, use 'organizations' as fallback (works for most orgs)
     const tenantId = process.env.MICROSOFT_TENANT_ID || 'organizations';
