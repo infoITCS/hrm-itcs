@@ -168,13 +168,20 @@ configurePassport();
 
 // Database Connection
 if (process.env.MONGODB_URI) {
-    const maskedUri = process.env.MONGODB_URI.replace(/\/\/.*@/, '//****:****@');
+    let finalUri = process.env.MONGODB_URI;
+    
+    // Auto-fix for Azure Cosmos DB on Vercel: Force direct port and remove SRV-only flags
+    if (!!process.env.VERCEL && finalUri.includes('authMechanism')) {
+        console.log('� Auto-sanitizing Cosmos DB URI for Vercel...');
+        // Strip everything after the ? and replace it with just tls=true
+        const baseUrl = finalUri.split('?')[0];
+        finalUri = `${baseUrl}?tls=true`;
+    }
+
+    const maskedUri = finalUri.replace(/\/\/.*@/, '//****:****@');
     console.log(`📡 Attempting to connect to: ${maskedUri}`);
     
-    // Note: Do NOT set bufferCommands=false on serverless as it causes 500 errors 
-    // if the very first request hits before the DB is fully connected.
-    
-    mongoose.connect(process.env.MONGODB_URI, {
+    mongoose.connect(finalUri, {
         dbName: 'hrm',
         autoIndex: true,
         connectTimeoutMS: 30000,      // wait up to 30s for initial connection
