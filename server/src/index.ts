@@ -139,6 +139,23 @@ if (process.env.MONGODB_URI) {
 
 app.use(session(sessionOptions));
 
+// Middleware to ensure DB connection is ready before processing requests
+app.use(async (req, res, next) => {
+    // Cast to any to avoid TypeScript enum comparison issues during build
+    if ((mongoose.connection.readyState as any) !== 1) {
+        console.log(`⌛ Waiting for MongoDB connection... (Current state: ${mongoose.connection.readyState})`);
+        try {
+            // Wait up to 5 seconds for existing connection attempt to finish
+            let attempts = 0;
+            while ((mongoose.connection.readyState as any) !== 1 && attempts < 10) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                attempts++;
+            }
+        } catch (e) {}
+    }
+    next();
+});
+
 
 // Initialize Scheduler (runs in dev + production; Vercel guard is inside initScheduler)
 if (process.env.ENABLE_SCHEDULER !== 'false') {
