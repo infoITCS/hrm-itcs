@@ -196,7 +196,7 @@ if (process.env.MONGODB_URI) {
     // Globally increase the buffer timeout so Mongoose doesn't give up after 10s
     mongoose.set('bufferTimeoutMS', 30000);
 } else {
-    console.error('❌ FATAL: MONGODB_URI is not defined.');
+    console.error('❌ FATAL ERROR: MONGODB_URI IS MISSING IN VERCEL ENVIRONMENT VARIABLES!');
 }
 
 // Static Files
