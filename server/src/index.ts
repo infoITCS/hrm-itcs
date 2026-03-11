@@ -160,15 +160,24 @@ if (process.env.MONGODB_URI) {
     mongoose.connect(process.env.MONGODB_URI, {
         dbName: 'hrm',
         autoIndex: true,
-        connectTimeoutMS: 20000, // Wait up to 20s for initial connection
-        socketTimeoutMS: 45000,
-        serverSelectionTimeoutMS: 15000 // Error out faster so Vercel can retry
+        connectTimeoutMS: 30000,      // wait up to 30s for initial connection
+        socketTimeoutMS: 45000,       // wait up to 45s for queries
+        serverSelectionTimeoutMS: 30000, 
+        heartbeatFrequencyMS: 10000,
+        retryWrites: false,
+        retryReads: true,
+        bufferCommands: true,
+        // Wait indefinitely for the connection rather than timing out the buffer after 10s
+        // mongoose defaults this to 10000ms, which is too short for some cold starts.
     }).then(() => {
         console.log('✅ Connected to MongoDB (Cosmos DB)');
     }).catch(err => {
         console.error('❌ MongoDB Connection Error:', err.message);
-        console.log('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / MongoDB Atlas.');
+        console.log('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / Networking.');
     });
+    
+    // Globally increase the buffer timeout so Mongoose doesn't give up after 10s
+    mongoose.set('bufferTimeoutMS', 30000);
 } else {
     console.error('❌ FATAL: MONGODB_URI is not defined.');
 }
