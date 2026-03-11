@@ -349,13 +349,22 @@ router.get(
 router.get("/me", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
-    let user = await User.findById(authReq.user?.userId).select("-password"); // Exclude sensitive info but keep microsoftId for detection
+    const userId = authReq.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    // Use lean() for performance if we only need the data, but keep it as doc if we need to save()
+    let user = await User.findById(userId).select("-password");
 
     if (!user) {
+      console.error(`❌ User not found in /me: ${userId}`);
       return res.status(404).json({ message: "User not found" });
     }
 
-    const employee = await Employee.findOne({ userId: user._id }).select('-attachments.fileData');
+    // Find associated employee - use string ID comparison
+    const employee = await Employee.findOne({ userId: user._id.toString() }).select('-attachments.fileData').lean() as any;
 
     // Auto-sync from Employee record if names or avatar are missing
     if (employee && (!user.firstName || !user.lastName || !user.avatar)) {
@@ -368,10 +377,12 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
         user.lastName = employee.lastName;
         updated = true;
       }
+      
       // Check if there's a profile picture attachment
       const profilePic = employee.attachments?.find(
-        (att: any) => att.fileType === "Profile Picture",
+        (att: any) => att.fileType === "Profile Picture"
       );
+      
       if (!user.avatar && profilePic) {
         user.avatar = `/api/employees/attachments/raw/${profilePic._id}`;
         updated = true;
@@ -382,12 +393,15 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
       }
     }
 
+    const userObj = user.toObject();
     res.json({
-      ...user.toObject(),
+      ...userObj,
+      id: userObj._id,
       hasProfile: !!employee,
       needsPasswordSetup: user.needsPasswordSetup ?? false,
     });
   } catch (error: any) {
+    console.error("🔥 Error in /auth/me:", error.message);
     next(error);
   }
 });
