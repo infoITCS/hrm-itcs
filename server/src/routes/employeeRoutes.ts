@@ -118,7 +118,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
                 Employee.countDocuments()
             ]);
         } else if (role === 'manager') {
-            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean();
+            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
@@ -284,7 +284,7 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response,
         if (cnic) query.$or.push({ cnic: cnic.trim() });
         if (email) query.$or.push({ email: email.trim().toLowerCase() });
         
-        const existing = await Employee.findOne(query).select('firstName lastName employeeId').lean();
+        const existing = await Employee.findOne(query).select('firstName lastName employeeId').lean() as any;
         
         if (existing && existing.employeeId !== employeeId) {
             return res.json({ 
@@ -433,7 +433,7 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             );
         } else if (fileType === 'Other Documents') {
             // Security: Limit "Other Documents" to 10 files to prevent database bloat/abuse
-            const docCount = (employee.attachments || []).filter(a => a.fileType === 'Other Documents').length;
+            const docCount = (employee.attachments || []).filter((a: any) => a.fileType === 'Other Documents').length;
             if (docCount >= 10) {
                 // Clean up the uploaded temp file before returning error
                 try { fs.unlinkSync(req.file.path); } catch (e) {}
