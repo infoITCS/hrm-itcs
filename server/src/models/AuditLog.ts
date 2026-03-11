@@ -24,4 +24,4 @@ AuditLogSchema.index({ targetId: 1, performedBy: 1, timestamp: -1 });
 AuditLogSchema.index({ action: 1, timestamp: -1 });
 AuditLogSchema.index({ targetResource: 1 });
 
-export default mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
+export default mongoose.models.AuditLog || mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);

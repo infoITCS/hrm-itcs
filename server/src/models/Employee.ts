@@ -217,4 +217,4 @@ EmployeeSchema.index({ email: 1 }, { sparse: true });
 EmployeeSchema.index({ dateOfBirth: 1 }, { sparse: true });
 EmployeeSchema.index({ 'jobInfo.joiningDate': 1 }, { sparse: true });
 
-export default mongoose.model<IEmployee>('Employee', EmployeeSchema);
+export default mongoose.models.Employee || mongoose.model<IEmployee>('Employee', EmployeeSchema);

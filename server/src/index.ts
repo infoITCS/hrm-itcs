@@ -23,7 +23,7 @@ process.on('uncaughtException', (err) => {
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
-    setTimeout(() => process.exit(1), 1000).unref();
+    // Don't exit in serverless environment — let Vercel handle the lifecycle
 });
 
 import express from 'express';
@@ -148,8 +148,8 @@ configurePassport();
 
 // Database Connection
 if (process.env.MONGODB_URI) {
-    // Optimization for Serverless (Vercel): Disable buffering so we don't hang if connection is down
-    mongoose.set('bufferCommands', false);
+    // Let Mongoose handle buffering by default for smoother start on serverless
+    // mongoose.set('bufferCommands', false);
 
     mongoose.connect(process.env.MONGODB_URI, {
         dbName: 'hrm',
@@ -196,10 +196,13 @@ app.get('/', (req, res) => {
 // Global Error Handler to catch and display 500 errors instead of generic message
 app.use((err: any, req: any, res: any, next: any) => {
     console.error('🔥 Global unhandled error:', err);
-    if (process.env.NODE_ENV === 'production') {
-        return res.status(500).json({ message: 'Internal server error' });
-    }
-    res.status(500).json({ message: err.message, stack: err.stack });
+    // Temporarily exposing error message and stack even in production to help debug the 500 error
+    res.status(500).json({ 
+        message: err.message || 'Internal server error', 
+        stack: process.env.VERCEL ? 'Exposed for debugging' : err.stack,
+        code: err.code,
+        name: err.name
+    });
 });
 
 // For Vercel serverless, export the app instead of listening
