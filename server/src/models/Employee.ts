@@ -209,5 +209,12 @@ const EmployeeSchema: Schema = new Schema({
 EmployeeSchema.index({ userId: 1 });
 EmployeeSchema.index({ 'jobInfo.reportingManager': 1 });
 EmployeeSchema.index({ 'employmentStatus.status': 1 });
+EmployeeSchema.index({ 'employmentStatus.probationEndDate': 1 }, { sparse: true });
+// Added for duplicate-check queries
+EmployeeSchema.index({ cnic: 1 }, { sparse: true });
+EmployeeSchema.index({ email: 1 }, { sparse: true });
+// Added for birthday/anniversary scheduler queries
+EmployeeSchema.index({ dateOfBirth: 1 }, { sparse: true });
+EmployeeSchema.index({ 'jobInfo.joiningDate': 1 }, { sparse: true });
 
 export default mongoose.model<IEmployee>('Employee', EmployeeSchema);

@@ -64,12 +64,9 @@ const EmployeeList = () => {
                 return res.json();
             })
             .then(data => {
-                if (Array.isArray(data)) {
-                    setEmployees(data);
-                } else {
-                    console.error('API returned non-array data:', data);
-                    setEmployees([]);
-                }
+                // Handle paginated response shape { employees, total } or plain array
+                const empArray = Array.isArray(data) ? data : (data.employees || []);
+                setEmployees(empArray);
             })
             .catch(err => {
                 console.error('Error fetching employees:', err);

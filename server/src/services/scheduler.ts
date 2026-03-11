@@ -4,93 +4,113 @@ import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
 import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
 
-// Run every day at midnight
-// Note: Vercel serverless functions have execution time limits
-// For production, consider using Vercel Cron Jobs or external scheduler
+// Note: Vercel serverless functions have execution time limits.
+// For production on Vercel, disable this and use Vercel Cron Jobs instead.
 export const initScheduler = () => {
-    // Only run scheduler if not on Vercel (use Vercel Cron Jobs instead)
     if (process.env.VERCEL) {
         console.log('Scheduler disabled on Vercel. Use Vercel Cron Jobs for scheduled tasks.');
         return;
     }
-    
+
+    // ── Probation Auto-Upgrade: Run every day at midnight ─────────────────────────
     cron.schedule('0 0 * * *', async () => {
         console.log('Running daily probation check...');
         try {
             const today = new Date();
-            // Find employees whose probation ends today or has passed, AND are still in "Probation"
             const eligibleEmployees = await Employee.find({
                 'employmentStatus.probationEndDate': { $lte: today },
                 'employmentStatus.status': 'Probation',
                 'employmentStatus.autoUpdated': { $ne: true }
-            });
+            }).select('_id employeeId').lean();
 
-            for (const emp of eligibleEmployees) {
-                emp.employmentStatus = {
-                    ...emp.employmentStatus,
-                    status: 'Permanent',
-                    autoUpdated: true
-                } as any;
-                await emp.save();
+            if (eligibleEmployees.length === 0) return;
 
-                // Create a traceable audit log entry for each auto-upgrade
-                await AuditLog.create({
-                    action: 'UPDATE',
-                    targetResource: 'Employee',
-                    targetId: emp.employeeId,
-                    performedBy: 'System',
-                    details: {
-                        diff: {
-                            'employmentStatus.status': { old: 'Probation', new: 'Permanent' },
-                            'employmentStatus.autoUpdated': { old: false, new: true }
-                        },
-                        reason: 'Automatic probation period completion'
+            // PERFORMANCE: Use bulkWrite instead of N sequential .save() calls
+            const bulkOps = eligibleEmployees.map(emp => ({
+                updateOne: {
+                    filter: { _id: emp._id },
+                    update: {
+                        $set: {
+                            'employmentStatus.status': 'Permanent',
+                            'employmentStatus.autoUpdated': true
+                        }
                     }
-                });
-            }
+                }
+            }));
+            await Employee.bulkWrite(bulkOps);
 
-            if (eligibleEmployees.length > 0) {
-                console.log(`Auto-upgraded ${eligibleEmployees.length} employees from Probation to Permanent.`);
-            }
+            // PERFORMANCE: Use insertMany instead of N sequential AuditLog.create() calls
+            const auditEntries = eligibleEmployees.map(emp => ({
+                action: 'UPDATE',
+                targetResource: 'Employee',
+                targetId: emp.employeeId,
+                performedBy: 'System',
+                timestamp: new Date(),
+                details: {
+                    diff: {
+                        'employmentStatus.status': { old: 'Probation', new: 'Permanent' },
+                        'employmentStatus.autoUpdated': { old: false, new: true }
+                    },
+                    reason: 'Automatic probation period completion'
+                }
+            }));
+            await AuditLog.insertMany(auditEntries);
+
+            console.log(`Auto-upgraded ${eligibleEmployees.length} employees from Probation to Permanent.`);
         } catch (error) {
             console.error('Error in probation scheduler:', error);
         }
     });
 
-    // Reminder Scheduler: Run every day at 10 AM
+    // ── Profile Completion Reminder: Run every day at 10 AM ──────────────────────
     cron.schedule('0 10 * * *', async () => {
         console.log('Running daily onboarding profile completion reminder check...');
         try {
-            // Only send reminders to active users with 'employee' role
-            // Admins, managers, and super-admins are excluded intentionally
-            const users = await User.find({ isActive: true, role: 'employee' });
-            const employees = await Employee.find();
+            // PERFORMANCE: Use aggregation $lookup to join server-side instead of
+            // loading all users + all employees into Node.js memory and doing JS join.
+            const incompleteUsers = await User.aggregate([
+                { $match: { isActive: true, role: 'employee' } },
+                {
+                    $lookup: {
+                        from: 'employees',
+                        let: { uid: { $toString: '$_id' } },
+                        pipeline: [
+                            { $match: { $expr: { $eq: ['$userId', '$$uid'] } } },
+                            { $project: { cnic: 1, dateOfBirth: 1 } }
+                        ],
+                        as: 'employeeRecord'
+                    }
+                },
+                {
+                    $match: {
+                        $or: [
+                            { 'employeeRecord.0': { $exists: false } },
+                            { 'employeeRecord.0.cnic': { $in: [null, '', undefined] } },
+                            { 'employeeRecord.0.dateOfBirth': { $in: [null, undefined] } }
+                        ]
+                    }
+                },
+                { $project: { email: 1, firstName: 1 } }
+            ]);
 
-            for (const user of users) {
-                const emp = employees.find(e => e.userId === user._id.toString());
-                let isComplete = false;
+            // PERFORMANCE: Send emails concurrently — one failure doesn't block others
+            const results = await Promise.allSettled(
+                incompleteUsers.map((u: any) =>
+                    u.email ? sendProfileReminderEmail(u.email, u.firstName || 'Employee') : Promise.resolve()
+                )
+            );
 
-                if (emp) {
-                    const personalComplete = !!(emp.firstName && emp.lastName && emp.cnic && emp.dateOfBirth);
-                    const jobComplete = !!(emp.jobInfo && emp.jobInfo.designation !== "Employee" && emp.jobInfo.department !== "General");
-                    const bankComplete = !!(emp.bankDetails?.bankName && emp.bankDetails?.accountNumber);
-
-                    // Simplistic check. You could refine to match exactly the frontend
-                    isComplete = personalComplete && jobComplete && bankComplete;
-                }
-
-                // If not complete, send email
-                if (!isComplete && user.email) {
-                    console.log(`Sending profile reminder to: ${user.email}`);
-                    await sendProfileReminderEmail(user.email, user.firstName || 'Employee');
-                }
+            const sent = results.filter(r => r.status === 'fulfilled').length;
+            const failed = results.filter(r => r.status === 'rejected').length;
+            if (sent > 0 || failed > 0) {
+                console.log(`Profile reminders: ${sent} sent, ${failed} failed.`);
             }
         } catch (error) {
             console.error('Error in profile reminder scheduler:', error);
         }
     });
 
-    // Birthday & Anniversary Scheduler: Run every day at 8 AM
+    // ── Birthday & Anniversary: Run every day at 8 AM ────────────────────────────
     cron.schedule('0 8 * * *', async () => {
         console.log('Running daily birthday and anniversary check...');
         try {
@@ -103,57 +123,48 @@ export const initScheduler = () => {
                     {
                         $expr: {
                             $and: [
-                                { $eq: [{ $month: "$dateOfBirth" }, currentMonth] },
-                                { $eq: [{ $dayOfMonth: "$dateOfBirth" }, currentDay] }
+                                { $eq: [{ $month: '$dateOfBirth' }, currentMonth] },
+                                { $eq: [{ $dayOfMonth: '$dateOfBirth' }, currentDay] }
                             ]
                         }
                     },
                     {
                         $expr: {
                             $and: [
-                                { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] },
-                                { $eq: [{ $dayOfMonth: "$jobInfo.joiningDate" }, currentDay] }
+                                { $eq: [{ $month: '$jobInfo.joiningDate' }, currentMonth] },
+                                { $eq: [{ $dayOfMonth: '$jobInfo.joiningDate' }, currentDay] }
                             ]
                         }
                     }
                 ]
-            });
+            }).select('firstName workEmail email dateOfBirth jobInfo.joiningDate').lean();
 
-            const todayStr = `${currentMonth}-${currentDay}`;
+            // PERFORMANCE: Send all emails concurrently
+            await Promise.allSettled(employees.map(async (emp) => {
+                const isBirthday = emp.dateOfBirth &&
+                    (new Date(emp.dateOfBirth).getMonth() + 1 === currentMonth) &&
+                    (new Date(emp.dateOfBirth).getDate() === currentDay);
 
-            for (const emp of employees) {
-                // Determine if it's birthday or anniversary
-                const isBirthday = emp.dateOfBirth && 
-                                 (emp.dateOfBirth.getMonth() + 1 === currentMonth) && 
-                                 (emp.dateOfBirth.getDate() === currentDay);
-                
-                const isAnniversary = emp.jobInfo?.joiningDate && 
-                                    (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth) && 
-                                    (emp.jobInfo.joiningDate.getDate() === currentDay);
+                const isAnniversary = emp.jobInfo?.joiningDate &&
+                    (new Date(emp.jobInfo.joiningDate).getMonth() + 1 === currentMonth) &&
+                    (new Date(emp.jobInfo.joiningDate).getDate() === currentDay);
 
-                // Use private/work email prefer work email
                 const email = emp.workEmail || (emp.email as string);
-                if (!email) continue;
+                if (!email) return;
 
                 if (isBirthday) {
-                    console.log(`Sending birthday email to: ${email}`);
                     await sendBirthdayEmail(email, emp.firstName);
                 }
 
-                if (isAnniversary) {
-                    const joiningDate = emp.jobInfo?.joiningDate;
-                    if (joiningDate) {
-                        const years = today.getFullYear() - joiningDate.getFullYear();
-                        if (years > 0) {
-                            console.log(`Sending anniversary email to: ${email} for ${years} years`);
-                            await sendWorkAnniversaryEmail(email, emp.firstName, years);
-                        }
+                if (isAnniversary && emp.jobInfo?.joiningDate) {
+                    const years = today.getFullYear() - new Date(emp.jobInfo.joiningDate).getFullYear();
+                    if (years > 0) {
+                        await sendWorkAnniversaryEmail(email, emp.firstName, years);
                     }
                 }
-            }
+            }));
         } catch (error) {
             console.error('Error in birthday/anniversary scheduler:', error);
         }
     });
-
 };

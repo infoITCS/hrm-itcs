@@ -34,12 +34,12 @@ const AddEmployeeWizard = () => {
                 const res = await fetch(api.employees, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (res.ok) {
                     const data = await res.json();
-                    if (Array.isArray(data)) {
-                        setEmployeesList(data.map((emp: any) => ({
-                            value: emp.employeeId,
-                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`
-                        })));
-                    }
+                    // Handle paginated response { employees } or plain array
+                    const empArray = Array.isArray(data) ? data : (data.employees || []);
+                    setEmployeesList(empArray.map((emp: any) => ({
+                        value: emp.employeeId,
+                        label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`
+                    })));
                 }
             } catch (err) {
                 console.error('Failed to fetch employees list for dropdown', err);

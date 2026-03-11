@@ -15,12 +15,15 @@ criticalEnvVars.forEach(key => {
     }
 });
 
-// CRASH LOGGING: Catch any deep server errors
+// CRASH LOGGING: Catch any deep server errors and exit gracefully
 process.on('uncaughtException', (err) => {
     console.error('❌ CRITICAL: Uncaught Exception:', err);
+    // Process is in undefined state after uncaughtException — must exit
+    setTimeout(() => process.exit(1), 1000).unref();
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+    setTimeout(() => process.exit(1), 1000).unref();
 });
 
 import express from 'express';
@@ -37,6 +40,7 @@ import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
 import { initScheduler } from './services/scheduler';
+import mongoSanitize from 'express-mongo-sanitize';
 
 import passport from 'passport';
 import configurePassport from './config/passport';
@@ -54,8 +58,21 @@ const corsOptions = {
 };
 
 // Security middleware
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })); // Allow cross-origin for API
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'"],
+        },
+    }
+}));
 app.use(cors(corsOptions));
+// NoSQL Injection Defense: Strip MongoDB operators ($, .) from all user input globally
+app.use(mongoSanitize({ replaceWith: '_', allowDots: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -75,11 +92,20 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter); // General rate limit for all API routes
 
 // Session configuration (required for OAuth state/PKCE)
+const getSessionSecret = (): string => {
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) {
+        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+            throw new Error('FATAL: SESSION_SECRET must be set in production! Set it as an environment variable.');
+        }
+        console.warn('⚠️ SESSION_SECRET not set, using temporary value for development only.');
+        return 'dev-only-temp-secret-not-for-production';
+    }
+    return secret;
+};
+
 const sessionOptions: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || (() => { 
-        console.warn('⚠️ SESSION_SECRET not set, using temporary value.'); 
-        return 'temp-secret-key-12345'; 
-    })(),
+    secret: getSessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: {

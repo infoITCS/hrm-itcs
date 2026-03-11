@@ -110,7 +110,9 @@ const Dashboard = () => {
                 });
                 if (empRes.ok) {
                     const empData = await empRes.json();
-                    const emp = Array.isArray(empData) ? empData[0] : empData;
+                    // Handle paginated { employees } or plain array, then get first match
+                    const empList = Array.isArray(empData) ? empData : (empData.employees || []);
+                    const emp = empList[0] || null;
                     if (emp) setOnboardingData(emp);
                 }
 
@@ -119,52 +121,52 @@ const Dashboard = () => {
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    if (Array.isArray(data)) {
-                        if (role === 'admin') {
-                            setEmployeeCount(data.length);
-                        } else if (role === 'manager') {
-                            const managerEmp = data.find((e: any) => e.userId === user.id);
-                            const myTeam = managerEmp ? data.filter((e: any) => e.jobInfo?.reportingManager === managerEmp.employeeId) : [];
-                            // Ensure we count team members, excluding themselves
-                            setTeamCount(myTeam.filter((e: any) => e.userId !== user.id).length);
-                            setTeamMembers(myTeam);
+                    // Handle paginated response { employees, total } or plain array
+                    const empList: any[] = Array.isArray(data) ? data : (data.employees || []);
 
-                            // Calculate pending document approvals for team members
-                            const pendingDocs: any[] = [];
-                            myTeam.forEach((member: any) => {
-                                member.attachments?.forEach((doc: any) => {
-                                    if (doc.status === 'Pending' || doc.status === 'PENDING') {
-                                        pendingDocs.push({
-                                            id: doc._id || doc.id,
-                                            type: 'document',
-                                            title: `Document Approval: ${doc.fileType}`,
-                                            employeeName: `${member.firstName} ${member.lastName}`,
-                                            employeeId: member._id,
-                                            date: new Date(doc.uploadDate || Date.now()).toLocaleDateString()
-                                        });
-                                    }
-                                });
+                    if (role === 'admin') {
+                        setEmployeeCount(data.total ?? empList.length);
+                    } else if (role === 'manager') {
+                        const managerEmp = empList.find((e: any) => e.userId === user.id);
+                        const myTeam = managerEmp ? empList.filter((e: any) => e.jobInfo?.reportingManager === managerEmp.employeeId) : [];
+                        setTeamCount(myTeam.filter((e: any) => e.userId !== user.id).length);
+                        setTeamMembers(myTeam);
+
+                        const pendingDocs: any[] = [];
+                        myTeam.forEach((member: any) => {
+                            member.attachments?.forEach((doc: any) => {
+                                if (doc.status === 'Pending' || doc.status === 'PENDING') {
+                                    pendingDocs.push({
+                                        id: doc._id || doc.id,
+                                        type: 'document',
+                                        title: `Document Approval: ${doc.fileType}`,
+                                        employeeName: `${member.firstName} ${member.lastName}`,
+                                        employeeId: member._id,
+                                        date: new Date(doc.uploadDate || Date.now()).toLocaleDateString()
+                                    });
+                                }
                             });
-                            setPendingTasks(pendingDocs);
-                        }
+                        });
+                        setPendingTasks(pendingDocs);
+                    }
 
-                        // Calculate New Hires count (Last 30 days)
-                        const thirtyDaysAgo = new Date();
-                        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                        const newHires = data.filter(e => {
-                            if (!e.jobInfo?.joiningDate) return false;
-                            return new Date(e.jobInfo.joiningDate) > thirtyDaysAgo;
-                        }).length;
-                        setNewHiresCount(newHires);
+                    // Calculate New Hires count (Last 30 days)
+                    const thirtyDaysAgo = new Date();
+                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                    const newHires = empList.filter(e => {
+                        if (!e.jobInfo?.joiningDate) return false;
+                        return new Date(e.jobInfo.joiningDate) > thirtyDaysAgo;
+                    }).length;
+                    setNewHiresCount(newHires);
+                } // end if (res.ok)
 
                 // Fetch Organizational Highlights (Birthdays, Anniversaries)
-                // Everyone can see these names/types to celebrate together
-                const highlightsRes = await fetch(api.todaySpecials, {
+                const highlightsRes2 = await fetch(api.todaySpecials, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (highlightsRes.ok) {
-                    const specialData = await highlightsRes.json();
-                    const items = specialData.map((s: any) => ({
+                if (highlightsRes2.ok) {
+                    const specialData = await highlightsRes2.json();
+                    const items2 = specialData.map((s: any) => ({
                         id: s.id,
                         type: s.type,
                         name: s.name,
@@ -174,13 +176,10 @@ const Dashboard = () => {
                         color: s.type === 'birthday' ? 'text-rose-500' : 'text-amber-500',
                         bg: s.type === 'birthday' ? 'bg-rose-50' : 'bg-amber-50'
                     }));
-
-                    if (items.length === 0) {
-                        items.push({ id: 'empty', type: 'info', name: 'No special events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                    if (items2.length === 0) {
+                        items2.push({ id: 'empty', type: 'info', name: 'No special events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
                     }
-                    setHighlights(items.slice(0, 3));
-                }
-                    }
+                    setHighlights(items2.slice(0, 3));
                 }
             } catch (err) {
                 console.error('Failed to fetch dashboard stats', err);

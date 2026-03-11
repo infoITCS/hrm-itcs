@@ -23,7 +23,7 @@ const validatePassword = (password: string): string | null => {
  * @desc    Login with email and password
  * @access  Public
  */
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
 
@@ -82,8 +82,7 @@ router.post("/login", async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ message: "Internal server error during login" });
+    next(error);
   }
 });
 
@@ -92,7 +91,7 @@ router.post("/login", async (req: Request, res: Response) => {
  * @desc    Change user password (authenticated)
  * @access  Private
  */
-router.post("/change-password", authenticate, async (req: Request, res: Response) => {
+router.post("/change-password", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     const { currentPassword, newPassword } = req.body;
@@ -124,8 +123,7 @@ router.post("/change-password", authenticate, async (req: Request, res: Response
 
     res.json({ message: "Password updated successfully" });
   } catch (error) {
-    console.error("Change password error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
 });
 
@@ -134,7 +132,7 @@ router.post("/change-password", authenticate, async (req: Request, res: Response
  * @desc    Set password for first-time Microsoft SSO users (no current password needed)
  * @access  Private
  */
-router.post("/setup-password", authenticate, async (req: Request, res: Response) => {
+router.post("/setup-password", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     const { newPassword } = req.body;
@@ -155,8 +153,7 @@ router.post("/setup-password", authenticate, async (req: Request, res: Response)
 
     res.json({ message: "Password set successfully" });
   } catch (error) {
-    console.error("Setup password error:", error);
-    res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
 });
 
@@ -165,7 +162,7 @@ router.post("/setup-password", authenticate, async (req: Request, res: Response)
  * @desc    Request password reset link
  * @access  Public
  */
-router.post("/forgot-password", async (req: Request, res: Response) => {
+router.post("/forgot-password", async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { email } = req.body;
         if (!email) {
@@ -200,8 +197,7 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
         return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
 
     } catch (error) {
-        console.error("Forgot password error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 });
 
@@ -210,7 +206,7 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
  * @desc    Reset password using a valid token
  * @access  Public
  */
-router.post("/reset-password", async (req: Request, res: Response) => {
+router.post("/reset-password", async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { token, newPassword } = req.body;
 
@@ -242,8 +238,7 @@ router.post("/reset-password", async (req: Request, res: Response) => {
 
         res.json({ message: "Your password has been successfully reset. You can now log in." });
     } catch (error) {
-        console.error("Reset password error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 });
 
@@ -342,7 +337,7 @@ router.get(
 );
 
 // Add /auth/me endpoint for fetching current user
-router.get("/me", authenticate, async (req: Request, res: Response) => {
+router.get("/me", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     let user = await User.findById(authReq.user?.userId).select("-password"); // Exclude sensitive info but keep microsoftId for detection
@@ -384,8 +379,7 @@ router.get("/me", authenticate, async (req: Request, res: Response) => {
       needsPasswordSetup: user.needsPasswordSetup ?? false,
     });
   } catch (error: any) {
-    console.error("Error fetching user:", error);
-    res.status(500).json({ message: error.message || "Internal server error" });
+    next(error);
   }
 });
 

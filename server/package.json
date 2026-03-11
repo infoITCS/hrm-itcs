@@ -23,8 +23,10 @@
         "cors": "^2.8.5",
         "dotenv": "^16.6.1",
         "express": "^4.19.2",
+        "express-mongo-sanitize": "^2.2.0",
         "express-rate-limit": "^8.2.1",
         "express-session": "^1.19.0",
+        "file-type": "^16.5.4",
         "helmet": "^8.1.0",
         "jsonwebtoken": "^9.0.3",
         "lodash": "^4.17.23",
@@ -35,7 +37,8 @@
         "nodemailer": "^8.0.1",
         "passport": "^0.7.0",
         "passport-microsoft": "^2.1.0",
-        "pdf-parse": "^1.1.1"
+        "pdf-parse": "^1.1.1",
+        "sanitize-filename": "^1.6.3"
     },
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",

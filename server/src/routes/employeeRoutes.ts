@@ -1,7 +1,9 @@
 import * as _ from 'lodash';
 import fs from 'fs';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import FileType from 'file-type';
+import sanitize from 'sanitize-filename';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
@@ -82,55 +84,65 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
 };
 
 // Get all employees (Protected) - Role-based filtering
-router.get('/', authenticate, async (req: Request, res: Response) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || 'employee';
         const userId = authReq.user?.userId;
-        const queryUserId = req.query.userId as string; // Support querying by userId
+        const queryUserId = req.query.userId;
+        
+        // Sanitize: only accept plain string userId, reject object operators
+        if (queryUserId && typeof queryUserId !== 'string') {
+            return res.status(400).json({ message: 'Invalid query parameters' });
+        }
+
+        // Pagination
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
+        const skip = (page - 1) * limit;
 
         let employees;
+        let total = 0;
 
         if (queryUserId) {
-            // If userId query parameter is provided, return that specific employee
-            // Only allow if user is querying their own userId or is admin
             if (queryUserId === userId || role === 'super-admin' || role === 'admin' || role === 'manager') {
-                const employee = await Employee.findOne({ userId: queryUserId }).select('-attachments.fileData');
+                const employee = await Employee.findOne({ userId: queryUserId }).select('-attachments.fileData').lean();
                 employees = employee ? [employee] : [];
+                total = employees.length;
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
         } else if (role === 'super-admin' || role === 'admin') {
-            // Super-admin and Admin can see all employees
-            employees = await Employee.find().select('-attachments.fileData');
+            [employees, total] = await Promise.all([
+                Employee.find().select('-attachments.fileData').skip(skip).limit(limit).lean(),
+                Employee.countDocuments()
+            ]);
         } else if (role === 'manager') {
-            // Manager can only see direct reports and themselves
-            const managerEmployee = await Employee.findOne({ userId }).select('-attachments.fileData');
+            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean();
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
-            employees = await Employee.find({ 
-                $or: [
-                    { 'jobInfo.reportingManager': managerEmployee.employeeId },
-                    { userId: userId }
-                ]
-            }).select('-attachments.fileData');
+            const query = { $or: [{ 'jobInfo.reportingManager': managerEmployee.employeeId }, { userId }] };
+            [employees, total] = await Promise.all([
+                Employee.find(query).select('-attachments.fileData').skip(skip).limit(limit).lean(),
+                Employee.countDocuments(query)
+            ]);
         } else {
-            // Employee can only see their own profile
-            const employee = await Employee.findOne({ userId }).select('-attachments.fileData');
+            const employee = await Employee.findOne({ userId }).select('-attachments.fileData').lean();
             employees = employee ? [employee] : [];
+            total = employees.length;
         }
 
-        res.json(employees);
+        res.json({ employees, total, page, totalPages: Math.ceil(total / limit) });
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 
 // Create employee (Protected)
 // Super-Admin/Admin can create any employee
 // Employees can create their own employee record
-router.post('/', authenticate, upload.array('attachments'), async (req: Request, res: Response) => {
+router.post('/', authenticate, upload.array('attachments'), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     const role = authReq.user?.role || '';
     const userId = authReq.user?.userId;
@@ -163,7 +175,26 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
     // If Body is JSON (standard creation), we proceed. 
 
     try {
-        let employeeData = req.body;
+        // SECURITY: Mass Assignment Protection
+        const EMPLOYEE_EDITABLE_FIELDS = [
+            'firstName', 'lastName', 'middleName', 'phone', 'address', 'cnic', 
+            'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId'
+        ];
+        const ADMIN_EXTRA_FIELDS = [
+            'jobInfo', 'employmentStatus', 'salaryComponents', 'benefits', 
+            'workEmail', 'otherEmail', 'employeeId', 'domicile', 'fatherName', 'bloodGroup', 'religion'
+        ];
+
+        const allowedFields = (role === 'super-admin' || role === 'admin')
+            ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
+            : EMPLOYEE_EDITABLE_FIELDS;
+
+        const employeeData = _.pick(req.body, allowedFields) as any;
+
+        // Basic validation
+        if (!employeeData.firstName || !employeeData.lastName) {
+            return res.status(400).json({ message: 'First name and last name are required' });
+        }
 
         // Prevent duplicate employee records for the same user
         if (employeeData.userId) {
@@ -236,20 +267,25 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
 // Get single employee (Role-based access)
 // Check for duplicate employees (by CNIC or email)
-router.get('/check-duplicate', authenticate, async (req: Request, res: Response) => {
+router.get('/check-duplicate', authenticate, async (req: Request, res: Response, next: Function) => {
     try {
         const { cnic, email, employeeId } = req.query;
+
+        // Sanitize: reject MongoDB operator objects (NoSQL injection protection)
+        if ((cnic && typeof cnic !== 'string') || (email && typeof email !== 'string') || (employeeId && typeof employeeId !== 'string')) {
+            return res.status(400).json({ message: 'Invalid query parameters' });
+        }
+
         if (!cnic && !email) {
             return res.status(400).json({ message: 'CNIC or email is required' });
         }
 
         const query: any = { $or: [] };
-        if (cnic) query.$or.push({ cnic: cnic as string });
-        if (email) query.$or.push({ email: email as string });
+        if (cnic) query.$or.push({ cnic: cnic.trim() });
+        if (email) query.$or.push({ email: email.trim().toLowerCase() });
         
-        const existing = await Employee.findOne(query).select('firstName lastName employeeId');
+        const existing = await Employee.findOne(query).select('firstName lastName employeeId').lean();
         
-        // If we found a match, check if it's the same employee we are currently editing
         if (existing && existing.employeeId !== employeeId) {
             return res.json({ 
                 isDuplicate: true, 
@@ -261,12 +297,12 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response)
         res.json({ isDuplicate: false });
     } catch (err) {
         console.error('Duplicate check error:', err);
-        res.status(500).json({ message: 'Error checking for duplicates' });
+        next(err);
     }
 });
 
 // Get today's birthdays and anniversaries
-router.get('/today-specials', authenticate, async (req: Request, res: Response) => {
+router.get('/today-specials', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const today = new Date();
         const currentMonth = today.getMonth() + 1; // 1-12
@@ -323,13 +359,12 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response) 
     }
 });
 
-router.get('/:id', authenticate, async (req: Request, res: Response) => {
+router.get('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
-        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
+        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData').lean();
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-        // Check if user can view this employee
         const canView = await canViewEmployee(
             authReq.user?.role || '',
             authReq.user?.userId || '',
@@ -342,12 +377,12 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
 
         res.json(employee);
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 
 // Upload attachment for an employee (All roles can upload)
-router.post('/:id/attachments', authenticate, upload.single('file'), async (req: Request, res: Response) => {
+router.post('/:id/attachments', authenticate, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
@@ -371,18 +406,21 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         const filePath = req.file.path;
         const fileBuffer = fs.readFileSync(filePath);
 
-        const attachmentId = new mongoose.Types.ObjectId();
-        const attachment = {
-            _id: attachmentId,
-            fileType: req.body.fileType || 'Document',
-            fileName: req.file.originalname,
-            filePath: req.file.filename,
-            fileData: fileBuffer,
-            contentType: req.file.mimetype,
-            uploadDate: new Date(),
-            status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending',
-            uploadedBy: authReq.user?.userId
-        };
+        // SECURITY: Validate magic bytes to ensure file content matches extension/mimetype
+        // This prevents "polyglot" attacks where an executable is disguised as an image.
+        const type = await FileType.fromBuffer(fileBuffer);
+        const allowedMimes = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'application/pdf', 'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ];
+
+        if (!type || !allowedMimes.includes(type.mime)) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+            return res.status(400).json({ 
+                message: 'Invalid file content. The file contents do not match the expected type.' 
+            });
+        }
 
         // 1. Clear existing documents of the same type to prevent bloat (except for generic buckets like 'Other Documents')
         const fileType = req.body.fileType || 'Document';
@@ -403,6 +441,22 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             }
         }
 
+        // SECURITY: Sanitize filename to prevent path traversal or malicious characters
+        const safeFilename = sanitize(req.file.originalname);
+
+        const attachmentId = new mongoose.Types.ObjectId();
+        const attachment = {
+            _id: attachmentId,
+            fileType: fileType,
+            fileName: safeFilename,
+            filePath: req.file.filename,
+            fileData: fileBuffer,
+            contentType: type.mime, // Use detected mime, not client-provided
+            uploadDate: new Date(),
+            status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending',
+            uploadedBy: authReq.user?.userId
+        };
+
         // 2. Use updateOne to push attachment directly into MongoDB array.
         // Doing this avoids Mongoose overwriting arrays when they are loaded partially (without fileData)
         await Employee.updateOne(
@@ -420,7 +474,7 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             }
         }
 
-        await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: req.file.originalname });
+        await createAuditLog('UPLOAD_DOC', employee.employeeId, authReq.user?.userId || 'unknown', { file: safeFilename });
 
         // Clean up: delete the local file after saving to MongoDB
         try {
@@ -435,12 +489,12 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         });
 
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 
 // Route to serve raw file from MongoDB — uses authenticateFile which also accepts ?token= for <img> tags
-router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response) => {
+router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response, next: NextFunction) => {
     try {
         // OPTIMIZATION: Use projection { 'attachments.$': 1 } to only fetch the EXACT attachment requested
         // Previously, this fetched the entire employee record WITH all binary files, which was very slow.
@@ -466,7 +520,7 @@ router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Reque
 });
 
 // Approve/Reject document (Super-Admin/Admin only)
-router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response) => {
+router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         if (!canApproveDocuments(authReq.user?.role || '')) {
@@ -511,7 +565,7 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
 });
 
 // Delete attachment
-router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response) => {
+router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const employeeId = req.params.id;
@@ -556,55 +610,61 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
 });
 
 // Update employee (Role-based access)
-router.put('/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
-        // Exclude fileData to prevent pulling hundreds of megabytes into Node.js memory just to update a text field
+        const role = authReq.user?.role || '';
+        const isAdmin = role === 'super-admin' || role === 'admin';
+
+        // Exclude fileData to prevent pulling hundreds of megabytes into Node.js memory
         const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-        // Check if user can view this employee
         const canView = await canViewEmployee(
-            authReq.user?.role || '',
+            role,
             authReq.user?.userId || '',
             req.params.id,
             employee
         );
         if (!canView) {
-            return res.status(403).json({ message: 'You do not have permission to view this employee' });
+            return res.status(403).json({ message: 'You do not have permission to update this employee' });
         }
 
-        const updates = req.body;
-        // Never allow attachments array to be overwritten by standard profile updates (they use separate endpoints)
+        // ─────────────────────────────────────────────────────────────────────────
+        // SECURITY: Mass Assignment Protection — explicit field allowlists per role
+        // ─────────────────────────────────────────────────────────────────────────
+        const EMPLOYEE_EDITABLE_FIELDS = [
+            'phone', 'address', 'emergencyContacts', 'dependents',
+            'education', 'employmentHistory', 'immigrationHistory',
+            'socialProfiles', 'skills', 'bankDetails',
+            'licenseNumber', 'simNumber', 'workEmail', 'otherEmail',
+            'email'
+        ];
+        const ADMIN_EXTRA_FIELDS = [
+            'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
+            'maritalStatus', 'nationality', 'domicile', 'cnic', 'fatherName',
+            'bloodGroup', 'religion', 'jobInfo', 'employmentStatus',
+            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar'
+        ];
+
+        const allowedFields = isAdmin
+            ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
+            : EMPLOYEE_EDITABLE_FIELDS;
+
+        // Use lodash pick to only allow whitelisted fields from the request body
+        const updates = _.pick(req.body, allowedFields) as any;
+        // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
-        const role = authReq.user?.role || '';
-
-        // Fields that can only be set once and cannot be edited after being filled
-        // Admins can override this restriction
+        // Fields that can only be set once (employees cannot change after initial fill)
         const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'] as const;
-
-        // Only apply one-time field restrictions if user is NOT an admin
-        // Admins can edit all fields including one-time fields
-        if (role !== 'super-admin' && role !== 'admin') {
-            // Prevent editing one-time fields if they already exist
-            // Allow setting if field is currently empty, but prevent changing if already filled
+        if (!isAdmin) {
             oneTimeFields.forEach(field => {
                 const employeeObj = employee.toObject();
                 const currentValue = employeeObj[field as keyof typeof employeeObj];
                 const newValue = updates[field];
-
-                // If field already has a value and user is trying to change it, prevent the change
-                if (currentValue && newValue && currentValue !== newValue) {
-                    // Field already exists and user is trying to change it - prevent this
-                    delete updates[field];
-                }
-                // If field is empty and user is setting it, allow it (newValue exists but currentValue doesn't)
-                // If field already has a value and user sends the same value, allow it (no change)
-                // If field already has a value and user sends empty/null, prevent clearing it
-                if (currentValue && (!newValue || newValue === '')) {
-                    delete updates[field];
-                }
+                if (currentValue && newValue && currentValue !== newValue) delete updates[field];
+                if (currentValue && (!newValue || newValue === '')) delete updates[field];
             });
         }
 
@@ -632,13 +692,12 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
         if (updates.socialProfiles) updates.socialProfiles = stripEmptyWizardArrays(updates.socialProfiles, 'platform');
         if (updates.salaryComponents) updates.salaryComponents = stripEmptyWizardArrays(updates.salaryComponents, 'type');
 
-        // Capture original state
+        // Capture original state for diff
         const originalEmployeeObj = employee.toObject();
 
         Object.assign(employee, updates);
         const updatedEmployee = await employee.save();
 
-        // Calculate diff STRICTLY between original DB vs new DB (ignoring partial frontend updates)
         const diff = getDiff(originalEmployeeObj, updatedEmployee.toObject());
 
         // Sync names to User model if userId exists
@@ -649,34 +708,18 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
             });
         }
 
-        // Log detailed diff if there are changes
         if (Object.keys(diff).length > 0) {
             await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { diff });
-
-            // ── HR Notification Emails (commented out — uncomment to enable) ──────────────
-            // const hrEmail = process.env.HR_EMAIL || 'hr@itcs.com';
-            //
-            // // Notify HR if employee updated their own profile
-            // if (role === 'employee' || role === '') {
-            //     await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, 'updated their profile');
-            // }
-            //
-            // // Notify HR if employment status changes to Terminated or Resigned
-            // if (diff.employmentStatus?.status?.new &&
-            //     ['Terminated', 'Resigned'].includes(diff.employmentStatus.status.new)) {
-            //     await sendHRNotificationEmail(hrEmail, `${updatedEmployee.firstName} ${updatedEmployee.lastName}`, `left the company (${diff.employmentStatus.status.new})`);
-            // }
-            // ─────────────────────────────────────────────────────────────────────────────
         }
 
         res.json(updatedEmployee);
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 
 // Delete employee (Super-Admin/Admin only)
-router.delete('/:id', authenticate, async (req: Request, res: Response) => {
+router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
 
     // Check permission
@@ -694,7 +737,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
         res.json({ message: 'Employee deleted' });
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 

@@ -305,8 +305,10 @@ const MyInfo = () => {
                 });
 
                 if (response.ok) {
-                    const employees = await response.json();
-                    const employee = Array.isArray(employees) ? employees.find((emp: any) => emp.userId === user.id) : null;
+                    const data = await response.json();
+                    // Handle paginated { employees } or plain array
+                    const empList = Array.isArray(data) ? data : (data.employees || []);
+                    const employee = empList.find((emp: any) => emp.userId === user.id);
 
                     if (employee) {
                         setRawEmployee(employee);
@@ -866,9 +868,9 @@ const MyInfo = () => {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (refreshRes.ok) {
-                    const employees = await refreshRes.json();
-                    const employeeList = Array.isArray(employees) ? employees : [employees];
-                    const employee = employeeList.find((emp: any) =>
+                    const data = await refreshRes.json();
+                    const empList = Array.isArray(data) ? data : (data.employees || []);
+                    const employee = empList.find((emp: any) =>
                         emp.userId === user?.id || emp._id === employeeId || emp.id === employeeId
                     );
                     if (employee) {

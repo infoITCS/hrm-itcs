@@ -1,5 +1,19 @@
-import { AuthRequest } from './auth';
 import Employee from '../models/Employee';
+
+// Simplified memory cache to avoid N+1 DB lookups during a single request/lifecycle
+// Key: userId, Value: { employee: any, timestamp: number }
+const employeeCache: Record<string, { employee: any, timestamp: number }> = {};
+const CACHE_TTL = 5000; // 5 seconds (enough for a single request sequence)
+
+const getCachedEmployee = async (userId: string) => {
+    const now = Date.now();
+    if (employeeCache[userId] && (now - employeeCache[userId].timestamp < CACHE_TTL)) {
+        return employeeCache[userId].employee;
+    }
+    const employee = await Employee.findOne({ userId });
+    employeeCache[userId] = { employee, timestamp: now };
+    return employee;
+};
 
 export enum Permission {
     CREATE_USER = 'create_user',
@@ -42,7 +56,7 @@ export const canViewEmployee = async (
         if (!employee) return false;
 
         // Get manager's own employee record via userId (DB lookup — not trusting free-text input)
-        const managerEmployee = await Employee.findOne({ userId });
+        const managerEmployee = await getCachedEmployee(userId);
         if (!managerEmployee) return false;
 
         // Allow viewing own record
@@ -55,7 +69,7 @@ export const canViewEmployee = async (
 
     if (role === 'employee') {
         // Can only view own profile — use userId.toString() for ObjectId compat
-        const employee = await Employee.findOne({ userId });
+        const employee = await getCachedEmployee(userId);
         if (!employee) return false;
         
         if (targetEmployeeId) {

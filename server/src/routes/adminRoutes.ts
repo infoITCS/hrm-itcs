@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth';
 import { User } from '../models/User.model';
 import Employee from '../models/Employee';
@@ -10,7 +10,7 @@ import { sendWelcomeEmail } from '../utils/email';
 const router = Router();
 
 // Middleware to ensure user is an admin
-const requireAdmin = (req: any, res: any, next: any) => {
+const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     if (authReq.user?.role !== 'super-admin') {
         return res.status(403).json({ message: 'Forbidden. Super Admin access required.' });
@@ -23,7 +23,7 @@ const requireAdmin = (req: any, res: any, next: any) => {
  * @desc    Get all users with their associated employee data
  * @access  Private (Admin only)
  */
-router.get('/users', authenticate, requireAdmin, async (req, res) => {
+router.get('/users', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const users = await User.find().select('-password');
         const employees = await Employee.find().select('userId employeeId firstName lastName jobInfo employmentStatus');
@@ -46,8 +46,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res) => {
 
         res.json(mergedData);
     } catch (error) {
-        console.error('Error fetching users:', error);
-        res.status(500).json({ message: 'Server error fetching users' });
+        next(error);
     }
 });
 
@@ -56,7 +55,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res) => {
  * @desc    Create a new user manually
  * @access  Private (Admin only)
  */
-router.post('/users', authenticate, requireAdmin, async (req, res) => {
+router.post('/users', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
         const { email, firstName, lastName, role, password } = req.body;
@@ -94,8 +93,7 @@ router.post('/users', authenticate, requireAdmin, async (req, res) => {
 
         res.status(201).json(newUser);
     } catch (error) {
-        console.error('Error creating user:', error);
-        res.status(500).json({ message: 'Server error creating user' });
+        next(error);
     }
 });
 
@@ -104,7 +102,7 @@ router.post('/users', authenticate, requireAdmin, async (req, res) => {
  * @desc    Update a user's role
  * @access  Private (Admin only)
  */
-router.patch('/users/:id/role', authenticate, requireAdmin, async (req, res) => {
+router.patch('/users/:id/role', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
         const { role } = req.body;
@@ -137,8 +135,7 @@ router.patch('/users/:id/role', authenticate, requireAdmin, async (req, res) => 
 
         res.json({ message: 'Role updated successfully', user });
     } catch (error) {
-        console.error('Error updating role:', error);
-        res.status(500).json({ message: 'Server error updating role' });
+        next(error);
     }
 });
 
@@ -147,7 +144,7 @@ router.patch('/users/:id/role', authenticate, requireAdmin, async (req, res) => 
  * @desc    Toggle user active status
  * @access  Private (Admin only)
  */
-router.patch('/users/:id/status', authenticate, requireAdmin, async (req, res) => {
+router.patch('/users/:id/status', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
         const { isActive } = req.body;
@@ -179,8 +176,7 @@ router.patch('/users/:id/status', authenticate, requireAdmin, async (req, res) =
 
         res.json({ message: `User account ${isActive ? 'activated' : 'suspended'}`, user });
     } catch (error) {
-        console.error('Error updating status:', error);
-        res.status(500).json({ message: 'Server error updating status' });
+        next(error);
     }
 });
 
@@ -189,7 +185,7 @@ router.patch('/users/:id/status', authenticate, requireAdmin, async (req, res) =
  * @desc    Unlink Microsoft account from user
  * @access  Private (Admin only)
  */
-router.delete('/users/:id/microsoft', authenticate, requireAdmin, async (req, res) => {
+router.delete('/users/:id/microsoft', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
         const user = await User.findById(req.params.id);
@@ -210,8 +206,7 @@ router.delete('/users/:id/microsoft', authenticate, requireAdmin, async (req, re
 
         res.json({ message: 'Microsoft account unlinked' });
     } catch (error) {
-        console.error('Error unlinking account:', error);
-        res.status(500).json({ message: 'Server error unlinking account' });
+        next(error);
     }
 });
 

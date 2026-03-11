@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import AuditLog from '../models/AuditLog';
 import User from '../models/User.model';
@@ -8,7 +8,7 @@ import { authenticate } from '../middleware/auth';
 const router = express.Router();
 
 // Get audit logs with filters — enriched with performer names
-router.get('/', authenticate, async (req: any, res) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { targetResource, targetId, action, page = 1, limit = 25 } = req.query;
         const query: any = {};
@@ -74,7 +74,7 @@ router.get('/', authenticate, async (req: any, res) => {
             pages: Math.ceil(total / Number(limit))
         });
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        next(err);
     }
 });
 

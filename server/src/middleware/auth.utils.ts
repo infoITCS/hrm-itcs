@@ -10,7 +10,10 @@ const getJwtSecret = (): string => {
 
 export class AuthUtils {
     static generateToken(payload: { userId: string; email: string; role: string; }): string {
-        return jwt.sign(payload, getJwtSecret(), { expiresIn: '1d' });
+        return jwt.sign(payload, getJwtSecret(), { 
+            expiresIn: '8h',
+            algorithm: 'HS256'  // Explicitly lock algorithm — prevents alg:none attack
+        });
     }
 
     static verifyToken(token: string): any {

@@ -78,7 +78,9 @@ const EmployeeProfile = () => {
             });
             if (res.ok) {
                 const data = await res.json();
-                if (Array.isArray(data)) setAllEmployees(data);
+                // Handle paginated response { employees } or plain array
+                const empArray = Array.isArray(data) ? data : (data.employees || []);
+                setAllEmployees(empArray);
             }
         } catch (err) {
             console.error('Error fetching employees list:', err);
