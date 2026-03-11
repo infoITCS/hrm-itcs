@@ -110,16 +110,19 @@ const getSessionSecret = (): string => {
     return secret;
 };
 
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
 const sessionOptions: session.SessionOptions = {
     secret: getSessionSecret(),
     resave: false,
     saveUninitialized: false,
+    proxy: isProduction, // Trust the proxy for setting secure cookies
     cookie: {
         // In Vercel/Production, we must use Secure and SameSite=None for cross-site SSO to work
-        secure: process.env.NODE_ENV === 'production' || !!process.env.VERCEL,
-        sameSite: (process.env.NODE_ENV === 'production' || !!process.env.VERCEL) ? 'none' : 'lax',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 };
 
@@ -148,18 +151,23 @@ configurePassport();
 
 // Database Connection
 if (process.env.MONGODB_URI) {
-    // Let Mongoose handle buffering by default for smoother start on serverless
-    // mongoose.set('bufferCommands', false);
-
+    const maskedUri = process.env.MONGODB_URI.replace(/\/\/.*@/, '//****:****@');
+    console.log(`📡 Attempting to connect to: ${maskedUri}`);
+    
+    // Note: Do NOT set bufferCommands=false on serverless as it causes 500 errors 
+    // if the very first request hits before the DB is fully connected.
+    
     mongoose.connect(process.env.MONGODB_URI, {
         dbName: 'hrm',
-        serverSelectionTimeoutMS: 10000, // 10 seconds
-        socketTimeoutMS: 45000, // 45 seconds (standard for cloud DBs)
-    })
-    .then(() => console.log('✅ Connected to MongoDB (hrm)'))
-    .catch(err => {
+        autoIndex: true,
+        connectTimeoutMS: 20000, // Wait up to 20s for initial connection
+        socketTimeoutMS: 45000,
+        serverSelectionTimeoutMS: 15000 // Error out faster so Vercel can retry
+    }).then(() => {
+        console.log('✅ Connected to MongoDB (Cosmos DB)');
+    }).catch(err => {
         console.error('❌ MongoDB Connection Error:', err.message);
-        console.error('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / MongoDB Atlas.');
+        console.log('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / MongoDB Atlas.');
     });
 } else {
     console.error('❌ FATAL: MONGODB_URI is not defined.');
