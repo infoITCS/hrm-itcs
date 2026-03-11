@@ -139,19 +139,17 @@ if (process.env.MONGODB_URI) {
 
 app.use(session(sessionOptions));
 
-// Middleware to ensure DB connection is ready before processing requests
+// Middleware to ensure DB connection is ready before processing requests.
+// On Vercel, each cold-start invocation may have a dead connection — re-establish it here.
 app.use(async (req, res, next) => {
-    // Cast to any to avoid TypeScript enum comparison issues during build
-    if ((mongoose.connection.readyState as any) !== 1) {
-        console.log(`⌛ Waiting for MongoDB connection... (Current state: ${mongoose.connection.readyState})`);
+    const state = mongoose.connection.readyState as any;
+    if (state !== 1) {
+        console.log(`⌛ MongoDB not ready (state=${state}). Re-connecting...`);
         try {
-            // Wait up to 5 seconds for existing connection attempt to finish
-            let attempts = 0;
-            while ((mongoose.connection.readyState as any) !== 1 && attempts < 10) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                attempts++;
-            }
-        } catch (e) {}
+            await connectDB();
+        } catch (e: any) {
+            console.error('❌ Re-connect failed in middleware:', e.message);
+        }
     }
     next();
 });
@@ -167,44 +165,99 @@ app.use(passport.session()); // Required for OAuth state/PKCE
 configurePassport();
 
 // Database Connection
-if (process.env.MONGODB_URI) {
-    let finalUri = process.env.MONGODB_URI;
-    
+const MONGO_URI = process.env.MONGODB_URI;
+
+/**
+ * Connect (or reconnect) to Cosmos DB.
+ * Safe to call multiple times — mongoose de-dupes concurrent calls.
+ */
+async function connectDB(): Promise<void> {
+    if (!MONGO_URI) {
+        console.error('❌ FATAL ERROR: MONGODB_URI IS MISSING IN VERCEL ENVIRONMENT VARIABLES!');
+        return;
+    }
+
+    // Already connected — nothing to do
+    if (mongoose.connection.readyState === 1) return;
+    // Connection is being established — let it finish
+    if (mongoose.connection.readyState === 2) {
+        await new Promise<void>((resolve, reject) => {
+            mongoose.connection.once('connected', resolve);
+            mongoose.connection.once('error', reject);
+        });
+        return;
+    }
+
+    let finalUri = MONGO_URI;
+
     // Auto-fix for Azure Cosmos DB on Vercel: Force direct port and remove SRV-only flags
     if (!!process.env.VERCEL && finalUri.includes('authMechanism')) {
-        console.log('� Auto-sanitizing Cosmos DB URI for Vercel...');
-        // Strip everything after the ? and replace it with just tls=true
+        console.log('⚙ Auto-sanitizing Cosmos DB URI for Vercel...');
         const baseUrl = finalUri.split('?')[0];
         finalUri = `${baseUrl}?tls=true`;
     }
 
     const maskedUri = finalUri.replace(/\/\/.*@/, '//****:****@');
     console.log(`📡 Attempting to connect to: ${maskedUri}`);
-    
-    mongoose.connect(finalUri, {
-        dbName: 'hrm',
-        autoIndex: true,
-        connectTimeoutMS: 30000,      // wait up to 30s for initial connection
-        socketTimeoutMS: 45000,       // wait up to 45s for queries
-        serverSelectionTimeoutMS: 30000, 
-        heartbeatFrequencyMS: 10000,
-        retryWrites: false,
-        retryReads: true,
-        bufferCommands: true,
-        // Wait indefinitely for the connection rather than timing out the buffer after 10s
-        // mongoose defaults this to 10000ms, which is too short for some cold starts.
-    }).then(() => {
+
+    try {
+        await mongoose.connect(finalUri, {
+            dbName: 'hrm',
+            autoIndex: true,
+
+            // --- Serverless-friendly pool settings ---
+            // Keep only 1 connection alive so the monitor doesn't fight idle slots
+            minPoolSize: 0,
+            maxPoolSize: 1,
+
+            // Give the initial handshake plenty of time on cold starts
+            connectTimeoutMS: 30000,
+            serverSelectionTimeoutMS: 30000,
+
+            // 45s is a safe upper bound for a single query round-trip
+            socketTimeoutMS: 45000,
+
+            // Cosmos DB drops idle TCP connections after ~4 min.
+            // Check every 60s (much less chatty than 10s) to reduce spurious timeouts.
+            heartbeatFrequencyMS: 60000,
+
+            // Allow extra time for the monitor to recover
+            minHeartbeatFrequencyMS: 10000,
+
+            // Cosmos DB (vCore) does NOT support retryWrites
+            retryWrites: false,
+            retryReads: true,
+
+            // Buffer commands until the connection is ready
+            bufferCommands: true,
+        });
         console.log('✅ Connected to MongoDB (Cosmos DB)');
-    }).catch(err => {
+    } catch (err: any) {
         console.error('❌ MongoDB Connection Error:', err.message);
         console.log('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / Networking.');
-    });
-    
-    // Globally increase the buffer timeout so Mongoose doesn't give up after 10s
-    mongoose.set('bufferTimeoutMS', 30000);
-} else {
-    console.error('❌ FATAL ERROR: MONGODB_URI IS MISSING IN VERCEL ENVIRONMENT VARIABLES!');
+    }
 }
+
+// Globally increase the buffer timeout so Mongoose doesn't give up during reconnect
+mongoose.set('bufferTimeoutMS', 60000);
+
+// Register connection event listeners for observability
+mongoose.connection.on('connected', () => console.log('🔗 Mongoose: connected'));
+mongoose.connection.on('disconnected', () => {
+    console.warn('⚠️ Mongoose: disconnected from Cosmos DB');
+    // In serverless the function will simply call connectDB() on the next request.
+    // In long-running (dev) mode, attempt to reconnect automatically.
+    if (!process.env.VERCEL) {
+        console.log('🔄 Non-serverless env — attempting reconnect in 5s...');
+        setTimeout(connectDB, 5000);
+    }
+});
+mongoose.connection.on('error', (err) =>
+    console.error('❌ Mongoose connection error:', err.message)
+);
+
+// Initial connection attempt
+connectDB();
 
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
