@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface UserData {
     _id: string;
@@ -24,6 +25,7 @@ interface UserData {
 
 const UserManagement = () => {
     const { role: currentUserRole } = usePermissions();
+    const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -34,6 +36,11 @@ const UserManagement = () => {
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteData, setInviteData] = useState({ email: '', firstName: '', lastName: '', role: 'employee' });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Impersonate Modal state
+    const [showImpersonateModal, setShowImpersonateModal] = useState(false);
+    const [impersonateData, setImpersonateData] = useState({ userId: '', userName: '', reason: '' });
+    const [isImpersonating, setIsImpersonating] = useState(false);
 
     useEffect(() => {
         fetchUsers();
@@ -99,6 +106,47 @@ const UserManagement = () => {
             setUsers(users.map(u => u._id === userId ? { ...u, isActive: !currentStatus } : u));
         } catch (err: any) {
             alert(err.message);
+        }
+    };
+
+    const handleImpersonateClick = (userId: string, userName: string) => {
+        setImpersonateData({ userId, userName, reason: '' });
+        setShowImpersonateModal(true);
+    };
+
+    const confirmImpersonate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const { userId, reason } = impersonateData;
+        if (!reason.trim()) return;
+
+        setIsImpersonating(true);
+        let category = 'other';
+        if (reason.toLowerCase().includes('support')) category = 'support';
+        else if (reason.toLowerCase().includes('debug')) category = 'debugging';
+        else if (reason.toLowerCase().includes('test')) category = 'testing';
+
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/auth/impersonate/${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ reason: category, note: reason })
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to start impersonation');
+
+            // Set specific session start time 
+            sessionStorage.setItem('impersonation_start', Date.now().toString());
+            // Overwrite main token with impersonated token
+            localStorage.setItem('token', data.token);
+            window.location.href = '/dashboard';
+        } catch (err: any) {
+            alert(err.message);
+            setIsImpersonating(false);
         }
     };
 
@@ -213,7 +261,7 @@ const UserManagement = () => {
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Linked Employee</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">System Role</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Status</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Login Typess</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Access & Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -286,13 +334,24 @@ const UserManagement = () => {
                                             </p>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`px-2 py-1 text-[10px] font-bold rounded border ${user.microsoftId ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                                                    SSO
-                                                </span>
-                                                <span className="px-2 py-1 text-[10px] font-bold rounded border bg-slate-50 text-slate-700 border-slate-200">
-                                                    Email
-                                                </span>
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2 py-1 text-[10px] font-bold rounded border ${user.microsoftId ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                                        SSO
+                                                    </span>
+                                                    <span className="px-2 py-1 text-[10px] font-bold rounded border bg-slate-50 text-slate-700 border-slate-200">
+                                                        Email
+                                                    </span>
+                                                </div>
+                                                {currentUserRole === 'super-admin' && user._id !== currentUser?.id && user.role !== 'super-admin' && (
+                                                    <button 
+                                                        onClick={() => handleImpersonateClick(user._id, user.firstName || user.email)}
+                                                        className="mt-1 flex items-center justify-center gap-1.5 w-full py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-indigo-200 group"
+                                                    >
+                                                        <UserCog size={14} className="group-hover:animate-pulse" />
+                                                        Impersonate
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -397,6 +456,75 @@ const UserManagement = () => {
                                             Creating...
                                         </>
                                     ) : 'Create User'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Impersonate Reason Modal */}
+            {showImpersonateModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden border-2 border-red-500/20">
+                        <div className="p-6 border-b border-red-100 bg-red-50 relative">
+                            <h3 className="text-xl font-bold text-red-800 flex items-center gap-2">
+                                <UserCog className="text-red-600" size={24} /> 
+                                Impersonate User
+                            </h3>
+                            <p className="text-sm text-red-600/80 mt-1">
+                                You are about to log in as <span className="font-bold">{impersonateData.userName}</span>.
+                            </p>
+                            <button 
+                                onClick={() => setShowImpersonateModal(false)}
+                                className="absolute top-6 right-6 p-2 text-red-400 hover:text-red-600 hover:bg-white rounded-full transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={confirmImpersonate} className="p-6 space-y-4">
+                            <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3">
+                                <ShieldAlert className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                                <div className="text-xs text-amber-800 font-medium">
+                                    <p className="font-bold mb-1">Strict Audit Logging is Active</p>
+                                    Your actions during this session will be recorded and tied to your admin account for security purposes.
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                    Why do you need to impersonate this user? <span className="text-red-500">*</span>
+                                </label>
+                                <textarea 
+                                    required
+                                    placeholder="e.g. Debugging an issue reported with their profile..."
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all resize-none h-24"
+                                    value={impersonateData.reason}
+                                    onChange={e => setImpersonateData({...impersonateData, reason: e.target.value})}
+                                />
+                            </div>
+
+                            <div className="pt-4 flex items-center justify-end gap-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowImpersonateModal(false)}
+                                    className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                                    disabled={isImpersonating}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isImpersonating || !impersonateData.reason.trim()}
+                                    className="px-6 py-2.5 text-sm font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isImpersonating ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Connecting...
+                                        </>
+                                    ) : 'Start Session'}
                                 </button>
                             </div>
                         </form>

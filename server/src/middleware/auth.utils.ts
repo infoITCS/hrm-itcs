@@ -9,9 +9,12 @@ const getJwtSecret = (): string => {
 };
 
 export class AuthUtils {
-    static generateToken(payload: { userId: string; email: string; role: string; }): string {
+    static generateToken(
+        payload: { userId: string; email: string; role: string; isImpersonated?: boolean; ghostSessionId?: string; impersonatorId?: string; },
+        expiresInStr: string = '8h'
+    ): string {
         return jwt.sign(payload, getJwtSecret(), { 
-            expiresIn: '8h',
+            expiresIn: expiresInStr as any,
             algorithm: 'HS256'  // Explicitly lock algorithm — prevents alg:none attack
         });
     }

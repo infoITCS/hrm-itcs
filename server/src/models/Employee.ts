@@ -30,6 +30,13 @@ export interface IEmployee extends Document {
         zipCode?: string;
         country?: string;
     };
+    temporaryAddress?: {
+        street?: string;
+        city?: string;
+        state?: string;
+        zipCode?: string;
+        country?: string;
+    };
     employmentStatus?: {
         status?: string;
         offboardingDate?: Date;
@@ -58,6 +65,9 @@ export interface IEmployee extends Document {
     socialProfiles?: {
         platform: string;
         link: string;
+    }[];
+    certifications?: {
+        title: string;
     }[];
     benefits?: {
         name: string;
@@ -88,6 +98,13 @@ export interface IEmployee extends Document {
         startDate: Date;
         endDate: Date;
         reasonForLeaving?: string;
+    }[];
+    immigrationHistory?: {
+        documentType: string;
+        documentNumber: string;
+        issueDate?: Date;
+        expiryDate?: Date;
+        issuingCountry: string;
     }[];
     attachments?: {
         _id?: Types.ObjectId;
@@ -134,6 +151,13 @@ const EmployeeSchema: Schema = new Schema({
         zipCode: { type: String },
         country: { type: String }
     },
+    temporaryAddress: {
+        street: { type: String },
+        city: { type: String },
+        state: { type: String },
+        zipCode: { type: String },
+        country: { type: String }
+    },
     employmentStatus: {
         status: { type: String, enum: ['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned', ''] },
         offboardingDate: { type: Date },
@@ -163,6 +187,9 @@ const EmployeeSchema: Schema = new Schema({
         platform: { type: String },
         link: { type: String }
     }],
+    certifications: [{
+        title: { type: String }
+    }],
     emergencyContacts: [{
         name: { type: String },
         relation: { type: String },
@@ -191,6 +218,13 @@ const EmployeeSchema: Schema = new Schema({
         startDate: { type: Date },
         endDate: { type: Date },
         reasonForLeaving: { type: String }
+    }],
+    immigrationHistory: [{
+        documentType: { type: String },
+        documentNumber: { type: String },
+        issueDate: { type: Date },
+        expiryDate: { type: Date },
+        issuingCountry: { type: String }
     }],
     attachments: [{
         fileType: { type: String },

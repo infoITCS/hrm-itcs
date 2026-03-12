@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
+import AddressForm from '../../components/UI/AddressForm';
+import RelationSelect from '../../components/UI/RelationSelect';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -36,6 +38,7 @@ const MyInfo = () => {
         attachmentId: null,
         fileName: null
     });
+    const [limitModalOpen, setLimitModalOpen] = useState(false);
     const [duplicateError, setDuplicateError] = useState<{ field: string; message: string } | null>(null);
 
     const validateField = (name: string, value: string): string => {
@@ -176,6 +179,13 @@ const MyInfo = () => {
             zipCode: '',
             country: ''
         },
+        temporaryAddress: {
+            street: '',
+            city: '',
+            state: '',
+            zipCode: '',
+            country: ''
+        },
 
         // Emergency Contacts
         emergencyContacts: [{ name: '', relation: '', phone: '' }],
@@ -209,6 +219,7 @@ const MyInfo = () => {
 
         // Supplemental
         skills: [] as string[],
+        certifications: [] as { title: string }[],
         socialProfiles: [
             { platform: 'LinkedIn', link: '' },
             { platform: 'GitHub', link: '' },
@@ -347,6 +358,13 @@ const MyInfo = () => {
                                 zipCode: employee.address?.zipCode || '',
                                 country: employee.address?.country || ''
                             },
+                            temporaryAddress: {
+                                street: employee.temporaryAddress?.street || '',
+                                city: employee.temporaryAddress?.city || '',
+                                state: employee.temporaryAddress?.state || '',
+                                zipCode: employee.temporaryAddress?.zipCode || '',
+                                country: employee.temporaryAddress?.country || ''
+                            },
                             emergencyContacts: employee.emergencyContacts?.length
                                 ? employee.emergencyContacts.map((ec: any) => ({
                                     name: ec.name || '',
@@ -388,6 +406,7 @@ const MyInfo = () => {
                                 }))
                                 : [{ level: '', institute: '', year: '', score: '' }],
                             skills: employee.skills || [],
+                            certifications: employee.certifications?.length ? employee.certifications : [],
                             socialProfiles: employee.socialProfiles?.length ? employee.socialProfiles : [
                                 { platform: 'LinkedIn', link: '' },
                                 { platform: 'GitHub', link: '' },
@@ -479,6 +498,8 @@ const MyInfo = () => {
 
         if (section === 'address') {
             setFormData(prev => ({ ...prev, address: { ...prev.address, [name]: value } }));
+        } else if (section === 'temporaryAddress') {
+            setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [name]: value } }));
         } else if (section === 'emergencyContacts' && index !== undefined && subfield) {
             const newContacts = [...formData.emergencyContacts];
             (newContacts[index] as any)[subfield] = value;
@@ -946,6 +967,7 @@ const MyInfo = () => {
             { id: 'history', label: 'Employment History', icon: History },
             { id: 'education', label: 'Education', icon: GraduationCap },
             { id: 'dependents', label: 'Dependents', icon: Users },
+            { id: 'immigration', label: 'Immigration & Travel', icon: Navigation },
             { id: 'documents', label: 'Documents', icon: FileText },
         ];
 
@@ -1110,6 +1132,24 @@ const MyInfo = () => {
                                     ) : <p className="text-gray-400 italic">No social profiles linked</p>}
                                 </div>
                             </div>
+                            {/* Certifications Display */}
+                            {rawEmployee.certifications?.length > 0 && (
+                                <div className="pt-8 border-t border-slate-100">
+                                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                        <FileText size={16} /> Certifications
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                        {rawEmployee.certifications.map((cert: any, idx: number) => (
+                                            <div key={idx} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center gap-3">
+                                                <div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg">
+                                                    <FileText size={16} />
+                                                </div>
+                                                <h4 className="font-semibold text-sm text-slate-700">{cert.title || 'Untitled Certification'}</h4>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1122,12 +1162,26 @@ const MyInfo = () => {
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                    <Globe size={16} /> Current Address
+                                    <Globe size={16} /> Permanent Address
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-6 bg-slate-50 rounded-2xl border border-slate-100">
                                     {renderField('Street', rawEmployee.address?.street)}
                                     {renderField('City', rawEmployee.address?.city)}
+                                    {renderField('State / Province', rawEmployee.address?.state)}
+                                    {renderField('Zip / Postal Code', rawEmployee.address?.zipCode)}
                                     {renderField('Country', rawEmployee.address?.country)}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <Globe size={16} /> Temporary Address
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                                    {renderField('Street', rawEmployee.temporaryAddress?.street)}
+                                    {renderField('City', rawEmployee.temporaryAddress?.city)}
+                                    {renderField('State / Province', rawEmployee.temporaryAddress?.state)}
+                                    {renderField('Zip / Postal Code', rawEmployee.temporaryAddress?.zipCode)}
+                                    {renderField('Country', rawEmployee.temporaryAddress?.country)}
                                 </div>
                             </div>
                             <div>
@@ -1298,6 +1352,39 @@ const MyInfo = () => {
                         </div>
                     )}
 
+                    {/* Immigration Tab */}
+                    {activeTab === 'immigration' && (
+                        <div className="space-y-6 animate-fadeIn">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Immigration & Travel History</h3>
+                            {rawEmployee.immigrationHistory?.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {rawEmployee.immigrationHistory.map((imm: any, i: number) => (
+                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all relative group overflow-hidden">
+                                            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-indigo-50 to-white rounded-bl-3xl -z-0 opacity-50" />
+                                            <div className="relative z-10">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg uppercase tracking-wider">{imm.documentType}</span>
+                                                    <span className="text-xs font-medium text-slate-400">{imm.issuingCountry}</span>
+                                                </div>
+                                                <h4 className="text-lg font-bold text-gray-800 mb-4 font-mono tracking-tight">{imm.documentNumber}</h4>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issue Date</p>
+                                                        <p className="text-sm font-semibold text-slate-700">{formatDate(imm.issueDate) || '-'}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expiry Date</p>
+                                                        <p className="text-sm font-semibold text-slate-700">{formatDate(imm.expiryDate) || '-'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <p className="text-gray-400 italic">No immigration history recorded</p>}
+                        </div>
+                    )}
+
                     {/* Documents Tab */}
                     {activeTab === 'documents' && (
                         <div className="space-y-4 animate-fadeIn">
@@ -1339,13 +1426,15 @@ const MyInfo = () => {
                                                 >
                                                     <Download size={20} />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleDeleteDocument(file._id, file.fileName)}
-                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={20} />
-                                                </button>
+                                                {!(file.fileType === 'Contract' && !isAdmin) && (
+                                                    <button
+                                                        onClick={() => handleDeleteDocument(file._id, file.fileName)}
+                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={20} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -1573,6 +1662,7 @@ const MyInfo = () => {
                                                     type="file"
                                                     accept={label === 'Profile Picture' ? "image/*" : ".pdf,.doc,.docx,.jpg,.png"}
                                                     className="absolute inset-0 opacity-0 cursor-pointer z-20"
+                                                    tabIndex={-1}
                                                     onChange={(e) => {
                                                         if (e.target.files && e.target.files.length > 0) {
                                                             const file = e.target.files[0];
@@ -1657,11 +1747,11 @@ const MyInfo = () => {
                                         type="text"
                                         name="cnic"
                                         value={formData.cnic || ''}
-                                        onChange={handleChange}
+                                        onChange={initialLockedFields.cnic && !canEditSensitiveData() ? undefined : handleChange}
                                         onBlur={(e) => handleFieldBlur('cnic', e.target.value)}
                                         placeholder="e.g. 12345-1234567-1"
-                                        disabled={initialLockedFields.cnic && !canEditSensitiveData()}
-                                        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.cnic ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        readOnly={initialLockedFields.cnic && !canEditSensitiveData()}
+                                        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.cnic ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${initialLockedFields.cnic && !canEditSensitiveData() ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                     />
                                     {fieldErrors.cnic && <p className="text-xs text-red-500 mt-1">{fieldErrors.cnic}</p>}
                                     {!fieldErrors.cnic && initialLockedFields.cnic && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
@@ -1673,10 +1763,10 @@ const MyInfo = () => {
                                         type="date"
                                         name="dateOfBirth"
                                         value={formData.dateOfBirth}
-                                        onChange={handleChange}
+                                        onChange={initialLockedFields.dateOfBirth && !canEditSensitiveData() ? undefined : handleChange}
                                         max={new Date().toISOString().split('T')[0]}
-                                        disabled={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        readOnly={initialLockedFields.dateOfBirth && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.dateOfBirth && !canEditSensitiveData() ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                     />
                                     {initialLockedFields.dateOfBirth && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
                                     {initialLockedFields.dateOfBirth && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
@@ -1687,9 +1777,9 @@ const MyInfo = () => {
                                         type="text"
                                         name="fatherName"
                                         value={formData.fatherName}
-                                        onChange={handleChange}
-                                        disabled={initialLockedFields.fatherName && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        onChange={initialLockedFields.fatherName && !canEditSensitiveData() ? undefined : handleChange}
+                                        readOnly={initialLockedFields.fatherName && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.fatherName && !canEditSensitiveData() ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                     />
                                     {initialLockedFields.fatherName && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
                                     {initialLockedFields.fatherName && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
@@ -1701,8 +1791,8 @@ const MyInfo = () => {
                                             type="text"
                                             name="nationality"
                                             value={formData.nationality}
-                                            disabled
-                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-default select-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
                                         />
                                     ) : (
                                         <CustomSelect
@@ -1721,9 +1811,9 @@ const MyInfo = () => {
                                         type="text"
                                         name="domicile"
                                         value={formData.domicile}
-                                        onChange={handleChange}
-                                        disabled={initialLockedFields.domicile && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.domicile && !canEditSensitiveData() ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+                                        onChange={initialLockedFields.domicile && !canEditSensitiveData() ? undefined : handleChange}
+                                        readOnly={initialLockedFields.domicile && !canEditSensitiveData()}
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.domicile && !canEditSensitiveData() ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                     />
                                     {initialLockedFields.domicile && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
                                     {initialLockedFields.domicile && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
@@ -1734,8 +1824,8 @@ const MyInfo = () => {
                                         <input
                                             type="text"
                                             value={formData.bloodGroup}
-                                            disabled
-                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-not-allowed"
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-default select-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
                                         />
                                     ) : (
                                         <CustomSelect
@@ -1798,22 +1888,40 @@ const MyInfo = () => {
                                         </div>
                                         <div className="space-y-2">
                                             <label className="block text-sm font-medium text-gray-600">Company SIM Number</label>
-                                            <input type="text" name="simNumber" value={formData.simNumber} onChange={handleChange} onBlur={(e) => handleFieldBlur('simNumber', e.target.value)} placeholder="e.g. +92 301 9876543" className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.simNumber ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            <input
+                                                type="text"
+                                                name="simNumber"
+                                                value={formData.simNumber}
+                                                onChange={canEditJob ? handleChange : undefined}
+                                                onBlur={canEditJob ? (e) => handleFieldBlur('simNumber', e.target.value) : undefined}
+                                                readOnly={!canEditJob}
+                                                placeholder="e.g. +92 301 9876543"
+                                                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all ${fieldErrors.simNumber ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${!canEditJob ? 'bg-gray-50 cursor-default select-none' : 'bg-white'}`}
+                                            />
                                             {fieldErrors.simNumber && <p className="text-xs text-red-500 mt-1">{fieldErrors.simNumber}</p>}
+                                            {!canEditJob && <p className="text-xs text-gray-500 mt-1">This field can only be updated by HR</p>}
+                                            {canEditJob && <p className="text-xs text-indigo-500 mt-1">Admin: You can edit this field</p>}
                                         </div>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <h3 className="text-lg font-medium text-gray-700 mb-4">Address</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        <input type="text" name="street" placeholder="Street" value={formData.address.street} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="city" placeholder="City" value={formData.address.city} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="state" placeholder="State / Province" value={formData.address.state} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="zipCode" placeholder="Zip / Postal Code" value={formData.address.zipCode} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                        <input type="text" name="country" placeholder="Country" value={formData.address.country} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all" />
-                                    </div>
-                                </div>
+                                <AddressForm
+                                    title="Permanent Address"
+                                    subtitle="Your official home / registered address"
+                                    value={formData.address}
+                                    onChange={(field, val) =>
+                                        setFormData(prev => ({ ...prev, address: { ...prev.address, [field]: val } }))
+                                    }
+                                />
+
+                                <AddressForm
+                                    title="Temporary Address"
+                                    subtitle="Your current / temporary residence (if different from permanent)"
+                                    value={formData.temporaryAddress}
+                                    onChange={(field, val) =>
+                                        setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [field]: val } }))
+                                    }
+                                />
 
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
@@ -1826,7 +1934,11 @@ const MyInfo = () => {
                                         <div key={idx} className="flex gap-4 mb-3 items-end p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:border-gray-300 transition-all group">
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
                                                 <input type="text" placeholder="Name" value={contact.name} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'name')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
-                                                <input type="text" placeholder="Relation" value={contact.relation} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'relation')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                                <RelationSelect
+                                                    value={contact.relation}
+                                                    onChange={(val) => handleChange({ target: { name: 'relation', value: val } } as any, 'emergencyContacts', idx, 'relation')}
+                                                    options={['Father','Mother','Spouse','Son','Daughter','Brother','Sister','Grandfather','Grandmother','Uncle','Aunt','Cousin','Friend','Colleague','Guardian','Other']}
+                                                />
                                                 <div>
                                                     <input type="tel" placeholder="e.g. +92 300 1234567" value={contact.phone} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'phone')} onBlur={(e) => { const err = validateField('phone', e.target.value); setFieldErrors(prev => ({ ...prev, [`ec_phone_${idx}`]: err })); }} className={`border rounded-lg px-3 py-2 text-sm focus:ring-2 outline-none transition-all w-full ${fieldErrors[`ec_phone_${idx}`] ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200 focus:border-indigo-400'}`} />
                                                     {fieldErrors[`ec_phone_${idx}`] && <p className="text-xs text-red-500 mt-1">{fieldErrors[`ec_phone_${idx}`]}</p>}
@@ -1854,7 +1966,11 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Relation</label>
-                                                    <input type="text" placeholder="Relation" value={dep.relation} onChange={(e) => handleChange(e, 'dependents', idx, 'relation')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                                    <RelationSelect
+                                                        value={dep.relation}
+                                                        onChange={(val) => handleChange({ target: { name: 'relation', value: val } } as any, 'dependents', idx, 'relation')}
+                                                        options={['Mother','Father','Spouse','Son','Daughter']}
+                                                    />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Date of Birth</label>
@@ -1919,7 +2035,7 @@ const MyInfo = () => {
                                                     <input type="text" name="issuingCountry" value={doc.issuingCountry} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issuingCountry')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <label className="text-xs font-medium text-gray-500">Issue Date</label>
+                                                    <label className="block text-xs font-medium text-gray-500">Issue Date</label>
                                                     <input 
                                                         type="date" 
                                                         name="issueDate" 
@@ -1930,7 +2046,7 @@ const MyInfo = () => {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <label className="text-xs font-medium text-gray-500">Expiry Date</label>
+                                                    <label className="block text-xs font-medium text-gray-500">Expiry Date</label>
                                                     <input 
                                                         type="date" 
                                                         name="expiryDate" 
@@ -1939,6 +2055,43 @@ const MyInfo = () => {
                                                         min={doc.issueDate || new Date().toISOString().split('T')[0]}
                                                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-500" 
                                                     />
+                                                </div>
+                                            </div>
+
+                                            {/* Document Upload */}
+                                            <div className="mt-3 pt-3 border-t border-gray-100">
+                                                <div className="flex items-center gap-2">
+                                                    <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center">
+                                                        <Upload size={14} />
+                                                        <span className="truncate">
+                                                            {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`)
+                                                                ? formData.files.find(f => f.type === `Immigration - ${doc.documentNumber || idx}`)?.file.name
+                                                                : 'Upload Document Scan (PDF / JPG / PNG)'}
+                                                        </span>
+                                                        <input
+                                                            type="file"
+                                                            accept=".pdf,.jpg,.jpeg,.png"
+                                                            className="hidden"
+                                                            onChange={(e) => {
+                                                                if (e.target.files && e.target.files.length > 0) {
+                                                                    const typeKey = `Immigration - ${doc.documentNumber || idx}`;
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                    }));
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                    {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`) && (
+                                                        <button
+                                                            onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Immigration - ${doc.documentNumber || idx}`) }))}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                                                            title="Remove File"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2289,6 +2442,92 @@ const MyInfo = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Certifications */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-4 mt-8">
+                                        <h3 className="text-lg font-medium text-gray-700">Certifications</h3>
+                                        <button onClick={() => setFormData(p => ({ ...p, certifications: [...p.certifications, { title: '' }] }))} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-all shadow-sm">
+                                            + Add Certification
+                                        </button>
+                                    </div>
+                                    {formData.certifications.map((cert, idx) => (
+                                        <div key={idx} className="mb-4 p-5 border border-gray-100 rounded-xl bg-white shadow-sm hover:shadow-md transition-all relative group">
+                                            <div className="flex justify-end mb-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setFormData(p => ({ 
+                                                            ...p, 
+                                                            certifications: p.certifications.filter((_, i) => i !== idx),
+                                                            files: p.files.filter(f => f.type !== `Certification - ${idx}`)
+                                                        }));
+                                                    }}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50"
+                                                    title="Delete Entry"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-medium text-gray-500">Certification Title</label>
+                                                    <input
+                                                        type="text"
+                                                        value={cert.title}
+                                                        onChange={(e) => {
+                                                            const newCerts = [...formData.certifications];
+                                                            newCerts[idx].title = e.target.value;
+                                                            setFormData(p => ({ ...p, certifications: newCerts }));
+                                                        }}
+                                                        placeholder="e.g. AWS Certified Solutions Architect"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1 mt-2 pt-2 border-t md:border-none md:mt-0 md:pt-0 border-gray-50">
+                                                    <label className="text-xs font-medium text-gray-500 md:opacity-0 hidden md:block">Upload</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
+                                                            <Upload size={14} />
+                                                            <span className="truncate max-w-[150px]">
+                                                                {formData.files.some(f => f.type === `Certification - ${idx}`)
+                                                                    ? formData.files.find(f => f.type === `Certification - ${idx}`)?.file.name
+                                                                    : 'Upload Cert Scan'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        const typeKey = `Certification - ${idx}`;
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                        {formData.files.some(f => f.type === `Certification - ${idx}`) && (
+                                                            <button
+                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Certification - ${idx}`) }))}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors border border-transparent hover:border-red-100 rounded-md"
+                                                                title="Remove File"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {formData.certifications.length === 0 && (
+                                        <div className="text-center py-6 text-sm text-gray-400">
+                                            No certifications added yet. Click "+ Add Certification" to start.
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -2518,13 +2757,15 @@ const MyInfo = () => {
                                                         >
                                                             <Download size={18} />
                                                         </a>
-                                                        <button
-                                                            onClick={() => handleDeleteDocument(file._id, file.fileName)}
-                                                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
+                                                        {!(file.fileType === 'Contract' && !isAdmin) && (
+                                                            <button
+                                                                onClick={() => handleDeleteDocument(file._id, file.fileName)}
+                                                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -2534,44 +2775,70 @@ const MyInfo = () => {
                                     {/* Upload Grid */}
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {['Contract', 'Other Documents'].map((label) => (
+                                        {[...(isAdmin ? ['Contract'] : []), 'Other Documents'].map((label) => (
                                             <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"
+                                                    multiple={label === 'Other Documents'}
                                                     accept=".pdf,.doc,.docx,.jpg,.png"
-                                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                                    className="absolute inset-0 opacity-0 cursor-pointer z-0"
                                                     onChange={(e) => {
                                                         if (e.target.files && e.target.files.length > 0) {
-                                                            const file = e.target.files[0];
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                files: [...prev.files, { file, type: label }]
-                                                            }));
+                                                            const newFiles = Array.from(e.target.files);
+                                                            if (label === 'Other Documents') {
+                                                                const currentOtherDocsCount = formData.files.filter(f => f.type === label).length;
+                                                                if (currentOtherDocsCount + newFiles.length > 5) {
+                                                                    setLimitModalOpen(true);
+                                                                    return;
+                                                                }
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    files: [...prev.files, ...newFiles.map(f => ({ file: f, type: label }))]
+                                                                }));
+                                                            } else {
+                                                                const file = newFiles[0];
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    files: [...prev.files.filter(f => f.type !== label), { file, type: label }]
+                                                                }));
+                                                            }
                                                         }
                                                     }}
                                                 />
-                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all">
+                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0">
                                                     <Upload size={28} />
                                                 </div>
-                                                <span className="text-sm font-bold text-gray-700">{label}</span>
+                                                <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
                                                 
                                                 {formData.files.some(f => f.type === label) ? (
-                                                    <div className="mt-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold max-w-full">
-                                                        <Check size={12} />
-                                                        <span className="truncate">{formData.files.find(f => f.type === label)?.file.name}</span>
-                                                        <button 
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
-                                                            }}
-                                                            className="hover:text-red-500"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
+                                                    <div className="mt-3 flex flex-col gap-2 w-full max-h-[120px] overflow-y-auto custom-scrollbar px-1 relative z-10">
+                                                        {formData.files.filter(f => f.type === label).map((fObj, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between gap-1 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-[10px] font-bold w-full">
+                                                                <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                    <Check size={12} className="shrink-0" />
+                                                                    <span className="truncate">{fObj.file.name}</span>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        setFormData(p => ({
+                                                                            ...p,
+                                                                            files: p.files.filter(fItem => fItem !== fObj)
+                                                                        }));
+                                                                    }}
+                                                                    className="hover:text-red-500 shrink-0 p-1"
+                                                                >
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        {label === 'Other Documents' && formData.files.filter(f => f.type === label).length < 5 && (
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 text-center cursor-pointer pointer-events-none">Click to add more</span>
+                                                        )}
                                                     </div>
                                                 ) : (
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Click to upload</span>
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 relative z-0">{label === 'Other Documents' ? 'Click to upload (Max 5)' : 'Click to upload'}</span>
                                                 )}
                                             </div>
                                         ))}
@@ -2664,6 +2931,29 @@ const MyInfo = () => {
                                     Cancel
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Limit Modal */}
+            {limitModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                <AlertCircle size={40} />
+                            </div>
+                            <h3 className="text-2xl font-bold text-gray-800 mb-2">Upload Limit Reached</h3>
+                            <p className="text-gray-500 text-sm">You can only upload a maximum of 5 Other Documents.</p>
+                        </div>
+                        <div className="px-8 pb-8 pt-2 flex justify-center text-sm font-bold">
+                            <button
+                                onClick={() => setLimitModalOpen(false)}
+                                className="px-8 py-3 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-500/30 hover:scale-105 transition-all text-sm font-bold w-full"
+                            >
+                                Got it
+                            </button>
                         </div>
                     </div>
                 </div>

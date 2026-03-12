@@ -28,6 +28,7 @@
         "express-session": "^1.19.0",
         "file-type": "^16.5.4",
         "helmet": "^8.1.0",
+        "ioredis": "^5.10.0",
         "jsonwebtoken": "^9.0.3",
         "lodash": "^4.17.23",
         "mongoose": "^8.4.0",
@@ -38,7 +39,8 @@
         "passport": "^0.7.0",
         "passport-microsoft": "^2.1.0",
         "pdf-parse": "^1.1.1",
-        "sanitize-filename": "^1.6.3"
+        "sanitize-filename": "^1.6.3",
+        "zod": "^4.3.6"
     },
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",

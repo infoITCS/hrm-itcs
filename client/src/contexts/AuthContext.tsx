@@ -40,7 +40,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         lastName: userData.lastName,
                         hasProfile: userData.hasProfile,
                         needsPasswordSetup: userData.needsPasswordSetup,
-                        microsoftId: userData.microsoftId
+                        microsoftId: userData.microsoftId,
+                        isImpersonated: !!userData.isImpersonated
                     };
                     setUser(user);
                 } catch (error) {

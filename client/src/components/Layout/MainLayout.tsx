@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet, useLocation } from 'react-router-dom';
+import GlobalImpersonationBanner from '../UI/GlobalImpersonationBanner';
 
 const MainLayout = () => {
     const location = useLocation();
@@ -21,11 +22,13 @@ const MainLayout = () => {
     else if (location.pathname.includes('claim')) title = 'Claim';
 
     return (
-        <div className="flex min-h-screen">
-            <Sidebar
-                isOpen={sidebarOpen}
-                onClose={closeSidebar}
-            />
+        <div className="flex flex-col min-h-screen">
+            <GlobalImpersonationBanner />
+            <div className="flex flex-1 min-h-0">
+                <Sidebar
+                    isOpen={sidebarOpen}
+                    onClose={closeSidebar}
+                />
             <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300">
                 <Header
                     title={title}
@@ -34,6 +37,7 @@ const MainLayout = () => {
                 <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
                     <Outlet />
                 </main>
+                </div>
             </div>
         </div>
     );

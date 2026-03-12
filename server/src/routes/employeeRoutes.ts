@@ -177,7 +177,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
     try {
         // SECURITY: Mass Assignment Protection
         const EMPLOYEE_EDITABLE_FIELDS = [
-            'firstName', 'lastName', 'middleName', 'phone', 'address', 'cnic', 
+            'firstName', 'lastName', 'middleName', 'phone', 'address', 'temporaryAddress', 'cnic', 
             'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId'
         ];
         const ADMIN_EXTRA_FIELDS = [
@@ -634,9 +634,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // SECURITY: Mass Assignment Protection — explicit field allowlists per role
         // ─────────────────────────────────────────────────────────────────────────
         const EMPLOYEE_EDITABLE_FIELDS = [
-            'phone', 'address', 'emergencyContacts', 'dependents',
+            'phone', 'address', 'temporaryAddress', 'emergencyContacts', 'dependents',
             'education', 'employmentHistory', 'immigrationHistory',
-            'socialProfiles', 'skills', 'bankDetails',
+            'socialProfiles', 'skills', 'certifications', 'bankDetails',
             'licenseNumber', 'simNumber', 'workEmail', 'otherEmail',
             'email'
         ];
@@ -687,6 +687,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         if (updates.immigrationHistory) updates.immigrationHistory = stripEmptyWizardArrays(updates.immigrationHistory, 'documentType');
         if (updates.employmentHistory) updates.employmentHistory = stripEmptyWizardArrays(updates.employmentHistory, '');
         if (updates.education) updates.education = stripEmptyWizardArrays(updates.education, '');
+        if (updates.certifications) updates.certifications = stripEmptyWizardArrays(updates.certifications, '');
         if (updates.emergencyContacts) updates.emergencyContacts = stripEmptyWizardArrays(updates.emergencyContacts, '');
         if (updates.dependents) updates.dependents = stripEmptyWizardArrays(updates.dependents, '');
         if (updates.socialProfiles) updates.socialProfiles = stripEmptyWizardArrays(updates.socialProfiles, 'platform');

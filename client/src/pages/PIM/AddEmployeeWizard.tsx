@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
+import AddressForm from '../../components/UI/AddressForm';
+import RelationSelect from '../../components/UI/RelationSelect';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -26,6 +28,7 @@ const AddEmployeeWizard = () => {
     const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const [limitModalOpen, setLimitModalOpen] = useState(false);
 
     useEffect(() => {
         const fetchEmployees = async () => {
@@ -183,6 +186,7 @@ const AddEmployeeWizard = () => {
 
         // Address
         address: { street: '', city: '', state: '', zipCode: '', country: '' },
+        temporaryAddress: { street: '', city: '', state: '', zipCode: '', country: '' },
 
         // Job
         jobInfo: {
@@ -213,6 +217,7 @@ const AddEmployeeWizard = () => {
 
         // Phase 2: Supplemental
         skills: [] as string[],
+        certifications: [] as { title: string }[],
         socialProfiles: [
             { platform: 'LinkedIn', link: '' },
             { platform: 'GitHub', link: '' },
@@ -294,6 +299,13 @@ const AddEmployeeWizard = () => {
                                 zipCode: found.address?.zipCode || '',
                                 country: found.address?.country || ''
                             },
+                            temporaryAddress: {
+                                street: found.temporaryAddress?.street || '',
+                                city: found.temporaryAddress?.city || '',
+                                state: found.temporaryAddress?.state || '',
+                                zipCode: found.temporaryAddress?.zipCode || '',
+                                country: found.temporaryAddress?.country || ''
+                            },
 
                             // Job Info
                             jobInfo: {
@@ -370,6 +382,7 @@ const AddEmployeeWizard = () => {
 
                             // Supplemental info
                             skills: found.skills || [],
+                            certifications: found.certifications?.length ? found.certifications : [],
                             socialProfiles: found.socialProfiles?.length ? found.socialProfiles : [
                                 { platform: 'LinkedIn', link: '' },
                                 { platform: 'GitHub', link: '' },
@@ -434,6 +447,8 @@ const AddEmployeeWizard = () => {
 
         if (section === 'address') {
             setFormData(prev => ({ ...prev, address: { ...prev.address, [name]: value } }));
+        } else if (section === 'temporaryAddress') {
+            setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [name]: value } }));
         } else if (section === 'jobInfo') {
             setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, [name]: value } }));
         } else if (section === 'employmentStatus') {
@@ -1048,16 +1063,25 @@ const AddEmployeeWizard = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <h3 className="text-lg font-medium text-gray-700 mb-4">Address</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                <input type="text" name="street" placeholder="Street" value={formData.address.street} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="city" placeholder="City" value={formData.address.city} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="state" placeholder="State / Province" value={formData.address.state} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="zipCode" placeholder="Zip / Postal Code" value={formData.address.zipCode} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="country" placeholder="Country" value={formData.address.country} onChange={(e) => handleChange(e, 'address')} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                            </div>
-                        </div>
+                        <AddressForm
+                            title="Permanent Address"
+                            subtitle="Official home / registered address"
+                            value={formData.address}
+                            onChange={(field, val) =>
+                                setFormData(prev => ({ ...prev, address: { ...prev.address, [field]: val } }))
+                            }
+                            inputClass="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all bg-white"
+                        />
+
+                        <AddressForm
+                            title="Temporary Address"
+                            subtitle="Current / temporary residence (if different)"
+                            value={formData.temporaryAddress}
+                            onChange={(field, val) =>
+                                setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [field]: val } }))
+                            }
+                            inputClass="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all bg-white"
+                        />
 
                         <div>
                             <div className="flex justify-between items-center mb-4">
@@ -1070,7 +1094,11 @@ const AddEmployeeWizard = () => {
                                 <div key={idx} className="flex gap-4 mb-3 items-end p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:border-gray-300 transition-all group">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
                                         <input type="text" placeholder="Name" value={contact.name} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'name')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
-                                        <input type="text" placeholder="Relation" value={contact.relation} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'relation')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                        <RelationSelect
+                                            value={contact.relation}
+                                            onChange={(val) => handleChange({ target: { name: 'relation', value: val } } as any, 'emergencyContacts', idx, 'relation')}
+                                            options={['Father','Mother','Spouse','Son','Daughter','Brother','Sister','Grandfather','Grandmother','Uncle','Aunt','Cousin','Friend','Colleague','Guardian','Other']}
+                                        />
                                         <input type="text" placeholder="Phone" value={contact.phone} onChange={(e) => handleChange(e, 'emergencyContacts', idx, 'phone')} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                     </div>
                                     <button onClick={() => removeEmergencyContact(idx)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Remove Contact">
@@ -1095,7 +1123,11 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Relation</label>
-                                            <input type="text" placeholder="Relation" value={dep.relation} onChange={(e) => handleChange(e, 'dependents', idx, 'relation')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                            <RelationSelect
+                                                value={dep.relation}
+                                                onChange={(val) => handleChange({ target: { name: 'relation', value: val } } as any, 'dependents', idx, 'relation')}
+                                                options={['Mother','Father','Spouse','Son','Daughter']}
+                                            />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Date of Birth</label>
@@ -1633,6 +1665,101 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 </div>
                             </div>
+
+                            <div className="mt-8 bg-slate-50/50 rounded-2xl border border-slate-100 p-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div>
+                                        <h4 className="text-base font-semibold text-gray-700">Certifications</h4>
+                                        <p className="text-xs text-gray-500">Upload your professional certifications here.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(p => ({ ...p, certifications: [...p.certifications, { title: '' }] }))}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-all shadow-sm"
+                                    >
+                                        <Plus size={14} /> Add Certification
+                                    </button>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    {formData.certifications.map((cert, idx) => (
+                                        <div key={idx} className="p-4 bg-white border border-gray-200 rounded-xl relative group hover:border-indigo-300 transition-colors">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setFormData(p => ({ 
+                                                        ...p, 
+                                                        certifications: p.certifications.filter((_, i) => i !== idx),
+                                                        files: p.files.filter(f => f.type !== `Certification - ${idx}`)
+                                                    }));
+                                                }}
+                                                className="absolute top-3 right-3 p-1.5 text-gray-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"
+                                                title="Delete this certification"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1 pr-8 md:pr-0">
+                                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Certification Title</label>
+                                                    <input
+                                                        type="text"
+                                                        value={cert.title}
+                                                        onChange={(e) => {
+                                                            const newCerts = [...formData.certifications];
+                                                            newCerts[idx].title = e.target.value;
+                                                            setFormData(p => ({ ...p, certifications: newCerts }));
+                                                        }}
+                                                        placeholder="e.g. AWS Certified Solutions Architect"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Certificate File</label>
+                                                    <div className="flex items-center gap-3">
+                                                        <label className="flex-1 flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed text-gray-500 border-gray-300 rounded-lg bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-all text-sm justify-center group-hover:bg-white">
+                                                            <Upload size={16} />
+                                                            <span className="truncate max-w-[150px]">
+                                                                {formData.files.some(f => f.type === `Certification - ${idx}`)
+                                                                    ? formData.files.find(f => f.type === `Certification - ${idx}`)?.file.name
+                                                                    : 'Upload Cert'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        const file = e.target.files[0];
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== `Certification - ${idx}`), { file, type: `Certification - ${idx}` }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                        {formData.files.some(f => f.type === `Certification - ${idx}`) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Certification - ${idx}`) }))}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 rounded-md transition-colors border border-transparent hover:border-red-100"
+                                                                title="Remove file"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {formData.certifications.length === 0 && (
+                                        <div className="text-center py-6 text-sm text-gray-400">
+                                            No certifications added yet. Click "Add Certification" to start.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1940,27 +2067,29 @@ const AddEmployeeWizard = () => {
                                                     >
                                                         <Download size={18} />
                                                     </a>
-                                                    <button
-                                                        onClick={async () => {
-                                                            const confirmed = window.confirm('Delete this document?');
-                                                            if (!confirmed) return;
-                                                            const token = localStorage.getItem('token');
-                                                            const res = await fetch(`${api.employees}/${id}/attachments/${file._id}`, {
-                                                                method: 'DELETE',
-                                                                headers: { 'Authorization': `Bearer ${token}` }
-                                                            });
-                                                            if (res.ok) {
-                                                                setFormData(p => ({
-                                                                    ...p,
-                                                                    existingAttachments: p.existingAttachments.filter((a: any) => a._id !== file._id)
-                                                                }));
-                                                            }
-                                                        }}
-                                                        className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={18} />
-                                                    </button>
+                                                    {!(file.fileType === 'Contract' && !isAdmin) && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                const confirmed = window.confirm('Delete this document?');
+                                                                if (!confirmed) return;
+                                                                const token = localStorage.getItem('token');
+                                                                const res = await fetch(`${api.employees}/${id}/attachments/${file._id}`, {
+                                                                    method: 'DELETE',
+                                                                    headers: { 'Authorization': `Bearer ${token}` }
+                                                                });
+                                                                if (res.ok) {
+                                                                    setFormData(p => ({
+                                                                        ...p,
+                                                                        existingAttachments: p.existingAttachments.filter((a: any) => a._id !== file._id)
+                                                                    }));
+                                                                }
+                                                            }}
+                                                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -1971,44 +2100,70 @@ const AddEmployeeWizard = () => {
                             {/* Upload Grid */}
                             <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {['Contract', 'Other Documents'].map((label) => (
+                                {[...(isAdmin ? ['Contract'] : []), 'Other Documents'].map((label) => (
                                     <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                         <input
                                             type="file"
+                                            multiple={label === 'Other Documents'}
                                             accept=".pdf,.doc,.docx,.jpg,.png"
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            className="absolute inset-0 opacity-0 cursor-pointer z-0"
                                             onChange={(e) => {
                                                 if (e.target.files && e.target.files.length > 0) {
-                                                    const file = e.target.files[0];
-                                                    setFormData(prev => ({
-                                                        ...prev,
-                                                        files: [...prev.files, { file, type: label }]
-                                                    }));
+                                                    const newFiles = Array.from(e.target.files);
+                                                    if (label === 'Other Documents') {
+                                                        const currentOtherDocsCount = formData.files.filter(f => f.type === label).length;
+                                                        if (currentOtherDocsCount + newFiles.length > 5) {
+                                                            setLimitModalOpen(true);
+                                                            return;
+                                                        }
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            files: [...prev.files, ...newFiles.map(f => ({ file: f, type: label }))]
+                                                        }));
+                                                    } else {
+                                                        const file = newFiles[0];
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            files: [...prev.files.filter(f => f.type !== label), { file, type: label }]
+                                                        }));
+                                                    }
                                                 }
                                             }}
                                         />
-                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all">
+                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0">
                                             <Upload size={28} />
                                         </div>
-                                        <span className="text-sm font-bold text-gray-700">{label}</span>
+                                        <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
                                         
                                         {formData.files.some(f => f.type === label) ? (
-                                            <div className="mt-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-bold max-w-full">
-                                                <Check size={12} />
-                                                <span className="truncate">{formData.files.find(f => f.type === label)?.file.name}</span>
-                                                <button 
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
-                                                    }}
-                                                    className="hover:text-red-500"
-                                                >
-                                                    <X size={12} />
-                                                </button>
+                                            <div className="mt-3 flex flex-col gap-2 w-full max-h-[120px] overflow-y-auto custom-scrollbar px-1 relative z-10">
+                                                {formData.files.filter(f => f.type === label).map((fObj, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between gap-1 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-[10px] font-bold w-full">
+                                                        <div className="flex items-center gap-1.5 overflow-hidden">
+                                                            <Check size={12} className="shrink-0" />
+                                                            <span className="truncate">{fObj.file.name}</span>
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    files: p.files.filter(fItem => fItem !== fObj)
+                                                                }));
+                                                            }}
+                                                            className="hover:text-red-500 shrink-0 p-1"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {label === 'Other Documents' && formData.files.filter(f => f.type === label).length < 5 && (
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 text-center cursor-pointer pointer-events-none">Click to add more</span>
+                                                )}
                                             </div>
                                         ) : (
-                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Click to upload</span>
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 relative z-0">{label === 'Other Documents' ? 'Click to upload (Max 5)' : 'Click to upload'}</span>
                                         )}
                                     </div>
                                 ))}
@@ -2083,6 +2238,29 @@ const AddEmployeeWizard = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Limit Modal */}
+            {limitModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                <AlertCircle size={40} />
+                            </div>
+                            <h3 className="text-2xl font-bold text-gray-800 mb-2">Upload Limit Reached</h3>
+                            <p className="text-gray-500 text-sm">You can only upload a maximum of 5 Other Documents.</p>
+                        </div>
+                        <div className="px-8 pb-8 pt-2 flex justify-center text-sm font-bold">
+                            <button
+                                onClick={() => setLimitModalOpen(false)}
+                                className="px-8 py-3 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-500/30 hover:scale-105 transition-all text-sm font-bold w-full"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Missing Fields Modal */}
             {showMissingModal && pendingNextStep !== null && (
