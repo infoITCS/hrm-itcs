@@ -696,8 +696,14 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Capture original state for diff
         const originalEmployeeObj = employee.toObject();
 
-        Object.assign(employee, updates);
-        const updatedEmployee = await employee.save();
+        // Use findOneAndUpdate to completely bypass VersionError (__v) during concurrent background saves
+        const updatedEmployee = await Employee.findOneAndUpdate(
+            { employeeId: req.params.id },
+            { $set: updates },
+            { new: true, runValidators: true }
+        ).select('-attachments.fileData');
+
+        if (!updatedEmployee) return res.status(404).json({ message: 'Employee not found during update' });
 
         const diff = getDiff(originalEmployeeObj, updatedEmployee.toObject());
 

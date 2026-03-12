@@ -206,9 +206,13 @@ async function connectDB(): Promise<void> {
             autoIndex: true,
 
             // --- Serverless-friendly pool settings ---
-            // Keep only 1 connection alive so the monitor doesn't fight idle slots
+            // Allow a small pool but scale down to 0
             minPoolSize: 0,
-            maxPoolSize: 1,
+            maxPoolSize: 10,
+
+            // CRITICAL FOR COSMOS DB: Azure aggressively drops idle connections after 4 minutes.
+            // We tell Mongoose to cleanly close any connection idle for 2 minutes and open a fresh one.
+            maxIdleTimeMS: 120000,
 
             // Give the initial handshake plenty of time on cold starts
             connectTimeoutMS: 30000,

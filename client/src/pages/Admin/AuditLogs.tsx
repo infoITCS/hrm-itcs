@@ -68,12 +68,25 @@ const AuditLogs = () => {
             case 'UPLOAD_DOC': return <Upload size={16} className="text-indigo-500" />;
             case 'DOC_APPROVAL': return <Check size={16} className="text-emerald-500" />;
             case 'DOC_DELETE': return <X size={16} className="text-red-500" />;
+            case 'IMPERSONATION_STARTED': return <User size={16} className="text-purple-500" />;
+            case 'IMPERSONATION_STOPPED': return <X size={16} className="text-gray-500" />;
+            case 'IMPERSONATED_ACTION_BLOCKED': return <Shield size={16} className="text-rose-600" />;
             default: return <AlertCircle size={16} className="text-gray-400" />;
         }
     };
 
     const formatDetails = (log: AuditLog) => {
         if (!log.details) return 'No additional details';
+
+        if (log.action === 'IMPERSONATION_STARTED') {
+            return `Reason: ${log.details.reason} - ${log.details.note || 'No note'}`;
+        }
+        if (log.action === 'IMPERSONATION_STOPPED') {
+            return `Session duration: ${Math.round((log.details.sessionDurationMs || 0) / 1000)} seconds`;
+        }
+        if (log.action === 'IMPERSONATED_ACTION_BLOCKED') {
+            return `Blocked request: ${log.details.method} ${log.details.path}`;
+        }
 
         if (log.details.diff) {
             const changes = Object.keys(log.details.diff);
@@ -148,6 +161,9 @@ const AuditLogs = () => {
                         <option value="DELETE">Delete</option>
                         <option value="UPLOAD_DOC">Document Upload</option>
                         <option value="DOC_APPROVAL">Document Approval</option>
+                        <option value="IMPERSONATION_STARTED">Impersonation Started</option>
+                        <option value="IMPERSONATION_STOPPED">Impersonation Stopped</option>
+                        <option value="IMPERSONATED_ACTION_BLOCKED">Blocked Action</option>
                     </select>
                 </div>
                 <div className="space-y-1">
