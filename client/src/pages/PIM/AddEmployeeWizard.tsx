@@ -115,10 +115,11 @@ const AddEmployeeWizard = () => {
                 check(formData.jobInfo.designation, 'Designation');
                 check(formData.jobInfo.department, 'Department');
                 check(formData.jobInfo.joiningDate, 'Joining Date');
+                if (!formData.files.some(f => f.type === 'Employment Contract') && !formData.existingAttachments.some(a => a.fileType === 'Employment Contract')) missing.push('Employment Contract');
                 break;
             case 5:
-                if (formData.employmentHistory.some(h => !h.companyName || !h.jobTitle || !h.startDate)) missing.push('Complete Employment History');
-                if (formData.education.some(e => !e.level || !e.institute || !e.year)) missing.push('Complete Education Info');
+                if (formData.employmentHistory.some((h, idx) => !h.companyName || !h.jobTitle || !h.startDate || (!formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)))) missing.push('Complete Employment History (with Experience Letter)');
+                if (formData.education.some((e, idx) => !e.level || !e.institute || !e.year || (!formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)))) missing.push('Complete Education Info (with Degree/Transcript)');
                 break;
             case 6:
                 if (formData.skills.length === 0) missing.push('Professional Skills');
@@ -129,7 +130,13 @@ const AddEmployeeWizard = () => {
                     check(formData.bankDetails.bankName, 'Bank Name');
                     check(formData.bankDetails.accountName, 'Account Name');
                     check(formData.bankDetails.accountNumber, 'Account Number');
+                } else {
+                    // Employees must upload Contract on their final Documents step
+                    if (!formData.files.some(f => f.type === 'Contract') && !formData.existingAttachments.some(a => a.fileType === 'Contract')) missing.push('Employment Contract');
                 }
+                break;
+            case 8:
+                // Admin Finance step handled above; no contract requirement for admins
                 break;
         }
         return missing;
@@ -487,6 +494,16 @@ const AddEmployeeWizard = () => {
         if (!isBackground) setLoading(true);
         setError(null);
 
+        // Employee (non-admin) must upload the Contract on the final Documents step before submitting
+        if (shouldNavigate && !isBackground && !isAdmin && step === steps.length) {
+            const hasContract = formData.files.some(f => f.type === 'Contract') || formData.existingAttachments.some(a => a.fileType === 'Contract');
+            if (!hasContract) {
+                setError('Employment Contract is mandatory. Please upload the contract before submitting.');
+                setLoading(false);
+                return;
+            }
+        }
+
         try {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -647,6 +664,33 @@ const AddEmployeeWizard = () => {
             setStepErrors([]);
         }
 
+
+        if (step === 5) {
+            const missingExp = formData.employmentHistory.some((h, idx) => 
+                (h.companyName || h.jobTitle || h.startDate) && 
+                !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
+                !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)
+            );
+            
+            if (missingExp) {
+                setError('Experience Letter is mandatory for your employment history. Please upload it.');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+
+            const missingEdu = formData.education.some((e, idx) => 
+                (e.level || e.institute || e.year) && 
+                !formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && 
+                !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)
+            );
+
+            if (missingEdu) {
+                setError('Degree/Transcript is mandatory for your education entries. Please upload it.');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
+
         // Determine if we need to await the save (Creation on Step 1 needs the Returned ID)
         const isCreationOnStep1 = !isEditMode && step === 1;
 
@@ -706,6 +750,34 @@ const AddEmployeeWizard = () => {
             setStepErrors([]);
             const result = await handleSubmit(false);
             if (!result) return;
+        }
+
+
+
+        if (step === 5 && targetStepId > 5) {
+            const missingExp = formData.employmentHistory.some((h, idx) => 
+                (h.companyName || h.jobTitle || h.startDate) && 
+                !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
+                !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)
+            );
+            
+            if (missingExp) {
+                setError('Experience Letter is mandatory for your employment history. Please upload it.');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+
+            const missingEdu = formData.education.some((e, idx) => 
+                (e.level || e.institute || e.year) && 
+                !formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && 
+                !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)
+            );
+
+            if (missingEdu) {
+                setError('Degree/Transcript is mandatory for your education entries. Please upload it.');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
         }
 
         const missing = getMissingFields(step);
@@ -1424,28 +1496,33 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
                                             <div className="flex items-center gap-2">
-                                                <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full">
-                                                    <Upload size={14} />
-                                                    <span className="truncate flex-1">
-                                                        {formData.files.some(f => f.type === `Experience Letter - ${history.companyName || idx}`)
-                                                            ? formData.files.find(f => f.type === `Experience Letter - ${history.companyName || idx}`)?.file.name
-                                                            : 'Upload Experience Letter'}
-                                                    </span>
-                                                    <input
-                                                        type="file"
-                                                        accept=".pdf,.jpg,.png,.doc,.docx"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                const typeKey = `Experience Letter - ${history.companyName || idx}`;
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                }));
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
+                                                {(() => {
+                                                    const typeKey = `Experience Letter - ${history.companyName || idx}`;
+                                                    const newFile = formData.files.find(f => f.type === typeKey);
+                                                    const savedFile = formData.existingAttachments.find((a: any) => a.fileType === typeKey);
+                                                    const isUploaded = !!savedFile && !newFile;
+                                                    return (
+                                                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
+                                                            <Upload size={14} />
+                                                            <span className="truncate flex-1">
+                                                                {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Experience Letter'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.png,.doc,.docx"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    );
+                                                })()}
                                                 {formData.files.some(f => f.type === `Experience Letter - ${history.companyName || idx}`) && (
                                                     <button
                                                         onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Experience Letter - ${history.companyName || idx}`) }))}
@@ -1519,28 +1596,33 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
                                             <div className="flex items-center gap-2">
-                                                <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
-                                                    <Upload size={14} />
-                                                    <span className="truncate">
-                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
-                                                            ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
-                                                            : 'Upload Degree/Transcript Scan'}
-                                                    </span>
-                                                    <input
-                                                        type="file"
-                                                        accept=".pdf,.jpg,.png"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                const typeKey = `Degree - ${edu.level || idx}`;
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                }));
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
+                                                {(() => {
+                                                    const typeKey = `Degree - ${edu.level || idx}`;
+                                                    const newFile = formData.files.find(f => f.type === typeKey);
+                                                    const savedFile = formData.existingAttachments.find((a: any) => a.fileType === typeKey);
+                                                    const isUploaded = !!savedFile && !newFile;
+                                                    return (
+                                                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
+                                                            <Upload size={14} />
+                                                            <span className="truncate">
+                                                                {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Degree/Transcript Scan'}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,.jpg,.png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    );
+                                                })()}
                                                 {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
                                                     <button
                                                         onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
@@ -2100,7 +2182,8 @@ const AddEmployeeWizard = () => {
                             {/* Upload Grid */}
                             <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {[...(isAdmin ? ['Contract'] : []), 'Other Documents'].map((label) => (
+                                {/* Contract: mandatory for employees (non-admins), optional for admins */}
+                                {(['Contract', 'Other Documents'] as string[]).map((label) => (
                                     <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                         <input
                                             type="file"
@@ -2134,7 +2217,13 @@ const AddEmployeeWizard = () => {
                                             <Upload size={28} />
                                         </div>
                                         <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
-                                        
+                                        {label === 'Contract' && !isAdmin && (
+                                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
+                                        )}
+                                        {label === 'Contract' && isAdmin && (
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
+                                        )}
+
                                         {formData.files.some(f => f.type === label) ? (
                                             <div className="mt-3 flex flex-col gap-2 w-full max-h-[120px] overflow-y-auto custom-scrollbar px-1 relative z-10">
                                                 {formData.files.filter(f => f.type === label).map((fObj, idx) => (

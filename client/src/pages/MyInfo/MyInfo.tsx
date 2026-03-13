@@ -149,6 +149,22 @@ const MyInfo = () => {
         return err;
     };
 
+    const isStep8RequiredValid = () => {
+        if (isAdmin) return true;
+        const hasSignedContract = rawEmployee?.attachments?.some((a: any) => a.fileType === 'Signed Contract' || a.fileType === 'Contract') || formData.files.some(f => f.type === 'Signed Contract' || f.type === 'Contract');
+        
+        return hasSignedContract;
+    };
+
+    const getStep8RequiredErrors = (): string[] => {
+        const err: string[] = [];
+        const hasSignedContract = rawEmployee?.attachments?.some((a: any) => a.fileType === 'Signed Contract' || a.fileType === 'Contract') || formData.files.some(f => f.type === 'Signed Contract' || f.type === 'Contract');
+        
+        if (!hasSignedContract) err.push('Signed Contract');
+        
+        return err;
+    };
+
 
     const [formData, setFormData] = useState({
         // Personal
@@ -235,7 +251,8 @@ const MyInfo = () => {
             accountNumber: '',
             iban: '',
             swiftCode: ''
-        }
+        },
+        benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[]
     });
 
 /*
@@ -435,6 +452,12 @@ const MyInfo = () => {
                                 iban: '',
                                 swiftCode: ''
                             },
+                            benefits: employee.benefits?.length ? employee.benefits.map((b: any) => ({
+                                name: b.name || '',
+                                description: b.description || '',
+                                eligibleDate: formatDate(b.eligibleDate),
+                                status: b.status || 'Active'
+                            })) : [],
                             jobInfo: {
                                 designation: employee.jobInfo?.designation || '',
                                 department: employee.jobInfo?.department || '',
@@ -458,7 +481,6 @@ const MyInfo = () => {
                             dateOfBirth: !!employee.dateOfBirth,
                             fatherName: !!employee.fatherName,
                             nationality: !!employee.nationality,
-                            domicile: !!employee.domicile,
                             bloodGroup: !!employee.bloodGroup
                         });
                     } else {
@@ -603,6 +625,15 @@ const MyInfo = () => {
             return;
         }
         setStepErrors([]);
+
+        // Non-admin employees must upload Contract on final (Documents) step
+        if (!isBackground && shouldNavigate && !isAdmin && step === steps[steps.length - 1].id) {
+            if (!isStep8RequiredValid()) {
+                setError(`The following documents are mandatory: ${getStep8RequiredErrors().join(', ')}`);
+                setSaving(false);
+                return;
+            }
+        }
 
         if (!isBackground) setSaving(true);
         setError(null);
@@ -1286,6 +1317,38 @@ const MyInfo = () => {
                                     {renderField('Swift Code', rawEmployee.bankDetails?.swiftCode)}
                                 </div>
                             </div>
+
+                            {/* Benefits Display */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <Check size={16} /> Company Benefits
+                                </h3>
+                                {rawEmployee.benefits?.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {rawEmployee.benefits.map((benefit: any, idx: number) => (
+                                            <div key={idx} className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-indigo-300 transition-all group overflow-hidden relative">
+                                                <div className="absolute top-0 right-0 w-12 h-12 bg-indigo-50 rounded-bl-2xl -z-0 opacity-40 group-hover:bg-indigo-100 transition-colors" />
+                                                <div className="relative z-10">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                                                            benefit.status === 'Active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                                                        }`}>
+                                                            {benefit.status || 'Active'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{formatDate(benefit.eligibleDate)}</span>
+                                                    </div>
+                                                    <h4 className="text-base font-bold text-slate-800 mb-1">{benefit.name}</h4>
+                                                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{benefit.description || 'No description provided'}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
+                                        <p className="text-sm text-slate-400 italic">No company benefits assigned Yet</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1811,12 +1874,9 @@ const MyInfo = () => {
                                         type="text"
                                         name="domicile"
                                         value={formData.domicile}
-                                        onChange={initialLockedFields.domicile && !canEditSensitiveData() ? undefined : handleChange}
-                                        readOnly={initialLockedFields.domicile && !canEditSensitiveData()}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all ${initialLockedFields.domicile && !canEditSensitiveData() ? 'bg-gray-50 cursor-default select-none' : ''}`}
+                                        onChange={handleChange}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all"
                                     />
-                                    {initialLockedFields.domicile && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
-                                    {initialLockedFields.domicile && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Blood Group</label>
@@ -2244,6 +2304,49 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Reason for Leaving</label>
                                                     <input type="text" value={eh.reasonForLeaving} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'reasonForLeaving')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
+                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
+                                                    <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                                                        Experience Letter <span className="text-red-500 font-bold">*</span>
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        {(() => {
+                                                            const typeKey = `Experience Letter - ${eh.companyName || idx}`;
+                                                            const newFile = formData.files.find(f => f.type === typeKey);
+                                                            const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
+                                                            const isUploaded = !!savedFile && !newFile;
+                                                            return (
+                                                                <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-indigo-300 bg-indigo-50/50 hover:bg-white text-indigo-600'}`}>
+                                                                    <Upload size={14} />
+                                                                    <span className="truncate">
+                                                                        {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Experience Letter'}
+                                                                    </span>
+                                                                    <input
+                                                                        type="file"
+                                                                        accept=".pdf,.jpg,.png,.doc,.docx"
+                                                                        className="hidden"
+                                                                        onChange={(e) => {
+                                                                            if (e.target.files && e.target.files.length > 0) {
+                                                                                setFormData(prev => ({
+                                                                                    ...prev,
+                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                                }));
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </label>
+                                                            );
+                                                        })()}
+                                                        {formData.files.some(f => f.type === `Experience Letter - ${eh.companyName || idx}`) && (
+                                                            <button
+                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Experience Letter - ${eh.companyName || idx}`) }))}
+                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                                                                title="Remove File"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -2300,28 +2403,33 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
                                                     <div className="flex items-center gap-2">
-                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
-                                                            <Upload size={14} />
-                                                            <span className="truncate">
-                                                                {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`)
-                                                                    ? formData.files.find(f => f.type === `Degree - ${edu.level || idx}`)?.file.name
-                                                                    : 'Upload Degree/Transcript Scan'}
-                                                            </span>
-                                                            <input
-                                                                type="file"
-                                                                accept=".pdf,.jpg,.png"
-                                                                className="hidden"
-                                                                onChange={(e) => {
-                                                                    if (e.target.files && e.target.files.length > 0) {
-                                                                        const typeKey = `Degree - ${edu.level || idx}`;
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                        }));
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </label>
+                                                        {(() => {
+                                                            const typeKey = `Degree - ${edu.level || idx}`;
+                                                            const newFile = formData.files.find(f => f.type === typeKey);
+                                                            const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
+                                                            const isUploaded = !!savedFile && !newFile;
+                                                            return (
+                                                                <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
+                                                                    <Upload size={14} />
+                                                                    <span className="truncate">
+                                                                        {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Degree/Transcript Scan'}
+                                                                    </span>
+                                                                    <input
+                                                                        type="file"
+                                                                        accept=".pdf,.jpg,.png"
+                                                                        className="hidden"
+                                                                        onChange={(e) => {
+                                                                            if (e.target.files && e.target.files.length > 0) {
+                                                                                setFormData(prev => ({
+                                                                                    ...prev,
+                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                                }));
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </label>
+                                                            );
+                                                        })()}
                                                         {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
                                                             <button
                                                                 onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
@@ -2710,6 +2818,108 @@ const MyInfo = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Benefits Admin Section */}
+                                <div className="pt-8 border-t border-slate-100">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-700">Company Benefits</h3>
+                                            <p className="text-sm text-gray-500">Assign specific benefits to this employee</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setFormData(p => ({
+                                                ...p,
+                                                benefits: [...p.benefits, { name: '', description: '', eligibleDate: '', status: 'Active' }]
+                                            }))}
+                                            className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                                        >
+                                            <Plus size={16} /> Add Benefit
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="space-y-4">
+                                        {formData.benefits.map((benefit, index) => (
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all animate-fadeIn">
+                                                
+                                                <div className="space-y-1 col-span-1 md:col-span-1 border-r border-slate-200 pr-4">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Benefit Name</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Insurance..."
+                                                        value={benefit.name}
+                                                        onChange={(e) => {
+                                                            const newBenefits = [...formData.benefits];
+                                                            newBenefits[index].name = e.target.value;
+                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                        }}
+                                                        className="w-full bg-transparent border-none text-indigo-900 font-bold focus:ring-0 p-0 text-sm placeholder-indigo-200"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-1 col-span-1 md:col-span-2">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Description</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Details..."
+                                                        value={benefit.description}
+                                                        onChange={(e) => {
+                                                            const newBenefits = [...formData.benefits];
+                                                            newBenefits[index].description = e.target.value;
+                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-1 col-span-1 md:col-span-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Eligible Date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={benefit.eligibleDate}
+                                                        onChange={(e) => {
+                                                            const newBenefits = [...formData.benefits];
+                                                            newBenefits[index].eligibleDate = e.target.value;
+                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
+                                                    />
+                                                </div>
+                                                
+                                                <div className="space-y-1 col-span-1 md:col-span-1 relative pr-10">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
+                                                    <select
+                                                        value={benefit.status}
+                                                        onChange={(e: any) => {
+                                                            const newBenefits = [...formData.benefits];
+                                                            newBenefits[index].status = e.target.value;
+                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
+                                                    >
+                                                        <option value="Active">Active</option>
+                                                        <option value="Pending">Pending</option>
+                                                        <option value="Expired">Expired</option>
+                                                    </select>
+
+                                                    <button
+                                                        onClick={() => {
+                                                            const newBenefits = formData.benefits.filter((_, i) => i !== index);
+                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                        }}
+                                                        className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {formData.benefits.length === 0 && (
+                                            <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                                                <p className="text-sm text-slate-400 italic">No benefits assigned. Click "+ Add Benefit" to start.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -2757,7 +2967,7 @@ const MyInfo = () => {
                                                         >
                                                             <Download size={18} />
                                                         </a>
-                                                        {!(file.fileType === 'Contract' && !isAdmin) && (
+                                                        {!( (file.fileType === 'Contract' || file.fileType === 'Signed Contract') && !isAdmin) && (
                                                             <button
                                                                 onClick={() => handleDeleteDocument(file._id, file.fileName)}
                                                                 className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
@@ -2774,8 +2984,9 @@ const MyInfo = () => {
 
                                     {/* Upload Grid */}
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {[...(isAdmin ? ['Contract'] : []), 'Other Documents'].map((label) => (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Document Categories */}
+                                        {(['Signed Contract', 'Other Documents'] as string[]).map((label) => (
                                             <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
                                                 <input
                                                     type="file"
@@ -2809,7 +3020,13 @@ const MyInfo = () => {
                                                     <Upload size={28} />
                                                 </div>
                                                 <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
-                                                
+                                                {label === 'Signed Contract' && !isAdmin && (
+                                                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
+                                                )}
+                                                {label === 'Signed Contract' && isAdmin && (
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
+                                                )}
+
                                                 {formData.files.some(f => f.type === label) ? (
                                                     <div className="mt-3 flex flex-col gap-2 w-full max-h-[120px] overflow-y-auto custom-scrollbar px-1 relative z-10">
                                                         {formData.files.filter(f => f.type === label).map((fObj, idx) => (
@@ -2892,13 +3109,20 @@ const MyInfo = () => {
                                         )}
                                     </button>
                                 ) : (
-                                    <button
-                                        onClick={() => handleSubmit(true, false)}
-                                        disabled={saving || !isStep1RequiredValid()}
-                                        className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${saving || !isStep1RequiredValid() ? 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
-                                    >
-                                        <Save size={18} /> {saving ? 'Saving...' : 'Save Information'}
-                                    </button>
+                                    <div className="flex flex-col items-end gap-2">
+                                        {!isStep8RequiredValid() && (
+                                            <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-3 py-1 rounded-lg border border-red-100 flex items-center gap-1.5 animate-bounce">
+                                                <AlertCircle size={12} /> Required: {getStep8RequiredErrors().join(', ')}
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={() => handleSubmit(true, false)}
+                                            disabled={saving || !isStep8RequiredValid()}
+                                            className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${ (saving || !isStep8RequiredValid()) ? 'opacity-50 cursor-not-allowed bg-gray-300 text-gray-500' : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'}`}
+                                        >
+                                            <Save size={18} /> {saving ? 'Saving...' : 'Save Information'}
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
