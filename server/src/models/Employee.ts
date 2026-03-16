@@ -119,6 +119,18 @@ export interface IEmployee extends Document {
         reviewedBy?: string;
         reviewedAt?: Date;
     }[];
+    salaryHistory?: {
+        effectiveDate: Date;
+        amount: number;
+        changeType: string;
+        reason: string;
+        previousAmount: number;
+        components?: {
+            component: string;
+            amount: number;
+            type: 'fixed' | 'variable';
+        }[];
+    }[];
 }
 
 const EmployeeSchema: Schema = new Schema({
@@ -236,6 +248,18 @@ const EmployeeSchema: Schema = new Schema({
         status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
         reviewedBy: { type: String },
         reviewedAt: { type: Date }
+    }],
+    salaryHistory: [{
+        effectiveDate: { type: Date },
+        amount: { type: Number },
+        changeType: { type: String },
+        reason: { type: String },
+        previousAmount: { type: Number },
+        components: [{
+            component: { type: String },
+            amount: { type: Number },
+            type: { type: String, enum: ['fixed', 'variable'] }
+        }]
     }]
 }, { timestamps: true });
 

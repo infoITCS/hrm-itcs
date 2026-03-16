@@ -241,7 +241,8 @@ const AddEmployeeWizard = () => {
             iban: '',
             swiftCode: ''
         },
-        benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[]
+        benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
+        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[]
     });
 
     // Fetch Data for Edit Mode
@@ -412,6 +413,12 @@ const AddEmployeeWizard = () => {
                                     description: b.description || '',
                                     eligibleDate: formatDate(b.eligibleDate),
                                     status: b.status || 'Active'
+                                }))
+                                : [],
+                            salaryHistory: found.salaryHistory?.length
+                                ? found.salaryHistory.map((sh: any) => ({
+                                    ...sh,
+                                    effectiveDate: formatDate(sh.effectiveDate)
                                 }))
                                 : []
                         });

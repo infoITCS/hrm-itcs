@@ -252,7 +252,8 @@ const MyInfo = () => {
             iban: '',
             swiftCode: ''
         },
-        benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[]
+        benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[],
+        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[]
     });
 
 /*
@@ -458,6 +459,12 @@ const MyInfo = () => {
                                 eligibleDate: formatDate(b.eligibleDate),
                                 status: b.status || 'Active'
                             })) : [],
+                            salaryHistory: employee.salaryHistory?.length
+                                ? employee.salaryHistory.map((sh: any) => ({
+                                    ...sh,
+                                    effectiveDate: formatDate(sh.effectiveDate)
+                                }))
+                                : [],
                             jobInfo: {
                                 designation: employee.jobInfo?.designation || '',
                                 department: employee.jobInfo?.department || '',
@@ -473,7 +480,7 @@ const MyInfo = () => {
                                     probationEndDate: formatDate(employee.employmentStatus?.probationEndDate)
                                 },
                             files: []
-                        } as any);
+                        });
 
                         // Track fields that were already filled to lock them for non-admins
                         setInitialLockedFields({
@@ -1346,6 +1353,56 @@ const MyInfo = () => {
                                 ) : (
                                     <div className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
                                         <p className="text-sm text-slate-400 italic">No company benefits assigned Yet</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Salary History Display */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <History size={16} /> Salary Progression
+                                </h3>
+                                {rawEmployee.salaryHistory?.length > 0 ? (
+                                    <div className="relative pl-8 border-l-2 border-indigo-100 space-y-8 pb-4">
+                                        {[...rawEmployee.salaryHistory].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime()).map((hist: any, idx: number) => (
+                                            <div key={idx} className="relative">
+                                                <div className="absolute -left-[41px] top-0 w-5 h-5 rounded-full bg-white border-4 border-indigo-500 shadow-sm" />
+                                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                        <div>
+                                                            <div className="flex items-center gap-3 mb-1">
+                                                                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                                                                    {hist.changeType || 'Revision'}
+                                                                </span>
+                                                                <span className="text-xs font-bold text-slate-400">{formatDate(hist.effectiveDate)}</span>
+                                                            </div>
+                                                            <h4 className="text-lg font-black text-slate-800">
+                                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(hist.amount).replace('PKR', 'Rs.')}
+                                                            </h4>
+                                                            {hist.previousAmount > 0 && (
+                                                                <p className="text-xs text-slate-500 mt-1">
+                                                                    Previously: <span className="line-through">{new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(hist.previousAmount).replace('PKR', 'Rs.')}</span>
+                                                                    <span className="ml-2 text-emerald-600 font-bold">
+                                                                        (+{Math.round(((hist.amount - hist.previousAmount) / hist.previousAmount) * 100)}%)
+                                                                    </span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <div className="max-w-md">
+                                                            <p className="text-sm font-medium text-slate-600">{hist.reason || 'No specific reason provided.'}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-10 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-3xl">
+                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm mx-auto mb-3">
+                                            <History size={24} className="text-slate-300" />
+                                        </div>
+                                        <p className="text-slate-500 font-medium">No salary history recorded yet.</p>
+                                        <p className="text-xs text-slate-400 mt-1">History starts from the joining date or first salary revision.</p>
                                     </div>
                                 )}
                             </div>
@@ -2850,7 +2907,7 @@ const MyInfo = () => {
                                                         onChange={(e) => {
                                                             const newBenefits = [...formData.benefits];
                                                             newBenefits[index].name = e.target.value;
-                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
                                                         }}
                                                         className="w-full bg-transparent border-none text-indigo-900 font-bold focus:ring-0 p-0 text-sm placeholder-indigo-200"
                                                     />
@@ -2865,7 +2922,7 @@ const MyInfo = () => {
                                                         onChange={(e) => {
                                                             const newBenefits = [...formData.benefits];
                                                             newBenefits[index].description = e.target.value;
-                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
                                                         }}
                                                         className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
                                                     />
@@ -2879,7 +2936,7 @@ const MyInfo = () => {
                                                         onChange={(e) => {
                                                             const newBenefits = [...formData.benefits];
                                                             newBenefits[index].eligibleDate = e.target.value;
-                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
                                                         }}
                                                         className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
                                                     />
@@ -2892,7 +2949,7 @@ const MyInfo = () => {
                                                         onChange={(e: any) => {
                                                             const newBenefits = [...formData.benefits];
                                                             newBenefits[index].status = e.target.value;
-                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
                                                         }}
                                                         className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
                                                     >
@@ -2904,7 +2961,7 @@ const MyInfo = () => {
                                                     <button
                                                         onClick={() => {
                                                             const newBenefits = formData.benefits.filter((_, i) => i !== index);
-                                                            setFormData({ ...formData, benefits: newBenefits });
+                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
                                                         }}
                                                         className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
                                                     >
@@ -2916,6 +2973,128 @@ const MyInfo = () => {
                                         {formData.benefits.length === 0 && (
                                             <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
                                                 <p className="text-sm text-slate-400 italic">No benefits assigned. Click "+ Add Benefit" to start.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Salary History Admin Section */}
+                                <div className="pt-8 border-t border-slate-100">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-700">Salary Revision History</h3>
+                                            <p className="text-sm text-gray-500">Log past and current salary changes for historical tracking</p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const sortedHist = [...formData.salaryHistory].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
+                                                const lastBalance = sortedHist.length > 0 ? sortedHist[0].amount : 0;
+                                                setFormData(p => ({
+                                                    ...p,
+                                                    salaryHistory: [...p.salaryHistory, { 
+                                                        effectiveDate: new Date().toISOString().split('T')[0], 
+                                                        amount: p.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0), 
+                                                        changeType: sortedHist.length === 0 ? 'Joining Salary' : 'Increment', 
+                                                        reason: '',
+                                                        previousAmount: lastBalance
+                                                    }]
+                                                }));
+                                            }}
+                                            className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                                        >
+                                            <Plus size={16} /> Add History Entry
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {formData.salaryHistory.map((hist: any, index: number) => (
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Effective Date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={hist.effectiveDate}
+                                                        onChange={(e) => {
+                                                            const newHist = [...formData.salaryHistory];
+                                                            newHist[index].effectiveDate = e.target.value;
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Type / Category</label>
+                                                    <select
+                                                        value={hist.changeType}
+                                                        onChange={(e) => {
+                                                            const newHist = [...formData.salaryHistory];
+                                                            newHist[index].changeType = e.target.value;
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
+                                                    >
+                                                        <option value="Increment">Increment</option>
+                                                        <option value="Probation Completion">Probation Completion</option>
+                                                        <option value="Joining Salary">Joining Salary</option>
+                                                        <option value="Promotion">Promotion</option>
+                                                        <option value="Market Adjustment">Market Adjustment</option>
+                                                        <option value="Bonus / Other">Bonus / Other</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gross Amount</label>
+                                                    <input
+                                                        type="number"
+                                                        value={hist.amount}
+                                                        onChange={(e) => {
+                                                            const newHist = [...formData.salaryHistory];
+                                                            newHist[index].amount = Number(e.target.value);
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-black text-indigo-600"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Prev. Amount (Optional)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={hist.previousAmount || ''}
+                                                        onChange={(e) => {
+                                                            const newHist = [...formData.salaryHistory];
+                                                            newHist[index].previousAmount = Number(e.target.value);
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-slate-500"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1 relative pr-10 md:col-span-1">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Reason / Remarks</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Performance based..."
+                                                        value={hist.reason}
+                                                        onChange={(e) => {
+                                                            const newHist = [...formData.salaryHistory];
+                                                            newHist[index].reason = e.target.value;
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            const newHist = formData.salaryHistory.filter((_, i) => i !== index);
+                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                        }}
+                                                        className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {formData.salaryHistory.length === 0 && (
+                                            <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                                                <p className="text-sm text-slate-400 italic">No historical records. Add a entry to track salary changes.</p>
                                             </div>
                                         )}
                                     </div>
