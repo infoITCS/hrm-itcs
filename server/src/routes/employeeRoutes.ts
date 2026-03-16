@@ -178,11 +178,12 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         // SECURITY: Mass Assignment Protection
         const EMPLOYEE_EDITABLE_FIELDS = [
             'firstName', 'lastName', 'middleName', 'phone', 'address', 'temporaryAddress', 'cnic', 
-            'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId'
+            'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId',
+            'fatherName', 'bloodGroup', 'religion'
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'benefits', 
-            'workEmail', 'otherEmail', 'employeeId', 'domicile', 'fatherName', 'bloodGroup', 'religion'
+            'workEmail', 'otherEmail', 'employeeId', 'domicile'
         ];
 
         const allowedFields = (role === 'super-admin' || role === 'admin')
@@ -236,9 +237,18 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         const employee = new Employee({
             ...employeeData,
+            jobInfo: {
+                designation: 'Employee',
+                department: 'General',
+                joiningDate: new Date(),
+                ...employeeData.jobInfo
+            },
             employmentStatus: {
+                status: 'Probation', // Default
                 ...employeeData.employmentStatus,
-                probationEndDate: employeeData.employmentStatus?.status === 'Probation' ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) : null // Default 3 months
+                probationEndDate: (employeeData.employmentStatus?.status === 'Probation' || !employeeData.employmentStatus)
+                    ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) 
+                    : employeeData.employmentStatus?.probationEndDate
             }
         });
 
@@ -638,12 +648,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             'education', 'employmentHistory', 'immigrationHistory',
             'socialProfiles', 'skills', 'certifications', 'bankDetails',
             'licenseNumber', 'simNumber', 'workEmail', 'otherEmail',
-            'email'
+            'email', 'fatherName', 'bloodGroup', 'religion'
         ];
         const ADMIN_EXTRA_FIELDS = [
             'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
-            'maritalStatus', 'nationality', 'domicile', 'cnic', 'fatherName',
-            'bloodGroup', 'religion', 'jobInfo', 'employmentStatus',
+            'maritalStatus', 'nationality', 'domicile', 'cnic', 'jobInfo', 'employmentStatus',
             'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar'
         ];
 
@@ -657,7 +666,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         delete updates.attachments;
 
         // Fields that can only be set once (employees cannot change after initial fill)
-        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality'] as const;
+        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality', 'religion'] as const;
         if (!isAdmin) {
             oneTimeFields.forEach(field => {
                 const employeeObj = employee.toObject();

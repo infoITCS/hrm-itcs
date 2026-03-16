@@ -488,7 +488,8 @@ const MyInfo = () => {
                             dateOfBirth: !!employee.dateOfBirth,
                             fatherName: !!employee.fatherName,
                             nationality: !!employee.nationality,
-                            bloodGroup: !!employee.bloodGroup
+                            bloodGroup: !!employee.bloodGroup,
+                            religion: !!employee.religion
                         });
                     } else {
                         // No employee record found, initialize with user data
@@ -671,6 +672,7 @@ const MyInfo = () => {
             if (!employeeData.nationality) delete employeeData.nationality;
             if (!employeeData.domicile) delete employeeData.domicile;
             if (!employeeData.bloodGroup) delete employeeData.bloodGroup;
+            if (!employeeData.religion) delete employeeData.religion;
 
             let response;
             if (employeeId) {
@@ -782,7 +784,8 @@ const MyInfo = () => {
                 fatherName: !!employeeData.fatherName,
                 nationality: !!employeeData.nationality,
                 domicile: !!employeeData.domicile,
-                bloodGroup: !!employeeData.bloodGroup
+                bloodGroup: !!employeeData.bloodGroup,
+                religion: !!employeeData.religion
             });
 
             if (!isBackground) {
@@ -1250,7 +1253,7 @@ const MyInfo = () => {
                                 {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManager)}
                                 {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
                                 {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
-                                {renderField('Status', rawEmployee.employmentStatus?.status || rawEmployee.employmentStatus || '-')}
+                                {renderField('Status', (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) || '-')}
                                 {rawEmployee.employmentStatus?.status === 'Probation' && (
                                     renderField('Probation End Date', formatDate(rawEmployee.employmentStatus?.probationEndDate))
                                 )}
@@ -1956,12 +1959,23 @@ const MyInfo = () => {
                                     {initialLockedFields.bloodGroup && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
-                                    <CustomSelect 
-                                        label="Religion *" 
-                                        value={formData.religion} 
-                                        onChange={(val) => setFormData({ ...formData, religion: val })} 
-                                        options={['Islam', 'Christianity', 'Hinduism', 'Buddhism', 'Sikhism', 'Other']} 
-                                    />
+                                    {initialLockedFields.religion && !canEditSensitiveData() ? (
+                                        <input
+                                            type="text"
+                                            value={formData.religion}
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm bg-gray-50 cursor-default select-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
+                                        />
+                                    ) : (
+                                        <CustomSelect 
+                                            label="Religion *" 
+                                            value={formData.religion} 
+                                            onChange={(val) => setFormData({ ...formData, religion: val })} 
+                                            options={['Islam', 'Christianity', 'Hinduism', 'Buddhism', 'Sikhism', 'Other']} 
+                                        />
+                                    )}
+                                    {initialLockedFields.religion && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
+                                    {initialLockedFields.religion && canEditSensitiveData() && <p className="text-xs text-indigo-500 mt-1">Admin: This field can be edited</p>}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">License Number</label>
