@@ -26,6 +26,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
+import Avatar from '../../components/UI/Avatar';
+import { getAvatarUrl } from '../../utils/avatar';
 
 type RoleType = 'admin' | 'manager' | 'employee';
 
@@ -683,9 +685,14 @@ const Dashboard = () => {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar relative z-10">
                                         {teamMembers.map((member, idx) => (
                                             <div key={idx} onClick={() => navigate(`/pim/view/${member._id}`)} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-md shadow-sm transition-all cursor-pointer group hover:bg-slate-50/50">
-                                                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold shrink-0 border border-indigo-100 group-hover:scale-105 transition-transform">
-                                                    {member.firstName ? `${member.firstName[0]}${member.lastName ? member.lastName[0] : ''}` : <User size={16} />}
-                                                </div>
+                                                <Avatar
+                                                    src={getAvatarUrl(member)}
+                                                    firstName={member.firstName}
+                                                    lastName={member.lastName}
+                                                    size="w-10 h-10"
+                                                    className="border border-indigo-100 group-hover:scale-105 transition-transform"
+                                                    initialsClassName="bg-indigo-50 text-indigo-600 font-bold"
+                                                />
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-700 transition-colors">{member.firstName} {member.lastName}</p>
                                                     <p className="text-[10px] font-bold text-slate-400 truncate tracking-wider uppercase mt-0.5 mb-1.5">{member.jobInfo?.designation || 'No Designation'}</p>

@@ -31,10 +31,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
                         email: userData.email,
                         role: userData.role,
-                        avatar: userData.avatar
+                        avatar: (userData.avatar && 
+                                 userData.avatar.trim() !== '' && 
+                                 userData.avatar !== 'null' && 
+                                 userData.avatar !== 'undefined')
                             ? (userData.avatar.startsWith('http')
                                 ? userData.avatar
-                                : `${api.baseURL}${userData.avatar}${userData.avatar.includes('/attachments/raw/') ? `?token=${token}` : ''}`)
+                                : `${api.baseURL.replace(/\/+$/, '')}/${userData.avatar.replace(/^\/+/, '')}${userData.avatar.includes('/attachments/raw/') ? `?token=${token}` : ''}`)
                             : null,
                         firstName: userData.firstName,
                         lastName: userData.lastName,

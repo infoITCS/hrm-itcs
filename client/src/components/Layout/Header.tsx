@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, LogOut, User as UserIcon, Menu, KeyRound, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import APIService from '../../services/api';
-
+import Avatar from '../UI/Avatar';
 
 const Header = ({ title, onMenuClick }: {
     title: string;
@@ -15,15 +15,7 @@ const Header = ({ title, onMenuClick }: {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
     const [pwdStatus, setPwdStatus] = useState({ loading: false, error: '', success: '' });
-    const [headerImgError, setHeaderImgError] = useState(false);
-    const [menuImgError, setMenuImgError] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
-
-    // Reset image-error state whenever the avatar URL changes
-    useEffect(() => {
-        setHeaderImgError(false);
-        setMenuImgError(false);
-    }, [user?.avatar]);
 
     // Close profile menu when clicking outside
     useEffect(() => {
@@ -35,13 +27,6 @@ const Header = ({ title, onMenuClick }: {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
-
-    const getInitials = () => {
-        if (!user) return '?';
-        const first = user.firstName?.charAt(0) || user.name?.charAt(0) || '';
-        const last = user.lastName?.charAt(0) || '';
-        return (first + last).toUpperCase() || '?';
-    };
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -105,26 +90,20 @@ const Header = ({ title, onMenuClick }: {
                             className="flex items-center gap-3 cursor-pointer p-1 rounded-lg hover:bg-white/10 transition-all group"
                         >
                             {/* Avatar */}
-                            <div className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 overflow-hidden flex items-center justify-center ring-2 ring-transparent group-hover:ring-white/20 transition-all">
-                                {user.avatar && !headerImgError ? (
-                                    <img
-                                        key={user.avatar}
-                                        src={user.avatar}
-                                        alt="User"
-                                        className="w-full h-full object-cover"
-                                        onError={() => setHeaderImgError(true)}
-                                    />
-                                ) : (
-                                    <div className="text-sm font-semibold flex items-center justify-center w-full h-full">
-                                        {getInitials()}
-                                    </div>
-                                )}
-                            </div>
+                            <Avatar
+                                src={user.avatar}
+                                firstName={user.firstName}
+                                lastName={user.lastName}
+                                name={user.name}
+                                email={user.email}
+                                className="ring-2 ring-transparent group-hover:ring-white/20 transition-all bg-white/20 backdrop-blur-sm border border-white/30"
+                                initialsClassName="bg-indigo-500/30"
+                            />
                             <div className="hidden md:flex flex-col">
-                                <span className="text-sm font-semibold leading-none mb-1">
+                                <span className="text-sm font-semibold leading-none mb-1 text-left">
                                     {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.name}
                                 </span>
-                                <span className="text-xs text-white/70 font-medium leading-none capitalize">{user.role}</span>
+                                <span className="text-xs text-white/70 font-medium leading-none capitalize text-left">{user.role}</span>
                             </div>
                             <ChevronDown
                                 size={16}
@@ -137,21 +116,16 @@ const Header = ({ title, onMenuClick }: {
                             <div className="absolute right-0 mt-3 w-56 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-blue-100/50 ring-1 ring-black/5">
                                 <div className="p-4 border-b border-gray-100 bg-gray-50/80">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-indigo-100 overflow-hidden flex items-center justify-center">
-                                            {user.avatar && !menuImgError ? (
-                                                <img
-                                                    key={user.avatar}
-                                                    src={user.avatar}
-                                                    alt="User"
-                                                    className="w-full h-full object-cover"
-                                                    onError={() => setMenuImgError(true)}
-                                                />
-                                            ) : (
-                                                <div className="text-sm font-semibold text-indigo-600 flex items-center justify-center w-full h-full">
-                                                    {getInitials()}
-                                                </div>
-                                            )}
-                                        </div>
+                                        <Avatar
+                                            src={user.avatar}
+                                            firstName={user.firstName}
+                                            lastName={user.lastName}
+                                            name={user.name}
+                                            email={user.email}
+                                            size="w-10 h-10"
+                                            className="bg-indigo-100"
+                                            initialsClassName="bg-indigo-50 text-indigo-600"
+                                        />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-gray-900 truncate">
                                                 {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.name}

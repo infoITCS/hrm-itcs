@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
+import Avatar from '../../components/UI/Avatar';
 
 const ITEMS_PER_PAGE = 12;
 
@@ -297,11 +298,13 @@ const EmployeeList = () => {
                                 {/* Avatar */}
                                 <div className="relative mb-4">
                                     <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform">
-                                        {getAvatarUrl(emp) ? (
-                                            <img src={getAvatarUrl(emp)!} alt={emp.firstName} className="w-full h-full object-cover" />
-                                        ) : (
-                                            `${emp.firstName[0]}${emp.lastName[0]}`
-                                        )}
+                                        <Avatar
+                                            src={getAvatarUrl(emp)}
+                                            firstName={emp.firstName}
+                                            lastName={emp.lastName}
+                                            size="w-full h-full"
+                                            initialsClassName="bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 text-2xl font-bold"
+                                        />
                                     </div>
                                 </div>
 
@@ -378,11 +381,13 @@ const EmployeeList = () => {
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100 relative group-hover:scale-110 transition-transform overflow-hidden">
-                                                        {getAvatarUrl(emp) ? (
-                                                            <img src={getAvatarUrl(emp)!} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            `${emp.firstName[0]}${emp.lastName[0]}`
-                                                        )}
+                                                        <Avatar
+                                                            src={getAvatarUrl(emp)}
+                                                            firstName={emp.firstName}
+                                                            lastName={emp.lastName}
+                                                            size="w-full h-full"
+                                                            initialsClassName="bg-indigo-50 text-indigo-600 font-bold"
+                                                        />
                                                     </div>
                                                     <div>
                                                         <p className="font-bold text-slate-800">{emp.firstName} {emp.middleName ? `${emp.middleName} ` : ''}{emp.lastName}</p>

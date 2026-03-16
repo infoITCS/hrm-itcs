@@ -10,6 +10,7 @@ import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
+import Avatar from '../../components/UI/Avatar';
 
 
 const EmployeeProfile = () => {
@@ -220,11 +221,13 @@ const EmployeeProfile = () => {
 
                 <div className="relative group">
                     <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
-                        {localAvatarPreview || getAvatarUrl(employee) ? (
-                            <img src={localAvatarPreview || getAvatarUrl(employee)!} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                            `${employee.firstName[0]}${employee.lastName[0]}`
-                        )}
+                        <Avatar
+                            src={localAvatarPreview || getAvatarUrl(employee)}
+                            firstName={employee.firstName}
+                            lastName={employee.lastName}
+                            size="w-full h-full"
+                            initialsClassName="bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 text-2xl font-bold"
+                        />
 
                         {canEditSensitiveData() && (
                             <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px] text-white">
