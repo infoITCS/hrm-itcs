@@ -982,7 +982,7 @@ const MyInfo = () => {
     ];
 
     const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
-    const canEditJob = user?.role === 'admin' || user?.role === 'super-admin';
+    const canEditJob = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
     const disabledJobClass = !canEditJob ? 'bg-gray-50 cursor-not-allowed' : 'bg-white';
     const steps = allSteps.filter(s => !s.roleRestricted || isAdmin);
 

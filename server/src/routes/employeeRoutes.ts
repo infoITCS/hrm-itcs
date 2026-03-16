@@ -112,7 +112,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
-        } else if (role === 'super-admin' || role === 'admin') {
+        } else if (role === 'super-admin' || role === 'admin' || role === 'manager') {
             [employees, total] = await Promise.all([
                 Employee.find().select('-attachments.fileData').skip(skip).limit(limit).lean(),
                 Employee.countDocuments()
@@ -186,7 +186,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             'workEmail', 'otherEmail', 'employeeId'
         ];
 
-        const allowedFields = (role === 'super-admin' || role === 'admin')
+        const allowedFields = (role === 'super-admin' || role === 'admin' || role === 'manager')
             ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
             : EMPLOYEE_EDITABLE_FIELDS;
 
@@ -624,7 +624,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || '';
-        const isAdmin = role === 'super-admin' || role === 'admin';
+        const isAdmin = role === 'super-admin' || role === 'admin' || role === 'manager';
 
         // Exclude fileData to prevent pulling hundreds of megabytes into Node.js memory
         const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');

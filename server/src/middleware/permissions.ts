@@ -24,17 +24,15 @@ export enum Permission {
 
 /**
  * Check if user can create new users
- * Allowed: super-admin, admin
+ * Allowed: super-admin, admin, manager
  */
 export const canCreateUser = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin';
+    return role === 'super-admin' || role === 'admin' || role === 'manager';
 };
 
 /**
  * Check if user can view an employee's personal info
- * - super-admin, admin: All employees
- * - manager: Only direct reports
- * - employee: Only own profile
+ * - super-admin, admin, manager (manager restricted to direct reports in logic below)
  */
 export const canViewEmployee = async (
     role: string,
@@ -42,7 +40,7 @@ export const canViewEmployee = async (
     targetEmployeeId?: string,
     targetEmployee?: any
 ): Promise<boolean> => {
-    if (role === 'super-admin' || role === 'admin') {
+    if (role === 'super-admin' || role === 'admin' || role === 'manager') {
         return true; // Can view all employees
     }
 
@@ -86,21 +84,18 @@ export const canViewEmployee = async (
 
 /**
  * Check if user can edit sensitive data
- * Allowed: super-admin, admin
- * View only: employee
+ * Allowed: super-admin, admin, manager
  */
 export const canEditSensitiveData = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin';
+    return role === 'super-admin' || role === 'admin' || role === 'manager';
 };
 
 /**
  * Check if user can approve documents
- * Allowed: super-admin, admin
- * View only: manager
- * Upload only: employee
+ * Allowed: super-admin, admin, manager
  */
 export const canApproveDocuments = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin';
+    return role === 'super-admin' || role === 'admin' || role === 'manager';
 };
 
 export const canViewDocuments = (role: string): boolean => {

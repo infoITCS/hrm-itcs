@@ -6,17 +6,17 @@ export const usePermissions = () => {
 
     const canCreateUser = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin';
+        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
     }, [user]);
 
     const canEditSensitiveData = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin';
+        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
     }, [user]);
 
     const canApproveDocuments = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin';
+        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
     }, [user]);
 
     const canViewDocuments = useCallback((): boolean => {
@@ -30,7 +30,7 @@ export const usePermissions = () => {
 
     const canViewAllEmployees = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin';
+        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
     }, [user]);
 
     const canViewDirectReports = useCallback((): boolean => {

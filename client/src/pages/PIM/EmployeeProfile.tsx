@@ -809,7 +809,7 @@ const EmployeeProfile = () => {
                                         {log.details && (
                                             <div className="mt-2">
                                                 {log.details.diff ? (
-                                                    <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                                                    <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
                                                         <table className="min-w-full divide-y divide-slate-100">
                                                             <thead className="bg-slate-50">
                                                                 <tr>
@@ -978,6 +978,49 @@ const EmployeeProfile = () => {
     );
 };
 
+const formatAuditValue = (val: any): string => {
+    if (val === null || val === undefined || val === '') return 'None';
+
+    // Normalize Dates if they look like ISO strings or YYYY-MM-DD
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+        try {
+            const date = new Date(val);
+            if (!isNaN(date.getTime())) {
+                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            }
+        } catch (e) {
+            // fallback
+        }
+    }
+    
+    // If it's an array, format each item
+    if (Array.isArray(val)) {
+        if (val.length === 0) return 'None';
+        return val.map(item => formatAuditValue(item)).join(', ');
+    }
+    
+    // If it's an object, try to find a descriptive field or stringify
+    if (typeof val === 'object') {
+        // Common descriptive fields across different sections
+        const keys = ['name', 'degree', 'institute', 'institution', 'companyName', 'company', 'jobTitle', 'level', 'platform', 'relation', 'fileName', 'title', 'bankName', 'accountName'];
+        
+        for (const k of keys) {
+            if (Object.prototype.hasOwnProperty.call(val, k)) {
+                return formatAuditValue(val[k]);
+            }
+        }
+        
+        // Fallback to JSON if no descriptive field exists
+        try {
+            return JSON.stringify(val);
+        } catch (e) {
+            return '[Complex Object]';
+        }
+    }
+    
+    return String(val);
+};
+
 const DiffRows = ({ diff, prefix = '' }: { diff: any, prefix?: string }) => {
     return (
         <>
@@ -987,9 +1030,9 @@ const DiffRows = ({ diff, prefix = '' }: { diff: any, prefix?: string }) => {
                 if (value && typeof value === 'object' && 'old' in value && 'new' in value) {
                     return (
                         <tr key={label} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-4 py-2 text-xs font-bold text-slate-700 capitalize">{label.replace(/([A-Z])/g, ' $1').replace(/\./g, ' > ')}</td>
-                            <td className="px-4 py-2 text-xs text-red-500 line-through bg-red-50/30 font-medium">{String(value.old ?? 'None')}</td>
-                            <td className="px-4 py-2 text-xs text-emerald-600 bg-emerald-50/30 font-bold">{String(value.new ?? 'None')}</td>
+                            <td className="px-4 py-3 text-xs font-bold text-slate-700 capitalize min-w-[140px]">{label.replace(/([A-Z])/g, ' $1').replace(/\./g, ' > ')}</td>
+                            <td className="px-4 py-3 text-xs text-red-500 line-through bg-red-50/30 font-medium break-words max-w-[250px]">{formatAuditValue(value.old)}</td>
+                            <td className="px-4 py-3 text-xs text-emerald-600 bg-emerald-50/30 font-bold break-words max-w-[250px]">{formatAuditValue(value.new)}</td>
                         </tr>
                     );
                 }

@@ -14,7 +14,7 @@ const AddEmployeeWizard = () => {
     const isEditMode = !!id;
     const { user: authUser, login } = useAuth();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
-    const isAdmin = role === 'super-admin' || role === 'admin';
+    const isAdmin = role === 'super-admin' || role === 'admin' || role === 'manager';
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
