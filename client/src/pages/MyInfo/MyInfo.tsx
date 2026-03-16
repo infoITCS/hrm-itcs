@@ -1118,6 +1118,7 @@ const MyInfo = () => {
                                 {renderField('Gender', rawEmployee.gender)}
                                 {renderField('Marital Status', rawEmployee.maritalStatus)}
                                 {renderField('Nationality', rawEmployee.nationality)}
+                                {renderField('Domicile', rawEmployee.domicile)}
                                 {renderField('Father Name', rawEmployee.fatherName)}
                                 {renderField('Blood Group', rawEmployee.bloodGroup)}
                                 {renderField('CNIC / Govt ID', rawEmployee.cnic)}

@@ -179,11 +179,11 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         const EMPLOYEE_EDITABLE_FIELDS = [
             'firstName', 'lastName', 'middleName', 'phone', 'address', 'temporaryAddress', 'cnic', 
             'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId',
-            'fatherName', 'bloodGroup', 'religion'
+            'fatherName', 'bloodGroup', 'religion', 'domicile'
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'benefits', 
-            'workEmail', 'otherEmail', 'employeeId', 'domicile'
+            'workEmail', 'otherEmail', 'employeeId'
         ];
 
         const allowedFields = (role === 'super-admin' || role === 'admin')
@@ -648,7 +648,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             'education', 'employmentHistory', 'immigrationHistory',
             'socialProfiles', 'skills', 'certifications', 'bankDetails',
             'licenseNumber', 'simNumber', 'workEmail', 'otherEmail',
-            'email', 'fatherName', 'bloodGroup', 'religion'
+            'email', 'fatherName', 'bloodGroup', 'religion', 'domicile'
         ];
         const ADMIN_EXTRA_FIELDS = [
             'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
@@ -666,7 +666,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         delete updates.attachments;
 
         // Fields that can only be set once (employees cannot change after initial fill)
-        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality', 'religion'] as const;
+        const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality', 'religion', 'domicile'] as const;
         if (!isAdmin) {
             oneTimeFields.forEach(field => {
                 const employeeObj = employee.toObject();
