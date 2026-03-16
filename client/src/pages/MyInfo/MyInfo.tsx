@@ -977,7 +977,7 @@ const MyInfo = () => {
         { id: 4, title: 'Job & Status', icon: Briefcase, roleRestricted: true },
         { id: 5, title: 'History & Education', icon: GraduationCap },
         { id: 6, title: 'Skills & Profiles', icon: User },
-        { id: 7, title: 'Finance', icon: CreditCard, roleRestricted: true },
+        { id: 7, title: 'Finance', icon: CreditCard },
         { id: 8, title: 'Documents', icon: FileText }
     ];
 
@@ -2891,229 +2891,231 @@ const MyInfo = () => {
                                     </div>
                                 </div>
 
-                                {/* Benefits Admin Section */}
-                                <div className="pt-8 border-t border-slate-100">
-                                    <div className="flex justify-between items-center mb-6">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-gray-700">Company Benefits</h3>
-                                            <p className="text-sm text-gray-500">Assign specific benefits to this employee</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setFormData(p => ({
-                                                ...p,
-                                                benefits: [...p.benefits, { name: '', description: '', eligibleDate: '', status: 'Active' }]
-                                            }))}
-                                            className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
-                                        >
-                                            <Plus size={16} /> Add Benefit
-                                        </button>
-                                    </div>
-                                    
-                                    <div className="space-y-4">
-                                        {formData.benefits.map((benefit, index) => (
-                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all animate-fadeIn">
-                                                
-                                                <div className="space-y-1 col-span-1 md:col-span-1 border-r border-slate-200 pr-4">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Benefit Name</label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Insurance..."
-                                                        value={benefit.name}
-                                                        onChange={(e) => {
-                                                            const newBenefits = [...formData.benefits];
-                                                            newBenefits[index].name = e.target.value;
-                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
-                                                        }}
-                                                        className="w-full bg-transparent border-none text-indigo-900 font-bold focus:ring-0 p-0 text-sm placeholder-indigo-200"
-                                                    />
-                                                </div>
-
-                                                <div className="space-y-1 col-span-1 md:col-span-2">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Description</label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Details..."
-                                                        value={benefit.description}
-                                                        onChange={(e) => {
-                                                            const newBenefits = [...formData.benefits];
-                                                            newBenefits[index].description = e.target.value;
-                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
-                                                    />
-                                                </div>
-
-                                                <div className="space-y-1 col-span-1 md:col-span-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Eligible Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={benefit.eligibleDate}
-                                                        onChange={(e) => {
-                                                            const newBenefits = [...formData.benefits];
-                                                            newBenefits[index].eligibleDate = e.target.value;
-                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
-                                                    />
-                                                </div>
-                                                
-                                                <div className="space-y-1 col-span-1 md:col-span-1 relative pr-10">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
-                                                    <select
-                                                        value={benefit.status}
-                                                        onChange={(e: any) => {
-                                                            const newBenefits = [...formData.benefits];
-                                                            newBenefits[index].status = e.target.value;
-                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
-                                                    >
-                                                        <option value="Active">Active</option>
-                                                        <option value="Pending">Pending</option>
-                                                        <option value="Expired">Expired</option>
-                                                    </select>
-
-                                                    <button
-                                                        onClick={() => {
-                                                            const newBenefits = formData.benefits.filter((_, i) => i !== index);
-                                                            setFormData(p => ({ ...p, benefits: newBenefits }));
-                                                        }}
-                                                        className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
+                                {isAdmin && (
+                                    <div className="pt-8 border-t border-slate-100">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-gray-700">Company Benefits</h3>
+                                                <p className="text-sm text-gray-500">Assign specific benefits to this employee</p>
                                             </div>
-                                        ))}
-                                        {formData.benefits.length === 0 && (
-                                            <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
-                                                <p className="text-sm text-slate-400 italic">No benefits assigned. Click "+ Add Benefit" to start.</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Salary History Admin Section */}
-                                <div className="pt-8 border-t border-slate-100">
-                                    <div className="flex justify-between items-center mb-6">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-gray-700">Salary Revision History</h3>
-                                            <p className="text-sm text-gray-500">Log past and current salary changes for historical tracking</p>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                const sortedHist = [...formData.salaryHistory].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
-                                                const lastBalance = sortedHist.length > 0 ? sortedHist[0].amount : 0;
-                                                setFormData(p => ({
+                                            <button
+                                                onClick={() => setFormData(p => ({
                                                     ...p,
-                                                    salaryHistory: [...p.salaryHistory, { 
-                                                        effectiveDate: new Date().toISOString().split('T')[0], 
-                                                        amount: p.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0), 
-                                                        changeType: sortedHist.length === 0 ? 'Joining Salary' : 'Increment', 
-                                                        reason: '',
-                                                        previousAmount: lastBalance
-                                                    }]
-                                                }));
-                                            }}
-                                            className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
-                                        >
-                                            <Plus size={16} /> Add History Entry
-                                        </button>
-                                    </div>
+                                                    benefits: [...p.benefits, { name: '', description: '', eligibleDate: '', status: 'Active' }]
+                                                }))}
+                                                className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                                            >
+                                                <Plus size={16} /> Add Benefit
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="space-y-4">
+                                            {formData.benefits.map((benefit, index) => (
+                                                <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all animate-fadeIn">
+                                                    
+                                                    <div className="space-y-1 col-span-1 md:col-span-1 border-r border-slate-200 pr-4">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Benefit Name</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Insurance..."
+                                                            value={benefit.name}
+                                                            onChange={(e) => {
+                                                                const newBenefits = [...formData.benefits];
+                                                                newBenefits[index].name = e.target.value;
+                                                                setFormData(p => ({ ...p, benefits: newBenefits }));
+                                                            }}
+                                                            className="w-full bg-transparent border-none text-indigo-900 font-bold focus:ring-0 p-0 text-sm placeholder-indigo-200"
+                                                        />
+                                                    </div>
 
-                                    <div className="space-y-4">
-                                        {formData.salaryHistory.map((hist: any, index: number) => (
-                                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Effective Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={hist.effectiveDate}
-                                                        onChange={(e) => {
-                                                            const newHist = [...formData.salaryHistory];
-                                                            newHist[index].effectiveDate = e.target.value;
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
-                                                    />
+                                                    <div className="space-y-1 col-span-1 md:col-span-2">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Description</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Details..."
+                                                            value={benefit.description}
+                                                            onChange={(e) => {
+                                                                const newBenefits = [...formData.benefits];
+                                                                newBenefits[index].description = e.target.value;
+                                                                setFormData(p => ({ ...p, benefits: newBenefits }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
+                                                        />
+                                                    </div>
+
+                                                    <div className="space-y-1 col-span-1 md:col-span-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Eligible Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={benefit.eligibleDate}
+                                                            onChange={(e) => {
+                                                                const newBenefits = [...formData.benefits];
+                                                                newBenefits[index].eligibleDate = e.target.value;
+                                                                setFormData(p => ({ ...p, benefits: newBenefits }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div className="space-y-1 col-span-1 md:col-span-1 relative pr-10">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</label>
+                                                        <select
+                                                            value={benefit.status}
+                                                            onChange={(e: any) => {
+                                                                const newBenefits = [...formData.benefits];
+                                                                newBenefits[index].status = e.target.value;
+                                                                setFormData(p => ({ ...p, benefits: newBenefits }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
+                                                        >
+                                                            <option value="Active">Active</option>
+                                                            <option value="Pending">Pending</option>
+                                                            <option value="Expired">Expired</option>
+                                                        </select>
+
+                                                        <button
+                                                            onClick={() => {
+                                                                const newBenefits = formData.benefits.filter((_, i) => i !== index);
+                                                                setFormData(p => ({ ...p, benefits: newBenefits }));
+                                                            }}
+                                                            className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Type / Category</label>
-                                                    <select
-                                                        value={hist.changeType}
-                                                        onChange={(e) => {
-                                                            const newHist = [...formData.salaryHistory];
-                                                            newHist[index].changeType = e.target.value;
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
-                                                    >
-                                                        <option value="Increment">Increment</option>
-                                                        <option value="Probation Completion">Probation Completion</option>
-                                                        <option value="Joining Salary">Joining Salary</option>
-                                                        <option value="Promotion">Promotion</option>
-                                                        <option value="Market Adjustment">Market Adjustment</option>
-                                                        <option value="Bonus / Other">Bonus / Other</option>
-                                                    </select>
+                                            ))}
+                                            {formData.benefits.length === 0 && (
+                                                <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                                                    <p className="text-sm text-slate-400 italic">No benefits assigned. Click "+ Add Benefit" to start.</p>
                                                 </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gross Amount</label>
-                                                    <input
-                                                        type="number"
-                                                        value={hist.amount}
-                                                        onChange={(e) => {
-                                                            const newHist = [...formData.salaryHistory];
-                                                            newHist[index].amount = Number(e.target.value);
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-black text-indigo-600"
-                                                    />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Prev. Amount (Optional)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={hist.previousAmount || ''}
-                                                        onChange={(e) => {
-                                                            const newHist = [...formData.salaryHistory];
-                                                            newHist[index].previousAmount = Number(e.target.value);
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-slate-500"
-                                                    />
-                                                </div>
-                                                <div className="space-y-1 relative pr-10 md:col-span-1">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Reason / Remarks</label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Performance based..."
-                                                        value={hist.reason}
-                                                        onChange={(e) => {
-                                                            const newHist = [...formData.salaryHistory];
-                                                            newHist[index].reason = e.target.value;
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
-                                                    />
-                                                    <button
-                                                        onClick={() => {
-                                                            const newHist = formData.salaryHistory.filter((_, i) => i !== index);
-                                                            setFormData(p => ({ ...p, salaryHistory: newHist }));
-                                                        }}
-                                                        className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                        {formData.salaryHistory.length === 0 && (
-                                            <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
-                                                <p className="text-sm text-slate-400 italic">No historical records. Add a entry to track salary changes.</p>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
+
+                                {isAdmin && (
+                                    <div className="pt-8 border-t border-slate-100">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-gray-700">Salary Revision History</h3>
+                                                <p className="text-sm text-gray-500">Log past and current salary changes for historical tracking</p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const sortedHist = [...formData.salaryHistory].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
+                                                    const lastBalance = sortedHist.length > 0 ? sortedHist[0].amount : 0;
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        salaryHistory: [...p.salaryHistory, { 
+                                                            effectiveDate: new Date().toISOString().split('T')[0], 
+                                                            amount: p.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0), 
+                                                            changeType: sortedHist.length === 0 ? 'Joining Salary' : 'Increment', 
+                                                            reason: '',
+                                                            previousAmount: lastBalance
+                                                        }]
+                                                    }));
+                                                }}
+                                                className="text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                                            >
+                                                <Plus size={16} /> Add History Entry
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {formData.salaryHistory.map((hist: any, index: number) => (
+                                                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Effective Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={hist.effectiveDate}
+                                                            onChange={(e) => {
+                                                                const newHist = [...formData.salaryHistory];
+                                                                newHist[index].effectiveDate = e.target.value;
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-gray-600 font-medium"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Type / Category</label>
+                                                        <select
+                                                            value={hist.changeType}
+                                                            onChange={(e) => {
+                                                                const newHist = [...formData.salaryHistory];
+                                                                newHist[index].changeType = e.target.value;
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-slate-700"
+                                                        >
+                                                            <option value="Increment">Increment</option>
+                                                            <option value="Probation Completion">Probation Completion</option>
+                                                            <option value="Joining Salary">Joining Salary</option>
+                                                            <option value="Promotion">Promotion</option>
+                                                            <option value="Market Adjustment">Market Adjustment</option>
+                                                            <option value="Bonus / Other">Bonus / Other</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gross Amount</label>
+                                                        <input
+                                                            type="number"
+                                                            value={hist.amount}
+                                                            onChange={(e) => {
+                                                                const newHist = [...formData.salaryHistory];
+                                                                newHist[index].amount = Number(e.target.value);
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none font-black text-indigo-600"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Prev. Amount (Optional)</label>
+                                                        <input
+                                                            type="number"
+                                                            value={hist.previousAmount || ''}
+                                                            onChange={(e) => {
+                                                                const newHist = [...formData.salaryHistory];
+                                                                newHist[index].previousAmount = Number(e.target.value);
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none text-slate-500"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1 relative pr-10 md:col-span-1">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Reason / Remarks</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Performance based..."
+                                                            value={hist.reason}
+                                                            onChange={(e) => {
+                                                                const newHist = [...formData.salaryHistory];
+                                                                newHist[index].reason = e.target.value;
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="w-full border-none bg-white rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-100 outline-none"
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                const newHist = formData.salaryHistory.filter((_, i) => i !== index);
+                                                                setFormData(p => ({ ...p, salaryHistory: newHist }));
+                                                            }}
+                                                            className="absolute top-1/2 -translate-y-1/2 right-0 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {formData.salaryHistory.length === 0 && (
+                                                <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                                                    <p className="text-sm text-slate-400 italic">No historical records. Add a entry to track salary changes.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
