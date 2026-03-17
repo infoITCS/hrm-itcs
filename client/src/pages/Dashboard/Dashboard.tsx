@@ -351,7 +351,7 @@ const Dashboard = () => {
 
     const quickLinksByRole: Record<string, any[]> = {
         admin: [
-            { title: 'Employee Directory', desc: 'View and manage all employees', icon: Users, path: '/pim' },
+            { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
             { title: 'Recruitment', desc: 'New hires and open positions', icon: UserPlus, path: '/recruitment' },
             { title: 'Company Policy', desc: 'Read latest updates and rules', icon: BookOpen, path: '/directory' },
         ],
