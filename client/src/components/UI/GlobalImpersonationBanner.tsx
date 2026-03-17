@@ -68,7 +68,7 @@ const GlobalImpersonationBanner = () => {
                 const data = await res.json();
                 if (data.adminToken) {
                     localStorage.setItem('token', data.adminToken);
-                    window.location.href = '/admin/users';
+                    window.location.href = '/dashboard';
                 } else {
                     // Fallback: Logout the impersonated session so they can sign in as admin again cleanly
                     localStorage.removeItem('token');
