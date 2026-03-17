@@ -26,6 +26,32 @@ const EmployeeList = () => {
         manager: ''
     });
     const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
+    const [departments, setDepartments] = React.useState<string[]>([]);
+    const [designations, setDesignations] = React.useState<string[]>([]);
+
+    React.useEffect(() => {
+        const fetchConfig = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const [deptRes, desigRes] = await Promise.all([
+                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.baseURL}/api/config/designations`, { headers: { 'Authorization': `Bearer ${token}` } })
+                ]);
+                
+                if (deptRes.ok) {
+                    const data = await deptRes.json();
+                    setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
+                }
+                if (desigRes.ok) {
+                    const data = await desigRes.json();
+                    setDesignations(data.filter((d: any) => d.isActive).map((d: any) => d.name));
+                }
+            } catch (err) {
+                console.error('Failed to fetch config', err);
+            }
+        };
+        fetchConfig();
+    }, []);
 
     const handleDeleteClick = (id: string) => {
         setEmployeeToDelete(id);
@@ -214,26 +240,32 @@ const EmployeeList = () => {
 
                         {/* Post Search */}
                         <div className="relative group">
-                            <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
-                            <input
-                                type="text"
-                                placeholder="Job Title..."
+                            <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none" size={16} />
+                            <select
                                 value={filters.post}
                                 onChange={(e) => setFilters(prev => ({ ...prev, post: e.target.value }))}
-                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                            />
+                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium appearance-none cursor-pointer"
+                            >
+                                <option value="">All Designations</option>
+                                {designations.map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Dept Search */}
                         <div className="relative group">
-                            <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
-                            <input
-                                type="text"
-                                placeholder="Department..."
+                            <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none" size={16} />
+                            <select
                                 value={filters.dept}
                                 onChange={(e) => setFilters(prev => ({ ...prev, dept: e.target.value }))}
-                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                            />
+                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium appearance-none cursor-pointer"
+                            >
+                                <option value="">All Departments</option>
+                                {departments.map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Manager Search */}

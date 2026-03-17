@@ -14,6 +14,8 @@ import { AuthCallback } from './pages/AuthCallback';
 import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
+import AdminSettings from './pages/Admin/AdminSettings';
+import Directory from './pages/Directory/Directory';
 import ResetPassword from './pages/ResetPassword';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -86,7 +88,7 @@ function AppRoutes() {
         <Route path="my-info" element={<MyInfo />} />
         <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
-        <Route path="directory" element={<div className="p-4">Directory Module Placeholder</div>} />
+        <Route path="directory" element={<Directory />} />
         <Route path="claim" element={<div className="p-4">Claim Module Placeholder</div>} />
 
         {/* Restricted to Admins & Managers */}
@@ -107,6 +109,7 @@ function AppRoutes() {
 
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
+          <Route path="admin/settings" element={<AdminSettings />} />
           <Route path="admin/audit" element={<AuditLogs />} />
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
           <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} />

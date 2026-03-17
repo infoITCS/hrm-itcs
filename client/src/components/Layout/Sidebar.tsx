@@ -29,6 +29,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
+        { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'] },
         { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin', 'admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },

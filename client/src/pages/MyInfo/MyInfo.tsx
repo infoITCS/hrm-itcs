@@ -40,6 +40,42 @@ const MyInfo = () => {
     });
     const [limitModalOpen, setLimitModalOpen] = useState(false);
     const [duplicateError, setDuplicateError] = useState<{ field: string; message: string } | null>(null);
+    const [departments, setDepartments] = useState<string[]>([]);
+    const [designations, setDesignations] = useState<string[]>([]);
+    const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
+
+    useEffect(() => {
+        const fetchConfig = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const [deptRes, desigRes, empRes] = await Promise.all([
+                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.baseURL}/api/config/designations`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.baseURL}/api/employees`, { headers: { 'Authorization': `Bearer ${token}` } })
+                ]);
+                
+                if (deptRes.ok) {
+                    const data = await deptRes.json();
+                    setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
+                }
+                if (desigRes.ok) {
+                    const data = await desigRes.json();
+                    setDesignations(data.filter((d: any) => d.isActive).map((d: any) => d.name));
+                }
+                if (empRes.ok) {
+                    const data = await empRes.json();
+                    const empArray = Array.isArray(data) ? data : (data.employees || []);
+                    setEmployeesList(empArray.map((emp: any) => ({
+                        value: emp.employeeId,
+                        label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`
+                    })));
+                }
+            } catch (err) {
+                console.error('Failed to fetch configuration data:', err);
+            }
+        };
+        fetchConfig();
+    }, []);
 
     const validateField = (name: string, value: string): string => {
         if (!value.trim()) return ''; // empty = no error
@@ -1370,203 +1406,230 @@ const MyInfo = () => {
                                     <div className="relative pl-8 border-l-2 border-indigo-100 space-y-8 pb-4">
                                         {[...rawEmployee.salaryHistory].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime()).map((hist: any, idx: number) => (
                                             <div key={idx} className="relative">
-                                                <div className="absolute -left-[41px] top-0 w-5 h-5 rounded-full bg-white border-4 border-indigo-500 shadow-sm" />
-                                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                <div className="absolute -left-10 top-2 w-4 h-4 rounded-full bg-white border-4 border-indigo-500 z-10" />
+                                                <div className="p-5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                                                    <div className="flex justify-between items-start mb-2">
                                                         <div>
-                                                            <div className="flex items-center gap-3 mb-1">
-                                                                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">
-                                                                    {hist.changeType || 'Revision'}
-                                                                </span>
-                                                                <span className="text-xs font-bold text-slate-400">{formatDate(hist.effectiveDate)}</span>
-                                                            </div>
-                                                            <h4 className="text-lg font-black text-slate-800">
+                                                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{formatDate(hist.effectiveDate)}</p>
+                                                            <h4 className="text-lg font-bold text-slate-800">{hist.changeType}</h4>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <p className="text-xl font-black text-indigo-600">
                                                                 {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(hist.amount).replace('PKR', 'Rs.')}
-                                                            </h4>
+                                                            </p>
                                                             {hist.previousAmount > 0 && (
-                                                                <p className="text-xs text-slate-500 mt-1">
-                                                                    Previously: <span className="line-through">{new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(hist.previousAmount).replace('PKR', 'Rs.')}</span>
-                                                                    <span className="ml-2 text-emerald-600 font-bold">
-                                                                        (+{Math.round(((hist.amount - hist.previousAmount) / hist.previousAmount) * 100)}%)
-                                                                    </span>
+                                                                <p className="text-[10px] font-bold text-emerald-500 uppercase">
+                                                                    +{(((hist.amount - hist.previousAmount) / hist.previousAmount) * 100).toFixed(1)}% Change
                                                                 </p>
                                                             )}
                                                         </div>
-                                                        <div className="max-w-md">
-                                                            <p className="text-sm font-medium text-slate-600">{hist.reason || 'No specific reason provided.'}</p>
-                                                        </div>
                                                     </div>
+                                                    {hist.reason && (
+                                                        <div className="mt-2 pt-2 border-t border-slate-50 italic text-sm text-slate-500">
+                                                            "{hist.reason}"
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="text-center py-10 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-3xl">
-                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm mx-auto mb-3">
-                                            <History size={24} className="text-slate-300" />
-                                        </div>
-                                        <p className="text-slate-500 font-medium">No salary history recorded yet.</p>
-                                        <p className="text-xs text-slate-400 mt-1">History starts from the joining date or first salary revision.</p>
+                                    <div className="p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
+                                        <p className="text-sm text-slate-400 italic">No salary progression recorded</p>
                                     </div>
                                 )}
                             </div>
                         </div>
                     )}
 
-                    {/* History Tab */}
+                    {/* Employment History Tab */}
                     {activeTab === 'history' && (
-                        <div className="space-y-6 animate-fadeIn">
-                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Employment History</h3>
+                        <div className="space-y-6 animate-fadeIn pb-10">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <History size={16} /> Previous Employment
+                            </h3>
                             {rawEmployee.employmentHistory?.length > 0 ? (
-                                <div className="relative border-l-2 border-slate-100 ml-4 pl-8 space-y-10">
-                                    {rawEmployee.employmentHistory.map((h: any, i: number) => (
-                                        <div key={i} className="relative">
-                                            <div className="absolute -left-[41px] top-0 w-4 h-4 rounded-full bg-indigo-600 border-4 border-white shadow-sm" />
-                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
-                                                <h4 className="text-lg font-bold text-gray-800">{h.companyName}</h4>
-                                                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">{formatDate(h.startDate)} - {formatDate(h.endDate)}</span>
+                                <div className="space-y-4">
+                                    {rawEmployee.employmentHistory.map((history: any, i: number) => (
+                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all relative overflow-hidden group">
+                                            <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="font-bold text-gray-800 text-lg">{history.companyName}</p>
+                                                    <p className="text-sm text-indigo-600 font-semibold">{history.jobTitle}</p>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-md border border-slate-100 italic">
+                                                    {formatDate(history.startDate)} - {formatDate(history.endDate)}
+                                                </span>
                                             </div>
-                                            <p className="text-indigo-600 font-semibold">{h.jobTitle}</p>
-                                            {h.reasonForLeaving && <p className="text-sm text-gray-500 mt-2 bg-slate-50 p-3 rounded-lg border border-slate-100 italic">"Reason: {h.reasonForLeaving}"</p>}
+                                            {history.reasonForLeaving && (
+                                                <p className="text-xs text-slate-500 mt-2 italic leading-relaxed">Reason for leaving: "{history.reasonForLeaving}"</p>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
-                            ) : <p className="text-gray-400 italic">No history recorded</p>}
+                            ) : <p className="text-gray-400 italic">No previous employment history recorded</p>}
                         </div>
                     )}
 
                     {/* Education Tab */}
                     {activeTab === 'education' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
-                            {rawEmployee.education?.map((edu: any, i: number) => (
-                                <div key={i} className="p-6 bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                                    <div className="flex items-start gap-4">
-                                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-                                            <GraduationCap size={24} />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-gray-800">{edu.level}</h4>
-                                            <p className="text-indigo-600 font-medium">{edu.institute}</p>
-                                            <div className="flex items-center gap-4 mt-3">
-                                                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">{edu.year}</span>
-                                                {edu.score && <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Score: {edu.score}</span>}
+                        <div className="space-y-6 animate-fadeIn pb-10">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <GraduationCap size={16} /> Educational Background
+                            </h3>
+                            {rawEmployee.education?.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {rawEmployee.education.map((edu: any, i: number) => (
+                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all relative group">
+                                            <div className="absolute top-0 right-0 w-12 h-12 bg-indigo-50 rounded-bl-3xl -z-0 opacity-40 group-hover:bg-indigo-100 transition-colors" />
+                                            <div className="relative z-10">
+                                                <div className="flex items-center gap-3 mb-3">
+                                                    <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl group-hover:bg-indigo-100 transition-colors">
+                                                        <GraduationCap size={18} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Level</p>
+                                                        <p className="text-sm font-bold text-indigo-600 uppercase">{edu.level}</p>
+                                                    </div>
+                                                </div>
+                                                <h4 className="font-bold text-slate-800 text-base mb-1">{edu.institute}</h4>
+                                                <div className="flex items-center gap-6 mt-3 pt-3 border-t border-slate-50">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year</p>
+                                                        <p className="text-sm font-bold text-slate-700">{edu.year}</p>
+                                                    </div>
+                                                    {edu.score && (
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Score / GPA</p>
+                                                            <p className="text-sm font-bold text-slate-700">{edu.score}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    ))}
                                 </div>
-                            ))}
+                            ) : <p className="text-gray-400 italic">No education records found</p>}
                         </div>
                     )}
 
                     {/* Dependents Tab */}
                     {activeTab === 'dependents' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
-                                {rawEmployee.dependents?.map((dep: any) => (
-                                    <div key={dep._id || dep.name} className="p-6 bg-white rounded-2xl border border-slate-200 flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                                            <User size={24} />
+                        <div className="space-y-6 animate-fadeIn pb-10">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <Users size={16} /> Family & Dependents
+                            </h3>
+                            {rawEmployee.dependents?.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {rawEmployee.dependents.map((dep: any, i: number) => (
+                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group overflow-hidden relative">
+                                            <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-slate-50 rounded-full group-hover:bg-indigo-50 transition-colors" />
+                                            <div className="relative z-10">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full uppercase tracking-widest">{dep.relation}</span>
+                                                </div>
+                                                <h4 className="text-base font-bold text-slate-800 mb-1">{dep.name}</h4>
+                                                <p className="text-xs text-slate-500 flex items-center gap-1.5"><History size={12} /> Born: {formatDate(dep.dateOfBirth)}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-bold text-gray-800">{dep.name}</p>
-                                            <p className="text-sm text-indigo-600 font-medium">{dep.relation}</p>
-                                            <p className="text-xs text-gray-400 mt-1">Born: {formatDate(dep.dateOfBirth)}</p>
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
+                            ) : <p className="text-gray-400 italic">No dependents recorded</p>}
                         </div>
                     )}
 
                     {/* Immigration Tab */}
                     {activeTab === 'immigration' && (
-                        <div className="space-y-6 animate-fadeIn">
-                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Immigration & Travel History</h3>
+                        <div className="space-y-8 animate-fadeIn pb-10">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <Navigation size={16} /> Immigration Documents
+                            </h3>
                             {rawEmployee.immigrationHistory?.length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {rawEmployee.immigrationHistory.map((imm: any, i: number) => (
-                                        <div key={i} className="p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all relative group overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-indigo-50 to-white rounded-bl-3xl -z-0 opacity-50" />
-                                            <div className="relative z-10">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg uppercase tracking-wider">{imm.documentType}</span>
-                                                    <span className="text-xs font-medium text-slate-400">{imm.issuingCountry}</span>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {rawEmployee.immigrationHistory.map((doc: any, i: number) => (
+                                        <div key={i} className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div>
+                                                    <span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wider mb-2">
+                                                        {doc.documentType}
+                                                    </span>
+                                                    <p className="text-lg font-bold text-gray-800 font-mono tracking-tighter">{doc.documentNumber || '—'}</p>
                                                 </div>
-                                                <h4 className="text-lg font-bold text-gray-800 mb-4 font-mono tracking-tight">{imm.documentNumber}</h4>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issue Date</p>
-                                                        <p className="text-sm font-semibold text-slate-700">{formatDate(imm.issueDate) || '-'}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expiry Date</p>
-                                                        <p className="text-sm font-semibold text-slate-700">{formatDate(imm.expiryDate) || '-'}</p>
-                                                    </div>
-                                                </div>
+                                                <Globe size={20} className="text-slate-200 group-hover:text-indigo-200 transition-colors" />
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : <p className="text-gray-400 italic">No immigration history recorded</p>}
-                        </div>
-                    )}
-
-                    {/* Documents Tab */}
-                    {activeTab === 'documents' && (
-                        <div className="space-y-4 animate-fadeIn">
-                            {rawEmployee.attachments?.length > 0 ? (
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    {rawEmployee.attachments.map((file: any) => (
-                                        <div key={file._id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all">
-                                            <div className="flex items-center gap-4">
-                                                <div className="p-3 bg-slate-50 text-slate-400 rounded-xl">
-                                                    <FileText size={20} />
+                                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100">
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issue Date</p>
+                                                    <p className="text-xs font-bold text-slate-700">{formatDate(doc.issueDate)}</p>
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-sm text-gray-800 truncate max-w-[200px]">{file.fileName}</p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{file.fileType || 'Doc'}</span>
-                                                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${file.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
-                                                            file.status === 'rejected' ? 'bg-red-50 text-red-600' :
-                                                                'bg-amber-50 text-amber-600'
-                                                            }`}>
-                                                            {file.status || 'Pending'}
-                                                        </span>
-                                                    </div>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Expiry Date</p>
+                                                    <p className={`text-xs font-bold ${doc.expiryDate && new Date(doc.expiryDate) < new Date() ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                        {formatDate(doc.expiryDate)}
+                                                    </p>
                                                 </div>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <a 
-                                                    href={apiHelpers.attachmentRaw(file._id)} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
-                                                    title="View"
-                                                >
-                                                    <Eye size={20} />
-                                                </a>
-                                                <button
-                                                    onClick={() => handleDownload(file._id, file.fileName)}
-                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-xl transition-all"
-                                                    title="Download"
-                                                >
-                                                    <Download size={20} />
-                                                </button>
-                                                {!(file.fileType === 'Contract' && !isAdmin) && (
-                                                    <button
-                                                        onClick={() => handleDeleteDocument(file._id, file.fileName)}
-                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={20} />
-                                                    </button>
-                                                )}
+                                                <div className="col-span-2">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Issuing Country</p>
+                                                    <p className="text-xs font-bold text-slate-700">{doc.issuingCountry || '—'}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                                    <FileText size={48} className="mx-auto text-slate-300 mb-4" />
-                                    <p className="text-slate-500 font-medium">No documents uploaded yet</p>
+                                <div className="p-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                                    <Globe size={48} className="mx-auto mb-4 opacity-20" />
+                                    <p className="text-sm font-medium text-slate-500">No immigration documents recorded</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Documents Tab */}
+                    {activeTab === 'documents' && (
+                        <div className="space-y-6 animate-fadeIn pb-10">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <FileText size={16} /> Personal Documents
+                            </h3>
+                            {rawEmployee.attachments?.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {rawEmployee.attachments.map((file: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200 hover:border-indigo-100 shadow-sm transition-all group">
+                                            <div className="flex items-center gap-4 min-w-0">
+                                                <div className="p-3 bg-slate-50 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-xl transition-colors shrink-0">
+                                                    <FileText size={20} />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-gray-700 truncate">{file.fileName}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{file.fileType}</span>
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                                            file.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 
+                                                            file.status === 'rejected' ? 'bg-rose-50 text-rose-600' : 
+                                                            'bg-amber-50 text-amber-600'
+                                                        }`}>
+                                                            {file.status || 'pending'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-4">
+                                                <button onClick={() => handleDownload(file._id, file.fileName)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                                    <Download size={18} />
+                                                </button>
+                                                <a href={apiHelpers.attachmentRaw(file._id)} target="_blank" rel="noopener noreferrer" className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                                    <Eye size={18} />
+                                                </a>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                                    <FileText size={48} className="mx-auto mb-4 opacity-20" />
+                                    <p className="text-sm font-medium text-slate-500">No documents uploaded yet</p>
                                 </div>
                             )}
                         </div>
@@ -1575,7 +1638,6 @@ const MyInfo = () => {
             </div>
         );
     };
-
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {!isEditing ? (
@@ -2236,50 +2298,60 @@ const MyInfo = () => {
                         {step === 4 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-slide-up pb-20">
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Designation</label>
-                                    <input
-                                        type="text"
-                                        name="designation"
+                                    <CustomSelect
+                                        label="Job Title"
                                         value={formData.jobInfo.designation}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, designation: e.target.value } }))}
+                                        onChange={(val) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, designation: val } }))}
+                                        options={designations}
                                         disabled={!canEditJob}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
-                                        placeholder="e.g. Software Engineer"
                                     />
+                                    {!canEditJob && (
+                                        <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                                            <Shield size={10} /> Locked for employees
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Department</label>
-                                    <input
-                                        type="text"
-                                        name="department"
+                                    <CustomSelect
+                                        label="Department"
                                         value={formData.jobInfo.department}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, department: e.target.value } }))}
+                                        onChange={(val) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, department: val } }))}
+                                        options={departments}
                                         disabled={!canEditJob}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
-                                        placeholder="e.g. IT"
                                     />
+                                    {!canEditJob && (
+                                        <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                                            <Shield size={10} /> Locked for employees
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Reporting Manager</label>
-                                    <input
-                                        type="text"
-                                        name="reportingManager"
+                                    <CustomSelect
+                                        label="Reporting Manager"
                                         value={formData.jobInfo.reportingManager}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, reportingManager: e.target.value } }))}
+                                        onChange={(val) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, reportingManager: val } }))}
+                                        options={employeesList}
                                         disabled={!canEditJob}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
+                                    {!canEditJob && (
+                                        <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                                            <Shield size={10} /> Locked for employees
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Work Location</label>
-                                    <input
-                                        type="text"
-                                        name="workLocation"
+                                    <CustomSelect
+                                        label="Work Location"
                                         value={formData.jobInfo.workLocation}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, workLocation: e.target.value } }))}
+                                        onChange={(val) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, workLocation: val } }))}
+                                        options={['On-site', 'Remote', 'Hybrid']}
                                         disabled={!canEditJob}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
+                                    {!canEditJob && (
+                                        <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                                            <Shield size={10} /> Locked for employees
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-600">Joining Date</label>
@@ -2293,20 +2365,18 @@ const MyInfo = () => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="block text-sm font-medium text-gray-600">Status</label>
-                                    <select
+                                    <CustomSelect
+                                        label="Status"
                                         value={formData.employmentStatus.status}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, status: e.target.value } }))}
+                                        onChange={(val) => setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, status: val } }))}
+                                        options={['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned']}
                                         disabled={!canEditJob}
-                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
-                                    >
-                                        <option value="Probation">Probation</option>
-                                        <option value="Permanent">Permanent</option>
-                                        <option value="Internship">Internship</option>
-                                        <option value="Contract">Contract</option>
-                                        <option value="Terminated">Terminated</option>
-                                        <option value="Resigned">Resigned</option>
-                                    </select>
+                                    />
+                                    {!canEditJob && (
+                                        <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                                            <Shield size={10} /> Locked for employees
+                                        </p>
+                                    )}
                                 </div>
                                 {formData.employmentStatus.status === 'Probation' && (
                                     <div className="space-y-2">

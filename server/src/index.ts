@@ -39,6 +39,7 @@ import auditRoutes from './routes/auditRoutes';
 import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
+import orgConfigRoutes from './routes/orgConfigRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -272,6 +273,7 @@ app.use('/api/audit-logs', auditRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limit on auth
 app.use('/api/ai', aiRoutes);
+app.use('/api/config', orgConfigRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ 

@@ -3,6 +3,7 @@ import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert } from 'lucide-r
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../contexts/AuthContext';
+import AlertModal from '../../components/UI/AlertModal';
 
 interface UserData {
     _id: string;
@@ -41,6 +42,19 @@ const UserManagement = () => {
     const [showImpersonateModal, setShowImpersonateModal] = useState(false);
     const [impersonateData, setImpersonateData] = useState({ userId: '', userName: '', reason: '' });
     const [isImpersonating, setIsImpersonating] = useState(false);
+
+    const [alertConfig, setAlertConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error' | 'confirm';
+        onConfirm?: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
 
     useEffect(() => {
         fetchUsers();
@@ -105,7 +119,12 @@ const UserManagement = () => {
 
             setUsers(users.map(u => u._id === userId ? { ...u, isActive: !currentStatus } : u));
         } catch (err: any) {
-            alert(err.message);
+            setAlertConfig({
+                isOpen: true,
+                title: 'Error',
+                message: err.message,
+                type: 'error'
+            });
         }
     };
 
@@ -145,7 +164,12 @@ const UserManagement = () => {
             localStorage.setItem('token', data.token);
             window.location.href = '/dashboard';
         } catch (err: any) {
-            alert(err.message);
+            setAlertConfig({
+                isOpen: true,
+                title: 'Impersonation Failed',
+                message: err.message,
+                type: 'error'
+            });
             setIsImpersonating(false);
         }
     };
@@ -173,7 +197,12 @@ const UserManagement = () => {
             setShowInviteModal(false);
             setInviteData({ email: '', firstName: '', lastName: '', role: 'employee' });
         } catch (err: any) {
-            alert(err.message);
+            setAlertConfig({
+                isOpen: true,
+                title: 'Creation Failed',
+                message: err.message,
+                type: 'error'
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -201,7 +230,7 @@ const UserManagement = () => {
     });
 
     return (
-        <div className="space-y-6 animate-slide-up pb-12">
+        <div className="space-y-6 animate-slide-up pb-12 pt-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -375,8 +404,8 @@ const UserManagement = () => {
 
             {/* Create User Modal */}
             {showInviteModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start sm:items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+                    <div className="bg-white rounded-3xl w-full max-w-md my-8 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
                         <div className="p-6 border-b border-slate-100 bg-slate-50 relative">
                             <h3 className="text-xl font-bold text-slate-800">Add New User</h3>
                             <p className="text-sm text-slate-500 mt-1">Create a user credential so they can log in.</p>
@@ -531,6 +560,16 @@ const UserManagement = () => {
                     </div>
                 </div>
             )}
+            {/* Modal components... */}
+            <AlertModal 
+                isOpen={alertConfig.isOpen}
+                onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+                onConfirm={alertConfig.onConfirm}
+                showCancel={alertConfig.type === 'confirm'}
+            />
         </div>
     );
 };

@@ -83,6 +83,23 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
     }
 };
 
+// Get simplified directory (All active employees, limited info)
+// Open to all authenticated users for internal phonebook purposes
+router.get('/directory', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const directory = await Employee.find({
+            'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+        })
+        .select('firstName lastName middleName avatar workEmail phone jobInfo.designation jobInfo.department employeeId userId attachments')
+        .sort({ firstName: 1 })
+        .lean();
+
+        res.json(directory);
+    } catch (err: any) {
+        next(err);
+    }
+});
+
 // Get all employees (Protected) - Role-based filtering
 router.get('/', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;

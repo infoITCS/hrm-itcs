@@ -29,7 +29,32 @@ const AddEmployeeWizard = () => {
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [limitModalOpen, setLimitModalOpen] = useState(false);
+    const [departments, setDepartments] = useState<{ value: string; label: string }[]>([]);
+    const [designations, setDesignations] = useState<{ value: string; label: string }[]>([]);
 
+    useEffect(() => {
+        const fetchConfig = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const [deptRes, desigRes] = await Promise.all([
+                    fetch(`${api.config}/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.config}/designations`, { headers: { 'Authorization': `Bearer ${token}` } })
+                ]);
+                
+                if (deptRes.ok) {
+                    const data = await deptRes.json();
+                    setDepartments(data.filter((d: any) => d.isActive).map((d: any) => ({ value: d.name, label: d.name })));
+                }
+                if (desigRes.ok) {
+                    const data = await desigRes.json();
+                    setDesignations(data.filter((d: any) => d.isActive).map((d: any) => ({ value: d.name, label: d.name })));
+                }
+            } catch (err) {
+                console.error('Failed to fetch config', err);
+            }
+        };
+        fetchConfig();
+    }, []);
     useEffect(() => {
         const fetchEmployees = async () => {
             try {
@@ -1342,18 +1367,22 @@ const AddEmployeeWizard = () => {
                         {/* Job Information */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-600">Job Title</label>
-                                <input 
-                                    type="text" 
-                                    name="designation" 
+                                <CustomSelect 
+                                    label="Job Title" 
                                     value={formData.jobInfo.designation} 
-                                    onChange={(e) => handleChange(e, 'jobInfo')} 
-                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none" 
-                                    placeholder="e.g. Software Engineer"
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, designation: val } }))} 
+                                    options={designations} 
+                                    placeholder="Select Designation"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <CustomSelect label="Department" value={formData.jobInfo.department} onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, department: val } }))} options={['Technical', 'Development', 'Administration', 'Marketing', 'Sales', 'Finance']} />
+                                <CustomSelect 
+                                    label="Department" 
+                                    value={formData.jobInfo.department} 
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, department: val } }))} 
+                                    options={departments} 
+                                    placeholder="Select Department"
+                                />
                             </div>
                             <div className="space-y-2">
                                 <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={['Internship', 'Probation', 'Permanent', 'Contract', 'Part-time', 'Resigned', 'Terminated']} />
@@ -2337,7 +2366,7 @@ const AddEmployeeWizard = () => {
 
             {/* Limit Modal */}
             {limitModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
                         <div className="p-8 text-center">
                             <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
