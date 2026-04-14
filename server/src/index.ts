@@ -198,8 +198,7 @@ async function connectDB(): Promise<void> {
         finalUri = `${baseUrl}?tls=true`;
     }
 
-    const maskedUri = finalUri.replace(/\/\/.*@/, '//****:****@');
-    console.log(`📡 Attempting to connect to: ${maskedUri}`);
+
 
     try {
         await mongoose.connect(finalUri, {
