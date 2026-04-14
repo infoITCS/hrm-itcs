@@ -12,5 +12,4 @@ export interface User {
     microsoftId?: string;
     hasProfile?: boolean;
     needsPasswordSetup?: boolean;
-    isImpersonated?: boolean;
 }

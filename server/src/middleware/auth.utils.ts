@@ -10,7 +10,7 @@ const getJwtSecret = (): string => {
 
 export class AuthUtils {
     static generateToken(
-        payload: { userId: string; email: string; role: string; isImpersonated?: boolean; ghostSessionId?: string; impersonatorId?: string; },
+        payload: { userId: string; email: string; role: string; },
         expiresInStr: string = '8h'
     ): string {
         return jwt.sign(payload, getJwtSecret(), { 

@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet, useLocation } from 'react-router-dom';
-import GlobalImpersonationBanner from '../UI/GlobalImpersonationBanner';
 
 const MainLayout = () => {
     const location = useLocation();
@@ -23,7 +22,6 @@ const MainLayout = () => {
 
     return (
         <div className="flex flex-col min-h-screen">
-            <GlobalImpersonationBanner />
             <div className="flex flex-1 min-h-0">
                 <Sidebar
                     isOpen={sidebarOpen}

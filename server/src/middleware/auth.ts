@@ -6,9 +6,6 @@ export interface AuthRequest extends Request {
     user?: {
         userId: string;
         role: string; // 'admin', 'hr', 'employee'
-        isImpersonated?: boolean;
-        ghostSessionId?: string;
-        impersonatorId?: string;
     };
 }
 
@@ -39,47 +36,10 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     // Set user info from token payload
     authReq.user = {
         userId: decoded.userId,
-        role: decoded.role || 'employee',
-        isImpersonated: decoded.isImpersonated,
-        ghostSessionId: decoded.ghostSessionId,
-        impersonatorId: decoded.impersonatorId
+        role: decoded.role || 'employee'
     };
 
-    // If impersonated, immediately enforce restricted mode and check Ghost Session TTL
-    if (authReq.user.isImpersonated) {
-        import('../services/GhostSessionService').then(({ getGhostSession }) => {
-            getGhostSession(decoded.ghostSessionId).then((ghostSession) => {
-                if (!ghostSession) {
-                    return res.status(401).json({ message: 'Ghost session expired. Please return to admin layout.' });
-                }
-
-                const blockedRoutes = [
-                    '/change-password', 
-                    '/setup-password', 
-                    '/users/delete', 
-                    '/finance/bank-details', 
-                    '/api/audit'
-                ];
-                
-                if (blockedRoutes.some(route => req.originalUrl.includes(route))) {
-                    import('../models/AuditLog').then(({ default: AuditLog }) => {
-                        AuditLog.create({
-                            action: 'IMPERSONATED_ACTION_BLOCKED',
-                            targetResource: req.originalUrl,
-                            performedBy: decoded.impersonatorId || 'Unknown Admin', 
-                            details: { method: req.method, ip: req.ip },
-                            timestamp: new Date()
-                        });
-                    });
-                    return res.status(403).json({ message: 'Action blocked. You cannot perform this action while impersonating.' });
-                }
-
-                next();
-            }).catch(next);
-        }).catch(next);
-    } else {
-        next();
-    }
+    next();
 };
 
 /**
@@ -115,10 +75,7 @@ export const authenticateFile = (req: Request, res: Response, next: NextFunction
 
     authReq.user = {
         userId: decoded.userId,
-        role: decoded.role || 'employee',
-        isImpersonated: decoded.isImpersonated,
-        ghostSessionId: decoded.ghostSessionId,
-        impersonatorId: decoded.impersonatorId
+        role: decoded.role || 'employee'
     };
 
     next();

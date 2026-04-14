@@ -6,9 +6,7 @@ import Employee from "../models/Employee";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import crypto from "crypto";
 import { sendPasswordResetEmail } from "../utils/email";
-import { createGhostSession, destroyGhostSession, getGhostSession } from "../services/GhostSessionService";
 import AuditLog from "../models/AuditLog";
-import { requireSuperAdmin, checkImpersonation, restrictedMode } from "../middleware/impersonate";
 import { z } from "zod";
 
 const router = Router();
@@ -350,7 +348,7 @@ router.get(
 );
 
 // Add /auth/me endpoint for fetching current user
-router.get("/me", authenticate, checkImpersonation, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/me", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     const userId = authReq.user?.userId;
@@ -402,8 +400,7 @@ router.get("/me", authenticate, checkImpersonation, async (req: Request, res: Re
       ...userObj,
       id: userObj._id,
       hasProfile: !!employee,
-      needsPasswordSetup: user.needsPasswordSetup ?? false,
-      isImpersonated: !!authReq.user?.isImpersonated
+      needsPasswordSetup: user.needsPasswordSetup ?? false
     });
   } catch (error: any) {
     console.error("🔥 Error in /auth/me:", error.message);
@@ -411,127 +408,7 @@ router.get("/me", authenticate, checkImpersonation, async (req: Request, res: Re
   }
 });
 
-/**
- * @route   POST /api/auth/impersonate/:userId
- * @desc    Impersonate another user (Super Admin only)
- * @access  Private
- */
-router.post("/impersonate/:userId", authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authReq = req as AuthRequest;
-    const adminId = authReq.user!.userId;
-    const { userId: targetUserId } = req.params;
-    
-    // Validate request
-    const schema = z.object({
-      reason: z.enum(["debugging", "support", "testing", "other"]),
-      note: z.string().optional()
-    });
-    
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.issues[0].message });
-    }
-    
-    if (adminId === targetUserId) {
-      return res.status(400).json({ message: "You cannot impersonate yourself." });
-    }
 
-    const targetUser = await User.findById(targetUserId);
-    if (!targetUser) {
-      return res.status(404).json({ message: "Target user not found." });
-    }
-    
-    if (targetUser.role === 'super-admin') {
-      return res.status(403).json({ message: "Cannot impersonate another super-admin." });
-    }
 
-    // Create ghost session
-    const ghostSessionId = await createGhostSession(
-      adminId,
-      targetUserId,
-      `${parsed.data.reason}${parsed.data.note ? ' - ' + parsed.data.note : ''}`,
-      req.ip
-    );
-
-    // Audit log
-    await AuditLog.create({
-      action: 'IMPERSONATION_STARTED',
-      targetResource: 'User',
-      targetId: targetUserId,
-      performedBy: adminId,
-      details: { reason: parsed.data.reason, note: parsed.data.note, ip: req.ip },
-      timestamp: new Date()
-    });
-
-    // Generate strict 15-min JWT
-    const token = AuthUtils.generateToken({
-      userId: targetUserId,
-      email: targetUser.email,
-      role: targetUser.role,
-      isImpersonated: true,
-      ghostSessionId,
-      impersonatorId: adminId
-    }, '15m'); // short lived
-
-    res.json({
-      token,
-      impersonatedUser: {
-        name: `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.email,
-        email: targetUser.email
-      }
-    });
-
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @route   POST /api/auth/stop-impersonation
- * @desc    Stop impersonation session
- * @access  Private
- */
-router.post("/stop-impersonation", authenticate, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authReq = req as AuthRequest;
-    
-    if (!authReq.user?.isImpersonated || !authReq.user?.ghostSessionId) {
-      return res.status(400).json({ message: "Not in an impersonation session." });
-    }
-
-    const ghostSessionId = authReq.user.ghostSessionId;
-    
-    // Get session to know the admin
-    const ghostSession = await getGhostSession(ghostSessionId);
-    if (ghostSession) {
-      // Audit log
-      await AuditLog.create({
-        action: 'IMPERSONATION_STOPPED',
-        targetResource: 'User',
-        targetId: ghostSession.targetUserId,
-        performedBy: ghostSession.adminId,
-        timestamp: new Date()
-      });
-      
-      await destroyGhostSession(ghostSessionId);
-
-      // Restore the admin JWT cleanly without localStorage backup
-      const adminUser = await User.findById(ghostSession.adminId);
-      if (adminUser) {
-        const adminToken = AuthUtils.generateToken({
-            userId: adminUser._id.toString(),
-            email: adminUser.email,
-            role: adminUser.role
-        });
-        return res.json({ message: "Impersonation session ended successfully.", adminToken });
-      }
-    }
-
-    res.json({ message: "Impersonation session ended successfully." });
-  } catch (error) {
-    next(error);
-  }
-});
 
 export default router;
