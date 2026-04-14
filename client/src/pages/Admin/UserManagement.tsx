@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
-import { useAuth } from '../../contexts/AuthContext';
 import AlertModal from '../../components/UI/AlertModal';
 
 interface UserData {
@@ -26,7 +25,6 @@ interface UserData {
 
 const UserManagement = () => {
     const { role: currentUserRole } = usePermissions();
-    const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
