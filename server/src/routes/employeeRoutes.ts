@@ -90,7 +90,7 @@ router.get('/directory', authenticate, async (req: Request, res: Response, next:
         const directory = await Employee.find({
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
         })
-        .select('firstName lastName middleName avatar workEmail phone jobInfo.designation jobInfo.department employeeId userId attachments')
+        .select('firstName lastName middleName avatar workEmail phone jobInfo.designation jobInfo.department employeeId userId attachments._id attachments.fileType')
         .sort({ firstName: 1 })
         .lean();
 
