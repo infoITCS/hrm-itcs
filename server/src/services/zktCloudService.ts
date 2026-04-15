@@ -40,10 +40,12 @@ export interface ZktReportEntry {
     emp_code: string;
     first_name?: string;
     last_name?: string;
-    department?: string;
-    punch_time: string;
-    punch_state: string;
-    punch_state_display?: string;
+    att_date: string;     // YYYY-MM-DD
+    clock_in?: string;    // HH:MM:SS
+    clock_out?: string;   // HH:MM:SS
+    status: string;       // "Present", "Absent", "Late", etc.
+    work_time?: string;   // HH:MM:SS
+    exception?: string | null;
 }
 
 export interface ZktPagedResponse<T> {
@@ -70,15 +72,18 @@ export interface ZktSyncResult {
 
 const ZKT_URL   = (process.env.ZKTECO_API_URL  || 'http://192.168.0.74:8081').replace(/\/$/, '');
 const ZKT_TOKEN = process.env.ZKTECO_API_TOKEN || '';
-const TIMEOUT_MS = 8000;
+const TIMEOUT_MS = 30000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function zktHeaders(): Record<string, string> {
+    // Some versions use 'JWT', others use 'Token'. 
+    // We'll default to 'Token' but you can change it here if needed.
+    const prefix = process.env.ZKTECO_TOKEN_PREFIX || 'Token';
     return {
-        Authorization:  `Token ${ZKT_TOKEN}`,
+        'Authorization': `${prefix} ${ZKT_TOKEN}`,
         'Content-Type': 'application/json',
-        Accept:         'application/json',
+        'Accept': 'application/json',
     };
 }
 
@@ -96,13 +101,16 @@ async function fetchWithTimeout(url: string, timeoutMs = TIMEOUT_MS): Promise<Re
 }
 
 async function zktGet<T>(path: string, timeoutMs = TIMEOUT_MS): Promise<T> {
-    const fullUrl = path.startsWith('http') ? path : `${ZKT_URL}${path}`;
-    const res = await fetchWithTimeout(fullUrl, timeoutMs);
+    const url = `${ZKT_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const res = await fetchWithTimeout(url, timeoutMs);
+    
     if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`ZKTeco API error ${res.status} ${res.statusText} — ${fullUrl} — body: ${body.slice(0, 300)}`);
+        let body = '';
+        try { body = await res.text(); } catch { /* ignore */ }
+        console.error(`[ZKT] GET ${path} failed: ${res.status} ${res.statusText}`, body);
+        throw new Error(`HTTP ${res.status}: ${res.statusText}${body ? ' - ' + body : ''}`);
     }
-    return (await res.json()) as T;
+    return res.json() as Promise<T>;
 }
 
 /**
@@ -187,6 +195,7 @@ export async function fetchTransactions(lastId?: number | null, pageSize = 100):
 export async function fetchReport(startDate: string, endDate: string): Promise<ZktReportEntry[]> {
     return withRetry(async () => {
         const all: ZktReportEntry[] = [];
+        // NOTE: The endpoint returns pre-calculated status based on machine rules
         let nextPath: string | null = `/att/api/transactionReport/?start_date=${startDate}&end_date=${endDate}&page_size=100`;
         
         while (nextPath) {

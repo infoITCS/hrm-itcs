@@ -21,6 +21,7 @@ export const api = {
     attendanceLiveFeed: `${API_BASE_URL}/api/attendance/live-feed`,
     attendanceLocations: `${API_BASE_URL}/api/attendance/locations`,
     attendanceDevices: `${API_BASE_URL}/api/attendance/devices`,
+    attendanceExport: `${API_BASE_URL}/api/attendance/export`,
 
     // ZKTeco Cloud API proxy endpoints (server proxies to 192.168.0.74:8081)
     zktStatus:       `${API_BASE_URL}/api/attendance/zkt/status`,
@@ -29,6 +30,7 @@ export const api = {
     zktReport:       `${API_BASE_URL}/api/attendance/zkt/report`,
     zktSyncState:    `${API_BASE_URL}/api/attendance/zkt/sync-state`,
     zktSync:         `${API_BASE_URL}/api/attendance/zkt/sync`,
+    zktSyncReport:   `${API_BASE_URL}/api/attendance/zkt/sync-report`,
 
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,

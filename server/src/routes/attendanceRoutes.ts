@@ -12,7 +12,9 @@ import {
     fetchReport,
     runZktSync,
 } from '../services/zktCloudService';
+import { syncFromMachineReport } from '../services/attendanceProcessor';
 import ZktSyncState from '../models/ZktSyncState';
+import { generateCSV } from '../utils/csv';
 
 const router = Router();
 
@@ -560,6 +562,65 @@ router.post('/zkt/sync', authenticate, authorize(['super-admin', 'admin']), asyn
         res.json({ success: true, data: syncResult });
     } catch (err: any) {
         res.status(503).json({ success: false, message: err.message });
+    }
+});
+
+/**
+ * POST /api/attendance/zkt/sync-report?date=YYYY-MM-DD
+ * Manually trigger a sync from the machine's calculated daily report.
+ */
+router.post('/zkt/sync-report', authenticate, authorize(['super-admin', 'admin']), async (req: Request, res: Response) => {
+    try {
+        const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+        const count = await syncFromMachineReport(date);
+        res.json({ success: true, message: `Synced ${count} records from machine report for ${date}` });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+/**
+ * GET /api/attendance/export
+ * Exports attendance records to CSV.
+ */
+router.get('/export', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
+    try {
+        const { startDate, endDate, location, status } = req.query;
+        
+        const filter: Record<string, any> = {};
+        if (startDate && endDate) {
+            filter.date = { $gte: startDate, $lte: endDate };
+        } else if (req.query.date) {
+            filter.date = req.query.date;
+        }
+        
+        if (location) filter.location = location;
+        if (status)   filter.status   = status;
+
+        const records = await AttendanceRecord.find(filter).sort({ date: -1, employeeId: 1 }).lean();
+
+        const columns = [
+            { header: 'Employee ID', key: 'employeeId' },
+            { header: 'Date',        key: 'date' },
+            { header: 'Location',    key: 'location' },
+            { header: 'Check In',    key: 'checkIn' },
+            { header: 'Check Out',   key: 'checkOut' },
+            { header: 'Work Minutes',key: 'workDurationMinutes' },
+            { header: 'Status',      key: 'status' },
+            { header: 'Late (Min)',  key: 'lateMinutes' },
+            { header: 'OT (Min)',    key: 'overtimeMinutes' },
+            { header: 'Note',        key: 'note' },
+        ];
+
+        const csv = generateCSV(records, columns);
+        
+        const filename = `Attendance_${startDate || 'Report'}_${endDate || ''}.csv`;
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+        res.status(200).send(csv);
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

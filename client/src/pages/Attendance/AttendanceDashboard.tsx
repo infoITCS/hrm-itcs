@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
     Clock, UserCheck, UserX, AlertTriangle, Activity,
     Calendar, Filter, RefreshCw, MapPin, ChevronDown, TrendingUp,
-    Fingerprint, BarChart2, List, Search, Timer, Zap
+    Fingerprint, BarChart2, List, Search, Timer, Zap, Download
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -45,6 +45,7 @@ const AttendanceDashboard = () => {
     const [loadingWeekly, setLoadingWeekly] = useState(true);
     const [loadingRecords, setLoadingRecords] = useState(false);
     const [autoRefresh, setAutoRefresh] = useState(true);
+    const [exporting, setExporting] = useState(false);
 
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
@@ -142,6 +143,34 @@ const AttendanceDashboard = () => {
         { id: 'zkt'      as Tab, label: 'ZKT Cloud',  icon: Zap        },
     ];
 
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const params = new URLSearchParams({
+                ...(recordsFilter.startDate ? { startDate: recordsFilter.startDate } : { startDate: selectedDate }),
+                ...(recordsFilter.endDate   ? { endDate: recordsFilter.endDate } : { endDate: selectedDate }),
+                ...(selectedLocation !== 'All' ? { location: selectedLocation } : {}),
+                ...(recordsFilter.status ? { status: recordsFilter.status } : {}),
+            });
+            const r = await fetch(`${api.attendanceExport}?${params}`, { headers });
+            if (!r.ok) throw new Error('Export failed');
+            
+            const blob = await r.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Attendance_${selectedDate}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (err) {
+            console.error('Export error:', err);
+            alert('Failed to export attendance data.');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     return (
         <div className="space-y-6 animate-fadeIn">
             {/* ── Page Header ── */}
@@ -197,6 +226,16 @@ const AttendanceDashboard = () => {
                         >
                             <RefreshCw size={15} className={autoRefresh ? 'animate-spin [animation-duration:3s]' : ''} />
                             {autoRefresh ? 'Live' : 'Paused'}
+                        </button>
+
+                        {/* Export button */}
+                        <button
+                            onClick={handleExport}
+                            disabled={exporting}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all disabled:opacity-50"
+                        >
+                            <Download size={15} className={exporting ? 'animate-bounce' : ''} />
+                            {exporting ? 'Exporting...' : 'Export CSV'}
                         </button>
                     </div>
                 </div>

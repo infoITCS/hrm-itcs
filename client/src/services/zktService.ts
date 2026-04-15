@@ -109,6 +109,10 @@ export const zktService = {
     /** Trigger a manual incremental sync from ZKTeco to local DB. */
     triggerSync: async (): Promise<{ success: boolean; data: { newRecords: number; lastTransactionId: number | null } }> =>
         post(`${api.zktSync}`),
+
+    /** Trigger a manual sync from the machine's calculated daily report. */
+    triggerReportSync: async (date: string): Promise<{ success: boolean; message: string }> =>
+        post(`${api.zktSyncReport}?date=${date}`),
 };
 
 export default zktService;

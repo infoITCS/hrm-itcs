@@ -115,6 +115,7 @@ const ZktLiveDashboard = () => {
 
     const [syncState, setSyncState]             = useState<ZktSyncState | null>(null);
     const [dateFilter, setDateFilter]           = useState(new Date().toISOString().slice(0, 10));
+    const [syncingReport, setSyncingReport]     = useState(false);
 
     const prevSetRef      = useRef<Set<number>>(new Set());
     const retryTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -230,6 +231,20 @@ const ZktLiveDashboard = () => {
         return () => { if (retryTimerRef.current) clearInterval(retryTimerRef.current); };
     }, [serverStatus?.reachable]);
 
+    // ── Manual report sync ────────────────────────────────────────────────────
+    const handleSyncReport = async () => {
+        if (!dateFilter) return;
+        setSyncingReport(true);
+        try {
+            const r = await zktService.triggerReportSync(dateFilter);
+            alert(r.message || `Successfully synced report for ${dateFilter}`);
+        } catch (err: any) {
+            alert(`Failed to sync report: ${err.message}`);
+        } finally {
+            setSyncingReport(false);
+        }
+    };
+
     // ── Computed stats ────────────────────────────────────────────────────────
     const todayStr = dateFilter;
     const todayTxns = transactions.filter(t => t.punch_time.startsWith(todayStr));
@@ -323,13 +338,24 @@ const ZktLiveDashboard = () => {
                                 {sound ? 'Sound On' : 'Sound Off'}
                             </button>
 
+                            {/* Sync Report */}
+                            <button
+                                onClick={handleSyncReport}
+                                disabled={syncingReport || !dateFilter}
+                                className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-teal-900/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100`}
+                                title="Pull pre-calculated Absent/Present status directly from machine engine"
+                            >
+                                <Zap size={13} className={syncingReport ? 'animate-pulse' : ''} />
+                                {syncingReport ? 'Syncing...' : 'Sync Machine Report'}
+                            </button>
+
                             {/* Export */}
                             <button
                                 onClick={() => exportToCSV(transactions, employees)}
-                                className="flex items-center gap-2 px-3 py-2 bg-white/20 border border-white/30 rounded-xl font-semibold text-xs hover:bg-white/30 transition-all"
+                                className="flex items-center gap-2 px-3 py-2 bg-white/20 border border-white/30 rounded-xl font-semibold text-xs hover:bg-white/30 transition-all font-mono"
                             >
                                 <Download size={13} />
-                                Export CSV
+                                CSV
                             </button>
                         </div>
                     </div>

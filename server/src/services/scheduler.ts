@@ -4,6 +4,7 @@ import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
 import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
 import { runZktSync } from './zktCloudService';
+import { syncFromMachineReport } from './attendanceProcessor';
 
 // Note: Vercel serverless functions have execution time limits.
 // For production on Vercel, disable this and use Vercel Cron Jobs instead.
@@ -166,6 +167,18 @@ export const initScheduler = () => {
             }));
         } catch (error) {
             console.error('Error in birthday/anniversary scheduler:', error);
+        }
+    });
+
+    // ── Nightly Absenteeism Check: Run every day at 11:30 PM ─────────────────────
+    cron.schedule('30 23 * * *', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        console.log(`[Scheduler] Starting machine-report sync for ${today}...`);
+        try {
+            const processedCount = await syncFromMachineReport(today);
+            console.log(`[Scheduler] Machine-report sync complete. Processed ${processedCount} records.`);
+        } catch (error) {
+            console.error('[Scheduler] Error in nightly report sync task:', error);
         }
     });
 

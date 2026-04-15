@@ -1,27 +1,26 @@
 /**
  * relay-punches.js
- * Run this on PC A (the machine that has ZKTeco local cloud software).
- * It acts as a middleman: receives punches from the ZKTeco machine,
- * saves them locally, AND forwards them to your HRM server on PC B.
+ * Run this on the local PC that receives data from the ZKTeco machine.
+ * It forwards machine heartbeats and punch logs to the live HRM backend.
  *
  * Usage:
  *   node relay-punches.js
  *
- * Requirements:
- *   npm install express node-fetch
+ * Optional env vars:
+ *   RELAY_PORT=8080
+ *   HRM_SERVER=https://hrm-itcs-server.vercel.app
  */
 
 const express = require('express');
+
 const app = express();
 
-// ── CONFIG ────────────────────────────────────────────────────────────────────
-const RELAY_PORT  = 8080;                             // Port ZKTeco machine points to (on PC A)
-const HRM_SERVER  = 'http://192.168.1.105:5000';      // ← Change to PC B's IP & port
-// ─────────────────────────────────────────────────────────────────────────────
+const RELAY_PORT = parseInt(process.env.RELAY_PORT || '8080', 10);
+const HRM_SERVER = (process.env.HRM_SERVER || 'https://hrm-itcs-server.vercel.app').replace(/\/$/, '');
 
 app.use(express.text({ type: '*/*' }));
 
-// Receive heartbeat from machine → forward to HRM
+// Receive heartbeat from machine and forward to HRM.
 app.get('/iclock/cdata', async (req, res) => {
     const SN = req.query.SN || 'UNKNOWN';
     console.log(`[RELAY] Heartbeat from device: ${SN}`);
@@ -35,15 +34,14 @@ app.get('/iclock/cdata', async (req, res) => {
         res.set('Content-Type', 'text/plain').send(text);
     } catch (err) {
         console.error('[RELAY] HRM unreachable:', err.message);
-        // Fallback response so machine stays happy
         res.set('Content-Type', 'text/plain');
         res.send(`GET OPTION FROM: ${SN}\nATTLOGStamp=9999\nDelay=10\nRealtime=1\nEncrypt=0\n`);
     }
 });
 
-// Receive punch data from machine → forward to HRM
+// Receive punch data from machine and forward to HRM.
 app.post('/iclock/cdata', async (req, res) => {
-    const SN    = req.query.SN    || 'UNKNOWN';
+    const SN = req.query.SN || 'UNKNOWN';
     const table = req.query.table || '';
     console.log(`[RELAY] Punch data from ${SN}, table=${table}`);
     console.log(`[RELAY] Body:\n${req.body}`);
@@ -64,18 +62,19 @@ app.post('/iclock/cdata', async (req, res) => {
     }
 });
 
-// Machine polls for commands
-app.get('/iclock/getrequest', (req, res) => {
+// Machine polls for commands.
+app.get('/iclock/getrequest', (_req, res) => {
     res.set('Content-Type', 'text/plain').send('OK\n');
 });
 
-app.post('/iclock/devicecmd', (req, res) => {
+app.post('/iclock/devicecmd', (_req, res) => {
     res.set('Content-Type', 'text/plain').send('OK\n');
 });
 
 app.listen(RELAY_PORT, '0.0.0.0', () => {
-    console.log(`\n✅ Relay running on port ${RELAY_PORT}`);
-    console.log(`   Forwarding punches to HRM at: ${HRM_SERVER}`);
-    console.log(`\n   Configure ZKTeco machine Cloud Server to:`);
-    console.log(`   Server: <PC-A-IP>   Port: ${RELAY_PORT}\n`);
+    console.log(`\nRelay running on port ${RELAY_PORT}`);
+    console.log(`Forwarding punches to HRM at: ${HRM_SERVER}`);
+    console.log(`\nConfigure ZKTeco machine Cloud Server to:`);
+    console.log(`Server: <PC-A-IP>   Port: ${RELAY_PORT}`);
+    console.log(`Forward target: ${HRM_SERVER}\n`);
 });
