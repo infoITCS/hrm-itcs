@@ -12,6 +12,23 @@ export const api = {
     auth: `${API_BASE_URL}/api/auth`,
     admin: `${API_BASE_URL}/api/admin`,
     config: `${API_BASE_URL}/api/config`,
+    attendance: `${API_BASE_URL}/api/attendance`,
+    attendanceToday: `${API_BASE_URL}/api/attendance/today`,
+    attendanceSummary: `${API_BASE_URL}/api/attendance/summary`,
+    attendanceWeekly: `${API_BASE_URL}/api/attendance/weekly`,
+    attendanceRecords: `${API_BASE_URL}/api/attendance/records`,
+    attendancePunches: `${API_BASE_URL}/api/attendance/punches`,
+    attendanceLiveFeed: `${API_BASE_URL}/api/attendance/live-feed`,
+    attendanceLocations: `${API_BASE_URL}/api/attendance/locations`,
+    attendanceDevices: `${API_BASE_URL}/api/attendance/devices`,
+
+    // ZKTeco Cloud API proxy endpoints (server proxies to 192.168.0.74:8081)
+    zktStatus:       `${API_BASE_URL}/api/attendance/zkt/status`,
+    zktEmployees:    `${API_BASE_URL}/api/attendance/zkt/employees`,
+    zktTransactions: `${API_BASE_URL}/api/attendance/zkt/transactions`,
+    zktReport:       `${API_BASE_URL}/api/attendance/zkt/report`,
+    zktSyncState:    `${API_BASE_URL}/api/attendance/zkt/sync-state`,
+    zktSync:         `${API_BASE_URL}/api/attendance/zkt/sync`,
 
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,

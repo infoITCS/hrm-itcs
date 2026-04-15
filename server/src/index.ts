@@ -40,6 +40,7 @@ import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
 import orgConfigRoutes from './routes/orgConfigRoutes';
+import attendanceRoutes from './routes/attendanceRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -76,6 +77,8 @@ app.use(cors(corsOptions));
 app.use(mongoSanitize({ replaceWith: '_', allowDots: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Required for ZKTeco ADMS: machine POSTs attendance logs as text/plain
+app.use(express.text({ type: 'text/plain', limit: '2mb' }));
 
 // Rate limiting — protect auth endpoints from brute force
 const authLimiter = rateLimit({
@@ -266,13 +269,27 @@ connectDB();
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// ── ZKTeco machine URL rewrite —————————————————————————————──
+// ZKTeco machines call /iclock/cdata directly (not /api/attendance/iclock/cdata).
+// We rewrite the URL BEFORE routing so all existing route handlers are reached.
+app.use((req: any, _res: any, next: any) => {
+    if (req.path.startsWith('/iclock/') || req.path === '/iclock') {
+        const original = req.url;
+        req.url = '/api/attendance' + req.url;
+        console.log(`[MACHINE] ${req.method} ${original} → ${req.url} | IP: ${req.ip}`);
+    }
+    next();
+});
+
 // Routes
 app.use('/api/employees', employeeRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authLimiter, authRoutes); // Stricter rate limit on auth
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/config', orgConfigRoutes);
+app.use('/api/attendance', attendanceRoutes);
+
 
 app.get('/api/health', (req, res) => {
     res.json({ 

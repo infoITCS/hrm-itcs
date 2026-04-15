@@ -2,7 +2,8 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IEmployee extends Document {
     employeeId: string;
-    userId?: string; // Stored as string (matches User._id.toString())
+    userId?: string;
+    biometricPin?: string;  // ZKTeco machine PIN (e.g. "2") — links machine punches to this employee
     firstName: string;
     middleName?: string;
     lastName: string;
@@ -135,7 +136,8 @@ export interface IEmployee extends Document {
 
 const EmployeeSchema: Schema = new Schema({
     employeeId: { type: String, required: true, unique: true },
-    userId: { type: String }, // Stored as string ID referencing User._id
+    userId: { type: String },
+    biometricPin: { type: String, sparse: true }, // ZKTeco machine PIN — used to map punches to HRM employee
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },

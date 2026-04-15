@@ -16,6 +16,7 @@ import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminSettings from './pages/Admin/AdminSettings';
 import Directory from './pages/Directory/Directory';
+import AttendanceDashboard from './pages/Attendance/AttendanceDashboard';
 import ResetPassword from './pages/ResetPassword';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -89,6 +90,7 @@ function AppRoutes() {
         <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
+        <Route path="attendance" element={<AttendanceDashboard />} />
         <Route path="claim" element={<div className="p-4">Claim Module Placeholder</div>} />
 
         {/* Restricted to Admins & Managers */}

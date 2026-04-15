@@ -3,6 +3,7 @@ import Employee from '../models/Employee';
 import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
 import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
+import { runZktSync } from './zktCloudService';
 
 // Note: Vercel serverless functions have execution time limits.
 // For production on Vercel, disable this and use Vercel Cron Jobs instead.
@@ -167,4 +168,32 @@ export const initScheduler = () => {
             console.error('Error in birthday/anniversary scheduler:', error);
         }
     });
+
+    // ── ZKTeco Cloud API Auto-Sync: Every 5 seconds ───────────────────────────
+    // Only runs if the ZKTeco API token is configured.
+    // Uses a guard flag to prevent overlapping executions.
+    if (process.env.ZKTECO_API_TOKEN) {
+        let zktSyncRunning = false;
+        const ZKT_INTERVAL_MS = parseInt(process.env.ZKTECO_SYNC_INTERVAL_SECONDS || '5', 10) * 1000;
+
+        setInterval(async () => {
+            if (zktSyncRunning) return; // Skip if still running
+            zktSyncRunning = true;
+            try {
+                const result = await runZktSync();
+                if (result.newRecords > 0) {
+                    console.log(`[ZKT Sync] ✅ ${result.newRecords} new punch(es) synced. Last ID: ${result.lastTransactionId}`);
+                }
+            } catch (err: any) {
+                // Swallow errors silently — server may be temporarily unreachable
+                console.warn(`[ZKT Sync] ⚠️ Sync failed: ${err.message}`);
+            } finally {
+                zktSyncRunning = false;
+            }
+        }, ZKT_INTERVAL_MS);
+
+        console.log(`[ZKT Sync] Auto-sync started. Polling every ${ZKT_INTERVAL_MS / 1000}s.`);
+    } else {
+        console.log('[ZKT Sync] ZKTECO_API_TOKEN not set — auto-sync disabled.');
+    }
 };
