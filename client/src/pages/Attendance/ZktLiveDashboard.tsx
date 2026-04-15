@@ -4,7 +4,8 @@ import {
     RefreshCw, Volume2, VolumeX, Download, Users,
     Zap, BarChart2, Calendar,
 } from 'lucide-react';
-import zktService, { ZktEmployee, ZktTransaction, ZktServerStatus, ZktSyncState } from '../../services/zktService';
+import zktService from '../../services/zktService';
+import type { ZktEmployee, ZktTransaction, ZktServerStatus, ZktSyncState } from '../../services/zktService';
 import ZktStatusBanner from './components/ZktStatusBanner';
 import ZktTransactionFeed from './components/ZktTransactionFeed';
 import ZktEmployeeTable from './components/ZktEmployeeTable';

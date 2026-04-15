@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Fingerprint, Clock, User, Wifi } from 'lucide-react';
+import { Fingerprint, Clock, Wifi } from 'lucide-react';
 import { api } from '../../../utils/api';
 
 interface LivePunchFeedProps {

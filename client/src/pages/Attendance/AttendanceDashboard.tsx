@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Clock, Users, UserCheck, UserX, AlertTriangle, Activity,
+    Clock, UserCheck, UserX, AlertTriangle, Activity,
     Calendar, Filter, RefreshCw, MapPin, ChevronDown, TrendingUp,
-    Fingerprint, BarChart2, List, Settings, Download, Search,
-    CheckCircle2, XCircle, Timer, Zap, Building2, Eye
+    Fingerprint, BarChart2, List, Search, Timer, Zap
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
