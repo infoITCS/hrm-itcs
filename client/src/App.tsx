@@ -90,12 +90,11 @@ function AppRoutes() {
         <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
-        <Route path="attendance" element={<AttendanceDashboard />} />
         <Route path="claim" element={<div className="p-4">Claim Module Placeholder</div>} />
-
         {/* Restricted to Admins & Managers */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
+          <Route path="attendance" element={<AttendanceDashboard />} />
           <Route path="pim" element={<PIM />}>
             <Route index element={<EmployeeList />} />
             <Route path="add" element={<AddEmployeeWizard />} />

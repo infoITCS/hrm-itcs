@@ -211,7 +211,7 @@ router.post('/iclock/devicecmd', (req: Request, res: Response) => {
 /**
  * GET /api/attendance/today
  */
-router.get('/today', authenticate, async (req: Request, res: Response) => {
+router.get('/today', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const today = new Date().toISOString().slice(0, 10);
         const { location } = req.query;
@@ -225,7 +225,7 @@ router.get('/today', authenticate, async (req: Request, res: Response) => {
 /**
  * GET /api/attendance/summary?date=YYYY-MM-DD&location=Main Office
  */
-router.get('/summary', authenticate, async (req: Request, res: Response) => {
+router.get('/summary', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const date     = (req.query.date as string) || new Date().toISOString().slice(0, 10);
         const location = req.query.location as string | undefined;
@@ -239,7 +239,7 @@ router.get('/summary', authenticate, async (req: Request, res: Response) => {
 /**
  * GET /api/attendance/weekly?endDate=YYYY-MM-DD&location=...
  */
-router.get('/weekly', authenticate, async (req: Request, res: Response) => {
+router.get('/weekly', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const endDate  = (req.query.endDate as string) || new Date().toISOString().slice(0, 10);
         const location = req.query.location as string | undefined;
@@ -274,7 +274,7 @@ router.get('/weekly', authenticate, async (req: Request, res: Response) => {
 /**
  * GET /api/attendance/records?page=1&limit=25&...
  */
-router.get('/records', authenticate, async (req: Request, res: Response) => {
+router.get('/records', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const page  = parseInt(req.query.page  as string) || 1;
         const limit = parseInt(req.query.limit as string) || 25;
@@ -307,7 +307,7 @@ router.get('/records', authenticate, async (req: Request, res: Response) => {
 /**
  * GET /api/attendance/punches?employeeId=&date=YYYY-MM-DD
  */
-router.get('/punches', authenticate, async (req: Request, res: Response) => {
+router.get('/punches', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const { employeeId, date } = req.query;
         if (!employeeId || !date) {
@@ -431,13 +431,13 @@ router.put(
     }
 );
 
-router.get('/locations', authenticate, async (_req, res) => {
+router.get('/locations', authenticate, authorize(['super-admin', 'admin', 'manager']), async (_req, res) => {
     const devices = await DeviceLocation.find({ isActive: true }, { locationName: 1 }).lean();
     const names   = [...new Set(devices.map(d => d.locationName))];
     res.json({ success: true, data: names });
 });
 
-router.get('/live-feed', authenticate, async (req: Request, res: Response) => {
+router.get('/live-feed', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const limit    = parseInt(req.query.limit as string) || 20;
         const location = req.query.location as string | undefined;
@@ -483,7 +483,7 @@ router.get('/live-feed', authenticate, async (req: Request, res: Response) => {
  * GET /api/attendance/zkt/status
  * Ping the ZKTeco server and return reachability info.
  */
-router.get('/zkt/status', authenticate, async (_req: Request, res: Response) => {
+router.get('/zkt/status', authenticate, authorize(['super-admin', 'admin', 'manager']), async (_req: Request, res: Response) => {
     try {
         const status = await checkServerStatus();
         res.json({ success: true, data: status });
@@ -496,7 +496,7 @@ router.get('/zkt/status', authenticate, async (_req: Request, res: Response) => 
  * GET /api/attendance/zkt/employees
  * Returns the full employee list from the ZKTeco Cloud server.
  */
-router.get('/zkt/employees', authenticate, async (_req: Request, res: Response) => {
+router.get('/zkt/employees', authenticate, authorize(['super-admin', 'admin', 'manager']), async (_req: Request, res: Response) => {
     try {
         const employees = await fetchEmployees();
         res.json({ success: true, count: employees.length, data: employees });
@@ -510,7 +510,7 @@ router.get('/zkt/employees', authenticate, async (_req: Request, res: Response) 
  * Returns transactions from the ZKTeco Cloud server.
  * Supports incremental fetch via last_id.
  */
-router.get('/zkt/transactions', authenticate, async (req: Request, res: Response) => {
+router.get('/zkt/transactions', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const lastId   = req.query.last_id ? parseInt(req.query.last_id as string, 10) : null;
         const pageSize = req.query.page_size ? parseInt(req.query.page_size as string, 10) : 100;
@@ -525,7 +525,7 @@ router.get('/zkt/transactions', authenticate, async (req: Request, res: Response
  * GET /api/attendance/zkt/report?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
  * Returns the transaction report from the ZKTeco Cloud server.
  */
-router.get('/zkt/report', authenticate, async (req: Request, res: Response) => {
+router.get('/zkt/report', authenticate, authorize(['super-admin', 'admin', 'manager']), async (req: Request, res: Response) => {
     try {
         const { start_date, end_date } = req.query as Record<string, string>;
         if (!start_date || !end_date) {
@@ -542,7 +542,7 @@ router.get('/zkt/report', authenticate, async (req: Request, res: Response) => {
  * GET /api/attendance/zkt/sync-state
  * Returns the current sync state (last transaction ID, last sync time).
  */
-router.get('/zkt/sync-state', authenticate, async (_req: Request, res: Response) => {
+router.get('/zkt/sync-state', authenticate, authorize(['super-admin', 'admin', 'manager']), async (_req: Request, res: Response) => {
     try {
         const state = await ZktSyncState.findOne({ key: 'default' }).lean();
         res.json({ success: true, data: state ?? { lastTransactionId: null, lastSyncAt: null, totalSynced: 0 } });
