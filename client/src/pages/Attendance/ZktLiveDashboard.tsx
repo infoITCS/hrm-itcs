@@ -15,6 +15,19 @@ import ZktEmployeeTable from './components/ZktEmployeeTable';
 const POLL_INTERVAL = 5000; // 5 seconds
 const RETRY_DELAY   = 15;   // seconds before auto-retry after failure
 
+const normalizeEmpCode = (code: string | number | null | undefined) => String(code ?? '').trim();
+const normalizePunchState = (state: string | number | null | undefined) => String(state ?? '').trim();
+const getTxnDate = (punchTime: string) => punchTime.slice(0, 10);
+// Some devices emit 255 as a generic biometric punch; treat it as IN.
+const isCheckIn = (txn: ZktTransaction) => ['0', '255'].includes(normalizePunchState(txn.punch_state));
+const isCheckOut = (txn: ZktTransaction) => normalizePunchState(txn.punch_state) === '1';
+const isAfterNine = (punchTime: string) => {
+    const dt = new Date(punchTime);
+    const h = dt.getHours();
+    const m = dt.getMinutes();
+    return h > 9 || (h === 9 && m > 0);
+};
+
 function useLiveClock() {
     const [now, setNow] = useState(new Date());
     useEffect(() => {
@@ -41,15 +54,17 @@ function punchBeep() {
 }
 
 function exportToCSV(transactions: ZktTransaction[], employees: ZktEmployee[]) {
-    const empMap = new Map(employees.map(e => [e.emp_code, `${e.first_name} ${e.last_name ?? ''}`.trim()]));
+    const empMap = new Map(
+        employees.map(e => [normalizeEmpCode(e.emp_code), `${e.first_name} ${e.last_name ?? ''}`.trim()])
+    );
     const rows = [
         ['ID', 'Emp Code', 'Name', 'Punch Time', 'State', 'Terminal', 'Area'],
         ...transactions.map(t => [
             t.id,
             t.emp_code,
-            empMap.get(t.emp_code) ?? '',
+            empMap.get(normalizeEmpCode(t.emp_code)) ?? '',
             t.punch_time,
-            t.punch_state === '0' ? 'IN' : t.punch_state === '1' ? 'OUT' : t.punch_state,
+            isCheckIn(t) ? 'IN' : isCheckOut(t) ? 'OUT' : normalizePunchState(t.punch_state),
             t.terminal_sn ?? '',
             t.area_alias ?? '',
         ]),
@@ -68,7 +83,7 @@ function exportToCSV(transactions: ZktTransaction[], employees: ZktEmployee[]) {
 
 interface StatProps { title: string; value: string | number; sub: string; icon: React.ElementType; color: string }
 
-const StatCard = ({ title, value, sub, icon: Icon, color }: StatProps) => {
+const StatCard = ({ title, value, sub, icon: Icon, color, onClick }: StatProps & { onClick?: () => void }) => {
     const colors: Record<string, string> = {
         emerald: 'bg-emerald-500',
         rose:    'bg-rose-500',
@@ -76,7 +91,13 @@ const StatCard = ({ title, value, sub, icon: Icon, color }: StatProps) => {
         indigo:  'bg-indigo-500',
     };
     return (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex items-start gap-4">
+        <button
+            type="button"
+            onClick={onClick}
+            className={`w-full bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex items-start gap-4 text-left ${
+                onClick ? 'hover:border-slate-200 hover:shadow-md transition-all cursor-pointer' : ''
+            }`}
+        >
             <div className={`${colors[color] ?? 'bg-slate-500'} p-3 rounded-xl text-white shrink-0`}>
                 <Icon size={20} />
             </div>
@@ -85,19 +106,21 @@ const StatCard = ({ title, value, sub, icon: Icon, color }: StatProps) => {
                 <p className="text-2xl font-extrabold text-slate-800 leading-tight mt-0.5">{value}</p>
                 <p className="text-xs text-slate-400 mt-0.5 truncate">{sub}</p>
             </div>
-        </div>
+        </button>
     );
 };
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 type DashTab = 'feed' | 'employees';
+type EmployeeFocus = 'all' | 'present' | 'absent' | 'late' | 'early';
 
 const ZktLiveDashboard = () => {
     const now = useLiveClock();
 
     // ── State ─────────────────────────────────────────────────────────────────
     const [tab, setTab]                         = useState<DashTab>('feed');
+    const [employeeFocus, setEmployeeFocus]     = useState<EmployeeFocus>('all');
     const [sound, setSound]                     = useState(false);
     const [autoRefresh, setAutoRefresh]         = useState(true);
 
@@ -247,32 +270,61 @@ const ZktLiveDashboard = () => {
 
     // ── Computed stats ────────────────────────────────────────────────────────
     const todayStr = dateFilter;
-    const todayTxns = transactions.filter(t => t.punch_time.startsWith(todayStr));
-    const todayInCodes = new Set(
-        todayTxns.filter(t => t.punch_state === '0').map(t => t.emp_code)
+    const todayTxns = transactions.filter(t => getTxnDate(t.punch_time) === todayStr);
+    const todayCheckIns = todayTxns.filter(isCheckIn);
+    const todayInCodes = new Set(todayCheckIns.map(t => normalizeEmpCode(t.emp_code)));
+
+    // Count present/absent against known workforce list to keep totals consistent.
+    const knownEmployeeCodes = new Set(employees.map(e => normalizeEmpCode(e.emp_code)));
+    const presentEmployeeCodes = new Set(
+        Array.from(todayInCodes).filter(code => knownEmployeeCodes.has(code))
     );
-    const presentCount = todayInCodes.size;
+    const presentCount = presentEmployeeCodes.size;
     const absentCount  = Math.max(0, employees.length - presentCount);
 
-    // Late = checked in after 09:00
-    const lateCount = todayTxns.filter(t => {
-        if (t.punch_state !== '0') return false;
-        const h = new Date(t.punch_time).getHours();
-        const m = new Date(t.punch_time).getMinutes();
-        return h > 9 || (h === 9 && m > 0);
-    }).length;
+    // Late = employee's first check-in is after 09:00 (unique employees, not punch events)
+    const firstCheckInByEmp = new Map<string, string>();
+    for (const txn of todayCheckIns) {
+        const code = normalizeEmpCode(txn.emp_code);
+        if (!knownEmployeeCodes.has(code)) continue;
+        const prev = firstCheckInByEmp.get(code);
+        if (!prev || new Date(txn.punch_time).getTime() < new Date(prev).getTime()) {
+            firstCheckInByEmp.set(code, txn.punch_time);
+        }
+    }
+    const lateCount = Array.from(firstCheckInByEmp.values()).filter(isAfterNine).length;
+    const lateEmployeeCodes = new Set(
+        Array.from(firstCheckInByEmp.entries())
+            .filter(([, checkIn]) => isAfterNine(checkIn))
+            .map(([code]) => code)
+    );
 
-    // Early leaves = checked out before 17:00
-    const earlyLeaveCount = todayTxns.filter(t => {
-        if (t.punch_state !== '1') return false;
-        const h = new Date(t.punch_time).getHours();
-        return h < 17;
-    }).length;
+    // Early leaves = employee's latest checkout is before 17:00
+    const lastCheckOutByEmp = new Map<string, string>();
+    for (const txn of todayTxns.filter(isCheckOut)) {
+        const code = normalizeEmpCode(txn.emp_code);
+        if (!knownEmployeeCodes.has(code)) continue;
+        const prev = lastCheckOutByEmp.get(code);
+        if (!prev || new Date(txn.punch_time).getTime() > new Date(prev).getTime()) {
+            lastCheckOutByEmp.set(code, txn.punch_time);
+        }
+    }
+    const earlyEmployeeCodes = new Set(
+        Array.from(lastCheckOutByEmp.entries())
+            .filter(([, checkOut]) => new Date(checkOut).getHours() < 17)
+            .map(([code]) => code)
+    );
+    const earlyLeaveCount = earlyEmployeeCodes.size;
+
+    const openEmployeeTab = (focus: EmployeeFocus) => {
+        setTab('employees');
+        setEmployeeFocus(focus);
+    };
 
     return (
         <div className="space-y-6">
             {/* ── Header ── */}
-            <div className="rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-700">
+            <div className="rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
                 <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none" />
 
@@ -342,7 +394,7 @@ const ZktLiveDashboard = () => {
                             <button
                                 onClick={handleSyncReport}
                                 disabled={syncingReport || !dateFilter}
-                                className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-teal-900/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100`}
+                                className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-indigo-900/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100`}
                                 title="Pull pre-calculated Absent/Present status directly from machine engine"
                             >
                                 <Zap size={13} className={syncingReport ? 'animate-pulse' : ''} />
@@ -382,6 +434,7 @@ const ZktLiveDashboard = () => {
                     sub={`${employees.length > 0 ? Math.round((presentCount / employees.length) * 100) : 0}% of workforce`}
                     icon={UserCheck}
                     color="emerald"
+                    onClick={() => openEmployeeTab('present')}
                 />
                 <StatCard
                     title="Absent Today"
@@ -389,6 +442,7 @@ const ZktLiveDashboard = () => {
                     sub="No check-in recorded"
                     icon={UserX}
                     color="rose"
+                    onClick={() => openEmployeeTab('absent')}
                 />
                 <StatCard
                     title="Late Arrivals"
@@ -396,6 +450,7 @@ const ZktLiveDashboard = () => {
                     sub="Checked in after 09:00"
                     icon={AlertTriangle}
                     color="amber"
+                    onClick={() => openEmployeeTab('late')}
                 />
                 <StatCard
                     title="Early Leaves"
@@ -403,6 +458,7 @@ const ZktLiveDashboard = () => {
                     sub="Checked out before 17:00"
                     icon={Timer}
                     color="indigo"
+                    onClick={() => openEmployeeTab('early')}
                 />
             </div>
 
@@ -418,7 +474,7 @@ const ZktLiveDashboard = () => {
                             onClick={() => setTab(t.id)}
                             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                                 tab === t.id
-                                    ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-sm'
+                                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
                                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                             }`}
                         >
@@ -447,7 +503,7 @@ const ZktLiveDashboard = () => {
                         <div>
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <Zap size={16} className="text-teal-500" />
+                                    <Zap size={16} className="text-indigo-500" />
                                     Real-Time Punch Feed
                                     <span className="text-xs text-slate-400 font-normal ml-1">
                                         (latest on top · polling every 5s)
@@ -460,7 +516,7 @@ const ZktLiveDashboard = () => {
                             <ZktTransactionFeed
                                 transactions={dateFilter === new Date().toISOString().slice(0, 10)
                                     ? transactions
-                                    : transactions.filter(t => t.punch_time.startsWith(dateFilter))
+                                    : transactions.filter(t => getTxnDate(t.punch_time) === dateFilter)
                                 }
                                 newIds={newIds}
                                 loading={txnLoading}
@@ -473,7 +529,7 @@ const ZktLiveDashboard = () => {
                         <div>
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <Users size={16} className="text-teal-500" />
+                                    <Users size={16} className="text-indigo-500" />
                                     Employee Directory
                                     <span className="text-xs text-slate-400 font-normal ml-1">
                                         from ZKTeco Cloud
@@ -492,6 +548,11 @@ const ZktLiveDashboard = () => {
                                 employees={employees}
                                 loading={empLoading}
                                 todayInCodes={todayInCodes}
+                                focusFilter={employeeFocus}
+                                lateCodes={lateEmployeeCodes}
+                                earlyLeaveCodes={earlyEmployeeCodes}
+                                firstCheckInByEmp={firstCheckInByEmp}
+                                lastCheckOutByEmp={lastCheckOutByEmp}
                             />
                         </div>
                     )}
@@ -501,16 +562,16 @@ const ZktLiveDashboard = () => {
             {/* ── Today's stats bar ── */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
                 <div className="flex items-center gap-2 mb-3">
-                    <BarChart2 size={16} className="text-teal-500" />
+                    <BarChart2 size={16} className="text-indigo-500" />
                     <h3 className="font-bold text-slate-800 text-sm">Today's Summary</h3>
                     <span className="text-xs text-slate-400 font-normal">{todayStr}</span>
                 </div>
                 <div className="flex flex-wrap gap-4">
                     {[
                         { label: 'Total Punches',  val: todayTxns.length,                              color: 'text-slate-700' },
-                        { label: 'Check-Ins',      val: todayTxns.filter(t => t.punch_state === '0').length, color: 'text-emerald-600' },
-                        { label: 'Check-Outs',     val: todayTxns.filter(t => t.punch_state === '1').length, color: 'text-rose-600'    },
-                        { label: 'Other',          val: todayTxns.filter(t => !['0','1'].includes(t.punch_state)).length, color: 'text-amber-600'  },
+                        { label: 'Check-Ins',      val: todayTxns.filter(isCheckIn).length, color: 'text-emerald-600' },
+                        { label: 'Check-Outs',     val: todayTxns.filter(isCheckOut).length, color: 'text-rose-600'    },
+                        { label: 'Other',          val: todayTxns.filter(t => !['0', '1', '255'].includes(normalizePunchState(t.punch_state))).length, color: 'text-amber-600'  },
                         { label: 'Total Synced',   val: syncState?.totalSynced ?? '…',                  color: 'text-indigo-600' },
                     ].map(s => (
                         <div key={s.label} className="flex flex-col items-center px-4 py-3 bg-slate-50 rounded-xl border border-slate-100 min-w-[90px]">

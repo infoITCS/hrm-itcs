@@ -6,10 +6,30 @@ interface ZktEmployeeTableProps {
     employees: ZktEmployee[];
     loading?: boolean;
     todayInCodes?: Set<string>;   // emp_codes that have punched IN today
+    focusFilter?: 'all' | 'present' | 'absent' | 'late' | 'early';
+    lateCodes?: Set<string>;
+    earlyLeaveCodes?: Set<string>;
+    firstCheckInByEmp?: Map<string, string>;
+    lastCheckOutByEmp?: Map<string, string>;
 }
 
 type SortKey = 'emp_code' | 'first_name' | 'department';
 type SortDir = 'asc' | 'desc';
+const normalizeEmpCode = (code: string | number | null | undefined) => String(code ?? '').trim();
+const getDepartmentText = (emp: ZktEmployee) => {
+    if (typeof emp.department_name === 'string' && emp.department_name.trim()) return emp.department_name.trim();
+    if (typeof emp.department === 'string' && emp.department.trim()) return emp.department.trim();
+    if (emp.department && typeof emp.department === 'object') {
+        const d = emp.department as Record<string, unknown>;
+        const candidate =
+            (typeof d.dept_name === 'string' && d.dept_name) ||
+            (typeof d.department_name === 'string' && d.department_name) ||
+            (typeof d.name === 'string' && d.name) ||
+            (typeof d.dept_code === 'string' && d.dept_code);
+        if (candidate) return candidate.trim();
+    }
+    return '—';
+};
 
 const SkeletonRow = () => (
     <tr className="border-b border-slate-50 animate-pulse">
@@ -20,7 +40,16 @@ const SkeletonRow = () => (
     </tr>
 );
 
-const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set() }: ZktEmployeeTableProps) => {
+const ZktEmployeeTable = ({
+    employees,
+    loading = false,
+    todayInCodes = new Set(),
+    focusFilter = 'all',
+    lateCodes = new Set(),
+    earlyLeaveCodes = new Set(),
+    firstCheckInByEmp = new Map(),
+    lastCheckOutByEmp = new Map(),
+}: ZktEmployeeTableProps) => {
     const [search, setSearch]         = useState('');
     const [deptFilter, setDeptFilter] = useState('');
     const [sortKey, setSortKey]       = useState<SortKey>('emp_code');
@@ -29,7 +58,10 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
     // Collect unique departments
     const departments = useMemo(() => {
         const depts = new Set<string>();
-        employees.forEach(e => { if (e.department_name) depts.add(e.department_name); });
+        employees.forEach(e => {
+            const dept = getDepartmentText(e);
+            if (dept !== '—') depts.add(dept);
+        });
         return Array.from(depts).sort();
     }, [employees]);
 
@@ -45,16 +77,26 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
             );
         }
         if (deptFilter) {
-            list = list.filter(e => e.department_name === deptFilter);
+            list = list.filter(e => getDepartmentText(e) === deptFilter);
+        }
+        if (focusFilter !== 'all') {
+            list = list.filter(e => {
+                const code = normalizeEmpCode(e.emp_code);
+                if (focusFilter === 'present') return todayInCodes.has(code);
+                if (focusFilter === 'absent') return !todayInCodes.has(code);
+                if (focusFilter === 'late') return lateCodes.has(code);
+                if (focusFilter === 'early') return earlyLeaveCodes.has(code);
+                return true;
+            });
         }
         return [...list].sort((a, b) => {
             let av = '', bv = '';
             if (sortKey === 'emp_code')    { av = a.emp_code;   bv = b.emp_code; }
             if (sortKey === 'first_name')  { av = a.first_name; bv = b.first_name; }
-            if (sortKey === 'department')  { av = a.department_name ?? ''; bv = b.department_name ?? ''; }
+            if (sortKey === 'department')  { av = getDepartmentText(a); bv = getDepartmentText(b); }
             return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
         });
-    }, [employees, search, deptFilter, sortKey, sortDir]);
+    }, [employees, search, deptFilter, sortKey, sortDir, focusFilter, todayInCodes, lateCodes, earlyLeaveCodes]);
 
     const toggleSort = (key: SortKey) => {
         if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -66,7 +108,7 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
         return sortDir === 'asc' ? <ChevronUp size={12} className="text-indigo-500" /> : <ChevronDown size={12} className="text-indigo-500" />;
     };
 
-    const presentCount = employees.filter(e => todayInCodes.has(e.emp_code)).length;
+    const presentCount = employees.filter(e => todayInCodes.has(normalizeEmpCode(e.emp_code))).length;
     const absentCount  = employees.length - presentCount;
 
     return (
@@ -87,6 +129,14 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
                     <Building2 size={14} className="text-slate-400" />
                     <span className="text-slate-500">{departments.length} department{departments.length !== 1 ? 's' : ''}</span>
                 </div>
+                {focusFilter !== 'all' && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-sm">
+                        <span className="text-indigo-600 font-semibold">Filtered:</span>
+                        <span className="text-indigo-700 font-bold capitalize">
+                            {focusFilter === 'early' ? 'Early Leaves' : `${focusFilter} employees`}
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Filters */}
@@ -126,13 +176,20 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
                                 <span className="flex items-center gap-1">Department <SortIcon col="department" /></span>
                             </th>
                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                            <th className="text-left px-4 py-3 font-semibold text-slate-600">First Check-In</th>
+                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Last Check-Out</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading
                             ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
                             : visible.map(emp => {
-                                const isPresent = todayInCodes.has(emp.emp_code);
+                                const code = normalizeEmpCode(emp.emp_code);
+                                const isPresent = todayInCodes.has(code);
+                                const isLate = lateCodes.has(code);
+                                const isEarly = earlyLeaveCodes.has(code);
+                                const firstCheckIn = firstCheckInByEmp.get(code);
+                                const lastCheckOut = lastCheckOutByEmp.get(code);
                                 return (
                                     <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                         <td className="px-4 py-3 font-mono font-bold text-slate-800 text-xs">{emp.emp_code}</td>
@@ -140,10 +197,10 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
                                             {emp.first_name} {emp.last_name ?? ''}
                                         </td>
                                         <td className="px-4 py-3 text-slate-500">
-                                            {emp.department_name ?? emp.department ?? '—'}
+                                            {getDepartmentText(emp)}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border mr-2 ${
                                                 isPresent
                                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                     : 'bg-rose-50 text-rose-600 border-rose-200'
@@ -151,6 +208,26 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
                                                 <span className={`w-1.5 h-1.5 rounded-full ${isPresent ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                                                 {isPresent ? 'Present' : 'Absent'}
                                             </span>
+                                            {isLate && (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border bg-amber-50 text-amber-700 border-amber-200 mr-2">
+                                                    Late
+                                                </span>
+                                            )}
+                                            {isEarly && (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                                                    Early Leave
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-600">
+                                            {firstCheckIn
+                                                ? new Date(firstCheckIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+                                                : '—'}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-600">
+                                            {lastCheckOut
+                                                ? new Date(lastCheckOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+                                                : '—'}
                                         </td>
                                     </tr>
                                 );
@@ -158,7 +235,7 @@ const ZktEmployeeTable = ({ employees, loading = false, todayInCodes = new Set()
                         }
                         {!loading && !visible.length && (
                             <tr>
-                                <td colSpan={4} className="px-4 py-10 text-center text-slate-400 text-sm">
+                                <td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-sm">
                                     No employees match your filter.
                                 </td>
                             </tr>
