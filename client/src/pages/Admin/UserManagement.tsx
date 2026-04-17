@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
@@ -35,6 +35,12 @@ const UserManagement = () => {
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [inviteData, setInviteData] = useState({ email: '', firstName: '', lastName: '', role: 'employee' });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Password Reset Modal state
+    const [showResetModal, setShowResetModal] = useState(false);
+    const [resettingUser, setResettingUser] = useState<UserData | null>(null);
+    const [newPassword, setNewPassword] = useState('');
+    const [isResetting, setIsResetting] = useState(false);
 
 
     const [alertConfig, setAlertConfig] = useState<{
@@ -157,6 +163,48 @@ const UserManagement = () => {
         }
     };
 
+    const handlePasswordReset = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!resettingUser) return;
+        
+        setIsResetting(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/admin/users/${resettingUser._id}/password`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ newPassword })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.message || 'Failed to reset password');
+            }
+
+            setAlertConfig({
+                isOpen: true,
+                title: 'Success',
+                message: `Password for ${resettingUser.email} has been reset successfully.`,
+                type: 'success'
+            });
+            setShowResetModal(false);
+            setNewPassword('');
+            setResettingUser(null);
+        } catch (err: any) {
+            setAlertConfig({
+                isOpen: true,
+                title: 'Reset Failed',
+                message: err.message,
+                type: 'error'
+            });
+        } finally {
+            setIsResetting(false);
+        }
+    };
+
     const getRoleBadgeColor = (role: string) => {
         switch (role) {
             case 'super-admin': return 'bg-purple-100 text-purple-700 border-purple-200';
@@ -254,7 +302,7 @@ const UserManagement = () => {
                                     <tr key={user._id} className="hover:bg-indigo-50/20 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100">
+                                                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100">
                                                     {user.firstName ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}` : <User size={18} />}
                                                 </div>
                                                 <div>
@@ -321,6 +369,18 @@ const UserManagement = () => {
                                                         Email
                                                     </span>
                                                 </div>
+                                                {currentUserRole === 'super-admin' && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setResettingUser(user);
+                                                            setShowResetModal(true);
+                                                        }}
+                                                        className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors w-fit shadow-sm"
+                                                        title="Reset Password"
+                                                    >
+                                                        <Key size={10} /> Reset Password
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -425,6 +485,71 @@ const UserManagement = () => {
                                             Creating...
                                         </>
                                     ) : 'Create User'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Reset Password Modal */}
+            {showResetModal && resettingUser && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 bg-amber-50 relative">
+                            <h3 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+                                <Key size={20} /> Reset User Password
+                            </h3>
+                            <p className="text-sm text-amber-600 mt-1">Setting a new password for <strong>{resettingUser.email}</strong></p>
+                            <button 
+                                onClick={() => {
+                                    setShowResetModal(false);
+                                    setNewPassword('');
+                                }}
+                                className="absolute top-6 right-6 p-2 text-amber-400 hover:text-amber-600 hover:bg-white rounded-full transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={handlePasswordReset} className="p-6 space-y-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">New Password</label>
+                                <input 
+                                    type="text" 
+                                    required
+                                    minLength={6}
+                                    placeholder="Enter new strong password"
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-amber-100 focus:border-amber-400 outline-none transition-all"
+                                    value={newPassword}
+                                    onChange={e => setNewPassword(e.target.value)}
+                                    autoFocus
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Minimum 6 characters. The user will NOT be notified automatically.</p>
+                            </div>
+
+                            <div className="pt-4 flex items-center justify-end gap-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowResetModal(false);
+                                        setNewPassword('');
+                                    }}
+                                    className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isResetting || !newPassword}
+                                    className="px-6 py-2.5 text-sm font-bold text-white bg-amber-600 rounded-xl hover:bg-amber-700 shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isResetting ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Resetting...
+                                        </>
+                                    ) : 'Confirm Reset'}
                                 </button>
                             </div>
                         </form>

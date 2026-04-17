@@ -210,4 +210,45 @@ router.delete('/users/:id/microsoft', authenticate, requireAdmin, async (req: Re
     }
 });
 
+/**
+ * @route   PATCH /api/admin/users/:id/password
+ * @desc    Reset a user's password (manual reset by admin)
+ * @access  Private (Super Admin only)
+ */
+router.patch('/users/:id/password', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const { newPassword } = req.body;
+
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Security: Prevent modifying other Super Admins if not a Super Admin (though requireAdmin already checks this)
+        if (user.role === 'super-admin' && authReq.user?.role !== 'super-admin') {
+            return res.status(403).json({ message: 'Only a Super Admin can modify another Super Admin' });
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'User',
+            targetId: user._id.toString(),
+            performedBy: authReq.user?.userId || 'System',
+            details: { message: 'Password manually reset by admin' }
+        });
+
+        res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

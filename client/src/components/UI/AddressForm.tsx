@@ -16,6 +16,7 @@ interface AddressFormProps {
     value: AddressValue;
     onChange: (field: keyof AddressValue, val: string) => void;
     inputClass?: string;
+    headerAction?: React.ReactNode;
 }
 
 // ─── Scrollable custom dropdown (shows 5 rows, scrolls for more) ────────────
@@ -135,7 +136,10 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass }: AddressFo
 
     return (
         <div>
-            <h3 className="text-lg font-medium text-gray-700 mb-1">{title}</h3>
+            <div className="flex items-center justify-between mb-1">
+                <h3 className="text-lg font-medium text-gray-700">{title}</h3>
+                {headerAction && <div className="flex items-center">{headerAction}</div>}
+            </div>
             {subtitle && <p className="text-xs text-gray-400 mb-4">{subtitle}</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-5 bg-slate-50 rounded-2xl border border-slate-100">
 

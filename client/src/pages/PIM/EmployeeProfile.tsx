@@ -220,7 +220,7 @@ const EmployeeProfile = () => {
                 </button>
 
                 <div className="relative group">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
                         <Avatar
                             src={localAvatarPreview || getAvatarUrl(employee)}
                             firstName={employee.firstName}

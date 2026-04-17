@@ -1873,7 +1873,7 @@ const MyInfo = () => {
                                                 {/* Profile Picture shows image preview instead of icon */}
                                                 {label === 'Profile Picture' && localAvatarPreview ? (
                                                     <div className="relative z-10">
-                                                        <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2" />
+                                                        <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2" />
                                                         <button
                                                             onClick={(e) => { 
                                                                 e.preventDefault(); 
@@ -1890,8 +1890,8 @@ const MyInfo = () => {
                                                     </div>
                                                 ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
                                                     <div className="relative z-10">
-                                                        <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-xl object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
-                                                        <div className="absolute inset-0 bg-black/20 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
+                                                        <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <Upload className="text-white drop-shadow-md" size={24} />
                                                         </div>
                                                     </div>

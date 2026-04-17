@@ -112,9 +112,10 @@ const EmployeeList = () => {
             if (statusFilter === 'past' && !isPast) return false;
 
             const fullName = `${emp.firstName} ${emp.middleName ? emp.middleName + ' ' : ''}${emp.lastName}`.toLowerCase();
-            const matchesName = fullName.includes(filters.name.toLowerCase());
+            const designation = (emp.jobInfo?.designation || '').toLowerCase();
+            const matchesName = fullName.includes(filters.name.toLowerCase()) || designation.includes(filters.name.toLowerCase());
             const matchesId = emp.employeeId.toLowerCase().includes(filters.id.toLowerCase());
-            const matchesPost = (emp.jobInfo?.designation || '').toLowerCase().includes(filters.post.toLowerCase());
+            const matchesPost = designation.includes(filters.post.toLowerCase());
             const matchesDept = (emp.jobInfo?.department || '').toLowerCase().includes(filters.dept.toLowerCase());
             const matchesManager = (emp.jobInfo?.reportingManager || '').toLowerCase().includes(filters.manager.toLowerCase());
 
@@ -219,7 +220,7 @@ const EmployeeList = () => {
                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
                             <input
                                 type="text"
-                                placeholder="Search Name..."
+                                placeholder="Search Name or Job Title..."
                                 value={filters.name}
                                 onChange={(e) => setFilters(prev => ({ ...prev, name: e.target.value }))}
                                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"
@@ -241,16 +242,13 @@ const EmployeeList = () => {
                         {/* Post Search */}
                         <div className="relative group">
                             <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none" size={16} />
-                            <select
+                            <input
+                                type="text"
+                                placeholder="Job Title..."
                                 value={filters.post}
                                 onChange={(e) => setFilters(prev => ({ ...prev, post: e.target.value }))}
-                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium appearance-none cursor-pointer"
-                            >
-                                <option value="">All Designations</option>
-                                {designations.map(d => (
-                                    <option key={d} value={d}>{d}</option>
-                                ))}
-                            </select>
+                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"
+                            />
                         </div>
 
                         {/* Dept Search */}
@@ -329,7 +327,7 @@ const EmployeeList = () => {
 
                                 {/* Avatar */}
                                 <div className="relative mb-4">
-                                    <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform">
+                                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform">
                                         <Avatar
                                             src={getAvatarUrl(emp)}
                                             firstName={emp.firstName}
@@ -412,7 +410,7 @@ const EmployeeList = () => {
                                         <tr key={emp.employeeId} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100 relative group-hover:scale-110 transition-transform overflow-hidden">
+                                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100 relative group-hover:scale-110 transition-transform overflow-hidden">
                                                         <Avatar
                                                             src={getAvatarUrl(emp)}
                                                             firstName={emp.firstName}

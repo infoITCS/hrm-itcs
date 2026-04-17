@@ -521,6 +521,13 @@ const AddEmployeeWizard = () => {
             emergencyContacts: prev.emergencyContacts.filter((_, i) => i !== index)
         }));
     };
+    
+    const copyPermanentAddress = () => {
+        setFormData(prev => ({
+            ...prev,
+            temporaryAddress: { ...prev.address }
+        }));
+    };
 
     const handleSubmit = async (shouldNavigate = true, isBackground = false) => {
         if (!isBackground) setLoading(true);
@@ -1205,6 +1212,16 @@ const AddEmployeeWizard = () => {
                                 setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [field]: val } }))
                             }
                             inputClass="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all bg-white"
+                            headerAction={
+                                <button
+                                    type="button"
+                                    onClick={copyPermanentAddress}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-100 transition-all shadow-sm"
+                                >
+                                    <Check size={14} />
+                                    Same as Permanent
+                                </button>
+                            }
                         />
 
                         <div>
