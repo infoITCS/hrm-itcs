@@ -23,6 +23,15 @@ export const api = {
     attendanceDevices: `${API_BASE_URL}/api/attendance/devices`,
     attendanceExport: `${API_BASE_URL}/api/attendance/export`,
 
+    // Expense Claims
+    claims: `${API_BASE_URL}/api/claims`,
+    claimMine: `${API_BASE_URL}/api/claims/mine`,
+    claimPendingApprovals: `${API_BASE_URL}/api/claims/approvals/pending`,
+    claimProfileProgress: `${API_BASE_URL}/api/claims/profile-progress`,
+    claimDecision: (id: string) => `${API_BASE_URL}/api/claims/${id}/decision`,
+    claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
+    claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,
+
     // ZKTeco Cloud API proxy endpoints (server proxies to 192.168.0.74:8081)
     zktStatus:       `${API_BASE_URL}/api/attendance/zkt/status`,
     zktEmployees:    `${API_BASE_URL}/api/attendance/zkt/employees`,

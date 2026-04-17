@@ -18,7 +18,7 @@ const MainLayout = () => {
     else if (location.pathname.includes('performance')) title = 'Performance';
     else if (location.pathname.includes('directory')) title = 'Directory';
     else if (location.pathname.includes('maintenance')) title = 'Maintenance';
-    else if (location.pathname.includes('claim')) title = 'Claim';
+    else if (location.pathname.includes('claim')) title = 'Expense Claim';
 
     return (
         <div className="flex flex-col min-h-screen">

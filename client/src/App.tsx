@@ -19,6 +19,7 @@ import Directory from './pages/Directory/Directory';
 import AttendanceDashboard from './pages/Attendance/AttendanceDashboard';
 import ResetPassword from './pages/ResetPassword';
 import ErrorBoundary from './components/ErrorBoundary';
+import ExpenseClaimDashboard from './pages/Claim/ExpenseClaimDashboard';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -90,7 +91,7 @@ function AppRoutes() {
         <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
-        <Route path="claim" element={<div className="p-4">Claim Module Placeholder</div>} />
+        <Route path="claim" element={<ExpenseClaimDashboard />} />
         {/* Restricted to Admins & Managers */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />

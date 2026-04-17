@@ -41,6 +41,7 @@ import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
 import orgConfigRoutes from './routes/orgConfigRoutes';
 import attendanceRoutes from './routes/attendanceRoutes';
+import claimRoutes from './routes/claimRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -289,6 +290,7 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/config', orgConfigRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/claims', claimRoutes);
 
 
 app.get('/api/health', (req, res) => {
