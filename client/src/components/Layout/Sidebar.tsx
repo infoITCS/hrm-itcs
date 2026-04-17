@@ -40,7 +40,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
-        { name: 'Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Claim', icon: DollarSign, path: '/pim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
     ];
 
     const menuItems = allMenuItems.filter(item => item.roles.includes(role));

@@ -53,7 +53,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
     // Derive display label directly from the controlled `value` prop
     const selectedLabel = normalizedOptions.find(opt => opt.value === value)?.label || placeholder;
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
         if (disabled) return;
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -79,11 +79,16 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
         <div className="space-y-1 relative" ref={containerRef}>
             {label && <label className="block text-sm font-semibold text-gray-700">{label}</label>}
 
-            <div
+            <button
+                type="button"
                 className={`w-full border ${isOpen && !disabled ? 'border-indigo-500 ring-1 ring-indigo-200' : 'border-slate-300'} rounded-lg ${disabled ? 'bg-gray-50 cursor-not-allowed' : 'bg-white cursor-pointer'} relative flex items-center justify-between transition-all ${!disabled && 'group hover:border-indigo-400 hover:bg-indigo-50/30'} focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200`}
                 onClick={() => !disabled && setIsOpen(!isOpen)}
                 onKeyDown={handleKeyDown}
-                tabIndex={disabled ? -1 : 0}
+                disabled={disabled}
+                onBlur={() => {
+                    // Slight delay to allow clicking options before closing
+                    setTimeout(() => setIsOpen(false), 200);
+                }}
                 role="combobox"
                 aria-expanded={isOpen}
                 aria-haspopup="listbox"
@@ -95,7 +100,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                 <div className="p-2 m-1 bg-indigo-50 rounded-md text-indigo-600 group-hover:bg-indigo-100 transition-colors">
                     {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </div>
-            </div>
+            </button>
 
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 max-h-60 overflow-auto" role="listbox">

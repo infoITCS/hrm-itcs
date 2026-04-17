@@ -49,12 +49,36 @@ const ScrollDropdown = ({
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (disabled) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen(prev => !prev);
+        } else if (e.key === 'Escape') {
+            setOpen(false);
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!open) { setOpen(true); return; }
+            const currentIndex = options.indexOf(value);
+            const nextIndex = Math.min(currentIndex + 1, options.length - 1);
+            onChange(options[nextIndex]);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!open) { setOpen(true); return; }
+            const currentIndex = options.indexOf(value);
+            const prevIndex = Math.max(currentIndex - 1, 0);
+            onChange(options[prevIndex]);
+        }
+    };
+
     return (
         <div ref={ref} className="relative w-full">
             <button
                 type="button"
                 disabled={disabled}
                 onClick={() => !disabled && setOpen(prev => !prev)}
+                onKeyDown={handleKeyDown}
+                onBlur={() => setTimeout(() => setOpen(false), 200)}
                 className={`w-full flex items-center justify-between ${className} text-left ${
                     disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                 }`}
@@ -73,15 +97,14 @@ const ScrollDropdown = ({
                     {/* 5 rows × 36px = 180px max-height, scrollable */}
                     <div className="overflow-y-auto" style={{ maxHeight: '180px' }}>
                         {options.map(opt => (
-                            <button
+                            <div
                                 key={opt}
-                                type="button"
                                 onClick={() => { onChange(opt); setOpen(false); }}
-                                className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-indigo-50 hover:text-indigo-700
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors cursor-pointer hover:bg-indigo-50 hover:text-indigo-700
                                     ${value === opt ? 'bg-indigo-50 font-medium text-indigo-700' : 'text-gray-700'}`}
                             >
                                 {opt}
-                            </button>
+                            </div>
                         ))}
                     </div>
                 </div>
