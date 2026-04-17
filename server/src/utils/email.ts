@@ -19,8 +19,23 @@ const transporter = nodemailer.createTransport({
  * 4. Default localhost
  */
 const getBaseUrl = (providedUrl?: string) => {
-    if (providedUrl) return providedUrl;
-    return process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+    // Priority:
+    // 1. process.env.FRONTEND_URL (if not localhost)
+    // 2. process.env.CLIENT_URL (if not localhost)
+    // 3. Provided URL (e.g. from request headers)
+    // 4. Fallback to env vars even if localhost
+    // 5. Default localhost
+    
+    const envUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+    if (envUrl && !envUrl.includes('localhost')) {
+        return envUrl;
+    }
+
+    if (providedUrl && !providedUrl.includes('localhost')) {
+        return providedUrl;
+    }
+
+    return envUrl || providedUrl || 'https://hrm-itcs-client.vercel.app';
 };
 
 export const sendPasswordResetEmail = async (to: string, resetToken: string, baseUrl?: string) => {

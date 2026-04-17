@@ -1846,7 +1846,7 @@ const MyInfo = () => {
                                             <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
                                                 <input
                                                     type="file"
-                                                    accept={label === 'Profile Picture' ? "image/*" : ".pdf,.doc,.docx,.jpg,.png"}
+                                                    accept={label === 'Profile Picture' ? "image/*" : (label === 'Resume/CV' ? '.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp' : '.jpg,.jpeg,.png,.webp')}
                                                     className="absolute inset-0 opacity-0 cursor-pointer z-20"
                                                     tabIndex={-1}
                                                     onChange={(e) => {

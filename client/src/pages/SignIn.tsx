@@ -4,6 +4,7 @@ import APIService from '../services/api';
 import { api } from '../utils/api';
 import itcsLogo from '../assets/logo.png';
 import { ForgotPasswordModal } from '../components/ForgotPasswordModal';
+import { Mail, AlertCircle, ArrowLeft } from 'lucide-react';
 interface SignInProps {
     onLogin: (user: User) => void;
 }
@@ -136,7 +137,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
                     {error && (
                         <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-md flex items-start gap-3 animate-shake">
-                            <span className="material-symbols-outlined text-red-500 text-xl mt-0.5">error</span>
+                            <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
                             <p className="text-sm text-red-700 font-medium">{error}</p>
                         </div>
                     )}
@@ -194,7 +195,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                         onClick={() => setShowEmailForm(true)}
                                         className="w-full flex items-center justify-center gap-2 px-6 py-3 border-2 border-gray-100 hover:border-primary/30 hover:bg-primary/5 rounded-xl text-gray-700 font-semibold transition-all duration-200"
                                     >
-                                        <span className="material-symbols-outlined text-gray-500">mail</span>
+                                        <Mail className="text-gray-500" size={20} />
                                         Email & Password
                                     </button>
                                 </div>
@@ -248,7 +249,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                         onClick={() => setShowEmailForm(false)}
                                         className="w-full py-2 flex items-center justify-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
                                     >
-                                        <span className="material-symbols-outlined text-lg">arrow_back</span>
+                                        <ArrowLeft size={18} />
                                         Back to login options
                                     </button>
                                 </form>
