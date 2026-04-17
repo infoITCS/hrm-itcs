@@ -19,23 +19,21 @@ const transporter = nodemailer.createTransport({
  * 4. Default localhost
  */
 const getBaseUrl = (providedUrl?: string) => {
-    // Priority:
-    // 1. process.env.FRONTEND_URL (if not localhost)
-    // 2. process.env.CLIENT_URL (if not localhost)
-    // 3. Provided URL (e.g. from request headers)
-    // 4. Fallback to env vars even if localhost
-    // 5. Default localhost
-    
     const envUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+
+    // 1. Prioritize any configured URL that ISN'T localhost (from .env)
     if (envUrl && !envUrl.includes('localhost')) {
         return envUrl;
     }
 
+    // 2. Fallback to provided URL (from request headers) ONLY if it's not localhost
     if (providedUrl && !providedUrl.includes('localhost')) {
         return providedUrl;
     }
 
-    return envUrl || providedUrl || 'https://hrm-itcs-client.vercel.app';
+    // 3. Absolute fallback: The production live link
+    // This ensures that even when testing locally, emails contain working live links.
+    return 'https://hrm-itcs-client.vercel.app';
 };
 
 export const sendPasswordResetEmail = async (to: string, resetToken: string, baseUrl?: string) => {

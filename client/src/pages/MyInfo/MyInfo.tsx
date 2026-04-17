@@ -2264,7 +2264,7 @@ const MyInfo = () => {
                                                         </span>
                                                         <input
                                                             type="file"
-                                                            accept=".pdf,.jpg,.jpeg,.png"
+                                                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                             className="hidden"
                                                             onChange={(e) => {
                                                                 if (e.target.files && e.target.files.length > 0) {
@@ -2464,7 +2464,7 @@ const MyInfo = () => {
                                                                     </span>
                                                                     <input
                                                                         type="file"
-                                                                        accept=".pdf,.jpg,.png,.doc,.docx"
+                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                         className="hidden"
                                                                         onChange={(e) => {
                                                                             if (e.target.files && e.target.files.length > 0) {
@@ -2558,7 +2558,7 @@ const MyInfo = () => {
                                                                     </span>
                                                                     <input
                                                                         type="file"
-                                                                        accept=".pdf,.jpg,.png"
+                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                         className="hidden"
                                                                         onChange={(e) => {
                                                                             if (e.target.files && e.target.files.length > 0) {
@@ -2745,7 +2745,7 @@ const MyInfo = () => {
                                                             </span>
                                                             <input
                                                                 type="file"
-                                                                accept=".pdf,.jpg,.png"
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                 className="hidden"
                                                                 onChange={(e) => {
                                                                     if (e.target.files && e.target.files.length > 0) {

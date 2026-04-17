@@ -85,7 +85,6 @@ const AddEmployeeWizard = () => {
 
         // Text fields required in both modes
         const hasCoreFields = !!(
-            formData.employeeId?.trim() &&
             formData.firstName?.trim() &&
             formData.lastName?.trim() &&
             formData.cnic?.trim() &&
@@ -174,7 +173,7 @@ const AddEmployeeWizard = () => {
         const hasCNICBack = formData.files.some(f => f.type === 'CNIC Back') || formData.existingAttachments.some(a => a.fileType === 'CNIC Back');
         const hasResume = formData.files.some(f => f.type === 'Resume/CV') || formData.existingAttachments.some(a => a.fileType === 'Resume/CV');
 
-        if (!formData.employeeId?.trim()) err.push('Employee ID');
+        // if (!formData.employeeId?.trim()) err.push('Employee ID');
         if (!formData.firstName?.trim()) err.push('First Name');
         if (!formData.lastName?.trim()) err.push('Last Name');
         if (!formData.cnic?.trim()) err.push('CNIC / Govt ID');
@@ -210,7 +209,7 @@ const AddEmployeeWizard = () => {
     // Initial State including Nested Objects
     const [formData, setFormData] = useState({
         // Personal
-        employeeId: '', firstName: '', lastName: '', middleName: '', cnic: '',
+        employeeId: '', biometricPin: '', firstName: '', lastName: '', middleName: '', cnic: '',
         email: '', phone: '', dateOfBirth: '', gender: '',
         maritalStatus: '', nationality: '', domicile: '', fatherName: '', bloodGroup: '',
         religion: '', licenseNumber: '', simNumber: '', workEmail: '', otherEmail: '',
@@ -304,6 +303,7 @@ const AddEmployeeWizard = () => {
                         setFormData({
                             // Personal Info
                             employeeId: found.employeeId || '',
+                            biometricPin: found.biometricPin || found.employeeId || '', // Default to employeeId if pin missing
                             firstName: found.firstName || '',
                             lastName: found.lastName || '',
                             middleName: found.middleName || '',
@@ -1026,7 +1026,27 @@ const AddEmployeeWizard = () => {
                             </div>
                         )})}
                         </div>
-                        {/* Employee ID — System Auto Generates */}
+                        {/* Employee ID / Machine ID */}
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-600">Employee ID / Machine ID *</label>
+                            <input 
+                                type="text" 
+                                name="employeeId" 
+                                value={formData.employeeId} 
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFormData(prev => ({ 
+                                        ...prev, 
+                                        employeeId: val,
+                                        biometricPin: val 
+                                    }));
+                                }} 
+                                placeholder="Match with Biometric Machine ID (e.g. 1)"
+                                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" 
+                            />
+                            <p className="text-[10px] text-gray-400">This ID will be used to link biometric machine attendance.</p>
+                        </div>
+                        {/* First and Last Name */}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">First Name *</label>
                             <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
@@ -1330,7 +1350,7 @@ const AddEmployeeWizard = () => {
                                                     </span>
                                                     <input
                                                         type="file"
-                                                        accept=".pdf,.jpg,.png"
+                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                         className="hidden"
                                                         onChange={(e) => {
                                                             if (e.target.files && e.target.files.length > 0) {
@@ -1434,7 +1454,7 @@ const AddEmployeeWizard = () => {
                                 <div className="flex items-center gap-4 border border-dashed border-gray-300 rounded-lg p-3 bg-gray-50/50 hover:bg-gray-50 transition-colors relative cursor-pointer">
                                     <input
                                         type="file"
-                                        accept=".pdf,.doc,.docx"
+                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                         className="absolute inset-0 opacity-0 cursor-pointer"
                                         onChange={(e) => {
                                             if (e.target.files && e.target.files.length > 0) {
@@ -1545,7 +1565,7 @@ const AddEmployeeWizard = () => {
                                                             </span>
                                                             <input
                                                                 type="file"
-                                                                accept=".pdf,.jpg,.png,.doc,.docx"
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                 className="hidden"
                                                                 onChange={(e) => {
                                                                     if (e.target.files && e.target.files.length > 0) {
@@ -1645,7 +1665,7 @@ const AddEmployeeWizard = () => {
                                                             </span>
                                                             <input
                                                                 type="file"
-                                                                accept=".pdf,.jpg,.png"
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                 className="hidden"
                                                                 onChange={(e) => {
                                                                     if (e.target.files && e.target.files.length > 0) {
@@ -1843,7 +1863,7 @@ const AddEmployeeWizard = () => {
                                                             </span>
                                                             <input
                                                                 type="file"
-                                                                accept=".pdf,.jpg,.png"
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                 className="hidden"
                                                                 onChange={(e) => {
                                                                     if (e.target.files && e.target.files.length > 0) {
@@ -2224,7 +2244,7 @@ const AddEmployeeWizard = () => {
                                         <input
                                             type="file"
                                             multiple={label === 'Other Documents'}
-                                            accept=".pdf,.doc,.docx,.jpg,.png"
+                                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                             className="absolute inset-0 opacity-0 cursor-pointer z-0"
                                             onChange={(e) => {
                                                 if (e.target.files && e.target.files.length > 0) {

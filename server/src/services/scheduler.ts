@@ -64,8 +64,8 @@ export const initScheduler = () => {
         }
     });
 
-    // ── Profile Completion Reminder: Run every day at 10 AM ──────────────────────
-    cron.schedule('0 10 * * *', async () => {
+    // ── Profile Completion Reminder: Run every day at 12:20 PM ──────────────────────
+    cron.schedule('20 12 * * *', async () => {
         console.log('Running daily onboarding profile completion reminder check...');
         try {
             // PERFORMANCE: Use aggregation $lookup to join server-side instead of

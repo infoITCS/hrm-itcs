@@ -208,7 +208,7 @@ const Header = ({ title, onMenuClick }: {
                                         </p>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-xs font-bold text-slate-500 uppercase">Current Password (optional for SSO)</label>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Current Password</label>
                                         <input
                                             type="password"
                                             value={pwdForm.currentPassword}

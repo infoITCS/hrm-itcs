@@ -227,28 +227,37 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
-            // Retry logic to handle concurrent creation (race condition safe)
-            let nextNum = 1;
-            let retries = 3;
-            while (retries > 0) {
-                const lastEmployee = await Employee.findOne({ 
-                    employeeId: { $regex: /^itcs-/i } 
-                }).sort({ createdAt: -1 });
+            // Priority 1: Use biometricPin if provided
+            if (employeeData.biometricPin) {
+                employeeData.employeeId = employeeData.biometricPin.toString();
+            } else {
+                // Priority 2: Auto-increment based on highest existing ID
+                let nextNum = 1;
+                let retries = 5; // Slightly more retries for numeric range
+                
+                while (retries > 0) {
+                    // Find any employee with a numeric ID
+                    const employees = await Employee.find({ 
+                        employeeId: { $regex: /^\d+$/ } 
+                    }, { employeeId: 1 }).lean();
 
-                if (lastEmployee) {
-                    const parts = lastEmployee.employeeId.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+                    if (employees.length > 0) {
+                        // Extract numbers and find max
+                        const ids = employees.map(e => parseInt(e.employeeId)).filter(n => !isNaN(n));
+                        if (ids.length > 0) {
+                            nextNum = Math.max(...ids) + 1;
+                        }
+                    }
+
+                    employeeData.employeeId = nextNum.toString();
+
+                    // Check if ID already exists before inserting
+                    const exists = await Employee.findOne({ employeeId: employeeData.employeeId });
+                    if (!exists) break;
+
+                    nextNum++;
+                    retries--;
                 }
-                
-                employeeData.employeeId = `itcs-${nextNum.toString().padStart(3, '0')}`;
-                
-                // Check if ID already exists before inserting
-                const exists = await Employee.findOne({ employeeId: employeeData.employeeId });
-                if (!exists) break;
-                
-                nextNum++;
-                retries--;
             }
         }
 
