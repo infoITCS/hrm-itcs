@@ -558,30 +558,46 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
 // Route to serve raw file from MongoDB — uses authenticateFile which also accepts ?token= for <img> tags
 router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // OPTIMIZATION: Use projection { 'attachments.$': 1 } to only fetch the EXACT attachment requested
-        // Previously, this fetched the entire employee record WITH all binary files, which was very slow.
         const employee = await Employee.findOne(
             { 'attachments._id': req.params.attachmentId },
             { 'attachments.$': 1 }
         );
+        
+        // If file not found in DB, send a default SVG icon instead of 404
         if (!employee || !employee.attachments || employee.attachments.length === 0) {
-            return res.status(404).send('File not found');
+            return sendDefaultAvatar(res);
         }
 
-        const attachment = employee.attachments[0]; // Since we used projection, it's the only one returned
-        // Fetch file buffer from the dedicated AttachmentFile collection
+        const attachment = employee.attachments[0];
         const fileDoc = await AttachmentFile.findById(req.params.attachmentId);
-        if (!fileDoc || !fileDoc.fileData) return res.status(404).send('File content not found');
+        
+        if (!fileDoc || !fileDoc.fileData) {
+            return sendDefaultAvatar(res);
+        }
 
-        // Add caching headers so the browser doesn't re-download the same avatar/file on every page load
-        res.set('Cache-Control', 'public, max-age=86400, immutable'); // Cache for 24 hours
+        res.set('Cache-Control', 'public, max-age=86400, immutable');
         res.set('Content-Type', fileDoc.contentType || attachment.contentType || 'application/octet-stream');
         res.set('Content-Disposition', `inline; filename="${attachment.fileName}"`);
         res.send(fileDoc.fileData);
     } catch (err: any) {
-        res.status(500).send(err.message);
+        // Even on database error, try to send the placeholder to keep the UI clean
+        sendDefaultAvatar(res);
     }
 });
+
+// Helper to send a simple SVG avatar placeholder
+function sendDefaultAvatar(res: Response) {
+    const svg = `
+        <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" fill="#F1F5F9"/>
+            <circle cx="50" cy="40" r="20" fill="#CBD5E1"/>
+            <path d="M20 80C20 63.4315 33.4315 50 50 50C66.5685 50 80 63.4315 80 80V100H20V80Z" fill="#CBD5E1"/>
+        </svg>
+    `.trim();
+    res.set('Content-Type', 'image/svg+xml');
+    res.set('Cache-Control', 'public, max-age=86400');
+    return res.status(200).send(svg);
+}
 
 // Approve/Reject document (Super-Admin/Admin only)
 router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response, next: NextFunction) => {

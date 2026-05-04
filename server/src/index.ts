@@ -299,22 +299,21 @@ app.use((req: any, _res: any, next: any) => {
 // NEW: ADMS machine endpoint (no auth — machines can't send JWT)
 app.use('/api/attendance/adms', admsRoutes);
 
-// Groups all API routes onto the mainRouter
-mainRouter.use('/employees', employeeRoutes);
-mainRouter.use('/audit-logs', auditRoutes);
-mainRouter.use('/admin', adminRoutes);
-mainRouter.use('/auth', authLimiter, authRoutes);
-mainRouter.use('/ai', aiRoutes);
-mainRouter.use('/config', orgConfigRoutes);
-mainRouter.use('/v2/attendance', attendanceV2Routes);
-mainRouter.use('/claims', claimRoutes);
-mainRouter.use('/leaves', leaveRoutes);
-mainRouter.use('/work-shifts', workShiftRoutes);
-mainRouter.use('/cron', cronRoutes);
-
-// Mount the router on BOTH /api and / for maximum compatibility with Vercel rewrites
-app.use('/api', mainRouter);
-app.use('/', mainRouter);
+// Mount all routes on BOTH /api and / to handle Vercel path rewriting perfectly
+const prefixes = ['/api', ''];
+prefixes.forEach(p => {
+    app.use(`${p}/employees`, employeeRoutes);
+    app.use(`${p}/audit-logs`, auditRoutes);
+    app.use(`${p}/admin`, adminRoutes);
+    app.use(`${p}/auth`, authLimiter, authRoutes);
+    app.use(`${p}/ai`, aiRoutes);
+    app.use(`${p}/config`, orgConfigRoutes);
+    app.use(`${p}/v2/attendance`, attendanceV2Routes);
+    app.use(`${p}/claims`, claimRoutes);
+    app.use(`${p}/leaves`, leaveRoutes);
+    app.use(`${p}/work-shifts`, workShiftRoutes);
+    app.use(`${p}/cron`, cronRoutes);
+});
 
 app.get('/', (req, res) => {
     res.json({ message: 'HRM API is running', env: process.env.NODE_ENV });
