@@ -2,16 +2,12 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/attendance/adms/(.*)",
-      "destination": "/api"
+      "source": "/(api/.*)",
+      "destination": "/api/index.ts"
     },
     {
-      "source": "/iclock/(.*)",
-      "destination": "/api"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api"
+      "source": "/(iclock/.*)",
+      "destination": "/api/index.ts"
     }
   ],
   "crons": [
