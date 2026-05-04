@@ -316,13 +316,25 @@ mainRouter.use('/cron', cronRoutes);
 app.use('/api', mainRouter);
 app.use('/', mainRouter);
 
+app.get('/', (req, res) => {
+    res.json({ message: 'HRM API is running', env: process.env.NODE_ENV });
+});
 
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
         env: process.env.NODE_ENV,
-        dbConnected: mongoose.connection.readyState === 1
+        vercel: !!process.env.VERCEL
+    });
+});
+
+// Catch-all for undefined routes - EXTREMELY HELPFUL FOR DEBUGGING 404s
+app.use('*', (req, res) => {
+    logger.warn(`404 at ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ 
+        message: `Route not found: ${req.method} ${req.originalUrl}`,
+        path: req.originalUrl 
     });
 });
 
