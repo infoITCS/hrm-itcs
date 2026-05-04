@@ -3,6 +3,7 @@
  * No component or hook calls fetch() directly. Everything goes through here.
  * Token is read once here — never in components.
  */
+import api from '../../../utils/api';
 import type {
     AttendanceSummary, AttendanceRecord, PaginationMeta,
     WeeklyDay, LivePunch, ZktTransaction, ZktEmployee,
@@ -10,9 +11,8 @@ import type {
     EmployeeMonthlyDetail,
 } from '../types';
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-// New routes on /api/v2/ — swap to /api/ when old routes are removed
-const V2 = `${BASE}/api/v2/attendance`;
+// Use the sanitized baseURL from our central utility to prevent /api/api doubling
+const V2 = `${api.baseURL}/api/v2/attendance`;
 
 function token(): string { return localStorage.getItem('token') || ''; }
 function headers(): HeadersInit {
