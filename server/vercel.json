@@ -1,23 +1,17 @@
 {
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "src/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/iclock/(.*)",
-      "dest": "src/index.ts"
+      "source": "/api/attendance/adms/(.*)",
+      "destination": "/api"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "src/index.ts"
+      "source": "/iclock/(.*)",
+      "destination": "/api"
     },
     {
-      "src": "/(.*)",
-      "dest": "src/index.ts"
+      "source": "/api/(.*)",
+      "destination": "/api"
     }
   ],
   "crons": [
