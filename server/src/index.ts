@@ -1,3 +1,4 @@
+// Triggering restart for .env update
 import dotenv from 'dotenv';
 // Load environment variables FIRST before any other imports
 dotenv.config();
@@ -15,15 +16,24 @@ criticalEnvVars.forEach(key => {
     }
 });
 
+import logger from './utils/logger';
+
 // CRASH LOGGING: Catch any deep server errors and exit gracefully
 process.on('uncaughtException', (err) => {
-    console.error('❌ CRITICAL: Uncaught Exception:', err);
+    if (logger) {
+        logger.error('❌ CRITICAL: Uncaught Exception:', err);
+    } else {
+        console.error('❌ CRITICAL: Uncaught Exception (Logger not ready):', err);
+    }
     // Process is in undefined state after uncaughtException — must exit
     setTimeout(() => process.exit(1), 1000).unref();
 });
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
-    // Don't exit in serverless environment — let Vercel handle the lifecycle
+    if (logger) {
+        logger.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+    } else {
+        console.error('❌ CRITICAL: Unhandled Rejection (Logger not ready):', reason);
+    }
 });
 
 import express from 'express';
@@ -40,13 +50,19 @@ import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
 import aiRoutes from './routes/aiRoutes';
 import orgConfigRoutes from './routes/orgConfigRoutes';
-import attendanceRoutes from './routes/attendanceRoutes';
+// NEW: Clean modular attendance routes (v2 — side-by-side testing)
+import attendanceV2Routes from './modules/attendance/attendance.routes';
+import admsRoutes from './modules/attendance/adms.routes';
 import claimRoutes from './routes/claimRoutes';
+import leaveRoutes from './routes/leaveRoutes';
+import workShiftRoutes from './routes/workShiftRoutes';
+import cronRoutes from './routes/cronRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
 import passport from 'passport';
 import configurePassport from './config/passport';
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -102,12 +118,12 @@ const getSessionSecret = (): string => {
     if (!secret) {
         // Fallback to JWT_SECRET if session secret is missing to prevent crash
         if (process.env.JWT_SECRET) {
-            console.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
+            logger.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
             return process.env.JWT_SECRET;
         }
         
         if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-            console.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
+            logger.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
             throw new Error('FATAL: At least JWT_SECRET must be set for the server to start.');
         }
         return 'dev-only-temp-secret-not-for-production';
@@ -139,7 +155,7 @@ if (process.env.MONGODB_URI) {
         ttl: 24 * 60 * 60 // 1 day
     });
 } else {
-    console.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
+    logger.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
 }
 
 app.use(session(sessionOptions));
@@ -149,11 +165,11 @@ app.use(session(sessionOptions));
 app.use(async (req, res, next) => {
     const state = mongoose.connection.readyState as any;
     if (state !== 1) {
-        console.log(`⌛ MongoDB not ready (state=${state}). Re-connecting...`);
+        logger.info(`⌛ MongoDB not ready (state=${state}). Re-connecting...`);
         try {
             await connectDB();
         } catch (e: any) {
-            console.error('❌ Re-connect failed in middleware:', e.message);
+            logger.error('❌ Re-connect failed in middleware:', e.message);
         }
     }
     next();
@@ -178,7 +194,7 @@ const MONGO_URI = process.env.MONGODB_URI;
  */
 async function connectDB(): Promise<void> {
     if (!MONGO_URI) {
-        console.error('❌ FATAL ERROR: MONGODB_URI IS MISSING IN VERCEL ENVIRONMENT VARIABLES!');
+        logger.error('❌ FATAL ERROR: MONGODB_URI IS MISSING IN VERCEL ENVIRONMENT VARIABLES!');
         return;
     }
 
@@ -197,7 +213,7 @@ async function connectDB(): Promise<void> {
 
     // Auto-fix for Azure Cosmos DB on Vercel: Force direct port and remove SRV-only flags
     if (!!process.env.VERCEL && finalUri.includes('authMechanism')) {
-        console.log('⚙ Auto-sanitizing Cosmos DB URI for Vercel...');
+        logger.info('⚙ Auto-sanitizing Cosmos DB URI for Vercel...');
         const baseUrl = finalUri.split('?')[0];
         finalUri = `${baseUrl}?tls=true`;
     }
@@ -239,10 +255,10 @@ async function connectDB(): Promise<void> {
             // Buffer commands until the connection is ready
             bufferCommands: true,
         });
-        console.log('✅ Connected to MongoDB (Cosmos DB)');
+        logger.info('✅ Connected to MongoDB (Cosmos DB)');
     } catch (err: any) {
-        console.error('❌ MongoDB Connection Error:', err.message);
-        console.log('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / Networking.');
+        logger.error('❌ MongoDB Connection Error:', err);
+        logger.info('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / Networking.');
     }
 }
 
@@ -250,18 +266,18 @@ async function connectDB(): Promise<void> {
 mongoose.set('bufferTimeoutMS', 60000);
 
 // Register connection event listeners for observability
-mongoose.connection.on('connected', () => console.log('🔗 Mongoose: connected'));
+mongoose.connection.on('connected', () => logger.info('🔗 Mongoose: connected'));
 mongoose.connection.on('disconnected', () => {
-    console.warn('⚠️ Mongoose: disconnected from Cosmos DB');
+    logger.warn('⚠️ Mongoose: disconnected from Cosmos DB');
     // In serverless the function will simply call connectDB() on the next request.
     // In long-running (dev) mode, attempt to reconnect automatically.
     if (!process.env.VERCEL) {
-        console.log('🔄 Non-serverless env — attempting reconnect in 5s...');
+        logger.info('🔄 Non-serverless env — attempting reconnect in 5s...');
         setTimeout(connectDB, 5000);
     }
 });
 mongoose.connection.on('error', (err) =>
-    console.error('❌ Mongoose connection error:', err.message)
+    logger.error('❌ Mongoose connection error:', err)
 );
 
 // Initial connection attempt
@@ -270,17 +286,18 @@ connectDB();
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// ── ZKTeco machine URL rewrite —————————————————————————————──
-// ZKTeco machines call /iclock/cdata directly (not /api/attendance/iclock/cdata).
-// We rewrite the URL BEFORE routing so all existing route handlers are reached.
+// ── ZKTeco machine URL rewrite ──────────────────────────────────────────────
+// Machines call /iclock/cdata directly (no prefix). Rewrite to hit adms.routes.ts.
 app.use((req: any, _res: any, next: any) => {
     if (req.path.startsWith('/iclock/') || req.path === '/iclock') {
         const original = req.url;
-        req.url = '/api/attendance' + req.url;
-        console.log(`[MACHINE] ${req.method} ${original} → ${req.url} | IP: ${req.ip}`);
+        req.url = '/api/attendance/adms' + req.url;
+        logger.info(`[MACHINE] ${req.method} ${original} → ${req.url} | IP: ${req.ip}`);
     }
     next();
 });
+// NEW: ADMS machine endpoint (no auth — machines can't send JWT)
+app.use('/api/attendance/adms', admsRoutes);
 
 // Routes
 app.use('/api/employees', employeeRoutes);
@@ -289,8 +306,12 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/config', orgConfigRoutes);
-app.use('/api/attendance', attendanceRoutes);
+// Full migration to V2 modular attendance routes — legacy /api/attendance is deprecated
+app.use('/api/v2/attendance', attendanceV2Routes);
 app.use('/api/claims', claimRoutes);
+app.use('/api/leaves', leaveRoutes);
+app.use('/api/work-shifts', workShiftRoutes);
+app.use('/api/cron', cronRoutes);
 
 
 app.get('/api/health', (req, res) => {
@@ -313,13 +334,17 @@ app.get('/', (req, res) => {
 
 // Global Error Handler to catch and display 500 errors instead of generic message
 app.use((err: any, req: any, res: any, next: any) => {
-    console.error('🔥 Global unhandled error:', err);
-    // Temporarily exposing error message and stack even in production to help debug the 500 error
+    const safeErr = err ?? {};
+    logger.error('🔥 Global unhandled error:', safeErr);
+
     res.status(500).json({ 
-        message: err.message || 'Internal server error', 
-        stack: process.env.VERCEL ? 'Exposed for debugging' : err.stack,
-        code: err.code,
-        name: err.name
+        message: safeErr.message || 'Internal server error',
+        // Only expose debug details in non-production environments
+        ...(!isProduction && { 
+            stack: safeErr.stack,
+            code: safeErr.code,
+            name: safeErr.name
+        })
     });
 });
 
@@ -331,6 +356,6 @@ export default app;
 if (!process.env.VERCEL) {
     const portNum = typeof PORT === 'string' ? parseInt(PORT) : PORT;
     app.listen(portNum, '0.0.0.0', () => {
-        console.log(`Server is running on port ${portNum}`);
+        logger.info(`Server is running on port ${portNum}`);
     });
 }

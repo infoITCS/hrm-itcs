@@ -231,8 +231,8 @@ const EmployeeProfile = () => {
 
                         {canEditSensitiveData() && (
                             <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px] text-white">
-                                <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
+                                <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform pointer-events-none" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider pointer-events-none">Change</span>
                                 <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
                             </label>
                         )}

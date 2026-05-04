@@ -1,5 +1,5 @@
-import React from 'react';
-import { CheckCircle2, AlertCircle, Info, Phone, Copy } from 'lucide-react';
+
+import { CheckCircle2, AlertCircle, Info, Phone, Copy, X } from 'lucide-react';
 
 interface AlertModalProps {
     isOpen: boolean;
@@ -59,7 +59,14 @@ const AlertModal: React.FC<AlertModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
+            <div className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20 relative">
+                <button 
+                    onClick={onClose}
+                    className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-all z-10"
+                    title="Close"
+                >
+                    <X size={20} />
+                </button>
                 <div className="p-8 text-center">
                     <div className={`w-20 h-20 ${getIconBg()} rounded-full flex items-center justify-center mx-auto mb-6 shrink-0`}>
                         {getIcon()}

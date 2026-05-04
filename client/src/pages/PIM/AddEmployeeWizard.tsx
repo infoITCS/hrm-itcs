@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, Fil
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
+import countriesData from '../../data/countries.json';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -16,6 +17,7 @@ const AddEmployeeWizard = () => {
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = role === 'super-admin' || role === 'admin' || role === 'manager';
     const [step, setStep] = useState(1);
+    const [isSameAddress, setIsSameAddress] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
@@ -31,6 +33,7 @@ const AddEmployeeWizard = () => {
     const [limitModalOpen, setLimitModalOpen] = useState(false);
     const [departments, setDepartments] = useState<{ value: string; label: string }[]>([]);
     const [designations, setDesignations] = useState<{ value: string; label: string }[]>([]);
+    const [availableShifts, setAvailableShifts] = useState<{ value: string; label: string }[]>([]);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -55,6 +58,25 @@ const AddEmployeeWizard = () => {
         };
         fetchConfig();
     }, []);
+    useEffect(() => {
+        const fetchShifts = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(api.workShifts, { headers: { 'Authorization': `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    setAvailableShifts(data.filter((s: any) => s.isActive).map((s: any) => ({ 
+                        value: s._id, 
+                        label: `${s.name} (${s.startTime}-${s.endTime})` 
+                    })));
+                }
+            } catch (err) {
+                console.error('Failed to fetch shifts', err);
+            }
+        };
+        fetchShifts();
+    }, []);
+
     useEffect(() => {
         const fetchEmployees = async () => {
             try {
@@ -142,8 +164,10 @@ const AddEmployeeWizard = () => {
                 if (!formData.files.some(f => f.type === 'Employment Contract') && !formData.existingAttachments.some(a => a.fileType === 'Employment Contract')) missing.push('Employment Contract');
                 break;
             case 5:
-                if (formData.employmentHistory.some((h, idx) => !h.companyName || !h.jobTitle || !h.startDate || (!formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)))) missing.push('Complete Employment History (with Experience Letter)');
-                if (formData.education.some((e, idx) => !e.level || !e.institute || !e.year || (!formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)))) missing.push('Complete Education Info (with Degree/Transcript)');
+                if (!isAdmin) {
+                    if (formData.employmentHistory.some((h, idx) => !h.companyName || !h.jobTitle || !h.startDate || (!formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)))) missing.push('Complete Employment History (with Experience Letter)');
+                    if (formData.education.some((e, idx) => !e.level || !e.institute || !e.year || (!formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)))) missing.push('Complete Education Info (with Degree/Transcript)');
+                }
                 break;
             case 6:
                 if (formData.skills.length === 0) missing.push('Professional Skills');
@@ -185,7 +209,7 @@ const AddEmployeeWizard = () => {
         if (!formData.gender) err.push('Gender');
         if (!formData.maritalStatus) err.push('Marital Status');
 
-        if (!isEditMode) {
+        if (!isEditMode && !isAdmin) {
             if (!hasProfilePicture) err.push('Profile Picture');
             if (!hasResume) err.push('Resume/CV');
             if (!hasCNICFront) err.push('CNIC Front Image');
@@ -221,7 +245,7 @@ const AddEmployeeWizard = () => {
 
         // Job
         jobInfo: {
-            designation: '', department: '', reportingManager: '', workLocation: '', joiningDate: ''
+            designation: '', department: '', reportingManager: '', workLocation: '', joiningDate: '', shift: ''
         },
 
         // Status
@@ -346,7 +370,8 @@ const AddEmployeeWizard = () => {
                                 department: found.jobInfo?.department || '',
                                 reportingManager: found.jobInfo?.reportingManager || '',
                                 workLocation: found.jobInfo?.workLocation || '',
-                                joiningDate: formatDate(found.jobInfo?.joiningDate)
+                                joiningDate: formatDate(found.jobInfo?.joiningDate),
+                                shift: found.jobInfo?.shift || ''
                             },
 
                             // Employment Status
@@ -704,7 +729,7 @@ const AddEmployeeWizard = () => {
         }
 
 
-        if (step === 5) {
+        if (step === 5 && !isAdmin) {
             const missingExp = formData.employmentHistory.some((h, idx) => 
                 (h.companyName || h.jobTitle || h.startDate) && 
                 !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
@@ -793,7 +818,7 @@ const AddEmployeeWizard = () => {
 
 
 
-        if (step === 5 && targetStepId > 5) {
+        if (step === 5 && targetStepId > 5 && !isAdmin) {
             const missingExp = formData.employmentHistory.some((h, idx) => 
                 (h.companyName || h.jobTitle || h.startDate) && 
                 !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
@@ -1018,41 +1043,36 @@ const AddEmployeeWizard = () => {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
+                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform pointer-events-none">
                                         <Upload size={20} />
                                     </div>
                                 )}
-                                <span className="text-sm font-medium text-gray-600">{label}</span>
+                                <span className="text-sm font-medium text-gray-600 pointer-events-none">{label}</span>
                                 {displayFileName && label !== 'Profile Picture' ? (
-                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
+                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2 pointer-events-none">
                                         {displayFileName}
                                     </span>
                                 ) : !displayFileName ? (
-                                    <span className="text-xs text-gray-400 mt-1">Click to upload</span>
+                                    <span className="text-xs text-gray-400 mt-1 pointer-events-none">Click to upload</span>
                                 ) : null}
                             </div>
                         )})}
                         </div>
-                        {/* Employee ID / Machine ID */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-600">Employee ID / Machine ID *</label>
-                            <input 
-                                type="text" 
-                                name="employeeId" 
-                                value={formData.employeeId} 
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setFormData(prev => ({ 
-                                        ...prev, 
-                                        employeeId: val,
-                                        biometricPin: val 
-                                    }));
-                                }} 
-                                placeholder="Match with Biometric Machine ID (e.g. 1)"
-                                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" 
-                            />
-                            <p className="text-[10px] text-gray-400">This ID will be used to link biometric machine attendance.</p>
-                        </div>
+                        {/* Employee ID - Admin Only */}
+                        {isAdmin && (
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-600">Employee ID</label>
+                                <input 
+                                    type="text" 
+                                    name="employeeId" 
+                                    value={formData.employeeId} 
+                                    disabled={true}
+                                    placeholder="Auto-generated (e.g. ITCS-001)"
+                                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-gray-50 cursor-not-allowed outline-none transition-all" 
+                                />
+                                <p className="text-[10px] text-gray-400">This ID is automatically generated by the system.</p>
+                            </div>
+                        )}
                         {/* First and Last Name */}
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-600">First Name *</label>
@@ -1119,7 +1139,7 @@ const AddEmployeeWizard = () => {
                                     label=""
                                     value={formData.nationality}
                                     onChange={(val) => setFormData({ ...formData, nationality: val })}
-                                    options={['Pakistani', 'Indian', 'Bangladeshi', 'American', 'British', 'Canadian', 'Australian', 'Other']}
+                                    options={countriesData.map(c => c.name)}
                                 />
                             )}
                             {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500">This field cannot be edited once filled</p>}
@@ -1213,14 +1233,24 @@ const AddEmployeeWizard = () => {
                             }
                             inputClass="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all bg-white"
                             headerAction={
-                                <button
-                                    type="button"
-                                    onClick={copyPermanentAddress}
-                                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 border border-indigo-100 transition-all shadow-sm"
-                                >
-                                    <Check size={14} />
-                                    Same as Permanent
-                                </button>
+                                <label className="flex items-center gap-2 cursor-pointer group">
+                                    <div className="relative">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSameAddress}
+                                            onChange={(e) => {
+                                                const checked = e.target.checked;
+                                                setIsSameAddress(checked);
+                                                if (checked) copyPermanentAddress();
+                                            }}
+                                            className="sr-only"
+                                        />
+                                        <div className={`w-4 h-4 border-2 rounded transition-all flex items-center justify-center ${isSameAddress ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300 group-hover:border-indigo-400'}`}>
+                                            {isSameAddress && <Check size={10} className="text-white" strokeWidth={4} />}
+                                        </div>
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 transition-colors uppercase tracking-wider">Same as Permanent</span>
+                                </label>
                             }
                         />
 
@@ -1330,7 +1360,12 @@ const AddEmployeeWizard = () => {
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Issuing Country</label>
-                                            <input type="text" name="issuingCountry" value={doc.issuingCountry} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issuingCountry')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                            <CustomSelect
+                                                label=""
+                                                value={doc.issuingCountry}
+                                                onChange={(val) => handleChange({ target: { name: 'issuingCountry', value: val } } as any, 'immigrationHistory', idx, 'issuingCountry')}
+                                                options={countriesData.map(c => c.name)}
+                                            />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Issue Date</label>
@@ -1359,8 +1394,8 @@ const AddEmployeeWizard = () => {
                                         <div className="md:col-span-2 lg:col-span-3 space-y-1 mt-2 pt-2 border-t border-gray-50">
                                             <div className="flex items-center gap-2">
                                                 <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
-                                                    <Upload size={14} />
-                                                    <span className="truncate">
+                                                    <Upload size={14} className="pointer-events-none" />
+                                                    <span className="truncate pointer-events-none">
                                                         {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`)
                                                             ? formData.files.find(f => f.type === `Immigration - ${doc.documentNumber || idx}`)?.file.name
                                                             : 'Upload Document Scan'}
@@ -1466,6 +1501,35 @@ const AddEmployeeWizard = () => {
                                     placeholder="Select Location"
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <CustomSelect 
+                                    label="Assigned Shift" 
+                                    value={formData.jobInfo.shift} 
+                                    onChange={(val) => setFormData(p => ({ ...p, jobInfo: { ...p.jobInfo, shift: val } }))} 
+                                    options={availableShifts} 
+                                    placeholder="Select Shift (Optional)"
+                                />
+                            </div>
+                            {/* Biometric PIN — admin only, links employee to ZKTeco machine */}
+                            {isAdmin && (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-600 flex items-center gap-1.5">
+                                        Biometric Machine PIN
+                                        <span className="text-xs font-normal text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Admin Only</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        name="biometricPin"
+                                        value={formData.biometricPin || ''}
+                                        onChange={handleChange}
+                                        placeholder="e.g. 1, 3, 42 — match with ZKTeco machine enrollment"
+                                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all"
+                                    />
+                                    <p className="text-[11px] text-gray-400">
+                                        This PIN must match the employee's enrollment PIN on the biometric device. Required for attendance sync.
+                                    </p>
+                                </div>
+                            )}
                             <div className="space-y-2 col-span-1 md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-600 mb-2">Employment Contract</label>
                                 <div className="flex items-center gap-4 border border-dashed border-gray-300 rounded-lg p-3 bg-gray-50/50 hover:bg-gray-50 transition-colors relative cursor-pointer">
@@ -1576,8 +1640,8 @@ const AddEmployeeWizard = () => {
                                                     const isUploaded = !!savedFile && !newFile;
                                                     return (
                                                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
-                                                            <Upload size={14} />
-                                                            <span className="truncate flex-1">
+                                                            <Upload size={14} className="pointer-events-none" />
+                                                            <span className="truncate flex-1 pointer-events-none">
                                                                 {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Experience Letter'}
                                                             </span>
                                                             <input
@@ -1676,8 +1740,8 @@ const AddEmployeeWizard = () => {
                                                     const isUploaded = !!savedFile && !newFile;
                                                     return (
                                                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
-                                                            <Upload size={14} />
-                                                            <span className="truncate">
+                                                            <Upload size={14} className="pointer-events-none" />
+                                                            <span className="truncate pointer-events-none">
                                                                 {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Degree/Transcript Scan'}
                                                             </span>
                                                             <input
@@ -1872,8 +1936,8 @@ const AddEmployeeWizard = () => {
                                                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Certificate File</label>
                                                     <div className="flex items-center gap-3">
                                                         <label className="flex-1 flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed text-gray-500 border-gray-300 rounded-lg bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition-all text-sm justify-center group-hover:bg-white">
-                                                            <Upload size={16} />
-                                                            <span className="truncate max-w-[150px]">
+                                                            <Upload size={16} className="pointer-events-none" />
+                                                            <span className="truncate max-w-[150px] pointer-events-none">
                                                                 {formData.files.some(f => f.type === `Certification - ${idx}`)
                                                                     ? formData.files.find(f => f.type === `Certification - ${idx}`)?.file.name
                                                                     : 'Upload Cert'}
@@ -2286,15 +2350,15 @@ const AddEmployeeWizard = () => {
                                                 }
                                             }}
                                         />
-                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0">
+                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0 pointer-events-none">
                                             <Upload size={28} />
                                         </div>
-                                        <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
+                                        <span className="text-sm font-bold text-gray-700 relative z-0 pointer-events-none">{label}</span>
                                         {label === 'Contract' && !isAdmin && (
-                                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
+                                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0 pointer-events-none">Required *</span>
                                         )}
                                         {label === 'Contract' && isAdmin && (
-                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0 pointer-events-none">Optional</span>
                                         )}
 
                                         {formData.files.some(f => f.type === label) ? (
@@ -2325,7 +2389,7 @@ const AddEmployeeWizard = () => {
                                                 )}
                                             </div>
                                         ) : (
-                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 relative z-0">{label === 'Other Documents' ? 'Click to upload (Max 5)' : 'Click to upload'}</span>
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 relative z-0 pointer-events-none">{label === 'Other Documents' ? 'Click to upload (Max 5)' : 'Click to upload'}</span>
                                         )}
                                     </div>
                                 ))}

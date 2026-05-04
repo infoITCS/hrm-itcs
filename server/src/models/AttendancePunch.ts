@@ -10,6 +10,11 @@ export interface IAttendancePunch extends Document {
     machineUserId: string;
     // Linked HRM employee ID (same value as machineUserId for now: "01" = "01")
     employeeId: string;
+    /** 
+     * Cached employee display name at the time of punch. 
+     * Treated as immutable historical data for fast feed rendering. 
+     */
+    employeeName?: string;
     punchTime: Date;
     // ZKTeco status codes: 0=CheckIn, 1=CheckOut, 2=BreakOut, 3=BreakIn, 4=OTIn, 5=OTOut
     punchStatus: number;
@@ -28,11 +33,13 @@ const AttendancePunchSchema: Schema = new Schema(
     {
         machineUserId: { type: String, required: true, index: true },
         employeeId:    { type: String, required: true, index: true },
+        // Denormalized display name — optional, for fast live-feed rendering without a JOIN
+        employeeName:  { type: String },
         punchTime:     { type: Date,   required: true, index: true },
         punchStatus:   { type: Number, default: 0 },
         verifyType:    { type: Number, default: 1 },
         deviceSN:      { type: String, default: 'UNKNOWN' },
-        location:      { type: String, default: 'Main Office' },
+        location:      { type: String, default: process.env.DEFAULT_LOCATION || 'ISB-Office' },
         processed:     { type: Boolean, default: false, index: true },
     },
     { timestamps: true }

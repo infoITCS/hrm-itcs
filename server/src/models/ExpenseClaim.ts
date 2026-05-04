@@ -86,8 +86,7 @@ const ExpenseClaimSchema = new Schema(
         approvals: { type: [ApprovalSchema], default: [] },
 
         audit: {
-            submittedAt: { type: Date, default: Date.now },
-            lastUpdatedAt: { type: Date, default: Date.now },
+            submittedAt: { type: Date }, // Explicitly set when transitioning from Draft to Submitted
             lastUpdatedByUserId: { type: Schema.Types.ObjectId, ref: 'User' },
         },
     },
@@ -95,11 +94,16 @@ const ExpenseClaimSchema = new Schema(
 );
 
 ExpenseClaimSchema.pre('save', function (next) {
-    // Keep timestamps consistent across serverless updates
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const doc: any = this;
+    // Ensure audit object exists for lastUpdatedByUserId writes
     doc.audit = doc.audit || {};
-    doc.audit.lastUpdatedAt = new Date();
+    
+    // Set submittedAt when status transitions to Submitted or is new and Submitted
+    if (doc.status === 'Submitted' && !doc.audit.submittedAt) {
+        doc.audit.submittedAt = new Date();
+    }
+    
     next();
 });
 

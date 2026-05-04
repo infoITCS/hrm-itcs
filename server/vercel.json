@@ -1,18 +1,8 @@
 {
-  "version": 2,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index.ts"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
   "crons": [
     {
-      "path": "/api/cron/probation-check",
-      "schedule": "0 0 * * *"
+      "path": "/api/cron/sync",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

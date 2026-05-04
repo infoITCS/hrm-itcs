@@ -8,7 +8,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IDeviceLocation extends Document {
     // ZKTeco machine serial number (e.g., "CAHT214760099")
     deviceSN: string;
-    // Human-readable name (e.g., "Main Office", "Karachi", "Lahore")
+    // Human-readable name (e.g., "ISB-Office", "Karachi", "Lahore")
     locationName: string;
     // Shift start time in "HH:MM" 24h format (e.g., "09:00")
     shiftStart: string;

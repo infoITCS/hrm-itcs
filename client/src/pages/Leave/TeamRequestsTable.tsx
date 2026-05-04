@@ -1,0 +1,269 @@
+import { useState, useEffect } from 'react';
+import { Check, X, Eye, MessageSquare } from 'lucide-react';
+import { api } from '../../utils/api';
+import LeaveDetailsModal from './LeaveDetailsModal';
+import Avatar from '../../components/UI/Avatar';
+
+const TeamRequestsTable = () => {
+    const [requests, setRequests] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [processingId, setProcessingId] = useState<string | null>(null);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [selectedLeave, setSelectedLeave] = useState<any>(null);
+    
+    // Rejection State
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectionNote, setRejectionNote] = useState('');
+    const [targetRequestId, setTargetRequestId] = useState<string | null>(null);
+
+    const fetchAllRequests = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const r = await fetch(`${api.baseURL}/api/leaves/all`, { 
+                headers: { Authorization: `Bearer ${token}` } 
+            });
+            
+            if (!r.ok) {
+                const errorData = await r.json().catch(() => ({}));
+                console.error('Error fetching team leaves:', errorData.message || r.statusText);
+                return;
+            }
+
+            const d = await r.json();
+            if (d.success) {
+                const sorted = d.data.sort((a: any, b: any) => {
+                    if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+                    if (a.status !== 'Pending' && b.status === 'Pending') return 1;
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                });
+                setRequests(sorted);
+            }
+        } catch (err) {
+            console.error('Error fetching team leaves:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchAllRequests();
+    }, []);
+
+    const handleAction = async (id: string, status: 'Approved' | 'Rejected', adminNote?: string): Promise<boolean> => {
+        setProcessingId(id);
+        try {
+            const token = localStorage.getItem('token');
+            const r = await fetch(`${api.baseURL}/api/leaves/${id}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ status, adminNote })
+            });
+
+            if (!r.ok) {
+                const errorData = await r.json().catch(() => ({}));
+                console.error('Error processing leave:', errorData.message || r.statusText);
+                return false;
+            }
+
+            const d = await r.json();
+            if (d.success) {
+                await fetchAllRequests();
+                setShowRejectModal(false);
+                setRejectionNote('');
+                setTargetRequestId(null);
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error('Error processing leave:', err);
+            return false;
+        } finally {
+            setProcessingId(null);
+        }
+    };
+
+    const openRejectDialog = (id: string) => {
+        setTargetRequestId(id);
+        setRejectionNote(''); // Clear note when opening
+        setShowRejectModal(true);
+    };
+
+    if (loading) {
+        return (
+            <div className="p-12 text-center">
+                <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-slate-400 font-medium">Loading requests...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    <tr className="bg-slate-50/50">
+                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Employee</th>
+                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Dates</th>
+                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Reason</th>
+                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                    {requests.length === 0 ? (
+                        <tr>
+                            <td colSpan={5} className="px-6 py-20 text-center">
+                                <div className="max-w-xs mx-auto">
+                                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                                        <MessageSquare size={32} />
+                                    </div>
+                                    <h3 className="font-bold text-slate-700">No Requests Found</h3>
+                                    <p className="text-sm text-slate-400 mt-1">There are no leave requests to display at this time.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    ) : (
+                        requests.map((req) => (
+                        <tr key={req._id} className="hover:bg-slate-50/50 transition-colors group">
+                            <td className="px-6 py-5">
+                                <div className="flex items-center gap-3">
+                                    <Avatar 
+                                        src={req.avatar} 
+                                        name={req.employeeName} 
+                                        size="w-10 h-10"
+                                        className="border-2 border-white shadow-sm shrink-0"
+                                        initialsClassName="bg-indigo-100 text-indigo-600 font-bold"
+                                    />
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800 text-sm">{req.employeeName || 'Unknown'}</span>
+                                        {req.readableId && <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-tighter italic">{req.readableId}</span>}
+                                    </div>
+                                </div>
+                            </td>
+                            <td className="px-6 py-5">
+                                <span className="font-bold text-slate-700 text-sm">{req.type}</span>
+                            </td>
+                            <td className="px-6 py-5">
+                                <div className="flex flex-col text-xs">
+                                    <span className="font-bold text-slate-700">{new Date(req.startDate).toLocaleDateString()}</span>
+                                    <span className="text-[10px] text-slate-400">to {new Date(req.endDate).toLocaleDateString()}</span>
+                                </div>
+                            </td>
+                            <td className="px-6 py-5">
+                                <div className="flex items-center gap-2">
+                                    <p className="text-xs text-slate-500 max-w-[120px] truncate italic">"{req.reason || 'No reason'}"</p>
+                                    <button onClick={() => { setSelectedLeave(req); setShowDetailsModal(true); }} className="p-1 text-slate-300 hover:text-indigo-600 transition-colors">
+                                        <Eye size={14} />
+                                    </button>
+                                </div>
+                            </td>
+                            <td className="px-6 py-5">
+                                <div className="flex justify-center items-center gap-2">
+                                    {req.status === 'Pending' ? (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction(req._id, 'Approved')}
+                                                disabled={processingId === req._id}
+                                                className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center"
+                                                title="Approve"
+                                            >
+                                                {processingId === req._id ? <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /> : <Check size={16} />}
+                                            </button>
+                                            <button 
+                                                onClick={() => openRejectDialog(req._id)}
+                                                disabled={processingId === req._id}
+                                                className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center"
+                                                title="Reject"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center">
+                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                                req.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
+                                            }`}>
+                                                {req.status}
+                                            </span>
+                                            {req.adminNote && (
+                                                <span className="text-[8px] text-slate-400 mt-1 max-w-[80px] truncate italic" title={req.adminNote}>
+                                                    "{req.adminNote}"
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    )))}
+                </tbody>
+            </table>
+
+            {/* Rejection Reason Modal */}
+            {showRejectModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-2 bg-rose-50 rounded-xl text-rose-600">
+                                    <MessageSquare size={20} />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-800">Reason for Rejection</h3>
+                            </div>
+                            
+                            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                                Please provide a brief explanation for the employee about why this leave request is being rejected.
+                            </p>
+
+                            <textarea 
+                                value={rejectionNote}
+                                onChange={(e) => setRejectionNote(e.target.value)}
+                                placeholder="E.g. Project deadline, short-staffed this week..."
+                                className="w-full h-24 p-3 bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 transition-all resize-none italic"
+                                autoFocus
+                            />
+
+                            <div className="flex gap-3 mt-6">
+                                <button 
+                                    onClick={() => setShowRejectModal(false)}
+                                    className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={async () => {
+                                        if (targetRequestId) {
+                                            const success = await handleAction(targetRequestId, 'Rejected', rejectionNote);
+                                            if (success) {
+                                                setShowRejectModal(false);
+                                                setTargetRequestId(null);
+                                            }
+                                        }
+                                    }}
+                                    disabled={!rejectionNote.trim() || processingId === targetRequestId}
+                                    className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-rose-200"
+                                >
+                                    {processingId === targetRequestId ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Reject Request'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <LeaveDetailsModal 
+                isOpen={showDetailsModal}
+                onClose={() => {
+                    setShowDetailsModal(false);
+                    setSelectedLeave(null);
+                }}
+                leave={selectedLeave}
+            />
+        </div>
+    );
+};
+
+export default TeamRequestsTable;

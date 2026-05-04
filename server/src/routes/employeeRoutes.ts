@@ -1,17 +1,67 @@
-import * as _ from 'lodash';
+// Native pick — replaces lodash's _.pick, eliminating the dependency
+const pick = (obj: Record<string, unknown>, keys: string[]): Record<string, unknown> =>
+    keys.reduce((acc: Record<string, unknown>, key: string) => {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) acc[key] = obj[key];
+        return acc;
+    }, {});
 import fs from 'fs';
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import FileType from 'file-type';
+
 import sanitize from 'sanitize-filename';
 import Employee from '../models/Employee';
 import User from '../models/User.model';
+import AttachmentFile from '../models/AttachmentFile';
+import Counter from '../models/Counter';
 import AuditLog from '../models/AuditLog';
 import { authenticate, authorize, AuthRequest, authenticateFile } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 import { getDiff } from '../utils/diff';
-// import { sendHRNotificationEmail } from '../utils/email'; // Commented out — uncomment to enable HR notifications
+import logger from '../utils/logger';
+
+
+
+// Native magic-byte MIME detector — replaces the file-type package.
+// Covers exactly the MIME types allowed in the upload allowlist.
+// Using magic bytes is more reliable than file extension alone (polyglot attack defense).
+const detectMimeFromBuffer = (buf: Buffer): string | null => {
+    if (buf.length < 4) return null;
+    // JPEG: FF D8 FF
+    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+    // GIF: 47 49 46 38
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
+    // WebP: 52 49 46 46 ... 57 45 42 50
+    if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+        buf.length >= 12 && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50)
+        return 'image/webp';
+    // PDF: 25 50 44 46
+    if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return 'application/pdf';
+    // DOC (old): D0 CF 11 E0 (OLE2 compound document — can be Word, Excel, or PPT)
+    if (buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0) {
+        // H3 FIX: Distinguish OLE2 subtypes (Word vs Excel vs PPT)
+        // We look for stream names in the first 4KB of the OLE container.
+        const header = buf.slice(0, 4096).toString('binary');
+        if (header.includes('WordDocument')) return 'application/msword';
+        if (header.includes('Workbook') || header.includes('Book')) return 'application/vnd.ms-excel';
+        if (header.includes('PowerPoint Document')) return 'application/vnd.ms-powerpoint';
+        return 'application/x-ole-storage'; // Generic OLE
+    }
+    // DOCX (ZIP-based, starts with PK): 50 4B 03 04
+    if (buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04) {
+        // H3 FIX: Inspect ZIP container for "word/document.xml" signature to confirm it's a DOCX
+        // DOCX is a ZIP containing a word/ directory. We look for this string in the first 4KB.
+        const header = buf.slice(0, 4096).toString('binary');
+        if (header.includes('word/document.xml') || header.includes('word/_rels/document.xml.rels')) {
+            return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        }
+        // If it's a ZIP but doesn't look like Word, we still might allow it if it's Excel/PPT later, 
+        // but for now, we only allow Word as per previous logic.
+    }
+    return null;
+};
 
 const router = express.Router();
 
@@ -47,7 +97,9 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
                         }
 
                         // If the change was reverted back to original, remove it from log
-                        if (_.isEqual(mergedDiff[key].old, mergedDiff[key].new)) {
+                        // JSON.stringify comparison is reliable here — diffs contain
+                        // already-normalized plain objects (no circular refs, no Dates)
+                        if (JSON.stringify(mergedDiff[key].old) === JSON.stringify(mergedDiff[key].new)) {
                             delete mergedDiff[key];
                         }
                     } else {
@@ -79,7 +131,7 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
             details
         });
     } catch (err) {
-        console.error('Failed to create audit log:', err);
+        logger.error('Failed to create audit log:', err);
     }
 };
 
@@ -121,31 +173,36 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
         let employees;
         let total = 0;
 
+        // Base filter: always exclude soft-deleted employees from normal queries
+        const baseFilter = { isDeleted: { $ne: true } };
+
         if (queryUserId) {
             if (queryUserId === userId || role === 'super-admin' || role === 'admin' || role === 'manager') {
-                const employee = await Employee.findOne({ userId: queryUserId }).select('-attachments.fileData').lean();
+                const employee = await Employee.findOne({ userId: queryUserId, ...baseFilter }).select('-attachments.fileData').lean();
                 employees = employee ? [employee] : [];
                 total = employees.length;
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
-        } else if (role === 'super-admin' || role === 'admin' || role === 'manager') {
+        } else if (role === 'super-admin' || role === 'admin') {
+            // Admins see all non-deleted employees
             [employees, total] = await Promise.all([
-                Employee.find().select('-attachments.fileData').skip(skip).limit(limit).lean(),
-                Employee.countDocuments()
+                Employee.find(baseFilter).select('-attachments.fileData').skip(skip).limit(limit).lean(),
+                Employee.countDocuments(baseFilter)
             ]);
         } else if (role === 'manager') {
-            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
+            // Managers see only their direct reports + their own record
+            const managerEmployee = await Employee.findOne({ userId, ...baseFilter }).select('employeeId').lean() as any;
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
-            const query = { $or: [{ 'jobInfo.reportingManager': managerEmployee.employeeId }, { userId }] };
+            const query = { ...baseFilter, $or: [{ 'jobInfo.reportingManager': managerEmployee.employeeId }, { userId }] };
             [employees, total] = await Promise.all([
                 Employee.find(query).select('-attachments.fileData').skip(skip).limit(limit).lean(),
                 Employee.countDocuments(query)
             ]);
         } else {
-            const employee = await Employee.findOne({ userId }).select('-attachments.fileData').lean();
+            const employee = await Employee.findOne({ userId, ...baseFilter }).select('-attachments.fileData').lean();
             employees = employee ? [employee] : [];
             total = employees.length;
         }
@@ -177,19 +234,6 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         // Ensure the userId in the request matches the authenticated user
         req.body.userId = userId;
     }
-    // Note: req.body will contain text fields, req.files will contain files
-    // Since we are sending JSON for complex nested fields from frontend, 
-    // dealing with multipart/form-data for nested objects can be tricky.
-    // For this implementation, we will assume:
-    // 1. If files are uploaded, they are handled separately or linked via IDs.
-    // 2. OR the frontend sends everything as FormData stringified JSONs.
-    // Let's assume standard JSON body for data, and separate endpoint for files OR mixed.
-    // Given the previous code used JSON body, let's keep it simple:
-    // If we want file uploads + data in one go, we must use FormData.
-    // The body will be [Object: null prototype]. We might need to parsing if it's stringified.
-
-    // Simplification for MVP: We will handle data creation here. File uploads can be separate or we assume simplified FormData.
-    // If Body is JSON (standard creation), we proceed. 
 
     try {
         // SECURITY: Mass Assignment Protection
@@ -200,14 +244,14 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'benefits', 
-            'workEmail', 'otherEmail', 'employeeId'
+            'workEmail', 'otherEmail', 'employeeId', 'biometricPin'
         ];
 
         const allowedFields = (role === 'super-admin' || role === 'admin' || role === 'manager')
             ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
             : EMPLOYEE_EDITABLE_FIELDS;
 
-        const employeeData = _.pick(req.body, allowedFields) as any;
+        const employeeData = pick(req.body, allowedFields) as any;
 
         // Basic validation
         if (!employeeData.firstName || !employeeData.lastName) {
@@ -227,38 +271,16 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
-            // Priority 1: Use biometricPin if provided
-            if (employeeData.biometricPin) {
-                employeeData.employeeId = employeeData.biometricPin.toString();
-            } else {
-                // Priority 2: Auto-increment based on highest existing ID
-                let nextNum = 1;
-                let retries = 5; // Slightly more retries for numeric range
-                
-                while (retries > 0) {
-                    // Find any employee with a numeric ID
-                    const employees = await Employee.find({ 
-                        employeeId: { $regex: /^\d+$/ } 
-                    }, { employeeId: 1 }).lean();
-
-                    if (employees.length > 0) {
-                        // Extract numbers and find max
-                        const ids = employees.map(e => parseInt(e.employeeId)).filter(n => !isNaN(n));
-                        if (ids.length > 0) {
-                            nextNum = Math.max(...ids) + 1;
-                        }
-                    }
-
-                    employeeData.employeeId = nextNum.toString();
-
-                    // Check if ID already exists before inserting
-                    const exists = await Employee.findOne({ employeeId: employeeData.employeeId });
-                    if (!exists) break;
-
-                    nextNum++;
-                    retries--;
-                }
-            }
+            // H3 FIX: Atomic Counter implementation using findOneAndUpdate to prevent race conditions
+            const PREFIX = 'ITCS-';
+            const counter = await Counter.findOneAndUpdate(
+                { key: 'employeeId' },
+                { $inc: { seq: 1 } },
+                { upsert: true, new: true }
+            );
+            
+            const nextNum = counter.seq;
+            employeeData.employeeId = `${PREFIX}${nextNum.toString().padStart(3, '0')}`;
         }
 
         const employee = new Employee({
@@ -332,7 +354,7 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response,
 
         res.json({ isDuplicate: false });
     } catch (err) {
-        console.error('Duplicate check error:', err);
+        logger.error('Duplicate check error:', err);
         next(err);
     }
 });
@@ -442,16 +464,16 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         const filePath = req.file.path;
         const fileBuffer = fs.readFileSync(filePath);
 
-        // SECURITY: Validate magic bytes to ensure file content matches extension/mimetype
-        // This prevents "polyglot" attacks where an executable is disguised as an image.
-        const type = await FileType.fromBuffer(fileBuffer);
+        // SECURITY: Validate magic bytes to ensure file content matches extension.
+        // Native implementation — file-type package removed (ESM-only in v22+, CVE in v13-21).
+        const detectedMime = detectMimeFromBuffer(fileBuffer);
         const allowedMimes = [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
             'application/pdf', 'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         ];
 
-        if (!type || !allowedMimes.includes(type.mime)) {
+        if (!detectedMime || !allowedMimes.includes(detectedMime)) {
             try { fs.unlinkSync(filePath); } catch (e) {}
             return res.status(400).json({ 
                 message: 'Invalid file content. The file contents do not match the expected type.' 
@@ -486,12 +508,19 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
             fileType: fileType,
             fileName: safeFilename,
             filePath: req.file.filename,
-            fileData: fileBuffer,
-            contentType: type.mime, // Use detected mime, not client-provided
+            contentType: detectedMime!, // Use detected mime from magic bytes, not client-provided
             uploadDate: new Date(),
             status: canApproveDocuments(authReq.user?.role || '') ? 'approved' : 'pending',
             uploadedBy: authReq.user?.userId
         };
+
+        // 2a. Save file buffer to dedicated AttachmentFile collection
+        await AttachmentFile.create({
+            _id: attachmentId,
+            employeeId: employee.employeeId,
+            fileData: fileBuffer,
+            contentType: detectedMime!
+        });
 
         // 2. Use updateOne to push attachment directly into MongoDB array.
         // Doing this avoids Mongoose overwriting arrays when they are loaded partially (without fileData)
@@ -516,13 +545,10 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
         try {
             fs.unlinkSync(filePath);
         } catch (unlinkErr) {
-            console.error('Failed to delete temporary file:', unlinkErr);
+            logger.error('Failed to delete temporary file:', unlinkErr);
         }
 
-        res.status(200).json({
-            ...attachment,
-            fileData: undefined // Don't send buffer back in JSON
-        });
+        res.status(200).json(attachment);
 
     } catch (err: any) {
         next(err);
@@ -543,13 +569,15 @@ router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Reque
         }
 
         const attachment = employee.attachments[0]; // Since we used projection, it's the only one returned
-        if (!attachment || !attachment.fileData) return res.status(404).send('File content not found');
+        // Fetch file buffer from the dedicated AttachmentFile collection
+        const fileDoc = await AttachmentFile.findById(req.params.attachmentId);
+        if (!fileDoc || !fileDoc.fileData) return res.status(404).send('File content not found');
 
         // Add caching headers so the browser doesn't re-download the same avatar/file on every page load
         res.set('Cache-Control', 'public, max-age=86400, immutable'); // Cache for 24 hours
-        res.set('Content-Type', attachment.contentType || 'application/octet-stream');
+        res.set('Content-Type', fileDoc.contentType || attachment.contentType || 'application/octet-stream');
         res.set('Content-Disposition', `inline; filename="${attachment.fileName}"`);
-        res.send(attachment.fileData);
+        res.send(fileDoc.fileData);
     } catch (err: any) {
         res.status(500).send(err.message);
     }
@@ -634,6 +662,9 @@ router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Reques
             { $pull: { attachments: { _id: req.params.attachmentId } } }
         );
 
+        // Also delete from the dedicated AttachmentFile collection
+        await AttachmentFile.findByIdAndDelete(req.params.attachmentId);
+
         await createAuditLog('DOC_DELETE', employee.employeeId, authReq.user?.userId || 'unknown', {
             attachmentId: req.params.attachmentId,
             fileName: (deletedAttachment as any).fileName
@@ -679,15 +710,15 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         const ADMIN_EXTRA_FIELDS = [
             'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
             'maritalStatus', 'nationality', 'domicile', 'cnic', 'jobInfo', 'employmentStatus',
-            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar'
+            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin'
         ];
 
         const allowedFields = isAdmin
             ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
             : EMPLOYEE_EDITABLE_FIELDS;
 
-        // Use lodash pick to only allow whitelisted fields from the request body
-        const updates = _.pick(req.body, allowedFields) as any;
+        // Use native pick to only allow whitelisted fields from the request body
+        const updates = pick(req.body, allowedFields) as any;
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
@@ -728,6 +759,12 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         if (updates.socialProfiles) updates.socialProfiles = stripEmptyWizardArrays(updates.socialProfiles, 'platform');
         if (updates.salaryComponents) updates.salaryComponents = stripEmptyWizardArrays(updates.salaryComponents, 'type');
 
+        // Sanitize jobInfo.shift: if it's an empty string, set it to null 
+        // to avoid BSONError/CastError when converting to ObjectId
+        if (updates.jobInfo && updates.jobInfo.shift === '') {
+            updates.jobInfo.shift = null;
+        }
+
         // Capture original state for diff
         const originalEmployeeObj = employee.toObject();
 
@@ -750,34 +787,45 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             });
         }
 
-        if (Object.keys(diff).length > 0) {
-            await createAuditLog('UPDATE', updatedEmployee.employeeId, authReq.user?.userId || 'unknown', { diff });
-        }
+        // Log action
+        await createAuditLog('UPDATE', req.params.id, authReq.user?.userId || 'unknown', { diff });
 
         res.json(updatedEmployee);
     } catch (err: any) {
-        next(err);
+        logger.error(`[EmployeeUpdate] Error updating ${req.params.id}:`, err);
+        
+        // Distinguish client-side validation errors from internal server errors
+        if (err.name === 'ValidationError' || err.name === 'CastError' || err.statusCode === 400) {
+            return res.status(400).json({ message: "Invalid request parameters or data format" });
+        }
+        
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
 // Delete employee (Super-Admin/Admin only)
-router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
-
-    // Check permission
-    if (!canCreateUser(authReq.user?.role || '')) {
-        return res.status(403).json({ message: 'You do not have permission to delete employees' });
-    }
-
     try {
-        const deletedEmployee = await Employee.findOneAndDelete({ employeeId: req.params.id });
-        if (!deletedEmployee) {
-            return res.status(404).json({ message: 'Employee not found' });
+        const role = authReq.user?.role || '';
+        if (role !== 'super-admin' && role !== 'admin') {
+            return res.status(403).json({ message: 'You do not have permission to delete employees' });
         }
 
-        await createAuditLog('DELETE', req.params.id, authReq.user?.userId || 'unknown', {});
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
-        res.json({ message: 'Employee deleted' });
+        // SOFT DELETE: Mark as deleted instead of removing from DB
+        await Employee.updateOne({ employeeId: req.params.id }, { isDeleted: true });
+
+        // Also deactivate the user account if linked
+        if (employee.userId) {
+            await User.findByIdAndUpdate(employee.userId, { isActive: false });
+        }
+
+        await createAuditLog('DELETE', req.params.id, authReq.user?.userId || 'unknown', { name: `${employee.firstName} ${employee.lastName}` });
+
+        res.json({ message: 'Employee deleted successfully (Soft delete)' });
     } catch (err: any) {
         next(err);
     }

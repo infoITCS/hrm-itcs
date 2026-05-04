@@ -9,10 +9,15 @@ export enum LeaveStatus {
 export interface ILeaveRequest extends Document {
     employeeId: string;    // itcs-001
     type: string;          // Sick, Casual, Annual
-    startDate: string;     // YYYY-MM-DD
-    endDate: string;       // YYYY-MM-DD
+    startDate: Date;     // YYYY-MM-DD
+    endDate: Date;       // YYYY-MM-DD
     status: LeaveStatus;
     reason?: string;
+    /**
+     * @sensitive May contain personal/medical info. DO NOT log this field.
+     * Only authorized admins/managers should view this.
+     */
+    adminNote?: string;
     appliedBy?: string;    // userId
     approvedBy?: string;   // userId
     createdAt: Date;
@@ -22,10 +27,11 @@ export interface ILeaveRequest extends Document {
 const LeaveRequestSchema: Schema = new Schema({
     employeeId: { type: String, required: true, index: true },
     type: { type: String, required: true },
-    startDate: { type: String, required: true, index: true },
-    endDate: { type: String, required: true, index: true },
+    startDate: { type: Date, required: true, index: true },
+    endDate: { type: Date, required: true, index: true },
     status: { type: String, enum: Object.values(LeaveStatus), default: LeaveStatus.PENDING },
     reason: { type: String },
+    adminNote: { type: String }, // [SENSITIVE] Private admin-only commentary
     appliedBy: { type: String },
     approvedBy: { type: String },
 }, { timestamps: true });

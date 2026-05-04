@@ -1,0 +1,332 @@
+import { useState, useEffect } from 'react';
+import { 
+    Calendar, Plus, ChevronRight, Filter, FileText, Clock,
+    Plane, Heart
+} from 'lucide-react';
+import { api } from '../../utils/api';
+import ApplyLeaveModal from './ApplyLeaveModal';
+import TeamRequestsTable from './TeamRequestsTable';
+import { usePermissions } from '../../hooks/usePermissions';
+
+// ── Components ──────────────────────────────────────────────────────────────
+
+const BalanceCard = ({ title, used, total, icon: Icon, color }: any) => {
+    const totalSafe = Math.max(0.1, total || 0);
+    const usedSafe = Math.max(0, used || 0);
+    const percentage = Math.min(100, (usedSafe / totalSafe) * 100);
+    const available = Math.max(0, (total || 0) - (used || 0));
+
+    const colors: any = {
+        indigo: 'from-indigo-500 to-blue-600 shadow-indigo-100',
+        emerald: 'from-emerald-500 to-teal-600 shadow-emerald-100',
+        rose: 'from-rose-500 to-pink-600 shadow-rose-100',
+        amber: 'from-amber-500 to-orange-600 shadow-amber-100',
+    };
+
+    const bgColors: any = {
+        indigo: 'bg-indigo-50 text-indigo-600',
+        emerald: 'bg-emerald-50 text-emerald-600',
+        rose: 'bg-rose-50 text-rose-600',
+        amber: 'bg-amber-50 text-amber-600',
+    };
+
+    return (
+        <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-all duration-300 group">
+            <div className="flex items-start justify-between mb-4">
+                <div className={`p-3 rounded-xl ${bgColors[color]} group-hover:scale-110 transition-transform duration-300`}>
+                    <Icon size={24} />
+                </div>
+                <div className="text-right">
+                    <span className="text-2xl font-bold text-slate-800">{available}</span>
+                    <span className="text-slate-400 text-xs block">Days Left</span>
+                </div>
+            </div>
+            
+            <h3 className="font-bold text-slate-700 mb-1">{title}</h3>
+            <p className="text-xs text-slate-400 mb-4">{used} days used of {total}</p>
+
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                    className={`h-full bg-gradient-to-r ${colors[color]} rounded-full transition-all duration-1000`}
+                    style={{ width: `${percentage}%` }}
+                />
+            </div>
+        </div>
+    );
+};
+
+import LeaveDetailsModal from './LeaveDetailsModal';
+
+const LeaveDashboard = () => {
+    const [balance, setBalance] = useState<any>(null);
+    const [history, setHistory] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [showApplyModal, setShowApplyModal] = useState(false);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [selectedLeave, setSelectedLeave] = useState<any>(null);
+    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests'>('my-leaves');
+    const [statusFilter, setStatusFilter] = useState('All');
+    const { role } = usePermissions();
+    const isManagement = ['super-admin', 'admin', 'manager'].includes(role);
+
+    const filteredHistory = history.filter(item => 
+        statusFilter === 'All' || item.status === statusFilter
+    );
+
+    const fetchLeaveData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const token = localStorage.getItem('token');
+            const [balRes, histRes] = await Promise.all([
+                fetch(`${api.baseURL}/api/leaves/balance`, { headers: { Authorization: `Bearer ${token}` } }),
+                fetch(`${api.baseURL}/api/leaves/mine`, { headers: { Authorization: `Bearer ${token}` } })
+            ]);
+            
+            if (!balRes.ok || !histRes.ok) {
+                throw new Error(`Failed to load data. Server returned ${balRes.status}/${histRes.status}`);
+            }
+
+            const [balData, histData] = await Promise.all([balRes.json(), histRes.json()]);
+
+            if (!balData.success || !histData.success) {
+                throw new Error(balData.message || histData.message || 'API reported failure');
+            }
+
+            setBalance(balData.data);
+            setHistory(histData.data);
+        } catch (err: any) {
+            console.error('Leave fetch error:', err);
+            setError(err.message || 'Could not fetch leave data. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchLeaveData();
+    }, []);
+
+const STATUS_COLORS: any = {
+    Pending: 'bg-amber-50 text-amber-600 border-amber-100',
+    Approved: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    Rejected: 'bg-rose-50 text-rose-600 border-rose-100',
+    DEFAULT: 'bg-slate-50 text-slate-500 border-slate-100'
+};
+
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+                <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+                <p className="text-sm font-bold text-slate-400 animate-pulse">Loading Leave Dashboard...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 sm:space-y-8 animate-fadeIn p-2 sm:p-0">
+            {/* Header Area */}
+            <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-violet-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-200/50">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full blur-2xl -translate-x-1/2 translate-y-1/2" />
+                
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div>
+                        <div className="flex items-center gap-3 mb-2 sm:mb-3">
+                            <div className="p-2 bg-white/20 backdrop-blur-md rounded-xl">
+                                <Calendar size={18} />
+                            </div>
+                            <span className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-white/70">Leave Management</span>
+                        </div>
+                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Time Off Dashboard</h1>
+                        <p className="text-white/70 mt-2 max-w-md text-xs sm:text-sm leading-relaxed">
+                            Manage your time off requests, check your available balance, and view your leave history all in one place.
+                        </p>
+                    </div>
+
+                    <button 
+                        onClick={() => setShowApplyModal(true)}
+                        className="bg-white text-indigo-600 px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl font-bold shadow-xl hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 w-full sm:w-auto"
+                    >
+                        <Plus size={20} strokeWidth={3} />
+                        Apply For Leave
+                    </button>
+                </div>
+            </div>
+
+            {/* Error Banner */}
+            {error && (
+                <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-shake">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-rose-100 rounded-lg text-rose-600">
+                            <Clock size={18} />
+                        </div>
+                        <p className="text-sm font-bold text-rose-700">{error}</p>
+                    </div>
+                    <button 
+                        onClick={fetchLeaveData}
+                        className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"
+                    >
+                        Retry Loading
+                    </button>
+                </div>
+            )}
+
+            {/* Balances Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl">
+                <BalanceCard 
+                    title="Annual Leave" 
+                    used={balance?.annual?.used || 0} 
+                    total={balance?.annual?.total || 20} 
+                    icon={Plane} 
+                    color="indigo" 
+                />
+                <BalanceCard 
+                    title="Sick Leave" 
+                    used={balance?.sick?.used || 0} 
+                    total={balance?.sick?.total || 10} 
+                    icon={Heart} 
+                    color="rose" 
+                />
+            </div>
+
+            {/* Main Content Area */}
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="border-b border-slate-50 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-6">
+                        <button 
+                            onClick={() => setActiveTab('my-leaves')}
+                            className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            My Leave History
+                            {activeTab === 'my-leaves' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                        </button>
+                        
+                        {isManagement && (
+                            <button 
+                                onClick={() => setActiveTab('team-requests')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'team-requests' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                {role === 'manager' ? 'Team Requests' : 'Employee Requests'}
+                                {activeTab === 'team-requests' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                        <select 
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            aria-label="Filter history by status"
+                            className="bg-transparent text-xs font-bold text-slate-500 outline-none px-2 py-1 cursor-pointer"
+                        >
+                            <option value="All">All Status</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
+                        <Filter size={14} className="text-slate-400 mr-2" />
+                    </div>
+                </div>
+
+                <div className="p-0 overflow-x-auto">
+                    {activeTab === 'team-requests' ? (
+                        <TeamRequestsTable />
+                    ) : (
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/50">
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Leave Type</th>
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Duration</th>
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Dates</th>
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Reason</th>
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider text-center">Status</th>
+                                    <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {filteredHistory.length > 0 ? filteredHistory.map((leave) => (
+                                    <tr key={leave._id} className="hover:bg-slate-50/50 transition-colors group">
+                                        <td className="px-6 py-5">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                                                    <FileText size={16} />
+                                                </div>
+                                                <span className="font-bold text-slate-700">{leave.type} Leave</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <span className="text-slate-600 font-medium">
+                                                {/* Calculate days roughly for now */}
+                                                {Math.ceil((new Date(leave.endDate).getTime() - new Date(leave.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-slate-700">{new Date(leave.startDate).toLocaleDateString()}</span>
+                                                <span className="text-[10px] text-slate-400">to {new Date(leave.endDate).toLocaleDateString()}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <p className="text-sm text-slate-500 max-w-xs truncate">{leave.reason || 'No reason provided'}</p>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            <div className="flex justify-center">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${STATUS_COLORS[leave.status] || STATUS_COLORS.DEFAULT}`}>
+                                                    {leave.status}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-5 text-right">
+                                            <button 
+                                                onClick={() => {
+                                                    setSelectedLeave(leave);
+                                                    setShowDetailsModal(true);
+                                                }}
+                                                aria-label="View leave details"
+                                                className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
+                                            >
+                                                <ChevronRight size={18} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={6} className="px-6 py-20 text-center">
+                                            <div className="max-w-xs mx-auto">
+                                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                                                    <Clock size={32} />
+                                                </div>
+                                                <h3 className="font-bold text-slate-700">No History Found</h3>
+                                                <p className="text-sm text-slate-400 mt-1">You haven't requested any time off yet. Click the button above to start.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            </div>
+
+            <ApplyLeaveModal 
+                isOpen={showApplyModal} 
+                onClose={() => setShowApplyModal(false)}
+                onSuccess={fetchLeaveData}
+                balance={balance}
+            />
+
+            <LeaveDetailsModal 
+                isOpen={showDetailsModal}
+                onClose={() => {
+                    setShowDetailsModal(false);
+                    setSelectedLeave(null);
+                }}
+                leave={selectedLeave}
+            />
+        </div>
+    );
+};
+
+export default LeaveDashboard;

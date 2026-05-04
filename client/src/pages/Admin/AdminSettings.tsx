@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
-    Info
+    Info, Clock
 } from 'lucide-react';
-import { api } from '../../utils/api';
+import api from '../../utils/api'; // Fix import to use default or named correctly
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
+import ShiftManagement from './ShiftManagement';
 
 type ConfigItem = {
     _id: string;
@@ -19,7 +20,7 @@ const AdminSettings = () => {
     const { role } = usePermissions();
     const isAdmin = role === 'super-admin' || role === 'admin';
     
-    const [activeTab, setActiveTab] = useState<'departments' | 'designations'>('departments');
+    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts'>('departments');
     const [items, setItems] = useState<ConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -173,15 +174,17 @@ const AdminSettings = () => {
                         Organization Admin
                     </div>
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Configuration</h1>
-                    <p className="text-slate-500 mt-1">Manage departments and designations to maintain system-wide data consistency.</p>
+                    <p className="text-slate-500 mt-1">Manage departments, designations, and work shifts to maintain system-wide data consistency.</p>
                 </div>
-                <button 
-                    onClick={() => handleOpenModal()}
-                    className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
-                >
-                    <Plus size={20} />
-                    Add New {activeTab === 'departments' ? 'Department' : 'Designation'}
-                </button>
+                {activeTab !== 'shifts' && (
+                    <button 
+                        onClick={() => handleOpenModal()}
+                        className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
+                    >
+                        <Plus size={20} />
+                        Add New {activeTab === 'departments' ? 'Department' : 'Designation'}
+                    </button>
+                )}
             </div>
 
             {/* Tabs & Search */}
@@ -201,23 +204,35 @@ const AdminSettings = () => {
                         <Briefcase size={18} />
                         Designations
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('shifts')}
+                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'shifts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Clock size={18} />
+                        Work Shifts
+                    </button>
                 </div>
 
-                <div className="relative w-full lg:w-96 group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
-                    <input 
-                        type="text" 
-                        placeholder={`Search ${activeTab}...`}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm"
-                    />
-                </div>
+                {activeTab !== 'shifts' && (
+                    <div className="relative w-full lg:w-96 group">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
+                        <input 
+                            type="text" 
+                            placeholder={`Search ${activeTab}...`}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm"
+                        />
+                    </div>
+                )}
             </div>
 
-            {/* Data Table */}
-            <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
-                <table className="w-full text-left">
+            {activeTab === 'shifts' ? (
+                <ShiftManagement />
+            ) : (
+                <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                    <table className="w-full text-left">
+                        {/* Existing Table Content */}
                     <thead className="bg-slate-50/80 border-b border-slate-100">
                         <tr>
                             <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Name</th>
@@ -303,6 +318,7 @@ const AdminSettings = () => {
                     </tbody>
                 </table>
             </div>
+            )}
 
             {/* Warning Box */}
             <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 flex items-start gap-4">

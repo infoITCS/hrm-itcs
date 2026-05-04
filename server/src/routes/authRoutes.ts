@@ -8,6 +8,8 @@ import crypto from "crypto";
 import { sendPasswordResetEmail } from "../utils/email";
 import AuditLog from "../models/AuditLog";
 import { z } from "zod";
+import logger from '../utils/logger';
+
 
 const router = Router();
 
@@ -282,7 +284,7 @@ router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
 
     authenticate(req, res, next);
   } catch (error: any) {
-    console.error("❌ Passport Microsoft authentication initialization failed:", error.message);
+    logger.error("❌ Passport Microsoft authentication initialization failed:", error.message);
     res.status(500).json({ 
       message: "Failed to initiate Microsoft login", 
       error: process.env.NODE_ENV === 'development' ? error.message : undefined 
@@ -310,7 +312,7 @@ router.get(
       session: false, // We use JWT, so no session needed
     })(req, res, (err: any) => {
       if (err) {
-        console.error("Passport Auth Error:", err);
+        logger.error("Passport Auth Error:", err.message || String(err));
         const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
         return res.redirect(
           `${clientUrl}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`,
@@ -340,7 +342,7 @@ router.get(
       // Use hash (#token=...) so long JWT isn't truncated by query string limits
       res.redirect(`${clientUrl}/auth/callback#token=${encodeURIComponent(token)}`);
     } catch (error: any) {
-      console.error("❌ Microsoft callback error:", error.message);
+      logger.error("❌ Microsoft callback error:", error.message);
       const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       res.redirect(`${clientUrl}/login?error=callback_error`);
     }
@@ -361,32 +363,28 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
     let user = await User.findById(userId).select("-password");
 
     if (!user) {
-      console.error(`❌ User not found in /me: ${userId}`);
+      logger.error(`❌ User not found in /me: ${userId}`);
       return res.status(404).json({ message: "User not found" });
     }
 
     // Find associated employee - use string ID comparison
     const employee = await Employee.findOne({ userId: user._id.toString() }).select('-attachments.fileData').lean() as any;
 
-    // Auto-sync from Employee record if names or avatar are missing
-    if (employee && (!user.firstName || !user.lastName || !user.avatar)) {
+    // Auto-sync from Employee record
+    if (employee) {
       let updated = false;
-      if (!user.firstName && employee.firstName) {
+      if (employee.firstName && user.firstName !== employee.firstName) {
         user.firstName = employee.firstName;
         updated = true;
       }
-      if (!user.lastName && employee.lastName) {
+      if (employee.lastName && user.lastName !== employee.lastName) {
         user.lastName = employee.lastName;
         updated = true;
       }
       
-      // Check if there's a profile picture attachment
-      const profilePic = employee.attachments?.find(
-        (att: any) => att.fileType === "Profile Picture"
-      );
-      
-      if (!user.avatar && profilePic) {
-        user.avatar = `/api/employees/attachments/raw/${profilePic._id}`;
+      // Force sync avatar if it differs
+      if (employee.avatar && user.avatar !== employee.avatar) {
+        user.avatar = employee.avatar;
         updated = true;
       }
 
@@ -403,7 +401,7 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
       needsPasswordSetup: user.needsPasswordSetup ?? false
     });
   } catch (error: any) {
-    console.error("🔥 Error in /auth/me:", error.message);
+    logger.error("🔥 Error in /auth/me:", error.message);
     next(error);
   }
 });

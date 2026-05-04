@@ -30,6 +30,9 @@ export interface ZktTransaction {
     terminal_sn?: string;
     area_alias?: string;
     upload_time?: string;
+    // Enriched fields from machine API
+    first_name?: string;
+    last_name?: string;
 }
 
 export interface ZktReportEntry {
@@ -91,9 +94,11 @@ export const zktService = {
      * Fetch transactions, optionally from a given ID onwards.
      * Pass lastId to get only new records (incremental poll).
      */
-    getTransactions: async (lastId?: number | null): Promise<{ success: boolean; count: number; data: ZktTransaction[] }> => {
-        const params = lastId != null ? `?last_id=${lastId}` : '';
-        return get(`${api.zktTransactions}${params}`);
+    getTransactions: async (lastId?: number | null, pageSize = 50): Promise<{ success: boolean; count: number; data: ZktTransaction[] }> => {
+        const query = new URLSearchParams();
+        if (lastId != null) query.set('last_id', String(lastId));
+        query.set('page_size', String(pageSize));
+        return get(`${api.zktTransactions}?${query.toString()}`);
     },
 
     /**

@@ -58,7 +58,7 @@ router.get('/users', authenticate, requireAdmin, async (req: Request, res: Respo
 router.post('/users', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        const { email, firstName, lastName, role, password } = req.body;
+        const { email, firstName, lastName, role, password, employeeId } = req.body;
 
         if (!email) {
             return res.status(400).json({ message: 'Email is required' });
@@ -79,6 +79,40 @@ router.post('/users', authenticate, requireAdmin, async (req: Request, res: Resp
         });
 
         await newUser.save();
+
+        // Link to employee if provided
+        if (employeeId) {
+            const employee = await Employee.findOne({ employeeId });
+            if (!employee) {
+                // Rollback user creation if employee not found
+                await User.findByIdAndDelete(newUser._id);
+                return res.status(404).json({ message: `Employee record ${employeeId} not found. User creation cancelled.` });
+            }
+
+            if (employee.userId && String(employee.userId) !== String(newUser._id)) {
+                // Rollback user creation if employee already linked
+                await User.findByIdAndDelete(newUser._id);
+                return res.status(409).json({ message: `Employee ${employeeId} is already linked to another account. User creation cancelled.` });
+            }
+
+            const updateResult = await Employee.updateOne(
+                { employeeId },
+                { $set: { userId: newUser._id.toString() } }
+            );
+
+            if (updateResult.matchedCount === 0) {
+                await User.findByIdAndDelete(newUser._id);
+                return res.status(404).json({ message: 'Employee linking failed. User creation cancelled.' });
+            }
+
+            await AuditLog.create({
+                action: 'UPDATE',
+                targetResource: 'Employee',
+                targetId: employee._id.toString(),
+                performedBy: authReq.user?.userId || 'System',
+                details: { action: 'LINK_USER', userId: newUser._id.toString(), employeeId }
+            });
+        }
 
         // Send Welcome Email
         await sendWelcomeEmail(email, userPassword, req.headers.origin);
@@ -246,6 +280,85 @@ router.patch('/users/:id/password', authenticate, requireAdmin, async (req: Requ
         });
 
         res.json({ message: 'Password reset successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   GET /api/admin/employees/unlinked
+ * @desc    Get employees who are not yet linked to a user account
+ * @access  Private (Admin only)
+ */
+router.get('/employees/unlinked', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const unlinkedEmployees = await Employee.find({ 
+            $or: [
+                { userId: { $exists: false } },
+                { userId: null },
+                { userId: '' }
+            ]
+        }).select('employeeId firstName lastName jobInfo').lean();
+        
+        res.json(unlinkedEmployees);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   POST /api/admin/users/:id/link
+ * @desc    Link an existing user to an employee profile
+ * @access  Private (Admin only)
+ */
+router.post('/users/:id/link', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const { employeeId } = req.body;
+        const userId = req.params.id;
+
+        if (!employeeId) {
+            return res.status(400).json({ message: 'Employee ID is required' });
+        }
+
+        // 1. Fetch and validate User
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // 2. Fetch and validate target Employee
+        const employee = await Employee.findOne({ employeeId });
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found' });
+        }
+
+        // 3. Check if this employee is already linked to someone else
+        if (employee.userId && employee.userId.toString() !== userId) {
+            return res.status(409).json({ message: `Employee ${employeeId} is already linked to another user account (${employee.userId})` });
+        }
+
+        // 4. Check if this userId is already linked to another employee
+        const otherLinkedEmployee = await Employee.findOne({ userId, employeeId: { $ne: employeeId } });
+        if (otherLinkedEmployee) {
+            return res.status(409).json({ message: `User ${userId} is already linked to another employee record (${otherLinkedEmployee.employeeId})` });
+        }
+
+        // Only update if not already linked to THIS user
+        if (String(employee.userId) !== String(userId)) {
+            employee.userId = userId;
+            await employee.save();
+
+            await AuditLog.create({
+                action: 'UPDATE',
+                targetResource: 'Employee',
+                targetId: employee._id.toString(),
+                performedBy: authReq.user?.userId || 'System',
+                details: { action: 'LINK_USER', userId, employeeId: employee.employeeId }
+            });
+        }
+
+        res.json({ success: true, message: 'User linked to employee successfully' });
     } catch (error) {
         next(error);
     }

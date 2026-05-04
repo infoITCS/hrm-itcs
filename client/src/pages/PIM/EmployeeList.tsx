@@ -27,24 +27,18 @@ const EmployeeList = () => {
     });
     const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
     const [departments, setDepartments] = React.useState<string[]>([]);
-    const [designations, setDesignations] = React.useState<string[]>([]);
 
     React.useEffect(() => {
         const fetchConfig = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const [deptRes, desigRes] = await Promise.all([
-                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(`${api.baseURL}/api/config/designations`, { headers: { 'Authorization': `Bearer ${token}` } })
+                const [deptRes] = await Promise.all([
+                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
                 
                 if (deptRes.ok) {
                     const data = await deptRes.json();
                     setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
-                }
-                if (desigRes.ok) {
-                    const data = await desigRes.json();
-                    setDesignations(data.filter((d: any) => d.isActive).map((d: any) => d.name));
                 }
             } catch (err) {
                 console.error('Failed to fetch config', err);

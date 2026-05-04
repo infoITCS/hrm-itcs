@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Tras
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
+import countriesData from '../../data/countries.json';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -134,6 +135,7 @@ const MyInfo = () => {
     const targetStep = parseInt(searchParams.get('step') || '1', 10);
 
     const [step, setStep] = useState<number>(targetStep);
+    const [isSameAddress, setIsSameAddress] = useState(false);
     
     // Required fields on step 1 – must be filled before Next/Save (for employee, manager, admin)
     const isStep1RequiredValid = () => {
@@ -527,6 +529,17 @@ const MyInfo = () => {
                             bloodGroup: !!employee.bloodGroup,
                             religion: !!employee.religion
                         });
+
+                        // Check if addresses are identical to set initial checkbox state
+                        const normalize = (val: any) => (val || '').trim();
+                        const hasPerm = !!(normalize(employee.address?.street) || normalize(employee.address?.city) || normalize(employee.address?.state) || normalize(employee.address?.zipCode) || normalize(employee.address?.country));
+                        const sameAddress = hasPerm &&
+                            normalize(employee.address?.street) === normalize(employee.temporaryAddress?.street) &&
+                            normalize(employee.address?.city) === normalize(employee.temporaryAddress?.city) &&
+                            normalize(employee.address?.state) === normalize(employee.temporaryAddress?.state) &&
+                            normalize(employee.address?.zipCode) === normalize(employee.temporaryAddress?.zipCode) &&
+                            normalize(employee.address?.country) === normalize(employee.temporaryAddress?.country);
+                        setIsSameAddress(sameAddress);
                     } else {
                         // No employee record found, initialize with user data
                         setIsEditing(true); // Default to editing if no record exists
@@ -554,10 +567,26 @@ const MyInfo = () => {
         fetchEmployeeData();
     }, [user?.id]); // Refresh on ID change
 
-    // Scroll to top when step changes
     useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [step]);
+
+    // Sync temporary address with permanent if "Same as Permanent" is checked
+    useEffect(() => {
+        if (isSameAddress) {
+            setFormData(prev => ({
+                ...prev,
+                temporaryAddress: { ...prev.address }
+            }));
+        }
+    }, [isSameAddress, formData.address]);
+
+    const copyPermanentAddress = () => {
+        setFormData(prev => ({
+            ...prev,
+            temporaryAddress: { ...prev.address }
+        }));
+    };
 
     const handleChange = (e: any, section?: string, index?: number, subfield?: string) => {
         const { name, value } = e.target;
@@ -565,6 +594,7 @@ const MyInfo = () => {
         if (section === 'address') {
             setFormData(prev => ({ ...prev, address: { ...prev.address, [name]: value } }));
         } else if (section === 'temporaryAddress') {
+            if (isSameAddress) return;
             setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [name]: value } }));
         } else if (section === 'emergencyContacts' && index !== undefined && subfield) {
             const newContacts = [...formData.emergencyContacts];
@@ -1092,8 +1122,8 @@ const MyInfo = () => {
                             </div>
                         )}
                         <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px]">
-                            <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider">Change</span>
+                            <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform pointer-events-none" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider pointer-events-none">Change</span>
                             <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
                         </label>
                         {uploadingAvatar && (
@@ -1872,7 +1902,7 @@ const MyInfo = () => {
                                                 />
                                                 {/* Profile Picture shows image preview instead of icon */}
                                                 {label === 'Profile Picture' && localAvatarPreview ? (
-                                                    <div className="relative z-10">
+                                                    <div className="relative z-10 pointer-events-none">
                                                         <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2" />
                                                         <button
                                                             onClick={(e) => { 
@@ -1884,30 +1914,30 @@ const MyInfo = () => {
                                                                 const originalUrl = getAvatarUrl(rawEmployee);
                                                                 login((prev: any) => prev ? { ...prev, avatar: originalUrl } : prev as any);
                                                             }}
-                                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-30"
+                                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-30 pointer-events-auto"
                                                             title="Remove"
                                                         >×</button>
                                                     </div>
                                                 ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
-                                                    <div className="relative z-10">
+                                                    <div className="relative z-10 pointer-events-none">
                                                         <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
                                                         <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <Upload className="text-white drop-shadow-md" size={24} />
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
+                                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform pointer-events-none">
                                                         <Upload size={20} />
                                                     </div>
                                                 )}
 
-                                                <span className="text-sm font-medium text-gray-600">{label}</span>
+                                                <span className="text-sm font-medium text-gray-600 pointer-events-none">{label}</span>
                                                 {displayFileName && label !== 'Profile Picture' ? (
-                                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2">
+                                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2 pointer-events-none">
                                                         {displayFileName}
                                                     </span>
                                                 ) : label !== 'Profile Picture' ? (
-                                                    <span className="text-xs text-gray-400 mt-1">Click to upload</span>
+                                                    <span className="text-xs text-gray-400 mt-1 pointer-events-none">Click to upload</span>
                                                 ) : null}
                                             </div>
                                         );
@@ -1985,7 +2015,7 @@ const MyInfo = () => {
                                             label=""
                                             value={formData.nationality}
                                             onChange={(val) => setFormData({ ...formData, nationality: val })}
-                                            options={['Pakistani', 'Indian', 'Bangladeshi', 'American', 'British', 'Canadian', 'Australian', 'Other']}
+                                            options={countriesData.map(c => c.name)}
                                         />
                                     )}
                                     {initialLockedFields.nationality && !canEditSensitiveData() && <p className="text-xs text-gray-500 mt-1">This field cannot be edited once filled</p>}
@@ -2115,6 +2145,27 @@ const MyInfo = () => {
                                     onChange={(field, val) =>
                                         setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [field]: val } }))
                                     }
+                                    disabled={isSameAddress}
+                                    headerAction={
+                                        <label className="flex items-center gap-2 cursor-pointer group">
+                                            <div className="relative">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSameAddress}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setIsSameAddress(checked);
+                                                        if (checked) copyPermanentAddress();
+                                                    }}
+                                                    className="sr-only"
+                                                />
+                                                <div className={`w-4 h-4 border-2 rounded transition-all flex items-center justify-center ${isSameAddress ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300 group-hover:border-indigo-400'}`}>
+                                                    {isSameAddress && <Check size={10} className="text-white" strokeWidth={4} />}
+                                                </div>
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 transition-colors uppercase tracking-wider">Same as Permanent</span>
+                                        </label>
+                                    }
                                 />
 
                                 <div>
@@ -2226,7 +2277,12 @@ const MyInfo = () => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-xs font-medium text-gray-500">Issuing Country</label>
-                                                    <input type="text" name="issuingCountry" value={doc.issuingCountry} onChange={(e) => handleChange(e, 'immigrationHistory', idx, 'issuingCountry')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
+                                                    <CustomSelect
+                                                        label=""
+                                                        value={doc.issuingCountry}
+                                                        onChange={(val) => handleChange({ target: { name: 'issuingCountry', value: val } } as any, 'immigrationHistory', idx, 'issuingCountry')}
+                                                        options={countriesData.map(c => c.name)}
+                                                    />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="block text-xs font-medium text-gray-500">Issue Date</label>
@@ -2256,8 +2312,8 @@ const MyInfo = () => {
                                             <div className="mt-3 pt-3 border-t border-gray-100">
                                                 <div className="flex items-center gap-2">
                                                     <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center">
-                                                        <Upload size={14} />
-                                                        <span className="truncate">
+                                                        <Upload size={14} className="pointer-events-none" />
+                                                        <span className="truncate pointer-events-none">
                                                             {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`)
                                                                 ? formData.files.find(f => f.type === `Immigration - ${doc.documentNumber || idx}`)?.file.name
                                                                 : 'Upload Document Scan (PDF / JPG / PNG)'}
@@ -2458,8 +2514,8 @@ const MyInfo = () => {
                                                             const isUploaded = !!savedFile && !newFile;
                                                             return (
                                                                 <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-indigo-300 bg-indigo-50/50 hover:bg-white text-indigo-600'}`}>
-                                                                    <Upload size={14} />
-                                                                    <span className="truncate">
+                                                                    <Upload size={14} className="pointer-events-none" />
+                                                                    <span className="truncate pointer-events-none">
                                                                         {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Experience Letter'}
                                                                     </span>
                                                                     <input
@@ -2552,8 +2608,8 @@ const MyInfo = () => {
                                                             const isUploaded = !!savedFile && !newFile;
                                                             return (
                                                                 <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
-                                                                    <Upload size={14} />
-                                                                    <span className="truncate">
+                                                                    <Upload size={14} className="pointer-events-none" />
+                                                                    <span className="truncate pointer-events-none">
                                                                         {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Degree/Transcript Scan'}
                                                                     </span>
                                                                     <input

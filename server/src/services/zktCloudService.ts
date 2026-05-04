@@ -8,6 +8,9 @@
 import AttendancePunch from '../models/AttendancePunch';
 import ZktSyncState from '../models/ZktSyncState';
 import Employee from '../models/Employee';
+import { processEmployeePunches } from './attendanceProcessor';
+import logger from '../utils/logger';
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +37,9 @@ export interface ZktTransaction {
     terminal_sn?: string;
     area_alias?: string;
     upload_time?: string;
+    // Optional names if enriched
+    first_name?: string;
+    last_name?: string;
 }
 
 export interface ZktReportEntry {
@@ -77,11 +83,21 @@ const TIMEOUT_MS = 30000;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function zktHeaders(): Record<string, string> {
-    // Some versions use 'JWT', others use 'Token'. 
-    // We'll default to 'Token' but you can change it here if needed.
     const prefix = process.env.ZKTECO_TOKEN_PREFIX || 'Token';
+    const token  = process.env.ZKTECO_API_TOKEN || '';
+    
+    let authHeader = `${prefix} ${token}`;
+    
+    // Support Basic Auth or direct token strings based on prefix
+    if (prefix === 'Basic' && !token && process.env.BIOTIME_USER) {
+        const credentials = Buffer.from(`${process.env.BIOTIME_USER}:${process.env.BIOTIME_PASS}`).toString('base64');
+        authHeader = `Basic ${credentials}`;
+    } else if (prefix === 'None') {
+        authHeader = token;
+    }
+
     return {
-        'Authorization': `${prefix} ${ZKT_TOKEN}`,
+        'Authorization': authHeader,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
     };
@@ -101,13 +117,13 @@ async function fetchWithTimeout(url: string, timeoutMs = TIMEOUT_MS): Promise<Re
 }
 
 async function zktGet<T>(path: string, timeoutMs = TIMEOUT_MS): Promise<T> {
-    const url = `${ZKT_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const url = path.startsWith('http') ? path : `${ZKT_URL}${path.startsWith('/') ? '' : '/'}${path}`;
     const res = await fetchWithTimeout(url, timeoutMs);
     
     if (!res.ok) {
         let body = '';
         try { body = await res.text(); } catch { /* ignore */ }
-        console.error(`[ZKT] GET ${path} failed: ${res.status} ${res.statusText}`, body);
+        logger.error(`[ZKT] GET ${path} failed: ${res.status} ${res.statusText}`, body);
         throw new Error(`HTTP ${res.status}: ${res.statusText}${body ? ' - ' + body : ''}`);
     }
     return res.json() as Promise<T>;
@@ -123,7 +139,7 @@ function assertPagedResponse<T>(raw: unknown, url: string): asserts raw is ZktPa
     }
     const d = raw as Record<string, unknown>;
     if (!Array.isArray(d['results']) && !Array.isArray(d['data'])) {
-        console.error('[ZKT] Unexpected API response from', url, '→', JSON.stringify(d).slice(0, 500));
+        logger.error('[ZKT] Unexpected API response from', url, '→', JSON.stringify(d).slice(0, 500));
         throw new Error(`ZKTeco: response missing "results"/"data" array — ${url} — body: ${JSON.stringify(d).slice(0, 300)}`);
     }
 }
@@ -141,7 +157,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
         } catch (err) {
             lastError = err;
             const delay = 500 * Math.pow(2, attempt);
-            console.warn(`[ZKT] Attempt ${attempt + 1} failed. Retrying in ${delay}ms…`);
+            logger.warn(`[ZKT] Attempt ${attempt + 1} failed: ${(err as any).message}. Retrying in ${delay}ms…`);
             await new Promise(r => setTimeout(r, delay));
         }
     }
@@ -153,7 +169,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
 export async function checkServerStatus(): Promise<ZktServerStatus> {
     const start = Date.now();
     try {
-        await fetchWithTimeout(`${ZKT_URL}/personnel/api/employees/?page_size=1`, 4000);
+        // Use a lightweight endpoint with a generous timeout — BioTime can be slow
+        await fetchWithTimeout(`${ZKT_URL}/iclock/api/transactions/?page_size=1`, 15000);
         return { reachable: true, latencyMs: Date.now() - start };
     } catch (err: any) {
         return { reachable: false, latencyMs: Date.now() - start, error: err.message };
@@ -175,22 +192,83 @@ export async function fetchEmployees(): Promise<ZktEmployee[]> {
     });
 }
 
-export async function fetchTransactions(lastId?: number | null, pageSize = 100): Promise<ZktTransaction[]> {
+export async function fetchTransactions(lastId?: number | null, pageSize = 100, followPagination = true): Promise<ZktTransaction[]> {
     return withRetry(async () => {
         const all: ZktTransaction[] = [];
-        const params = new URLSearchParams({ page_size: String(pageSize) });
+        const params = new URLSearchParams({ 
+            page_size: String(pageSize),
+            ordering: '-id' // Newest records first (supported by BioTime)
+        });
         if (lastId != null) params.set('last_id', String(lastId));
         
+        // If the machine ignores 'ordering', we need to find the latest page.
+        // We'll fetch the first page to get the total 'count'.
         let nextPath: string | null = `/iclock/api/transactions/?${params.toString()}`;
-        while (nextPath) {
-            const data: unknown = await zktGet<unknown>(nextPath);
-            assertPagedResponse<ZktTransaction>(data, nextPath);
-            all.push(...getPageItems(data));
-            nextPath = data.next ?? null;
+        const firstPage = await zktGet<ZktPagedResponse<ZktTransaction>>(nextPath);
+        assertPagedResponse<ZktTransaction>(firstPage, nextPath);
+        
+        const totalCount = firstPage.count || 0;
+        const totalPages = Math.ceil(totalCount / pageSize);
+
+        // If we have many pages and NO lastId was provided, 
+        // we should jump to the LAST page to get today's data.
+        if (lastId == null && totalPages > 1) {
+            nextPath = `/iclock/api/transactions/?page_size=${pageSize}&page=${totalPages}`;
+        } else if (totalPages <= 1 && lastId == null) {
+            // Reuse first page if everything fits and no jump needed
+            all.push(...getPageItems(firstPage));
+            nextPath = null;
         }
-        return all;
+
+        while (nextPath) {
+            const data = await zktGet<ZktPagedResponse<ZktTransaction>>(nextPath);
+            assertPagedResponse<ZktTransaction>(data, nextPath);
+            
+            const items = getPageItems(data);
+            all.push(...items);
+            
+            // If we are looking for 'latest' and the API gives us old first, 
+            // we don't want to follow 'next' because that goes even further into the past.
+            if (lastId == null) break; 
+
+            nextPath = data.next ?? null;
+            if (!followPagination) break;
+        }
+
+        // Return latest first for the UI
+        return all.sort((a, b) => b.id - a.id);
     });
 }
+
+/**
+ * Enriches a list of transactions with names from the machine's employee list.
+ */
+export async function enrichTransactionsWithNames(txns: ZktTransaction[]): Promise<ZktTransaction[]> {
+    if (txns.length === 0) return txns;
+
+    try {
+        const employees = await fetchEmployees();
+        const empMap = new Map<string, ZktEmployee>(
+            employees.map(e => [String(e.emp_code), e])
+        );
+
+        return txns.map(t => {
+            const emp = empMap.get(String(t.emp_code));
+            if (emp) {
+                return {
+                    ...t,
+                    first_name: emp.first_name,
+                    last_name: emp.last_name,
+                };
+            }
+            return t;
+        });
+    } catch (err: any) {
+        logger.error('[ZKT] Failed to enrich transactions with names:', err.message);
+        return txns;
+    }
+}
+
 
 export async function fetchReport(startDate: string, endDate: string): Promise<ZktReportEntry[]> {
     return withRetry(async () => {
@@ -237,7 +315,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
     // Warn about machine PINs with no matching HRM employee profile
     const unmappedPins = uniquePins.filter(p => !pinToHrmId.has(p));
     if (unmappedPins.length > 0) {
-        console.warn(
+        logger.warn(
             `[ZKT Sync] ⚠️  ${unmappedPins.length} machine PIN(s) not linked to any HRM employee: [${unmappedPins.join(', ')}]`,
             '\n  → Open the employee profile → set "Biometric PIN" to match the machine PIN.'
         );
@@ -246,20 +324,30 @@ export async function runZktSync(): Promise<ZktSyncResult> {
 
     let savedCount = 0;
     let maxId      = lastId ?? 0;
+    const toProcess = new Set<string>();
 
     for (const txn of txns) {
         if (txn.id > maxId) maxId = txn.id;
 
-        const punchStatus = parseInt(txn.punch_state ?? '0', 10);
-        const punchTime   = new Date(txn.punch_time.replace(' ', 'T'));
+        let punchStatus = parseInt(txn.punch_state ?? '0', 10);
+        if (punchStatus === 255) punchStatus = 0; // 255 is generic biometric punch
+
+        const punchTime = new Date(txn.punch_time.replace(' ', 'T'));
         if (isNaN(punchTime.getTime())) continue;
 
-        // Resolve machine PIN → HRM employeeId (falls back to raw pin if not yet mapped)
-        const hrmEmployeeId = pinToHrmId.get(txn.emp_code) ?? txn.emp_code;
+        // Resolve machine PIN → HRM employeeId
+        const hrmEmployeeId = pinToHrmId.get(txn.emp_code);
+        if (!hrmEmployeeId) {
+            logger.warn(`[ZKT Sync] Skipping punch: biometricPin="${txn.emp_code}" not mapped to any HRM employee. Set biometricPin in employee profile.`);
+            continue;
+        }
 
         try {
+            const dateStr = punchTime.toISOString().slice(0, 10);
+            const sn = txn.terminal_sn ?? 'ZKT_CLOUD';
+
             const existing = await AttendancePunch.findOneAndUpdate(
-                { deviceSN: txn.terminal_sn ?? 'ZKT_LOCAL', machineUserId: txn.emp_code, punchTime },
+                { deviceSN: sn, machineUserId: txn.emp_code, punchTime },
                 {
                     $setOnInsert: {
                         machineUserId: txn.emp_code,
@@ -267,17 +355,20 @@ export async function runZktSync(): Promise<ZktSyncResult> {
                         punchTime,
                         punchStatus,
                         verifyType:    txn.verify_type ?? 15,
-                        deviceSN:      txn.terminal_sn ?? 'ZKT_LOCAL',
-                        location:      txn.area_alias  ?? 'Main Office',
+                        deviceSN:      sn,
+                        location:      txn.area_alias  ?? 'ISB-Office',
                         processed:     false,
                     },
                 },
                 { upsert: true, new: false }
             );
-            if (!existing) savedCount++;
+            if (!existing) {
+                savedCount++;
+                toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
+            }
         } catch (err: any) {
             if (err.code !== 11000) {
-                console.error('[ZKT Sync] Error saving punch:', err.message);
+                logger.error('[ZKT Sync] Error saving punch:', err.message);
             }
         }
     }
@@ -287,6 +378,17 @@ export async function runZktSync(): Promise<ZktSyncResult> {
     state.totalSynced       = (state.totalSynced ?? 0) + savedCount;
     await state.save();
 
-    console.log(`[ZKT Sync] ✅ Fetched ${txns.length} txns, saved ${savedCount} new. Last ID: ${maxId}`);
+    logger.info(`[ZKT Sync] ✅ Fetched ${txns.length} txns, saved ${savedCount} new. Last ID: ${maxId}`);
+    
+    // ── Trigger background processing for all affected employee/date pairs ──
+    if (toProcess.size > 0) {
+        for (const key of toProcess) {
+            const [empId, dStr, sn] = key.split('|');
+            processEmployeePunches(empId, dStr, sn).catch(err => {
+                logger.error(`[ZKT Sync] Background processing failed for ${empId} on ${dStr}:`, err);
+            });
+        }
+    }
+
     return { newRecords: savedCount, lastTransactionId: maxId, syncedAt: state.lastSyncAt.toISOString() };
 }

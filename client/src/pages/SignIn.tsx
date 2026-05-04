@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { User, UserRole } from '../types';
 import APIService from '../services/api';
 import { api } from '../utils/api';
@@ -19,8 +20,10 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
     // Check for error in URL (from SSO redirect)
     useEffect(() => {
-        const params = new URLSearchParams(window.location.hash.split('?')[1]);
-        const errorParam = params.get('error');
+        const searchParams = new URLSearchParams(window.location.search);
+        const errorParam = searchParams.get('error');
+        const msgParam = searchParams.get('msg');
+
         if (errorParam) {
             const errorMap: Record<string, string> = {
                 'access_denied': 'Access denied by Microsoft.',
@@ -28,7 +31,8 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 'no_code': 'No authorization code received.',
                 'no_email': 'No email address found in your Microsoft account.',
                 'callback_failed': 'Authentication callback failed. Please try again.',
-                'server_error': 'Internal server error during authentication.'
+                'server_error': 'Internal server error during authentication.',
+                'login_failed': msgParam || 'Microsoft login failed. Your account may be suspended.'
             };
             setError(errorMap[errorParam] || decodeURIComponent(errorParam).replace(/_/g, ' '));
         }
@@ -260,7 +264,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                     <div className="pt-6 text-center">
                         <p className="text-xs text-gray-400">
                             Protected by Enterprise Grade Security. <br />
-                            By signing in, you agree to our <a href="#" className="underline hover:text-gray-600">Terms</a> and <a href="#" className="underline hover:text-gray-600">Privacy Policy</a>.
+                            By signing in, you agree to our <Link to="/terms" className="underline hover:text-gray-600">Terms</Link> and <Link to="/privacy-policy" className="underline hover:text-gray-600">Privacy Policy</Link>.
                         </p>
                     </div>
                 </div>

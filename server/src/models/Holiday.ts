@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IHoliday extends Document {
     name: string;
     date: string;          // YYYY-MM-DD
-    location?: string;     // Karachi, Lahore, Main Office (null = All)
+    location?: string;     // Karachi, Lahore, ISB-Office (null = All)
     isRecurring: boolean;  // Yearly holiday
 }
 

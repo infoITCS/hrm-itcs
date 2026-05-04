@@ -3,6 +3,8 @@ import passport from 'passport';
 // @ts-ignore
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import { User, UserRole } from '../models/User.model';
+import logger from '../utils/logger';
+
 
 // Passport serialization
 passport.serializeUser((user: any, done: any) => {
@@ -37,12 +39,8 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
         pkce: true, // Enable PKCE (Proof Key for Code Exchange) - required by Azure AD
         state: true, // Required when PKCE is enabled
         // Custom function to add prompt parameter to authorization URL
-        // This function is called by passport-oauth2 to add custom parameters to the authorization URL
         customParams: (req: any) => {
-            // Check both query param and request property (set in authRoutes)
-            // Note: req might be undefined in some passport-oauth2 versions, so we check multiple sources
             const prompt = req?.query?.prompt || req?.oauthPrompt || (req && typeof req === 'object' && 'prompt' in req ? req.prompt : undefined);
-            console.log('customParams called with prompt:', prompt, 'req:', req ? 'exists' : 'undefined');
             if (prompt === 'select_account') {
                 return { prompt: 'select_account' };
             }
@@ -50,8 +48,6 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
         }
     };
     
-    // Only add clientSecret if provided (for confidential clients/Web apps)
-    // Public clients (SPA/Mobile) don't use client secrets
     if (process.env.MICROSOFT_CLIENT_SECRET) {
         strategyOptions.clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
     }
@@ -65,31 +61,12 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                     const email = profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
 
                     if (!email) {
-                        console.error('❌ No email found in Microsoft profile');
-                        // done should be called with (error, user, info)
+                        logger.error('❌ No email found in Microsoft profile');
                         return done(null, false, { message: 'No email found in Microsoft profile' });
                     }
 
                     // Find existing user or create new one
                     let user = await User.findOne({ email });
-
-                    // Fetch user photo from Microsoft Graph
-                    let avatarDataUri = '';
-                    try {
-                        const photoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
-                            headers: { 'Authorization': `Bearer ${accessToken}` }
-                        });
-                        
-                        if (photoResponse.ok) {
-                            const contentType = photoResponse.headers.get('content-type');
-                            const arrayBuffer = await photoResponse.arrayBuffer();
-                            const buffer = Buffer.from(arrayBuffer);
-                            avatarDataUri = `data:${contentType};base64,${buffer.toString('base64')}`;
-                            console.log('✅ Microsoft photo fetched successfully');
-                        }
-                    } catch (photoErr) {
-                        console.error('⚠️ Could not fetch Microsoft photo:', photoErr);
-                    }
 
                     if (!user) {
                         // Create new user with default Employee role
@@ -100,7 +77,6 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                             firstName: profile.name?.givenName || 'Unknown',
                             lastName: profile.name?.familyName || 'User',
                             microsoftId: profile.id,
-                            avatar: avatarDataUri || undefined,
                             needsPasswordSetup: true // Prompt user to set a password on first login
                         });
                     } else if (!user.isActive) {
@@ -112,12 +88,6 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                         // Link Microsoft ID if not yet linked
                         if (!user.microsoftId) {
                             user.microsoftId = profile.id;
-                            changed = true;
-                        }
-
-                        // Update avatar if we got a new one from Microsoft and they don't have one or have an old one
-                        if (avatarDataUri && (!user.avatar || user.avatar.startsWith('data:'))) {
-                            user.avatar = avatarDataUri;
                             changed = true;
                         }
 
@@ -133,16 +103,15 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
 
                     return done(null, user);
                 } catch (error: any) {
-                    console.error('❌ Microsoft SSO error:', error.message);
+                    logger.error('❌ Microsoft SSO error:', error.message);
                     return done(error, undefined);
                 }
             }
         )
     );
-    console.log(`✅ Microsoft OAuth strategy configured (Tenant: ${tenantId})`);
+    logger.info(`✅ Microsoft OAuth strategy configured (Tenant: ${tenantId})`);
 } else {
-    console.warn('⚠️  Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_CALLBACK_URL to enable.');
+    logger.warn('⚠️  Microsoft OAuth not configured. Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_CALLBACK_URL to enable.');
 }
 
-export default () => { }; // Export empty function to satisfy init expectation or change call site
-
+export default () => { };

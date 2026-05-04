@@ -34,3 +34,7 @@ uploads/*
 
 
 .vercel
+coverage/
+*.lcov
+lcov-report/
+*.local.ts

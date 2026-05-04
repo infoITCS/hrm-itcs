@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -26,6 +26,7 @@ interface UserData {
 const UserManagement = () => {
     const { role: currentUserRole } = usePermissions();
     const [users, setUsers] = useState<UserData[]>([]);
+    const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState('all');
@@ -33,8 +34,13 @@ const UserManagement = () => {
 
     // Modal state
     const [showInviteModal, setShowInviteModal] = useState(false);
-    const [inviteData, setInviteData] = useState({ email: '', firstName: '', lastName: '', role: 'employee' });
+    const [inviteData, setInviteData] = useState({ email: '', firstName: '', lastName: '', role: 'employee', employeeId: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Linking state
+    const [showLinkModal, setShowLinkModal] = useState(false);
+    const [linkingUser, setLinkingUser] = useState<UserData | null>(null);
+    const [selectedEmpId, setSelectedEmpId] = useState('');
 
     // Password Reset Modal state
     const [showResetModal, setShowResetModal] = useState(false);
@@ -58,7 +64,22 @@ const UserManagement = () => {
 
     useEffect(() => {
         fetchUsers();
+        fetchEmployees();
     }, []);
+
+    const fetchEmployees = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/admin/employees/unlinked`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('Failed to fetch employees');
+            const data = await res.json();
+            setEmployees(data);
+        } catch (err) {
+            console.error('Failed to fetch employees', err);
+        }
+    };
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -74,6 +95,41 @@ const UserManagement = () => {
             setError(err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleLinkUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!linkingUser || !selectedEmpId) return;
+
+        setIsSubmitting(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/admin/users/${linkingUser._id}/link`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ employeeId: selectedEmpId })
+            });
+
+            if (!res.ok) throw new Error('Failed to link employee');
+
+            await fetchUsers();
+            await fetchEmployees();
+            setShowLinkModal(false);
+            setLinkingUser(null);
+            setSelectedEmpId('');
+        } catch (err: any) {
+            setAlertConfig({
+                isOpen: true,
+                title: 'Linking Failed',
+                message: err.message,
+                type: 'error'
+            });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -96,7 +152,12 @@ const UserManagement = () => {
 
             setUsers(users.map(u => u._id === userId ? { ...u, role: newRole } : u));
         } catch (err: any) {
-            alert(err.message);
+            setAlertConfig({
+                isOpen: true,
+                title: 'Update Failed',
+                message: err.message,
+                type: 'error'
+            });
         }
     };
 
@@ -150,7 +211,7 @@ const UserManagement = () => {
 
             await fetchUsers();
             setShowInviteModal(false);
-            setInviteData({ email: '', firstName: '', lastName: '', role: 'employee' });
+            setInviteData({ email: '', firstName: '', lastName: '', role: 'employee', employeeId: '' });
         } catch (err: any) {
             setAlertConfig({
                 isOpen: true,
@@ -310,7 +371,9 @@ const UserManagement = () => {
                                                         {user.firstName || user.employeeInfo?.firstName} {user.lastName || user.employeeInfo?.lastName}
                                                         {!user.firstName && !user.employeeInfo && <span className="text-slate-400 italic">No Name Set</span>}
                                                     </p>
-                                                    <p className="text-xs text-slate-500 font-medium break-all">{user.email}</p>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight italic">
+                                                        {user.employeeInfo?.employeeId || user.email}
+                                                    </p>
                                                 </div>
                                             </div>
                                         </td>
@@ -326,9 +389,20 @@ const UserManagement = () => {
                                                     </span>
                                                 </div>
                                             ) : (
-                                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex items-center gap-1 w-fit">
-                                                    <ShieldAlert size={12} /> Not Linked
-                                                </span>
+                                                <div className="flex flex-col gap-2">
+                                                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex items-center gap-1 w-fit">
+                                                        <ShieldAlert size={12} /> Not Linked
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            setLinkingUser(user);
+                                                            setShowLinkModal(true);
+                                                        }}
+                                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 ml-1"
+                                                    >
+                                                        <Plus size={10} /> Link Profile
+                                                    </button>
+                                                </div>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
@@ -466,6 +540,22 @@ const UserManagement = () => {
                                 </select>
                             </div>
 
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Associate with Employee (Optional)</label>
+                                <select 
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all"
+                                    value={inviteData.employeeId}
+                                    onChange={e => setInviteData({...inviteData, employeeId: e.target.value})}
+                                >
+                                    <option value="">-- No Employee Link --</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.employeeId} value={emp.employeeId}>
+                                            {emp.firstName} {emp.lastName} ({emp.employeeId})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
                             <div className="pt-4 flex items-center justify-end gap-3">
                                 <button 
                                     type="button" 
@@ -559,6 +649,78 @@ const UserManagement = () => {
 
 
             {/* Modal components... */}
+            {/* Link Employee Modal */}
+            {showLinkModal && linkingUser && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 bg-indigo-50 relative">
+                            <h3 className="text-xl font-bold text-indigo-800 flex items-center gap-2">
+                                <Briefcase size={20} /> Link Employee Profile
+                            </h3>
+                            <p className="text-sm text-indigo-600 mt-1">Connect <strong>{linkingUser.email}</strong> to an employee profile.</p>
+                            <button 
+                                onClick={() => {
+                                    setShowLinkModal(false);
+                                    setLinkingUser(null);
+                                    setSelectedEmpId('');
+                                }}
+                                className="absolute top-6 right-6 p-2 text-indigo-400 hover:text-indigo-600 hover:bg-white rounded-full transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <form onSubmit={handleLinkUser} className="p-6 space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select Employee</label>
+                                <select 
+                                    required
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all"
+                                    value={selectedEmpId}
+                                    onChange={e => setSelectedEmpId(e.target.value)}
+                                >
+                                    <option value="">-- Select Employee --</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.employeeId} value={emp.employeeId}>
+                                            {emp.firstName} {emp.lastName} ({emp.employeeId})
+                                        </option>
+                                    ))}
+                                </select>
+                                {employees.length === 0 && (
+                                    <p className="text-xs text-amber-600 font-medium italic mt-1">No unlinked employees found.</p>
+                                )}
+                            </div>
+
+                            <div className="pt-4 flex items-center justify-end gap-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        setShowLinkModal(false);
+                                        setLinkingUser(null);
+                                        setSelectedEmpId('');
+                                    }}
+                                    className="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isSubmitting || !selectedEmpId}
+                                    className="px-6 py-2.5 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Linking...
+                                        </>
+                                    ) : 'Link Profile'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <AlertModal 
                 isOpen={alertConfig.isOpen}
                 onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}

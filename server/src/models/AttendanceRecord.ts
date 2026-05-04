@@ -9,6 +9,7 @@ export type AttendanceStatus =
     | 'Absent'
     | 'Late'
     | 'Half-Day'
+    | 'Early Leave'
     | 'On Leave'
     | 'Holiday'
     | 'Weekend'
@@ -43,17 +44,28 @@ const AttendanceRecordSchema: Schema = new Schema(
     {
         employeeId:          { type: String, required: true, index: true },
         date:                { type: String, required: true, index: true }, // "YYYY-MM-DD"
-        location:            { type: String, default: 'Main Office' },
+        location:            { type: String, default: 'ISB-Office' },
+        
+        // Time tracking
         checkIn:             { type: Date },
         checkOut:            { type: Date },
+        shiftStart:          { type: String }, // e.g. "09:00"
+        shiftEnd:            { type: String },   // e.g. "18:00"
+        
+        // Metrics
         workDurationMinutes: { type: Number, default: 0 },
-        status:              {
-            type: String,
-            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'On Leave', 'Holiday', 'Weekend', 'Incomplete'],
-            default: 'Incomplete'
-        },
         lateMinutes:         { type: Number, default: 0 },
         overtimeMinutes:     { type: Number, default: 0 },
+        
+        // Status & Details
+        status:              {
+            type: String,
+            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'Early Leave', 'On Leave', 'Holiday', 'Weekend', 'Incomplete'],
+            default: 'Incomplete'
+        },
+        isHalfDay:           { type: Boolean, default: false },
+        leaveType:           { type: String }, // e.g. "Casual", "Sick", "Annual"
+        
         allPunches:          [{ type: Date }],
         note:                { type: String },
         manuallyAdjusted:    { type: Boolean, default: false },

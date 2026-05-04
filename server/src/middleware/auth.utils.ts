@@ -2,6 +2,15 @@
 import jwt from 'jsonwebtoken';
 import { IUser } from '../models/User.model';
 
+/** Shape of the JWT payload this system issues */
+export interface JwtPayload {
+    userId: string;
+    email: string;
+    role: string;
+    iat: number;
+    exp: number;
+}
+
 const getJwtSecret = (): string => {
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error('FATAL: JWT_SECRET environment variable is not set!');
@@ -11,18 +20,22 @@ const getJwtSecret = (): string => {
 export class AuthUtils {
     static generateToken(
         payload: { userId: string; email: string; role: string; },
-        expiresInStr: string = '8h'
+        expiresIn: string = '8h'
     ): string {
         return jwt.sign(payload, getJwtSecret(), { 
-            expiresIn: expiresInStr as any,
+            expiresIn: expiresIn as `${number}${'s' | 'm' | 'h' | 'd'}` | number,
             algorithm: 'HS256'  // Explicitly lock algorithm — prevents alg:none attack
         });
     }
 
-    static verifyToken(token: string): any {
+    /**
+     * Verifies and decodes a JWT token.
+     * Returns the typed payload or null if invalid/expired.
+     */
+    static verifyToken(token: string): JwtPayload | null {
         try {
-            return jwt.verify(token, getJwtSecret());
-        } catch (error) {
+            return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as JwtPayload;
+        } catch {
             return null;
         }
     }

@@ -16,10 +16,18 @@ import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminSettings from './pages/Admin/AdminSettings';
 import Directory from './pages/Directory/Directory';
-import AttendanceDashboard from './pages/Attendance/AttendanceDashboard';
+// import AttendanceDashboard from './pages/Attendance/AttendanceDashboard';
+// import EmployeeAttendanceReport from './pages/Attendance/EmployeeAttendanceReport';
 import ResetPassword from './pages/ResetPassword';
 import ErrorBoundary from './components/ErrorBoundary';
 import ExpenseClaimDashboard from './pages/Claim/ExpenseClaimDashboard';
+import LeaveDashboard from './pages/Leave/LeaveDashboard';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import Terms from './pages/Terms';
+
+// NEW V2 Attendance Pages
+import AttendanceRouter from './modules/attendance/AttendanceRouter';
+import V2ZktMonitor from './modules/attendance/pages/ZktMonitor';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -69,6 +77,14 @@ function AppRoutes() {
         element={<AuthCallback />}
       />
       <Route
+        path="/privacy-policy"
+        element={<PrivacyPolicy />}
+      />
+      <Route
+        path="/terms"
+        element={<Terms />}
+      />
+      <Route
         path="/onboarding"
         element={
           <ProtectedRoute>
@@ -88,14 +104,20 @@ function AppRoutes() {
         {/* Open to all authenticated users */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        <Route path="leave" element={<div className="p-4">Leave Module Placeholder</div>} />
+        <Route path="leave" element={<LeaveDashboard />} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
         <Route path="claim" element={<ExpenseClaimDashboard />} />
+        <Route path="attendance" element={<AttendanceRouter />} />
+        
+        {/* Restricted to Admins only */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
+          <Route path="zkt-monitor" element={<V2ZktMonitor />} />
+        </Route>
+
         {/* Restricted to Admins & Managers */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
-          <Route path="attendance" element={<AttendanceDashboard />} />
           <Route path="pim" element={<PIM />}>
             <Route index element={<EmployeeList />} />
             <Route path="add" element={<AddEmployeeWizard />} />

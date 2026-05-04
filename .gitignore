@@ -7,43 +7,43 @@ dist/
 */dist/
 build/
 */build/
+.vercel/
 
 # Environment variables
 .env
-.env.production # Production environment files
+.env.production
 .env.local
 .env.production.local
 .env.development.local
 */.env
 */.env.local
+.env*.local
 
 # Logs
-push_error.txt
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+push_error.txt
 
-# Editor directories and files
+# Editor/OS files
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Uploads (keep structure but ignore files)
+# Uploads and Database Dumps
 server/uploads/*
 !server/uploads/.gitkeep
+hrm_final_dump.json
 
-# OS files
-Thumbs.db
-.DS_Store
-
-
-.vercel
-.env*.local
+# Test/Coverage
+coverage/
+clover.xml

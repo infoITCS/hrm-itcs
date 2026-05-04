@@ -8,20 +8,18 @@ export const api = {
     employees: `${API_BASE_URL}/api/employees`,
     directory: `${API_BASE_URL}/api/employees/directory`,
     todaySpecials: `${API_BASE_URL}/api/employees/today-specials`,
-    auditLogs: `${API_BASE_URL}/api/audit-logs`,
+    audit: `${API_BASE_URL}/api/audit-logs`,
     auth: `${API_BASE_URL}/api/auth`,
     admin: `${API_BASE_URL}/api/admin`,
     config: `${API_BASE_URL}/api/config`,
     attendance: `${API_BASE_URL}/api/attendance`,
     attendanceToday: `${API_BASE_URL}/api/attendance/today`,
-    attendanceSummary: `${API_BASE_URL}/api/attendance/summary`,
-    attendanceWeekly: `${API_BASE_URL}/api/attendance/weekly`,
-    attendanceRecords: `${API_BASE_URL}/api/attendance/records`,
-    attendancePunches: `${API_BASE_URL}/api/attendance/punches`,
-    attendanceLiveFeed: `${API_BASE_URL}/api/attendance/live-feed`,
+    // Legacy attendance routes removed
+    zkt: `${API_BASE_URL}/api/attendance/zkt`,
     attendanceLocations: `${API_BASE_URL}/api/attendance/locations`,
     attendanceDevices: `${API_BASE_URL}/api/attendance/devices`,
     attendanceExport: `${API_BASE_URL}/api/attendance/export`,
+    workShifts: `${API_BASE_URL}/api/work-shifts`,
 
     // Expense Claims
     claims: `${API_BASE_URL}/api/claims`,
@@ -55,26 +53,6 @@ export const api = {
         if (employeeId) params.append('employeeId', employeeId);
         return `${API_BASE_URL}/api/employees/check-duplicate?${params.toString()}`;
     },
-/*
-    extractFromDocument: (file: File) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        return fetch(`${API_BASE_URL}/api/ai/extract`, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-        }).then(async res => {
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                console.error('[API] AI Extraction Failed:', res.status, errorData);
-                throw new Error(errorData.message || `Server error: ${res.status}`);
-            }
-            return res.json();
-        });
-    }
-    */
 };
 
 export default api;

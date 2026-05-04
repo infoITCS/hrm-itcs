@@ -50,6 +50,7 @@ export interface IEmployee extends Document {
         reportingManager?: string;
         workLocation?: string;
         joiningDate?: Date;
+        shift?: Schema.Types.ObjectId | undefined;
     };
     salaryComponents?: {
         component: string;
@@ -111,8 +112,7 @@ export interface IEmployee extends Document {
         _id?: Types.ObjectId;
         fileType: string; // e.g., ID, Resume, Contract
         fileName: string;
-        filePath: string;
-        fileData?: Buffer;
+        filePath?: string;
         contentType?: string;
         uploadDate: Date;
         status?: 'pending' | 'approved' | 'rejected';
@@ -132,12 +132,17 @@ export interface IEmployee extends Document {
             type: 'fixed' | 'variable';
         }[];
     }[];
+    // Soft-delete fields — use these instead of hard-deleting to preserve
+    // audit logs, attendance history, and expense claim references
+    isDeleted?: boolean;
+    deletedAt?: Date;
+    deletedBy?: string; // userId of the admin who performed the delete
 }
 
 const EmployeeSchema: Schema = new Schema({
     employeeId: { type: String, required: true, unique: true },
     userId: { type: String },
-    biometricPin: { type: String, sparse: true }, // ZKTeco machine PIN — used to map punches to HRM employee
+    biometricPin: { type: String }, // ZKTeco machine PIN — used to map punches to HRM employee
     firstName: { type: String, required: true },
     middleName: { type: String },
     lastName: { type: String, required: true },
@@ -178,12 +183,18 @@ const EmployeeSchema: Schema = new Schema({
         probationEndDate: { type: Date },
         autoUpdated: { type: Boolean, default: false }
     },
+    // Soft-delete: never permanently destroy employee records
+    // Preserves attendance history, audit log linkages, expense claim references
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: String }, // userId of admin who performed the delete
     jobInfo: {
         designation: { type: String },
         department: { type: String },
         reportingManager: { type: String },
         workLocation: { type: String },
-        joiningDate: { type: Date }
+        joiningDate: { type: Date },
+        shift: { type: Schema.Types.ObjectId, ref: 'WorkShift' }
     },
     salaryComponents: [{
         component: { type: String },
@@ -244,10 +255,10 @@ const EmployeeSchema: Schema = new Schema({
         fileType: { type: String },
         fileName: { type: String },
         filePath: { type: String },
-        fileData: { type: Buffer },
         contentType: { type: String },
         uploadDate: { type: Date, default: Date.now },
         status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+        uploadedBy: { type: String },  // FIX: was in interface but missing from schema
         reviewedBy: { type: String },
         reviewedAt: { type: Date }
     }],
@@ -265,6 +276,29 @@ const EmployeeSchema: Schema = new Schema({
     }]
 }, { timestamps: true });
 
+// Pre-hook to globally filter out soft-deleted records from find queries unless explicitly requested
+EmployeeSchema.pre(/^find/, function(this: mongoose.Query<any, any>, next) {
+    // If the query doesn't explicitly look for isDeleted: true, filter it out
+    const query = this.getQuery();
+    if (query.isDeleted === undefined) {
+        this.where({ isDeleted: { $ne: true } });
+    }
+    next();
+});
+
+// Pre-hook for aggregation to filter out soft-deleted records
+EmployeeSchema.pre('aggregate', function(next) {
+    const pipeline = this.pipeline();
+    // Check if the pipeline already has a match for isDeleted
+    const hasDeletedFilter = pipeline.some((stage: any) => stage.$match && (stage.$match.isDeleted !== undefined));
+    if (!hasDeletedFilter) {
+        pipeline.unshift({ $match: { isDeleted: { $ne: true } } });
+    }
+    next();
+});
+
+// Encryption removed as per user request
+
 // Performance indexes
 EmployeeSchema.index({ userId: 1 });
 EmployeeSchema.index({ 'jobInfo.reportingManager': 1 });
@@ -276,5 +310,11 @@ EmployeeSchema.index({ email: 1 }, { sparse: true });
 // Added for birthday/anniversary scheduler queries
 EmployeeSchema.index({ dateOfBirth: 1 }, { sparse: true });
 EmployeeSchema.index({ 'jobInfo.joiningDate': 1 }, { sparse: true });
+// CRITICAL: queried on every biometric punch — full scan without this index
+EmployeeSchema.index({ biometricPin: 1 }, { sparse: true });
+// Added for email-based lookups in scheduler/auth
+EmployeeSchema.index({ workEmail: 1 }, { sparse: true });
+// Soft-delete filter index
+EmployeeSchema.index({ isDeleted: 1 });
 
 export default mongoose.models.Employee || mongoose.model<IEmployee>('Employee', EmployeeSchema);

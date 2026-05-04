@@ -4,19 +4,21 @@ import User from '../models/User.model';
 import AuditLog from '../models/AuditLog';
 import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
 import { runZktSync } from './zktCloudService';
-import { syncFromMachineReport } from './attendanceProcessor';
+import { syncFromMachineReport, autoCloseIncompleteRecords, processDailyAbsenteeism } from './attendanceProcessor';
+import logger from '../utils/logger';
+
 
 // Note: Vercel serverless functions have execution time limits.
 // For production on Vercel, disable this and use Vercel Cron Jobs instead.
 export const initScheduler = () => {
     if (process.env.VERCEL) {
-        console.log('Scheduler disabled on Vercel. Use Vercel Cron Jobs for scheduled tasks.');
+        logger.info('Scheduler disabled on Vercel. Use Vercel Cron Jobs for scheduled tasks.');
         return;
     }
 
     // ── Probation Auto-Upgrade: Run every day at midnight ─────────────────────────
     cron.schedule('0 0 * * *', async () => {
-        console.log('Running daily probation check...');
+        logger.info('Running daily probation check...');
         try {
             const today = new Date();
             const eligibleEmployees = await Employee.find({
@@ -27,7 +29,6 @@ export const initScheduler = () => {
 
             if (eligibleEmployees.length === 0) return;
 
-            // PERFORMANCE: Use bulkWrite instead of N sequential .save() calls
             const bulkOps = eligibleEmployees.map(emp => ({
                 updateOne: {
                     filter: { _id: emp._id },
@@ -41,7 +42,6 @@ export const initScheduler = () => {
             }));
             await Employee.bulkWrite(bulkOps);
 
-            // PERFORMANCE: Use insertMany instead of N sequential AuditLog.create() calls
             const auditEntries = eligibleEmployees.map(emp => ({
                 action: 'UPDATE',
                 targetResource: 'Employee',
@@ -58,18 +58,16 @@ export const initScheduler = () => {
             }));
             await AuditLog.insertMany(auditEntries);
 
-            console.log(`Auto-upgraded ${eligibleEmployees.length} employees from Probation to Permanent.`);
+            logger.info(`Auto-upgraded ${eligibleEmployees.length} employees from Probation to Permanent.`);
         } catch (error) {
-            console.error('Error in probation scheduler:', error);
+            logger.error('Error in probation scheduler:', error);
         }
-    });
+    }, { timezone: 'Asia/Karachi' });
 
     // ── Profile Completion Reminder: Run every day at 12:20 PM ──────────────────────
     cron.schedule('20 12 * * *', async () => {
-        console.log('Running daily onboarding profile completion reminder check...');
+        logger.info('Running daily onboarding profile completion reminder check...');
         try {
-            // PERFORMANCE: Use aggregation $lookup to join server-side instead of
-            // loading all users + all employees into Node.js memory and doing JS join.
             const incompleteUsers = await User.aggregate([
                 { $match: { isActive: true, role: 'employee' } },
                 {
@@ -95,7 +93,6 @@ export const initScheduler = () => {
                 { $project: { email: 1, firstName: 1 } }
             ]);
 
-            // PERFORMANCE: Send emails concurrently — one failure doesn't block others
             const results = await Promise.allSettled(
                 incompleteUsers.map((u: any) =>
                     u.email ? sendProfileReminderEmail(u.email, u.firstName || 'Employee') : Promise.resolve()
@@ -105,16 +102,16 @@ export const initScheduler = () => {
             const sent = results.filter(r => r.status === 'fulfilled').length;
             const failed = results.filter(r => r.status === 'rejected').length;
             if (sent > 0 || failed > 0) {
-                console.log(`Profile reminders: ${sent} sent, ${failed} failed.`);
+                logger.info(`Profile reminders: ${sent} sent, ${failed} failed.`);
             }
         } catch (error) {
-            console.error('Error in profile reminder scheduler:', error);
+            logger.error('Error in profile reminder scheduler:', error);
         }
-    });
+    }, { timezone: 'Asia/Karachi' });
 
     // ── Birthday & Anniversary: Run every day at 8 AM ────────────────────────────
     cron.schedule('0 8 * * *', async () => {
-        console.log('Running daily birthday and anniversary check...');
+        logger.info('Running daily birthday and anniversary check...');
         try {
             const today = new Date();
             const currentMonth = today.getMonth() + 1;
@@ -141,7 +138,6 @@ export const initScheduler = () => {
                 ]
             }).select('firstName workEmail email dateOfBirth jobInfo.joiningDate').lean();
 
-            // PERFORMANCE: Send all emails concurrently
             await Promise.allSettled(employees.map(async (emp) => {
                 const isBirthday = emp.dateOfBirth &&
                     (new Date(emp.dateOfBirth).getMonth() + 1 === currentMonth) &&
@@ -166,47 +162,68 @@ export const initScheduler = () => {
                 }
             }));
         } catch (error) {
-            console.error('Error in birthday/anniversary scheduler:', error);
+            logger.error('Error in birthday/anniversary scheduler:', error);
         }
-    });
+    }, { timezone: 'Asia/Karachi' });
 
-    // ── Nightly Absenteeism Check: Run every day at 11:30 PM ─────────────────────
+    // ── Daily Absenteeism Check: Run every day at 11:00 PM ─────────────────────
+    cron.schedule('0 23 * * *', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        logger.info(`[Scheduler] Running daily absenteeism check for ${today}...`);
+        try {
+            const count = await processDailyAbsenteeism(today);
+            if (count > 0) {
+                logger.info(`[Scheduler] Daily absenteeism check: Marked ${count} employees as absent/on-leave/weekend.`);
+            }
+        } catch (error) {
+            logger.error('[Scheduler] Error in daily absenteeism check:', error);
+        }
+    }, { timezone: 'Asia/Karachi' });
+
+    // ── Nightly Machine Sync: Run every day at 11:30 PM ─────────────────────
     cron.schedule('30 23 * * *', async () => {
         const today = new Date().toISOString().slice(0, 10);
-        console.log(`[Scheduler] Starting machine-report sync for ${today}...`);
+        logger.info(`[Scheduler] Starting machine-report sync for ${today}...`);
         try {
             const processedCount = await syncFromMachineReport(today);
-            console.log(`[Scheduler] Machine-report sync complete. Processed ${processedCount} records.`);
+            logger.info(`[Scheduler] Machine-report sync complete. Processed ${processedCount} records.`);
         } catch (error) {
-            console.error('[Scheduler] Error in nightly report sync task:', error);
+            logger.error('[Scheduler] Error in nightly report sync task:', error);
         }
-    });
+    }, { timezone: 'Asia/Karachi' });
+
+    // ── Auto-Close Incomplete Records: Run every day at 11:05 PM PKT (18:05 UTC) ─
+    cron.schedule('5 23 * * *', async () => {
+        const dateStr = new Date().toISOString().slice(0, 10);
+        logger.info(`[Scheduler] Running auto-close for ${dateStr}...`);
+        try {
+            const result = await autoCloseIncompleteRecords(dateStr);
+            logger.info(`[Scheduler] Auto-close done. Processed: ${result.processed}, Skipped: ${result.skipped}`);
+        } catch (error) {
+            logger.error('[Scheduler] Error in auto-close task:', error);
+        }
+    }, { timezone: 'Asia/Karachi' });
 
     // ── ZKTeco Cloud API Auto-Sync: Every 5 seconds ───────────────────────────
-    // Only runs if the ZKTeco API token is configured.
-    // Uses a guard flag to prevent overlapping executions.
-    if (process.env.ZKTECO_API_TOKEN) {
+    if (process.env.ZKTECO_API_TOKEN || process.env.BIOTIME_USER) {
         let zktSyncRunning = false;
         const ZKT_INTERVAL_MS = parseInt(process.env.ZKTECO_SYNC_INTERVAL_SECONDS || '5', 10) * 1000;
 
         setInterval(async () => {
-            if (zktSyncRunning) return; // Skip if still running
+            if (zktSyncRunning) return;
             zktSyncRunning = true;
             try {
                 const result = await runZktSync();
                 if (result.newRecords > 0) {
-                    console.log(`[ZKT Sync] ✅ ${result.newRecords} new punch(es) synced. Last ID: ${result.lastTransactionId}`);
+                    logger.info(`[ZKT Sync] ✅ ${result.newRecords} new punch(es) synced. Last ID: ${result.lastTransactionId}`);
                 }
             } catch (err: any) {
-                // Swallow errors silently — server may be temporarily unreachable
-                console.warn(`[ZKT Sync] ⚠️ Sync failed: ${err.message}`);
+                logger.warn(`[ZKT Sync] ⚠️ Sync failed: ${err.message}`);
             } finally {
                 zktSyncRunning = false;
             }
         }, ZKT_INTERVAL_MS);
 
-        console.log(`[ZKT Sync] Auto-sync started. Polling every ${ZKT_INTERVAL_MS / 1000}s.`);
-    } else {
-        console.log('[ZKT Sync] ZKTECO_API_TOKEN not set — auto-sync disabled.');
+        logger.info(`[ZKT Sync] Auto-sync started. Polling every ${ZKT_INTERVAL_MS / 1000}s.`);
     }
 };

@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import logger from './logger';
+
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -60,11 +62,11 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string, bas
     };
 
     if (!process.env.SMTP_USER) {
-        console.warn('⚠️ SMTP_USER is not configured. Email will not be actually sent.');
-        console.log(`\n================= PASSWORD RESET EMAIL ===================`);
-        console.log(`To: ${to}`);
-        console.log(`Reset URL: ${resetUrl}`);
-        console.log(`==========================================================\n`);
+        logger.warn('⚠️ SMTP_USER is not configured. Email will not be actually sent.');
+        logger.info(`\n================= PASSWORD RESET EMAIL ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Reset URL: [REDACTED]`);
+        logger.info(`==========================================================\n`);
         return process.env.NODE_ENV !== 'production';
     }
 
@@ -72,7 +74,7 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string, bas
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Email sending error:', error);
+        logger.error('Email sending error:', error);
         return false;
     }
 };
@@ -109,11 +111,12 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUr
     };
 
     if (!process.env.SMTP_USER) {
-        console.log(`\n================= WELCOME EMAIL ===================`);
-        console.log(`To: ${to}`);
-        console.log(`Temp Password: ${tempPassword || 'N/A (SSO)'}`);
-        console.log(`Login URL: ${loginUrl}`);
-        console.log(`====================================================\n`);
+        logger.info(`\n================= WELCOME EMAIL ===================`);
+        logger.info(`To: ${to}`);
+        // H6 FIX: Do NOT log tempPassword — it may appear in shared/exported logs
+        logger.info(`Has temporary password: ${!!tempPassword}`);
+        logger.info(`Login URL: ${loginUrl}`);
+        logger.info(`====================================================\n`);
         return process.env.NODE_ENV !== 'production';
     }
 
@@ -121,7 +124,7 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUr
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Email sending error:', error);
+        logger.error('Email sending error:', error);
         return false;
     }
 };
@@ -145,10 +148,10 @@ export const sendHRNotificationEmail = async (to: string, employeeName: string, 
     };
 
     if (!process.env.SMTP_USER) {
-        console.log(`\n================= HR NOTIFICATION EMAIL ===================`);
-        console.log(`To: ${to}`);
-        console.log(`Action: ${employeeName} has ${actionDesc}`);
-        console.log(`===========================================================\n`);
+        logger.info(`\n================= HR NOTIFICATION EMAIL ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Action: ${employeeName} has ${actionDesc}`);
+        logger.info(`===========================================================\n`);
         return process.env.NODE_ENV !== 'production';
     }
 
@@ -156,7 +159,7 @@ export const sendHRNotificationEmail = async (to: string, employeeName: string, 
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Email sending error:', error);
+        logger.error('Email sending error:', error);
         return false;
     }
 };
@@ -181,9 +184,9 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
     };
 
     if (!process.env.SMTP_USER) {
-        console.log(`\n================= PROFILE REMINDER EMAIL ===================`);
-        console.log(`To: ${to}`);
-        console.log(`===========================================================\n`);
+        logger.info(`\n================= PROFILE REMINDER EMAIL ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`===========================================================\n`);
         return process.env.NODE_ENV !== 'production';
     }
 
@@ -191,7 +194,7 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Email sending error:', error);
+        logger.error('Email sending error:', error);
         return false;
     }
 };
@@ -216,9 +219,9 @@ export const sendBirthdayEmail = async (to: string, firstName: string) => {
     };
 
     if (!process.env.SMTP_USER) {
-        console.log(`\n================= BIRTHDAY EMAIL ===================`);
-        console.log(`To: ${to}`);
-        console.log(`====================================================\n`);
+        logger.info(`\n================= BIRTHDAY EMAIL ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`====================================================\n`);
         return true;
     }
 
@@ -226,7 +229,7 @@ export const sendBirthdayEmail = async (to: string, firstName: string) => {
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Error sending birthday email:', error);
+        logger.error('Error sending birthday email:', error);
         return false;
     }
 };
@@ -251,9 +254,9 @@ export const sendWorkAnniversaryEmail = async (to: string, firstName: string, ye
     };
 
     if (!process.env.SMTP_USER) {
-        console.log(`\n================= ANNIVERSARY EMAIL ===================`);
-        console.log(`To: ${to} (${years} years)`);
-        console.log(`========================================================\n`);
+        logger.info(`\n================= ANNIVERSARY EMAIL ===================`);
+        logger.info(`To: ${to} (${years} years)`);
+        logger.info(`========================================================\n`);
         return true;
     }
 
@@ -261,7 +264,7 @@ export const sendWorkAnniversaryEmail = async (to: string, firstName: string, ye
         await transporter.sendMail(mailOptions);
         return true;
     } catch (error) {
-        console.error('Error sending anniversary email:', error);
+        logger.error('Error sending anniversary email:', error);
         return false;
     }
 };

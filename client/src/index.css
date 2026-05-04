@@ -1,5 +1,38 @@
 @import "tailwindcss";
 
+/* Self-hosted Outfit Font */
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/outfit-v15-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/outfit-v15-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/outfit-v15-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/outfit-v15-800.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-primary: #4f46e5;
   --color-primary-dark: #4338ca;
@@ -21,7 +54,7 @@
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e0e7ff 100%);
     background-attachment: fixed;
     color: #1e293b;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     overflow-x: hidden;
     min-width: 0;
   }

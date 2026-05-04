@@ -35,9 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                                  userData.avatar.trim() !== '' && 
                                  userData.avatar !== 'null' && 
                                  userData.avatar !== 'undefined')
-                            ? (userData.avatar.startsWith('http')
-                                ? userData.avatar
-                                : `${api.baseURL.replace(/\/+$/, '')}/${userData.avatar.replace(/^\/+/, '')}${userData.avatar.includes('/attachments/raw/') ? `?token=${token}` : ''}`)
+                            ? userData.avatar
                             : null,
                         firstName: userData.firstName,
                         lastName: userData.lastName,

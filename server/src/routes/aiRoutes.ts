@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { authenticate } from '../middleware/auth';
 import multer from 'multer';
+import logger from '../utils/logger';
+
 // pdf requirement moved inside the route handler to prevent top-level load issues
 
 const router = express.Router();
@@ -11,7 +13,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.post('/extract', authenticate, upload.single('file'), async (req: Request, res: Response) => {
     try {
         if (!process.env.GEMINI_API_KEY) {
-            console.error('AI Extraction Error: GEMINI_API_KEY not configured in .env');
+            logger.error('AI Extraction Error: GEMINI_API_KEY not configured in .env');
             return res.status(500).json({ message: 'AI features are not configured. Please contact admin.' });
         }
 
@@ -20,7 +22,7 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
             return res.status(400).json({ message: 'No file uploaded' });
         }
 
-        console.log(`[AI] Processing file: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`);
+        logger.info(`[AI] Processing file: ${file.originalname} (${file.mimetype}, ${file.size} bytes)`);
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         // Using 2.5-flash as 2.0-flash quota is 0 for this key and 1.5 is missing
@@ -31,7 +33,7 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
         
         if (file.mimetype === 'application/pdf') {
             try {
-                console.log(`[AI] Debug: Checking PDF library...`);
+                logger.info(`[AI] Debug: Checking PDF library...`);
                 // Ensure pdf library is available
                 const pdfLib = require('pdf-parse');
                 const parsePdf = typeof pdfLib === 'function' ? pdfLib : (pdfLib.default || null);
@@ -40,16 +42,16 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
                     throw new Error('PDF parsing engine is not a function');
                 }
 
-                console.log(`[AI] Starting PDF extraction...`);
+                logger.info(`[AI] Starting PDF extraction...`);
                 const data = await parsePdf(file.buffer);
                 content = data.text;
                 
                 if (!content) {
                     throw new Error('No text content found in PDF');
                 }
-                console.log(`[AI] PDF extracted, text length: ${content.length}`);
+                logger.info(`[AI] PDF extracted, text length: ${content.length}`);
             } catch (pdfErr: any) {
-                console.error('[AI] PDF Processing failed:', pdfErr);
+                logger.error('[AI] PDF Processing failed:', pdfErr);
                 return res.status(500).json({ 
                     message: 'Could not read PDF. Try uploading a clear image or manually typing.',
                     error: pdfErr.message 
@@ -57,10 +59,10 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
             }
         } else if (isImage) {
             content = file.buffer.toString('base64');
-            console.log(`[AI] Image converted to base64`);
+            logger.info(`[AI] Image converted to base64`);
         } else {
             content = file.buffer.toString('utf-8');
-            console.log(`[AI] Text file read, length: ${content.length}`);
+            logger.info(`[AI] Text file read, length: ${content.length}`);
         }
 
         const prompt = `
@@ -119,7 +121,7 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
             5. Extract EVERYTHING useful you find in the text. Be thorough.
         `;
 
-        console.log(`[AI] Sending request to Gemini...`);
+        logger.info(`[AI] Sending request to Gemini...`);
         let result;
         if (isImage) {
             result = await model.generateContent([
@@ -132,21 +134,21 @@ router.post('/extract', authenticate, upload.single('file'), async (req: Request
 
         const response = await result.response;
         const text = response.text();
-        console.log(`[AI] Raw response received:`, text.substring(0, 50) + '...');
+        logger.info(`[AI] Response received. length: ${text.length}`);
         
         // Clean up markdown if AI included it
         const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         try {
             const extractedData = JSON.parse(cleanedText);
-            console.log(`[AI] Successfully parsed JSON structure.`);
+            logger.info(`[AI] Successfully parsed JSON structure.`);
             res.json(extractedData);
         } catch (parseErr) {
-            console.error('[AI] Response Parsing Error. Raw text:', text);
+            logger.error('[AI] Response Parsing Error. Text length:', text.length);
             res.status(500).json({ message: 'Failed to process AI response: ' + parseErr });
         }
     } catch (err: any) {
-        console.error('[AI] Extraction Error:', err);
+        logger.error('[AI] Extraction Error:', err);
         res.status(500).json({ message: 'AI Extraction failed: ' + err.message });
     }
 });

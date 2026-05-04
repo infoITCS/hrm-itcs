@@ -6,7 +6,15 @@ export interface IAuditLog extends Document {
     targetResource: string; // e.g., 'Employee', 'Department'
     targetId?: string; // ID of the resource
     performedBy: string; // User ID or Name
-    details?: any; // Changed fields or snapshot
+    details?: {
+        diff?: Record<string, { old: unknown; new: unknown } | Record<string, unknown>>;
+        name?: string;
+        file?: string;
+        attachment?: string;
+        status?: string;
+        reason?: string;
+        [key: string]: unknown;
+    };
     timestamp: Date;
 }
 
@@ -23,5 +31,10 @@ const AuditLogSchema: Schema = new Schema({
 AuditLogSchema.index({ targetId: 1, performedBy: 1, timestamp: -1 });
 AuditLogSchema.index({ action: 1, timestamp: -1 });
 AuditLogSchema.index({ targetResource: 1 });
+// TTL: auto-expire audit logs to prevent unbounded collection growth (default 1 year)
+const ttlSeconds = parseInt(process.env.AUDIT_LOG_TTL_SECONDS || '31536000', 10);
+if (!isNaN(ttlSeconds) && ttlSeconds > 0) {
+    AuditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds });
+}
 
 export default mongoose.models.AuditLog || mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
