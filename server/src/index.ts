@@ -63,8 +63,8 @@ import mongoSanitize from 'express-mongo-sanitize';
 import passport from 'passport';
 import configurePassport from './config/passport';
 
-
 const app = express();
+const mainRouter = express.Router();
 const PORT = process.env.PORT || 5000;
 
 app.set('trust proxy', 1);
@@ -299,19 +299,22 @@ app.use((req: any, _res: any, next: any) => {
 // NEW: ADMS machine endpoint (no auth — machines can't send JWT)
 app.use('/api/attendance/adms', admsRoutes);
 
-// Routes
-app.use('/api/employees', employeeRoutes);
-app.use('/api/audit-logs', auditRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/config', orgConfigRoutes);
-// Full migration to V2 modular attendance routes — legacy /api/attendance is deprecated
-app.use('/api/v2/attendance', attendanceV2Routes);
-app.use('/api/claims', claimRoutes);
-app.use('/api/leaves', leaveRoutes);
-app.use('/api/work-shifts', workShiftRoutes);
-app.use('/api/cron', cronRoutes);
+// Groups all API routes onto the mainRouter
+mainRouter.use('/employees', employeeRoutes);
+mainRouter.use('/audit-logs', auditRoutes);
+mainRouter.use('/admin', adminRoutes);
+mainRouter.use('/auth', authLimiter, authRoutes);
+mainRouter.use('/ai', aiRoutes);
+mainRouter.use('/config', orgConfigRoutes);
+mainRouter.use('/v2/attendance', attendanceV2Routes);
+mainRouter.use('/claims', claimRoutes);
+mainRouter.use('/leaves', leaveRoutes);
+mainRouter.use('/work-shifts', workShiftRoutes);
+mainRouter.use('/cron', cronRoutes);
+
+// Mount the router on BOTH /api and / for maximum compatibility with Vercel rewrites
+app.use('/api', mainRouter);
+app.use('/', mainRouter);
 
 
 app.get('/api/health', (req, res) => {
