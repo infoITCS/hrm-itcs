@@ -59,7 +59,7 @@ const EmployeeProfile = () => {
     const fetchAuditLogs = useCallback(async () => {
         const token = localStorage.getItem('token');
         try {
-            const res = await fetch(`${api.auditLogs}?targetResource=Employee&targetId=${id}`, {
+            const res = await fetch(`${api.audit}?targetResource=Employee&targetId=${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();

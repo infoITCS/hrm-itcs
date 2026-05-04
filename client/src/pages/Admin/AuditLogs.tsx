@@ -43,7 +43,7 @@ const AuditLogs = () => {
             queryParams.append('page', pageNum.toString());
             queryParams.append('limit', LIMIT.toString());
 
-            const response = await fetch(`${api.auditLogs}?${queryParams.toString()}`, {
+            const response = await fetch(`${api.audit}?${queryParams.toString()}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
