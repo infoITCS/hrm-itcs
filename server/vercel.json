@@ -26,8 +26,8 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/sync",
-      "schedule": "0 1 * * *"
+      "path": "/api/cron/absenteeism",
+      "schedule": "0 18 * * *"
     }
   ]
 }
