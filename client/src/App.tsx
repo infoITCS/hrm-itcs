@@ -104,7 +104,6 @@ function AppRoutes() {
         {/* Open to all authenticated users */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        <Route path="leave" element={<LeaveDashboard />} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
         <Route path="claim" element={<ExpenseClaimDashboard />} />
@@ -117,6 +116,7 @@ function AppRoutes() {
 
         {/* Restricted to Admins & Managers */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
+          <Route path="leave" element={<LeaveDashboard />} />
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
           <Route path="pim" element={<PIM />}>
             <Route index element={<EmployeeList />} />
