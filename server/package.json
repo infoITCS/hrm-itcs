@@ -41,6 +41,7 @@
         "passport-microsoft": "^2.1.0",
         "pdf-parse": "^1.1.1",
         "sanitize-filename": "^1.6.3",
+        "winston": "^3.13.0",
         "zod": "^4.3.6"
     },
     "devDependencies": {
