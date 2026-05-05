@@ -555,8 +555,8 @@ router.post('/:id/attachments', authenticate, upload.single('file'), async (req:
     }
 });
 
-// Route to serve raw file from MongoDB — uses authenticateFile which also accepts ?token= for <img> tags
-router.get('/attachments/raw/:attachmentId', authenticateFile, async (req: Request, res: Response, next: NextFunction) => {
+// Route to serve raw file from MongoDB — PUBLIC access for <img> tags
+router.get('/attachments/raw/:attachmentId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const employee = await Employee.findOne(
             { 'attachments._id': req.params.attachmentId },
