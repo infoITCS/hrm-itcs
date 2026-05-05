@@ -1,5 +1,5 @@
 import winston from 'winston';
-import 'winston-daily-rotate-file';
+import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
 
 // Define log format
@@ -29,13 +29,13 @@ if (isVercel) {
     }));
 } else {
     // Local development can still use files
-    transports.push(new winston.transports.DailyRotateFile({
+    transports.push(new DailyRotateFile({
         filename: 'logs/combined-%DATE%.log',
         datePattern: 'YYYY-MM-DD',
         maxFiles: '14d',
         maxSize: '20m',
     }));
-    transports.push(new winston.transports.DailyRotateFile({
+    transports.push(new DailyRotateFile({
         level: 'error',
         filename: 'logs/error-%DATE%.log',
         datePattern: 'YYYY-MM-DD',
