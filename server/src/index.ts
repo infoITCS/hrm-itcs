@@ -69,9 +69,30 @@ const PORT = process.env.PORT || 5000;
 
 app.set('trust proxy', 1);
 
-// CORS Configuration — never default to wildcard in production
-const corsOptions = {
-    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.trim() : 'http://localhost:5173',
+// CORS Configuration — Allow production, localhost, and Vercel preview deployments
+const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+        const allowedOrigins = [
+            process.env.FRONTEND_URL?.trim(),
+            process.env.CLIENT_URL?.trim(),
+            'http://localhost:5173',
+            'https://hrm-itcs-client.vercel.app'
+        ].filter(Boolean) as string[];
+
+        // Allow if no origin (like mobile apps or curl) or if it matches our list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } 
+        // Dynamic check for Vercel Preview/Branch URLs
+        else if (origin.endsWith('.vercel.app')) {
+            logger.info(`[CORS] Allowing Vercel Preview Origin: ${origin}`);
+            callback(null, true);
+        }
+        else {
+            logger.warn(`[CORS] Blocked Origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     optionsSuccessStatus: 200
 };
