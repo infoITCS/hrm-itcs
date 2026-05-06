@@ -38,8 +38,9 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ onClos
             const res = await APIService.forgotPassword(email.trim());
             console.log(res);
             setSuccess(true);
-        } catch {
-            setError('Something went wrong. Please try again.');
+        } catch (err: any) {
+            const message = err.response?.data?.message || 'Something went wrong. Please try again.';
+            setError(message);
         } finally {
             setLoading(false);
         }

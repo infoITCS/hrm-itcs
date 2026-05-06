@@ -195,7 +195,10 @@ router.post("/forgot-password", async (req: Request, res: Response, next: NextFu
             user.resetPasswordToken = undefined;
             user.resetPasswordExpires = undefined;
             await user.save();
-            return res.status(500).json({ message: "Error sending email. Please try again later." });
+            return res.status(500).json({ 
+                message: "Error sending reset email. Please ensure your email is correct and try again later.",
+                error: process.env.NODE_ENV !== 'production' ? "SMTP_ERROR" : undefined
+            });
         }
 
         return res.json({ message: "If an account with that email exists, a password reset link has been sent." });

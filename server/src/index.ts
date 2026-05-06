@@ -8,7 +8,7 @@ const criticalEnvVars = [
     'MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET', 'MICROSOFT_CLIENT_ID', 
     'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID', 
     'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL',
-    'GEMINI_API_KEY'
+    'GEMINI_API_KEY', 'SMTP_USER', 'SMTP_PASS'
 ];
 criticalEnvVars.forEach(key => {
     if (process.env[key]) {
