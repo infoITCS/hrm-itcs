@@ -68,7 +68,7 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
         (att: any) => att.fileType === "Profile Picture"
       );
       if (profilePic) {
-        avatarUrl = `/api/employees/attachments/raw/\${profilePic._id}`;
+        avatarUrl = `/api/employees/attachments/raw/${profilePic._id}`;
       }
     }
 
@@ -192,18 +192,18 @@ router.post("/forgot-password", async (req: Request, res: Response, next: NextFu
         const emailResult = await sendPasswordResetEmail(user.email, resetToken, req.headers.origin as string) as any;
 
         if (!emailResult.success) {
-            logger.error(`❌ Forgot Password: Failed to send reset email to \${email}. Error: \${emailResult.error}`);
+            logger.error(`❌ Forgot Password: Failed to send reset email to ${email}. Error: ${emailResult.error}`);
             // Roll back the token save so they can try again fresh
             user.resetPasswordToken = undefined;
             user.resetPasswordExpires = undefined;
             await user.save();
             return res.status(500).json({ 
-                message: `Error sending reset email: \${emailResult.error || 'Unknown error'}. Please ensure your email configuration is correct.`,
+                message: `Error sending reset email: ${emailResult.error || 'Unknown error'}. Please ensure your email configuration is correct.`,
                 error: emailResult.error
             });
         }
 
-        logger.info(`📧 Forgot Password: Reset link sent to \${email}`);
+        logger.info(`📧 Forgot Password: Reset link sent to ${email}`);
         return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
 
     } catch (error: any) {
@@ -312,17 +312,17 @@ router.get(
       !process.env.MICROSOFT_CLIENT_SECRET
     ) {
       const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
-      return res.redirect(`\${clientUrl}/login?error=microsoft_not_configured`);
+      return res.redirect(`${clientUrl}/login?error=microsoft_not_configured`);
     }
     passport.authenticate("microsoft", {
-      failureRedirect: `\${process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=login_failed`,
+      failureRedirect: `${process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=login_failed`,
       session: false, // We use JWT, so no session needed
     })(req, res, (err: any) => {
       if (err) {
         logger.error("Passport Auth Error:", err.message || String(err));
         const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
         return res.redirect(
-          `\${clientUrl}/login?error=passport_err&msg=\${encodeURIComponent(err.message || String(err))}`,
+          `${clientUrl}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`,
         );
       }
       next();
@@ -335,7 +335,7 @@ router.get(
       const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       if (!user) {
         return res.redirect(
-          `\${clientUrl}/login?error=user_not_found`,
+          `${clientUrl}/login?error=user_not_found`,
         );
       }
 
@@ -347,11 +347,11 @@ router.get(
       });
 
       // Use hash (#token=...) so long JWT isn't truncated by query string limits
-      res.redirect(`\${clientUrl}/auth/callback#token=\${encodeURIComponent(token)}`);
+      res.redirect(`${clientUrl}/auth/callback#token=${encodeURIComponent(token)}`);
     } catch (error: any) {
       logger.error("❌ Microsoft callback error:", error.message);
       const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
-      res.redirect(`\${clientUrl}/login?error=callback_error`);
+      res.redirect(`${clientUrl}/login?error=callback_error`);
     }
   },
 );
@@ -370,7 +370,7 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
     let user = await User.findById(userId).select("-password");
 
     if (!user) {
-      logger.error(`❌ User not found in /me: \${userId}`);
+      logger.error(`❌ User not found in /me: ${userId}`);
       return res.status(404).json({ message: "User not found" });
     }
 
