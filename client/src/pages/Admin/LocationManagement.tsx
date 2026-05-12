@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Trash2, Edit2, ShieldAlert, X, Cpu, Clock, History } from 'lucide-react';
+import { MapPin, Plus, Edit2, ShieldAlert, X, Cpu, Clock } from 'lucide-react';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
 import AlertModal from '../../components/UI/AlertModal';
 
