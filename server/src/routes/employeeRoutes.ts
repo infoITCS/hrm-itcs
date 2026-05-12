@@ -272,7 +272,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
             // H3 FIX: Atomic Counter implementation using findOneAndUpdate to prevent race conditions
-            const PREFIX = 'ITCS-';
+            const PREFIX = 'itcs-';
             const counter = await Counter.findOneAndUpdate(
                 { key: 'employeeId' },
                 { $inc: { seq: 1 } },

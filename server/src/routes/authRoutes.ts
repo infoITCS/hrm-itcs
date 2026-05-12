@@ -198,8 +198,7 @@ router.post("/forgot-password", async (req: Request, res: Response, next: NextFu
             user.resetPasswordExpires = undefined;
             await user.save();
             return res.status(500).json({ 
-                message: `Error sending reset email: ${emailResult.error || 'Unknown error'}. Please ensure your email configuration is correct.`,
-                error: emailResult.error
+                message: "We encountered an issue sending the reset email. Please try again later or contact support if the problem persists."
             });
         }
 

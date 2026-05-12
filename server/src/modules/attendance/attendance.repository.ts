@@ -182,11 +182,10 @@ export async function findEmployeeByPin(pin: string) {
     } | null>;
 }
 
-export async function findEmployeesByPins(pins: string[]) {
-    return Employee.find(
-        { biometricPin: { $in: pins }, isDeleted: { $ne: true } },
-        { employeeId: 1, biometricPin: 1, firstName: 1, lastName: 1, avatar: 1 }
-    ).lean();
+export async function findEmployeesByPins(pins: string[], location?: string) {
+    const filter: any = { biometricPin: { $in: pins }, isDeleted: { $ne: true } };
+    if (location) filter['jobInfo.workLocation'] = location;
+    return Employee.find(filter).lean();
 }
 
 export async function findSubordinateIds(managerEmployeeId: string): Promise<string[]> {

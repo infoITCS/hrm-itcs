@@ -144,7 +144,7 @@ const Dashboard = () => {
                                         type: 'document',
                                         title: `Document Approval: ${doc.fileType}`,
                                         employeeName: `${member.firstName} ${member.lastName}`,
-                                        employeeId: member._id,
+                                        employeeId: member.employeeId,
                                         date: new Date(doc.uploadDate || Date.now()).toLocaleDateString()
                                     });
                                 }
@@ -650,7 +650,7 @@ const Dashboard = () => {
                                         }).map((member, idx) => {
                                             const daysLeft = Math.ceil((new Date(member.employmentStatus.probationEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
                                             return (
-                                                <div key={idx} onClick={() => navigate(`/pim/view/${member._id}?tab=job`)} className="p-3 bg-amber-50/50 border border-amber-200 hover:bg-white hover:shadow-md rounded-xl flex items-center justify-between cursor-pointer transition-all group">
+                                                <div key={idx} onClick={() => navigate(`/pim/view/${member.employeeId}?tab=job`)} className="p-3 bg-amber-50/50 border border-amber-200 hover:bg-white hover:shadow-md rounded-xl flex items-center justify-between cursor-pointer transition-all group">
                                                     <div>
                                                         <p className="font-bold text-sm text-slate-800 group-hover:text-amber-700 transition-colors">{member.firstName} {member.lastName}</p>
                                                         <p className="text-xs text-slate-500 font-medium mt-0.5">Probation ends in <span className="font-bold text-amber-600">{daysLeft === 0 ? 'Today' : `${daysLeft} days`}</span></p>
@@ -684,7 +684,7 @@ const Dashboard = () => {
                                 {teamMembers.length > 0 ? (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-2 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar relative z-10">
                                         {teamMembers.map((member, idx) => (
-                                            <div key={idx} onClick={() => navigate(`/pim/view/${member._id}`)} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-md shadow-sm transition-all cursor-pointer group hover:bg-slate-50/50">
+                                            <div key={idx} onClick={() => navigate(`/pim/view/${member.employeeId}`)} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-md shadow-sm transition-all cursor-pointer group hover:bg-slate-50/50">
                                                 <Avatar
                                                     src={getAvatarUrl(member)}
                                                     firstName={member.firstName}

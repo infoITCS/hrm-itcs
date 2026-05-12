@@ -11,6 +11,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
+import DeleteModal from '../../components/UI/DeleteModal';
+
 
 
 const EmployeeProfile = () => {
@@ -38,6 +40,9 @@ const EmployeeProfile = () => {
     const [offboardLoading, setOffboardLoading] = useState(false);
 
     const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; type: string } | null>(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
+
     const isAdmin = role === 'super-admin' || role === 'admin';
 
     const fetchEmployee = useCallback(async () => {
@@ -196,6 +201,57 @@ const EmployeeProfile = () => {
     const isOffboarded = ['Terminated', 'Resigned'].includes(
         employee.employmentStatus?.status || employee.employmentStatus || ''
     );
+
+    const handleApprove = async (attachmentId: string) => {
+        const token = localStorage.getItem('token');
+        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ status: 'approved' })
+        });
+        await fetchEmployee();
+    };
+
+    const handleReject = async (attachmentId: string) => {
+        const token = localStorage.getItem('token');
+        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ status: 'rejected' })
+        });
+        await fetchEmployee();
+    };
+
+    const handleDownload = (attachmentId: string, fileName: string) => {
+        if (!attachmentId) return;
+        const url = api.attachmentRaw(attachmentId);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleDelete = async (attachmentId: string) => {
+        setAttachmentToDelete(attachmentId);
+        setShowDeleteModal(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!attachmentToDelete) return;
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${api.employees}/${id}/attachments/${attachmentToDelete}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+            await fetchEmployee();
+            setShowDeleteModal(false);
+            setAttachmentToDelete(null);
+        }
+    };
 
     const tabs = [
         { id: 'personal', label: 'Personal', icon: User },
@@ -683,47 +739,7 @@ const EmployeeProfile = () => {
                                         return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Pending</span>;
                                     };
 
-                                    const handleApprove = async (attachmentId: string) => {
-                                        const token = localStorage.getItem('token');
-                                        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                            method: 'PATCH',
-                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                            body: JSON.stringify({ status: 'approved' })
-                                        });
-                                        await fetchEmployee();
-                                    };
-
-                                    const handleReject = async (attachmentId: string) => {
-                                        const token = localStorage.getItem('token');
-                                        await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                            method: 'PATCH',
-                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                            body: JSON.stringify({ status: 'rejected' })
-                                        });
-                                        await fetchEmployee();
-                                    };
-
-                                    const handleDownload = (attachmentId: string, fileName: string) => {
-                                        if (!attachmentId) return;
-                                        const url = api.attachmentRaw(attachmentId);
-                                        const link = document.createElement('a');
-                                        link.href = url;
-                                        link.download = fileName;
-                                        link.target = '_blank';
-                                        document.body.appendChild(link);
-                                        link.click();
-                                        document.body.removeChild(link);
-                                    };
-
-                                    const handleDelete = async (attachmentId: string) => {
-                                        if (!window.confirm('Are you sure you want to delete this document?')) return;
-                                        const token = localStorage.getItem('token');
-                                        const response = await fetch(`${api.employees}/${id}/attachments/${attachmentId}`, {
-                                            method: 'DELETE',
-                                            headers: { 'Authorization': `Bearer ${token}` }
-                                        });
-                                        if (response.ok) await fetchEmployee();
-                                    };
+                                    // Re-using handlers from component scope
 
                                     return (
                                         <div key={i} className="flex items-center justify-between p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border border-indigo-200 hover:bg-gradient-to-br hover:from-indigo-100 hover:to-purple-100 transition-colors">
@@ -974,6 +990,17 @@ const EmployeeProfile = () => {
                     </div>
                 </div>
             )}
+            {/* Delete Confirmation Modal */}
+            <DeleteModal
+                isOpen={showDeleteModal}
+                onClose={() => {
+                    setShowDeleteModal(false);
+                    setAttachmentToDelete(null);
+                }}
+                onConfirm={confirmDelete}
+                title="Delete Document?"
+                message="This document will be permanently removed from the employee record. This action cannot be undone."
+            />
         </div>
     );
 };

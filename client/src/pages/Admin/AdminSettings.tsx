@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
-    Info, Clock
+    Info, Clock, MapPin
 } from 'lucide-react';
 import api from '../../utils/api'; // Fix import to use default or named correctly
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
 import ShiftManagement from './ShiftManagement';
+import LocationManagement from './LocationManagement';
 
 type ConfigItem = {
     _id: string;
@@ -20,7 +21,7 @@ const AdminSettings = () => {
     const { role } = usePermissions();
     const isAdmin = role === 'super-admin' || role === 'admin';
     
-    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts'>('departments');
+    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts' | 'locations'>('departments');
     const [items, setItems] = useState<ConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -176,7 +177,7 @@ const AdminSettings = () => {
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Configuration</h1>
                     <p className="text-slate-500 mt-1">Manage departments, designations, and work shifts to maintain system-wide data consistency.</p>
                 </div>
-                {activeTab !== 'shifts' && (
+                {activeTab !== 'shifts' && activeTab !== 'locations' && (
                     <button 
                         onClick={() => handleOpenModal()}
                         className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
@@ -211,9 +212,16 @@ const AdminSettings = () => {
                         <Clock size={18} />
                         Work Shifts
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('locations')}
+                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'locations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <MapPin size={18} />
+                        Locations
+                    </button>
                 </div>
 
-                {activeTab !== 'shifts' && (
+                {activeTab !== 'shifts' && activeTab !== 'locations' && (
                     <div className="relative w-full lg:w-96 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
                         <input 
@@ -229,6 +237,8 @@ const AdminSettings = () => {
 
             {activeTab === 'shifts' ? (
                 <ShiftManagement />
+            ) : activeTab === 'locations' ? (
+                <LocationManagement />
             ) : (
                 <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
                     <table className="w-full text-left">

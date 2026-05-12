@@ -164,5 +164,7 @@ export const attendanceApi = {
     // ── Admin ──────────────────────────────────────────────────────────────────
     admin: {
         autoClose: (date: string) => post<object>(`${V2}/admin/auto-close${qs({ date })}`),
+        getDevices: () => get<any[]>(`${V2}/devices`),
+        updateDevice: (sn: string, data: any) => put<any>(`${V2}/devices/${sn}`, data),
     },
 };

@@ -170,25 +170,59 @@ const EmployeeList = () => {
         <div className="space-y-8 animate-fadeIn pb-12 bg-slate-50/30 min-h-screen">
             {/* 1. Analytics Header */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, i) => (
-                    <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all group overflow-hidden relative">
-                        <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 bg-${stat.color}-500/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-500`} />
-                        <div className="flex items-center gap-4">
-                            <div className={`p-3 rounded-xl bg-${stat.color}-50 text-${stat.color}-600 group-hover:bg-${stat.color}-600 group-hover:text-white transition-all`}>
-                                <stat.icon size={24} />
-                            </div>
-                            <div>
-                                <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-                                <div className="flex items-baseline gap-2">
-                                    <h4 className="text-2xl font-bold text-slate-800">{stat.value}</h4>
-                                    <span className={`text-[10px] font-bold uppercase tracking-wider text-${stat.color}-600 bg-${stat.color}-50 px-1.5 py-0.5 rounded`}>
-                                        {stat.trend}
-                                    </span>
+                {stats.map((stat, i) => {
+                    const colorMap: Record<string, any> = {
+                        indigo: {
+                            bg: 'bg-indigo-50',
+                            text: 'text-indigo-600',
+                            hoverBg: 'group-hover:bg-indigo-600',
+                            glow: 'bg-indigo-500/5',
+                            badge: 'text-indigo-600 bg-indigo-50'
+                        },
+                        purple: {
+                            bg: 'bg-purple-50',
+                            text: 'text-purple-600',
+                            hoverBg: 'group-hover:bg-purple-600',
+                            glow: 'bg-purple-500/5',
+                            badge: 'text-purple-600 bg-purple-50'
+                        },
+                        emerald: {
+                            bg: 'bg-emerald-50',
+                            text: 'text-emerald-600',
+                            hoverBg: 'group-hover:bg-emerald-600',
+                            glow: 'bg-emerald-500/5',
+                            badge: 'text-emerald-600 bg-emerald-50'
+                        },
+                        amber: {
+                            bg: 'bg-amber-50',
+                            text: 'text-amber-600',
+                            hoverBg: 'group-hover:bg-amber-600',
+                            glow: 'bg-amber-500/5',
+                            badge: 'text-amber-600 bg-amber-50'
+                        }
+                    };
+                    const styles = colorMap[stat.color] || colorMap.indigo;
+
+                    return (
+                        <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all group overflow-hidden relative">
+                            <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 ${styles.glow} rounded-full blur-2xl group-hover:scale-150 transition-transform duration-500`} />
+                            <div className="flex items-center gap-4">
+                                <div className={`p-3 rounded-xl ${styles.bg} ${styles.text} ${styles.hoverBg} group-hover:text-white transition-all`}>
+                                    <stat.icon size={24} />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-slate-500">{stat.label}</p>
+                                    <div className="flex items-baseline gap-2">
+                                        <h4 className="text-2xl font-bold text-slate-800">{stat.value}</h4>
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${styles.badge} px-1.5 py-0.5 rounded`}>
+                                            {stat.trend}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* 2. Sleek Filter Bar */}

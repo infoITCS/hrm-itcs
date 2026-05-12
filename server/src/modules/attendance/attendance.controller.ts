@@ -216,22 +216,30 @@ export async function getLiveFeed(req: AuthRequest, res: Response) {
 
         const punches = await repo.findRecentPunches(dateStr, limit, extraFilter) as any[];
         const pins = [...new Set(punches.map((p) => String(p.machineUserId)).filter(Boolean))];
-        const hrmEmployees = pins.length > 0 ? await repo.findEmployeesByPins(pins) as any[] : [];
-        const hrmMap = new Map(hrmEmployees.map((e) => [e.biometricPin, e]));
+        const [hrmEmployees, allDevices] = await Promise.all([
+            pins.length > 0 ? repo.findEmployeesByPins(pins) : Promise.resolve([]),
+            repo.findAllDevices()
+        ]);
+
+        const snToLoc = new Map(allDevices.map(d => [d.deviceSN, d.locationName]));
+        const hrmMap = new Map(hrmEmployees.map((e) => [`${e.jobInfo?.workLocation}_${e.biometricPin}`, e]));
 
         const empIds = [...new Set(punches.map((p) => {
-            const emp = hrmMap.get(String(p.machineUserId));
+            const punchLoc = snToLoc.get(p.deviceSN) || p.location || location || 'ISB-Office';
+            const emp = hrmMap.get(`${punchLoc}_${p.machineUserId}`);
             return emp?.employeeId || p.employeeId;
         }))];
         const recordsForDay = await repo.findRecordsForDate(dateStr, { employeeId: { $in: empIds } }) as any[];
         const recMap = new Map(recordsForDay.map((r) => [r.employeeId, r]));
 
         const enriched = punches.map((p) => {
-            const emp = hrmMap.get(String(p.machineUserId));
+            const punchLoc = snToLoc.get(p.deviceSN) || p.location || location || 'ISB-Office';
+            const emp = hrmMap.get(`${punchLoc}_${p.machineUserId}`);
             const empId = emp?.employeeId || p.employeeId;
             const rec = recMap.get(empId);
             return {
                 ...p,
+                location: punchLoc,
                 employeeName: p.employeeName || (emp ? `${emp.firstName} ${emp.lastName}` : `User ${p.machineUserId}`),
                 avatar: emp?.avatar,
                 employeeId: empId,

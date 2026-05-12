@@ -194,11 +194,17 @@ export async function getTodayRoster(
     const activeEmployees = await repo.findActiveEmployees(activeFilter) as any[];
     const activeEmpIds = activeEmployees.map(e => e.employeeId);
     
-    const [pinEmployees, idEmployees] = await Promise.all([
+    const [pinEmployees, idEmployees, allDevices] = await Promise.all([
         allPins.length > 0 ? repo.findEmployeesByPins(allPins) : Promise.resolve([]),
         repo.findEmployeesByIds([...new Set([...allEmpIds, ...activeEmpIds])]),
+        repo.findAllDevices(),
     ]);
-    const pinToEmp = new Map((pinEmployees as any[]).map(e => [e.biometricPin, e]));
+
+    // Build device SN to location map
+    const snToLoc = new Map((allDevices as any[]).map(d => [d.deviceSN, d.locationName]));
+
+    // Composite key for pin resolution: location_pin
+    const pinToEmp = new Map((pinEmployees as any[]).map(e => [`${e.jobInfo?.workLocation}_${e.biometricPin}`, e]));
     const idToEmp = new Map((idEmployees as any[]).map(e => [e.employeeId, e]));
 
     // 5. Get location config for shift/grace info
@@ -262,17 +268,22 @@ export async function getTodayRoster(
         let employeeName = `Not Linked (Pin: ${firstPunch.machineUserId})`;
         let avatar = undefined;
 
-        const emp = empId ? idToEmp.get(empId) : pinToEmp.get(String(firstPunch.machineUserId));
+        // Use location-aware pin resolution
+        const punchLoc = snToLoc.get(firstPunch.deviceSN) || firstPunch.location || location || 'ISB-Office';
+        const emp = empId 
+            ? idToEmp.get(empId) 
+            : pinToEmp.get(`${punchLoc}_${firstPunch.machineUserId}`);
+
         if (emp) {
             employeeName = `${(emp as any).firstName} ${(emp as any).lastName || ''}`.trim();
             avatar = (emp as any).avatar;
         }
 
         roster.push({
-            employeeId: empId || `unlinked_${firstPunch.machineUserId}`,
+            employeeId: empId || (emp as any)?.employeeId || `unlinked_${firstPunch.machineUserId}`,
             employeeName,
             avatar,
-            location: firstPunch.location || location || 'ISB-Office',
+            location: punchLoc,
             checkIn: checkInTime.toISOString(),
             checkOut: checkOutTime?.toISOString(),
             totalPunches: punches.length,
