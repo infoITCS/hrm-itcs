@@ -15,13 +15,14 @@ import { useState, useEffect } from 'react';
 import {
     Activity, Calendar, MapPin, ChevronDown, RefreshCw,
     UserCheck, UserX, AlertTriangle, Timer, Clock,
-    Fingerprint, LogIn, LogOut, Download, User, Zap
+    Fingerprint, LogIn, LogOut, Download, User, Zap, Edit2
 } from 'lucide-react';
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
 import { useRoster } from '../hooks/useRoster';
 import { attendanceApi } from '../api/attendanceApi';
 import type { TodayRosterEntry, StatusFilter } from '../types';
 import MonthlyInsightsModal from '../components/MonthlyInsightsModal';
+import EditAttendanceModal from '../components/EditAttendanceModal';
 import AlertModal from '../../../components/UI/AlertModal';
 import EmployeeDashboard from './EmployeeDashboard';
 
@@ -69,9 +70,9 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // ─── Roster Row ───────────────────────────────────────────────────────────────
 // ─── Roster Row ───────────────────────────────────────────────────────────────
 function RosterRow({ 
-    entry, isNew, isPast, onClick 
+    entry, isNew, isPast, onClick, onEdit 
 }: { 
-    entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void 
+    entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void 
 }) {
     const isMissing = entry.status === 'Incomplete' && isPast;
     const statusLabel = isMissing ? 'Missing Checkout' : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
@@ -159,6 +160,18 @@ function RosterRow({
             </td>
             {/* Method */}
             <td className="py-3 px-4 text-xs text-slate-400">{entry.verifyType || '—'}</td>
+            {/* Actions */}
+            <td className="py-3 px-4 text-right">
+                {onEdit && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title="Edit Record"
+                    >
+                        <Edit2 size={14} />
+                    </button>
+                )}
+            </td>
         </tr>
     );
 }
@@ -192,6 +205,7 @@ export default function AdminDashboard() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [statusFilter, setStatusFilter] = useState<StatusFilter | ''>('');
     const [selectedEmp, setSelectedEmp] = useState<{ id: string; name: string } | null>(null);
+    const [editingEmp, setEditingEmp] = useState<TodayRosterEntry | null>(null);
     const [isAutoCloseModalOpen, setIsAutoCloseModalOpen] = useState(false);
     const weekend = isWeekendDay(date);
 
@@ -375,6 +389,7 @@ export default function AdminDashboard() {
                                     <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Late</th>
                                     <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                                     <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Method</th>
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -384,6 +399,7 @@ export default function AdminDashboard() {
                                         entry={entry} 
                                         isPast={date !== todayStr()} 
                                         onClick={() => setSelectedEmp({ id: entry.employeeId, name: entry.employeeName })}
+                                        onEdit={() => setEditingEmp(entry)}
                                     />
                                 ))}
                             </tbody>
@@ -400,6 +416,18 @@ export default function AdminDashboard() {
                     onClose={() => setSelectedEmp(null)}
                 />
             )}
+
+            {/* Edit Attendance Modal */}
+            <EditAttendanceModal
+                isOpen={!!editingEmp}
+                onClose={() => setEditingEmp(null)}
+                date={date}
+                employee={editingEmp}
+                onSuccess={() => {
+                    refresh();
+                    refreshRoster();
+                }}
+            />
 
             <AlertModal
                 isOpen={isAutoCloseModalOpen}
