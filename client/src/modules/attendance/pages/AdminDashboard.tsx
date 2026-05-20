@@ -246,6 +246,7 @@ export default function AdminDashboard() {
             if (statusFilter === 'OnTime') return ['Present', 'Half-Day'].includes(r.status) && r.lateMinutes === 0;
             if (statusFilter === 'StillIn') return r.status === 'Incomplete';
             if (statusFilter === 'Present') return ['Present', 'Late', 'Half-Day', 'Incomplete'].includes(r.status);
+            if (statusFilter === 'Late') return r.status !== 'Incomplete' && (r.lateMinutes || 0) > 0;
             return r.status === statusFilter;
         })
         : roster;
