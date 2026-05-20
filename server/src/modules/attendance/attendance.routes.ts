@@ -14,6 +14,7 @@ import * as ctrl from './attendance.controller';
 const router = Router();
 
 const ADMIN_ROLES   = ['super-admin', 'admin'];
+const EDIT_ROLES    = ['super-admin', 'admin', 'manager'];
 const MANAGER_ROLES = ['super-admin', 'admin', 'manager'];
 const ALL_ROLES     = ['super-admin', 'admin', 'manager', 'employee'];
 
@@ -44,8 +45,8 @@ router.get('/weekly',  ...auth(...MANAGER_ROLES), h(ctrl.getWeekly));
 // ─── Records ──────────────────────────────────────────────────────────────────
 router.get('/records',      ...auth(...ALL_ROLES),     h(ctrl.getRecords));
 router.get('/punches',      ...auth(...MANAGER_ROLES), h(ctrl.getPunches));
-router.put('/records/:id',  ...auth(...ADMIN_ROLES),   h(ctrl.updateRecord));
-router.post('/manual',      ...auth(...ADMIN_ROLES),   h(ctrl.createManualRecord));
+router.put('/records/:id',  ...auth(...EDIT_ROLES),    h(ctrl.updateRecord));
+router.post('/manual',      ...auth(...EDIT_ROLES),    h(ctrl.createManualRecord));
 router.get('/export',       ...auth(...MANAGER_ROLES), h(ctrl.exportCSV));
 router.get('/export/monthly', ...auth(...MANAGER_ROLES), h(ctrl.exportGlobalMonthly));
 router.get('/employee/:employeeId/monthly', ...auth(...ALL_ROLES), h(ctrl.getEmployeeMonthly));

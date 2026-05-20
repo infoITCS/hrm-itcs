@@ -77,6 +77,8 @@ function RosterRow({
     const isMissing = entry.status === 'Incomplete' && isPast;
     const statusLabel = isMissing ? 'Missing Checkout' : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
     const statusClass = STATUS_BADGE[statusLabel] || 'bg-slate-100 text-slate-500';
+    const showLateFlag = entry.status !== 'Incomplete' && entry.lateMinutes > 0;
+    const showEarlyFlag = entry.status === 'Early Leave';
     const [imgError, setImgError] = useState(false);
 
     // Build full avatar URL if relative
@@ -154,9 +156,25 @@ function RosterRow({
             </td>
             {/* Status */}
             <td className="py-3 px-4">
-                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${statusClass}`}>
-                    {statusLabel}
-                </span>
+                <div className="flex flex-col items-start gap-1.5">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${statusClass}`}>
+                        {statusLabel}
+                    </span>
+                    {(showLateFlag || showEarlyFlag) && (
+                        <div className="flex items-center gap-1.5">
+                            {showLateFlag && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                    Late Arrival
+                                </span>
+                            )}
+                            {showEarlyFlag && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                                    Left Early
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
             </td>
             {/* Method */}
             <td className="py-3 px-4 text-xs text-slate-400">{entry.verifyType || '—'}</td>

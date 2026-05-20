@@ -129,9 +129,9 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         const record = await repo.findRecordById(req.params.id);
         if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
 
-        // Authorization: Only Admin or HR can modify records
-        if (req.user?.role !== 'admin' && req.user?.role !== 'hr') {
-            return res.status(403).json({ success: false, message: 'Access denied: Only Admin or HR can update records.' });
+        // Authorization: only super-admin/admin/manager can modify records
+        if (!['super-admin', 'admin', 'manager'].includes(req.user?.role || '')) {
+            return res.status(403).json({ success: false, message: 'Access denied: only Admin, Super Admin, or Manager can update records.' });
         }
 
         if (status && !VALID_STATUSES.includes(status)) {
@@ -188,10 +188,18 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
         if (dIn && dOut && dOut <= dIn) {
             return res.status(400).json({ success: false, message: 'checkOut must be after checkIn' });
         }
+
+        const allPunches = [dIn, dOut].filter(Boolean) as Date[];
+        const workDurationMinutes = dIn && dOut
+            ? Math.max(0, Math.floor((dOut.getTime() - dIn.getTime()) / 60000))
+            : 0;
+
         const record = await repo.upsertRecord(employeeId, date, {
             location: location ?? 'ISB-Office',
-            checkIn: checkIn ? new Date(checkIn) : undefined,
-            checkOut: checkOut ? new Date(checkOut) : undefined,
+            checkIn: dIn ?? undefined,
+            checkOut: dOut ?? undefined,
+            workDurationMinutes,
+            allPunches,
             status: status ?? 'Present',
             note,
             manuallyAdjusted: true,

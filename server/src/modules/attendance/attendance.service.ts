@@ -14,14 +14,11 @@ import { AttendanceStatus } from '../../models/AttendanceRecord';
 // ─── Shift Logic ──────────────────────────────────────────────────────────────
 
 function computeStatus(
-    workMins: number,
     lateMinutes: number,
     isEarlyLeave: boolean,
-    hasCheckout: boolean,
-    halfDayHrs: number
+    hasCheckout: boolean
 ): AttendanceStatus {
     if (!hasCheckout) return 'Incomplete';
-    if (workMins < halfDayHrs * 60) return 'Half-Day';
     if (isEarlyLeave) return 'Early Leave';
     if (lateMinutes > 0) return 'Late';
     return 'Present';
@@ -108,11 +105,9 @@ export async function processEmployeePunches(
         const leaveType = leaveMap.get(employeeId) ?? null;
 
         const status = computeStatus(
-            workDurationMinutes,
             lateMinutes,
             isEarlyLeave,
-            !!checkOut,
-            cfg.halfDayThresholdHours
+            !!checkOut
         );
 
         await repo.upsertRecord(employeeId, dateStr, {
@@ -207,11 +202,12 @@ export async function getTodayRoster(
     const pinToEmp = new Map((pinEmployees as any[]).map(e => [`${e.jobInfo?.workLocation}_${e.biometricPin}`, e]));
     const idToEmp = new Map((idEmployees as any[]).map(e => [e.employeeId, e]));
 
-    // 5. Get location config for shift/grace info
-    const locationCfg = await repo.findLocationConfig(location || 'ISB-Office') as any;
-    const shiftStartStr = locationCfg?.shiftStart || '09:00';
-    const graceMinutes = locationCfg?.graceMinutes ?? 30;
-    const shiftStartTime = pktHHMMtoUtc(dateStr, shiftStartStr);
+    // 5. Resolve location configs once and evaluate timing per employee shift
+    const inferredLocations = [...new Set(
+        allPunches.map((p: any) => snToLoc.get(p.deviceSN) || p.location || location || 'ISB-Office')
+    )];
+    const locationConfigs = await repo.findLocationConfigs(inferredLocations as string[]) as any[];
+    const locationCfgMap = new Map(locationConfigs.map((cfg: any) => [cfg.locationName, cfg]));
 
     // 6. Build roster entries
     const roster: import('./attendance.types').TodayRosterEntry[] = [];
@@ -228,23 +224,34 @@ export async function getTodayRoster(
         const empId = isUnlinked ? null : key;
         if (empId) processedEmpIds.add(empId);
 
+        const punchLoc = snToLoc.get(firstPunch.deviceSN) || firstPunch.location || location || 'ISB-Office';
+        const deviceConfig = locationCfgMap.get(punchLoc);
+
         // Use existing processed record if available
         const rec = empId ? recMap.get(empId) as any : null;
         const checkInTime = rec?.checkIn ? new Date(rec.checkIn) : new Date(firstPunch.punchTime);
+
+        // Use location-aware pin resolution
+        const emp = empId 
+            ? idToEmp.get(empId) 
+            : pinToEmp.get(`${punchLoc}_${firstPunch.machineUserId}`);
+
+        const cfg = repo.resolveShiftConfig(emp, deviceConfig);
+        const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
+        const shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
 
         // Determine if last punch qualifies as a valid checkout
         let checkOutTime: Date | null = rec?.checkOut ? new Date(rec.checkOut) : null;
         if (!checkOutTime && punches.length > 1) {
             const lastTime = new Date(lastPunch.punchTime);
-            const diffMins = Math.floor((lastTime.getTime() - checkInTime.getTime()) / 60000);
-            if (diffMins >= 60 && isValidCheckout(checkInTime, lastTime)) {
+            if (isValidCheckout(checkInTime, lastTime)) {
                 checkOutTime = lastTime;
             }
         }
 
         // Compute late minutes
         const diffFromShift = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
-        const lateMinutes = rec?.lateMinutes ?? (diffFromShift > graceMinutes ? diffFromShift - graceMinutes : 0);
+        const lateMinutes = rec?.lateMinutes ?? (diffFromShift > cfg.graceMinutes ? diffFromShift - cfg.graceMinutes : 0);
 
         // Compute work duration
         let workDurationMinutes = rec?.workDurationMinutes ?? 0;
@@ -260,19 +267,17 @@ export async function getTodayRoster(
         // Determine status
         let status = rec?.status || 'Incomplete';
         if (!rec) {
-            if (checkOutTime) status = lateMinutes > 0 ? 'Late' : 'Present';
+            if (checkOutTime) {
+                const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOutTime.getTime()) / 60000);
+                const isEarlyLeave = earlyDiff > 10;
+                status = computeStatus(lateMinutes, isEarlyLeave, true);
+            }
             else status = 'Incomplete';
         }
 
         // Resolve employee name
         let employeeName = `Not Linked (Pin: ${firstPunch.machineUserId})`;
         let avatar = undefined;
-
-        // Use location-aware pin resolution
-        const punchLoc = snToLoc.get(firstPunch.deviceSN) || firstPunch.location || location || 'ISB-Office';
-        const emp = empId 
-            ? idToEmp.get(empId) 
-            : pinToEmp.get(`${punchLoc}_${firstPunch.machineUserId}`);
 
         if (emp) {
             employeeName = `${(emp as any).firstName} ${(emp as any).lastName || ''}`.trim();
@@ -349,12 +354,15 @@ export async function getDashboardSummary(
 
     for (const entry of roster) {
         if (entry.status === 'Present') totalPresent++;
-        else if (entry.status === 'Late') totalLate++;
         else if (entry.status === 'Absent') totalAbsent++;
         else if (entry.status === 'On Leave') totalOnLeave++;
         else if (entry.status === 'Incomplete') totalIncomplete++;
         else if (entry.status === 'Half-Day') totalHalfDay++;
         else if (entry.status === 'Early Leave') totalEarlyLeave++;
+
+        // Late is treated as a violation flag after finalized checkout,
+        // so HR can see late arrivals even when primary status is Early Leave.
+        if (entry.status !== 'Incomplete' && (entry.lateMinutes || 0) > 0) totalLate++;
 
         if (entry.checkIn) {
             totalWorkMins += entry.workDurationMinutes || 0;
@@ -521,7 +529,7 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
         const earlyDiff = Math.floor((shiftEndTime.getTime() - effectiveCheckOut.getTime()) / 60000);
         const isEarlyLeave = earlyDiff > 10;
 
-        const status = computeStatus(workDurationMinutes, lateMinutes, isEarlyLeave, true, cfg.halfDayThresholdHours);
+        const status = computeStatus(lateMinutes, isEarlyLeave, true);
         const checkOutStr = toPKTTimeString(effectiveCheckOut);
 
         // Upsert the record (create if missing, update if exists)

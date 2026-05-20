@@ -6,7 +6,9 @@ import {
 } from 'lucide-react';
 import { attendanceApi } from '../api/attendanceApi';
 import { STATUS_LABELS } from '../types';
-import type { EmployeeMonthlyDetail } from '../types';
+import type { EmployeeMonthlyDetail, MonthlyDayEntry, TodayRosterEntry } from '../types';
+import { usePermissions } from '../../../hooks/usePermissions';
+import EditAttendanceModal from './EditAttendanceModal';
 
 // Deterministic class mappings for Tailwind JIT safety
 const STATUS_CLASS_MAP: Record<string, string> = {
@@ -48,10 +50,13 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
     employeeName, 
     onClose 
 }) => {
+    const { role } = usePermissions();
+    const canEditAttendance = role === 'super-admin' || role === 'admin' || role === 'manager';
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [data, setData] = useState<EmployeeMonthlyDetail | null>(null);
+    const [editingDay, setEditingDay] = useState<MonthlyDayEntry | null>(null);
     const modalRef = useRef<HTMLDivElement>(null);
     
     const [currentMonth, setCurrentMonth] = useState(() => {
@@ -143,6 +148,19 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
             setIsDownloading(false);
         }
     };
+
+    const toEditableEntry = (day: MonthlyDayEntry): TodayRosterEntry => ({
+        employeeId,
+        employeeName,
+        location: 'ISB-Office',
+        checkIn: day.checkIn,
+        checkOut: day.checkOut,
+        totalPunches: (day.checkIn ? 1 : 0) + (day.checkOut ? 1 : 0),
+        workDurationMinutes: day.workDurationMinutes || 0,
+        lateMinutes: day.lateMinutes || 0,
+        status: day.status,
+        verifyType: 'Manual',
+    });
 
     return (
         <AnimatePresence>
@@ -305,7 +323,10 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                                         {data.days.map((day) => (
                                             <div 
                                                 key={day.date}
-                                                className="group flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 hover:shadow-md transition-all cursor-default"
+                                                onClick={canEditAttendance ? () => setEditingDay(day) : undefined}
+                                                className={`group flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 hover:shadow-md transition-all ${
+                                                    canEditAttendance ? 'cursor-pointer' : 'cursor-default'
+                                                }`}
                                             >
                                                 <div className="flex items-center gap-4">
                                                     <div className="flex flex-col">
@@ -351,6 +372,15 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                     </div>
                 </motion.div>
             </div>
+            <EditAttendanceModal
+                isOpen={!!editingDay}
+                onClose={() => setEditingDay(null)}
+                date={editingDay?.date || ''}
+                employee={editingDay ? toEditableEntry(editingDay) : null}
+                onSuccess={() => {
+                    setRetryKey((prev) => prev + 1);
+                }}
+            />
         </AnimatePresence>
     );
 };
