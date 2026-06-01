@@ -190,7 +190,7 @@ const AdminSettings = () => {
 
             {/* Tabs & Search */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-full lg:w-auto">
+                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-full lg:w-auto lg:shrink-0">
                     <button 
                         onClick={() => setActiveTab('departments')}
                         className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'departments' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
@@ -222,7 +222,7 @@ const AdminSettings = () => {
                 </div>
 
                 {activeTab !== 'shifts' && activeTab !== 'locations' && (
-                    <div className="relative w-full lg:w-96 group">
+                    <div className="relative w-full lg:w-80 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
                         <input 
                             type="text" 

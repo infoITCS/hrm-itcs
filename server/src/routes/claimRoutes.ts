@@ -16,11 +16,11 @@ const HR_EMAILS = (process.env.EXPENSE_HR_EMAILS || '').split(',').map(s => s.tr
 const FINANCE_EMAILS = (process.env.EXPENSE_FINANCE_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const POLICY_LIMITS: Record<ExpenseClaimCategory, number> = {
-    Medical: 20000,
-    'Training & Certification': 50000,
+    Medical: 60000,
+    'Training & Certification': 9999999,
     Travel: 9999999,
-    'Sales/Customer Gifts': 15000,
-    Other: 10000,
+    'Sales/Customer Gifts': 9999999,
+    Other: 9999999,
 };
 
 function sanitizeClaimForJson(doc: any) {
@@ -104,8 +104,6 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             forWhom,
             dependentId,
             purpose,
-            serviceDateFrom,
-            serviceDateTo,
             amountRequested,
             notes,
             receipts,
@@ -133,18 +131,43 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
 
         const flags: string[] = [];
-        const limit = POLICY_LIMITS[cat];
+        let limit = POLICY_LIMITS[cat];
+
+        if (cat === 'Medical') {
+            const currentYear = new Date().getFullYear();
+            const startOfYear = new Date(currentYear, 0, 1);
+            const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+            const existingClaims = await ExpenseClaim.find({
+                employeeUserId: new mongoose.Types.ObjectId(String(userId)),
+                category: 'Medical',
+                status: { $nin: ['Draft', 'Declined'] },
+                createdAt: { $gte: startOfYear, $lte: endOfYear }
+            }).lean() as any[];
+
+            const claimedSoFar = existingClaims.reduce((sum, c) => {
+                const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+                return sum + amount;
+            }, 0);
+
+            limit = Math.max(0, 60000 - claimedSoFar);
+        }
+
         const amountAllowed = Math.min(amountRequested, limit);
         const outOfPolicy = amountRequested > limit;
         if (outOfPolicy) flags.push('OutOfPolicy');
 
-        if ((cat === 'Sales/Customer Gifts' || cat === 'Other') && (!notes || String(notes).trim().length < 5)) {
-            flags.push('MissingComment');
-        }
-
         const decodedReceipts = decodeReceipts(receipts as ReceiptInput[] | undefined);
-        if ((cat === 'Sales/Customer Gifts' || cat === 'Other') && decodedReceipts.length === 0) {
-            flags.push('MissingReceipt');
+        const hasComment = notes && String(notes).trim().length >= 5;
+        const hasReceipt = decodedReceipts.length > 0;
+
+        if (cat === 'Medical') {
+            if (!hasReceipt) {
+                flags.push('MissingReceipt');
+            }
+        } else if (cat === 'Training & Certification' || cat === 'Sales/Customer Gifts' || cat === 'Other') {
+            if (!hasComment && !hasReceipt) {
+                flags.push('MissingCommentOrReceipt');
+            }
         }
 
         const workflow = buildWorkflow(cat);
@@ -172,8 +195,6 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             dependentId: fw === 'Dependent' ? String(dependentId) : undefined,
             dependentName,
             purpose,
-            serviceDateFrom: serviceDateFrom ? new Date(serviceDateFrom) : undefined,
-            serviceDateTo: serviceDateTo ? new Date(serviceDateTo) : undefined,
             amountRequested,
             amountAllowed,
             approvedTotal: undefined,
@@ -268,6 +289,22 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
                 .lean();
         }
 
+        res.json({ success: true, data: claims });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.get('/all', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
+
+        const claims = await ExpenseClaim.find({})
+            .select('-receipts.fileData')
+            .sort({ createdAt: -1 })
+            .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
         next(err);

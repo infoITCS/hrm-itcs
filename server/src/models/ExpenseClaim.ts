@@ -59,8 +59,6 @@ const ExpenseClaimSchema = new Schema(
         dependentName: { type: String },
 
         purpose: { type: String }, // training/certification purpose, etc
-        serviceDateFrom: { type: Date }, // medical / travel date range
-        serviceDateTo: { type: Date },
 
         currency: { type: String, default: 'PKR' },
         amountRequested: { type: Number, required: true, min: 0 },

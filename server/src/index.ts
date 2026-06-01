@@ -5,8 +5,8 @@ dotenv.config();
 
 // Defensive Sanitization: Trim all critical environment variables to remove accidental newlines/whitespace
 const criticalEnvVars = [
-    'MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET', 'MICROSOFT_CLIENT_ID', 
-    'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID', 
+    'MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET', 'MICROSOFT_CLIENT_ID',
+    'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_TENANT_ID',
     'MICROSOFT_CALLBACK_URL', 'FRONTEND_URL', 'CLIENT_URL',
     'GEMINI_API_KEY', 'SMTP_USER', 'SMTP_PASS'
 ];
@@ -82,7 +82,7 @@ const corsOptions: cors.CorsOptions = {
         // Allow if no origin (like mobile apps or curl) or if it matches our list
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
-        } 
+        }
         // Dynamic check for Vercel Preview/Branch URLs
         else if (origin.endsWith('.vercel.app')) {
             logger.info(`[CORS] Allowing Vercel Preview Origin: ${origin}`);
@@ -143,7 +143,7 @@ const getSessionSecret = (): string => {
             logger.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
             return process.env.JWT_SECRET;
         }
-        
+
         if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
             logger.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
             throw new Error('FATAL: At least JWT_SECRET must be set for the server to start.');
@@ -342,8 +342,8 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-    res.json({ 
-        status: 'Vercel-May-4-Final-Test', 
+    res.json({
+        status: 'Vercel-May-4-Final-Test',
         timestamp: new Date().toISOString(),
         env: process.env.NODE_ENV,
         vercel: !!process.env.VERCEL
@@ -353,9 +353,9 @@ app.get('/api/health', (req, res) => {
 // Catch-all for undefined routes - EXTREMELY HELPFUL FOR DEBUGGING 404s
 app.use('*', (req, res) => {
     logger.warn(`404 at ${req.method} ${req.originalUrl}`);
-    res.status(404).json({ 
+    res.status(404).json({
         message: `Route not found: ${req.method} ${req.originalUrl}`,
-        path: req.originalUrl 
+        path: req.originalUrl
     });
 });
 
@@ -373,10 +373,10 @@ app.use((err: any, req: any, res: any, next: any) => {
     const safeErr = err ?? {};
     logger.error('🔥 Global unhandled error:', safeErr);
 
-    res.status(500).json({ 
+    res.status(500).json({
         message: safeErr.message || 'Internal server error',
         // Only expose debug details in non-production environments
-        ...(!isProduction && { 
+        ...(!isProduction && {
             stack: safeErr.stack,
             code: safeErr.code,
             name: safeErr.name

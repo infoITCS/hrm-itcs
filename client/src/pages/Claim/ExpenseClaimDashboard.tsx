@@ -10,6 +10,7 @@ import {
     RefreshCw,
     ShieldCheck,
     X,
+    History,
 } from 'lucide-react';
 
 type Category = 'Medical' | 'Training & Certification' | 'Travel' | 'Sales/Customer Gifts' | 'Other';
@@ -47,7 +48,7 @@ const ExpenseClaimDashboard = () => {
     const token = localStorage.getItem('token');
     const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
 
-    type Tab = 'submit' | 'mine' | 'approvals';
+    type Tab = 'submit' | 'mine' | 'approvals' | 'history';
     const [tab, setTab] = useState<Tab>('submit');
 
     const [employee, setEmployee] = useState<any>(null);
@@ -55,12 +56,14 @@ const ExpenseClaimDashboard = () => {
 
     const [mine, setMine] = useState<Claim[]>([]);
     const [approvals, setApprovals] = useState<Claim[]>([]);
+    const [history, setHistory] = useState<Claim[]>([]);
 
     const [progress, setProgress] = useState<{ pct: number; totalEmployees: number; completed: number } | null>(null);
 
     const [loadingEmployee, setLoadingEmployee] = useState(false);
     const [loadingMine, setLoadingMine] = useState(false);
     const [loadingApprovals, setLoadingApprovals] = useState(false);
+    const [loadingHistory, setLoadingHistory] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(false);
 
     // Form state
@@ -69,8 +72,6 @@ const ExpenseClaimDashboard = () => {
     const [forWhom, setForWhom] = useState<ForWhom>('Self');
     const [dependentId, setDependentId] = useState('');
     const [purpose, setPurpose] = useState('');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
     const [amountRequested, setAmountRequested] = useState<number>(0);
     const [notes, setNotes] = useState('');
     const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
@@ -78,6 +79,26 @@ const ExpenseClaimDashboard = () => {
 
     const isApprover = role === 'manager' || role === 'admin' || role === 'super-admin';
     const isAdminLike = role === 'admin' || role === 'super-admin';
+
+    const remainingMedicalLimit = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1).getTime();
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999).getTime();
+
+        const medicalClaims = mine.filter((c: any) => {
+            if (c.category !== 'Medical') return false;
+            if (c.status === 'Draft' || c.status === 'Declined') return false;
+            const createdAt = new Date(c.createdAt).getTime();
+            return createdAt >= startOfYear && createdAt <= endOfYear;
+        });
+
+        const claimedSoFar = medicalClaims.reduce((sum: number, c: any) => {
+            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            return sum + amount;
+        }, 0);
+
+        return Math.max(0, 60000 - claimedSoFar);
+    }, [mine]);
 
     const fetchEmployee = useCallback(async () => {
         if (!user?.id) return;
@@ -136,12 +157,27 @@ const ExpenseClaimDashboard = () => {
         }
     }, [headers, isApprover]);
 
+    const fetchHistory = useCallback(async () => {
+        if (!isAdminLike) return;
+        setLoadingHistory(true);
+        try {
+            const r = await fetch(api.claimAll, { headers });
+            const d = await r.json();
+            if (d?.success) setHistory(d.data || []);
+        } catch {
+            // ignore
+        } finally {
+            setLoadingHistory(false);
+        }
+    }, [headers, isAdminLike]);
+
     useEffect(() => {
         fetchEmployee();
         fetchMine();
         fetchApprovals();
         fetchProgress();
-    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress]);
+        fetchHistory();
+    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory]);
 
     useEffect(() => {
         if (forWhom === 'Self') setDependentId('');
@@ -152,8 +188,14 @@ const ExpenseClaimDashboard = () => {
         if (!employee?.employeeId) return 'Employee profile not found';
         if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
         if (forWhom === 'Dependent' && !dependentId) return 'Select a registered dependent';
-        if ((category === 'Sales/Customer Gifts' || category === 'Other') && (notes.trim().length < 5)) return 'Comment is required for this category';
-        if ((category === 'Sales/Customer Gifts' || category === 'Other') && receiptFiles.length === 0) return 'Receipt upload is required for this category';
+        if (category === 'Medical' && receiptFiles.length === 0) return 'Receipt upload is required for Medical claims';
+        if (['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category)) {
+            const hasComment = notes.trim().length >= 5;
+            const hasReceipt = receiptFiles.length > 0;
+            if (!hasComment && !hasReceipt) {
+                return 'A comment (min 5 chars) or a receipt upload is required for this category';
+            }
+        }
         return '';
     }, [loadingEmployee, employee?.employeeId, amountRequested, forWhom, dependentId, category, notes, receiptFiles.length]);
 
@@ -169,8 +211,6 @@ const ExpenseClaimDashboard = () => {
                 forWhom,
                 dependentId: forWhom === 'Dependent' ? dependentId : undefined,
                 purpose: purpose.trim() || undefined,
-                serviceDateFrom: dateFrom || undefined,
-                serviceDateTo: dateTo || undefined,
                 amountRequested,
                 notes: notes.trim() || undefined,
                 receipts,
@@ -185,8 +225,6 @@ const ExpenseClaimDashboard = () => {
             setForWhom('Self');
             setDependentId('');
             setPurpose('');
-            setDateFrom('');
-            setDateTo('');
             setAmountRequested(0);
             setNotes('');
             setReceiptFiles([]);
@@ -269,6 +307,7 @@ const ExpenseClaimDashboard = () => {
             setDecisionClaim(null);
             await fetchApprovals();
             await fetchMine();
+            await fetchHistory();
         } catch (e: any) {
             alert(e?.message || 'Failed to submit decision');
         } finally {
@@ -305,6 +344,7 @@ const ExpenseClaimDashboard = () => {
             setCorrectClaim(null);
             await fetchMine();
             await fetchApprovals();
+            await fetchHistory();
         } catch (e: any) {
             alert(e?.message || 'Failed to update claim');
         } finally {
@@ -316,6 +356,7 @@ const ExpenseClaimDashboard = () => {
         { id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle },
         { id: 'mine' as const, label: 'My Claims', icon: FileText },
         ...(isApprover ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
+        ...(isAdminLike ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
     ];
 
     return (
@@ -339,7 +380,7 @@ const ExpenseClaimDashboard = () => {
 
                     <div className="flex flex-wrap items-center gap-3">
                         <button
-                            onClick={() => { fetchMine(); fetchApprovals(); fetchProgress(); }}
+                            onClick={() => { fetchMine(); fetchApprovals(); fetchProgress(); fetchHistory(); }}
                             className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all"
                         >
                             <RefreshCw size={15} />
@@ -400,6 +441,14 @@ const ExpenseClaimDashboard = () => {
                 {tab === 'submit' && (
                     <div className="p-6 space-y-6">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {category === 'Medical' && (
+                                <div className="lg:col-span-2 p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-indigo-700 text-xs font-bold animate-fadeIn">
+                                    <span>Remaining Medical balance for {new Date().getFullYear()}:</span>
+                                    <span className="text-sm font-extrabold">
+                                        {loadingMine ? 'Loading...' : formatMoney(remainingMedicalLimit)}
+                                    </span>
+                                </div>
+                            )}
                             <div>
                                 <label className="text-xs font-bold text-slate-600">Category</label>
                                 <select
@@ -468,26 +517,6 @@ const ExpenseClaimDashboard = () => {
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600">Date From (optional)</label>
-                                    <input
-                                        type="date"
-                                        value={dateFrom}
-                                        onChange={e => setDateFrom(e.target.value)}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600">Date To (optional)</label>
-                                    <input
-                                        type="date"
-                                        value={dateTo}
-                                        onChange={e => setDateTo(e.target.value)}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                    />
-                                </div>
-                            </div>
 
                             <div>
                                 <label className="text-xs font-bold text-slate-600">Amount Requested (PKR)</label>
@@ -498,14 +527,20 @@ const ExpenseClaimDashboard = () => {
                                     placeholder="0"
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 />
-                                <p className="text-[11px] text-slate-400 mt-1">
-                                    Out-of-policy amounts are flagged and require HR/Senior Management authorization.
-                                </p>
+                                 <p className="text-[11px] text-slate-400 mt-1">
+                                     {category === 'Medical' ? (
+                                         <span>
+                                             Claims exceeding your remaining <strong>{formatMoney(remainingMedicalLimit)}</strong> balance are flagged as out-of-policy.
+                                         </span>
+                                     ) : (
+                                         'Out-of-policy amounts are flagged and require HR/Senior Management authorization.'
+                                     )}
+                                 </p>
                             </div>
 
                             <div>
                                 <label className="text-xs font-bold text-slate-600">
-                                    Comment {category === 'Sales/Customer Gifts' || category === 'Other' ? '(required)' : '(optional)'}
+                                    Comment {['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) ? '(comment or receipt required)' : '(optional)'}
                                 </label>
                                 <input
                                     value={notes}
@@ -517,7 +552,7 @@ const ExpenseClaimDashboard = () => {
 
                             <div className="lg:col-span-2">
                                 <label className="text-xs font-bold text-slate-600">
-                                    Receipts {category === 'Sales/Customer Gifts' || category === 'Other' ? '(required)' : '(optional)'}
+                                    Receipts {category === 'Medical' ? '(required)' : ['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) ? '(comment or receipt required)' : '(optional)'}
                                 </label>
                                 <input
                                     type="file"
@@ -698,6 +733,91 @@ const ExpenseClaimDashboard = () => {
                                                         className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
                                                     >
                                                         Review
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {tab === 'history' && isAdminLike && (
+                    <div className="p-6">
+                        {loadingHistory ? (
+                            <div className="text-slate-400 text-sm">Loading…</div>
+                        ) : history.length === 0 ? (
+                            <div className="text-center py-12 text-slate-400">
+                                <History size={42} className="mx-auto mb-3 text-slate-300" />
+                                <p className="font-semibold">No claims in history.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100">
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee ID</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {history.map((c: any) => (
+                                            <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
+                                                <td className="px-4 py-3 text-slate-600">{c.employeeId}</td>
+                                                <td className="px-4 py-3 text-slate-600">{c.category}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold">{formatMoney(c.amountRequested, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.approvedTotal, c.currency)}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                        {c.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500">
+                                                    {c.audit?.submittedAt ? new Date(c.audit.submittedAt).toLocaleDateString('en-PK') : new Date(c.createdAt).toLocaleDateString('en-PK')}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {(c.receipts || []).length ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            {(c.receipts || []).map((r: any) => (
+                                                                <button
+                                                                    key={r._id}
+                                                                    onClick={() => downloadReceipt(c._id, r._id, r.fileName)}
+                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs"
+                                                                >
+                                                                    {r.fileName}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 flex gap-2">
+                                                    {c.status !== 'Approved' && c.status !== 'Declined' && (
+                                                        <button
+                                                            onClick={() => openDecision(c)}
+                                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-900"
+                                                        >
+                                                            Decision
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => openCorrect(c)}
+                                                        className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                                                    >
+                                                        Correct
                                                     </button>
                                                 </td>
                                             </tr>

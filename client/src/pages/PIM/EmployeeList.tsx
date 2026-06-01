@@ -22,8 +22,7 @@ const EmployeeList = () => {
         name: '',
         id: '',
         post: '',
-        dept: '',
-        manager: ''
+        dept: ''
     });
     const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
     const [departments, setDepartments] = React.useState<string[]>([]);
@@ -35,7 +34,7 @@ const EmployeeList = () => {
                 const [deptRes] = await Promise.all([
                     fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
-                
+
                 if (deptRes.ok) {
                     const data = await deptRes.json();
                     setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
@@ -111,9 +110,8 @@ const EmployeeList = () => {
             const matchesId = emp.employeeId.toLowerCase().includes(filters.id.toLowerCase());
             const matchesPost = designation.includes(filters.post.toLowerCase());
             const matchesDept = (emp.jobInfo?.department || '').toLowerCase().includes(filters.dept.toLowerCase());
-            const matchesManager = (emp.jobInfo?.reportingManager || '').toLowerCase().includes(filters.manager.toLowerCase());
 
-            return matchesName && matchesId && matchesPost && matchesDept && matchesManager;
+            return matchesName && matchesId && matchesPost && matchesDept;
         });
     }, [employees, filters, statusFilter]);
 
@@ -228,13 +226,13 @@ const EmployeeList = () => {
             {/* 2. Sleek Filter Bar */}
             <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-slate-200/60 sticky top-20 z-20">
                 <div className="flex border-b border-slate-200 mb-5 pb-1 gap-6">
-                    <button 
+                    <button
                         onClick={() => setStatusFilter('active')}
                         className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'active' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                     >
                         Active Employees
                     </button>
-                    <button 
+                    <button
                         onClick={() => setStatusFilter('past')}
                         className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'past' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                     >
@@ -242,13 +240,13 @@ const EmployeeList = () => {
                     </button>
                 </div>
                 <div className="flex flex-col xl:flex-row gap-6 items-start xl:items-center justify-between">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 flex-1 w-full">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 flex-1 w-full">
                         {/* Name Search */}
                         <div className="relative group">
                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
                             <input
                                 type="text"
-                                placeholder="Search Name or Job Title..."
+                                placeholder="Search Name "
                                 value={filters.name}
                                 onChange={(e) => setFilters(prev => ({ ...prev, name: e.target.value }))}
                                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"
@@ -260,7 +258,7 @@ const EmployeeList = () => {
                             <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
                             <input
                                 type="text"
-                                placeholder="Emp ID..."
+                                placeholder="Emp ID "
                                 value={filters.id}
                                 onChange={(e) => setFilters(prev => ({ ...prev, id: e.target.value }))}
                                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
@@ -272,7 +270,7 @@ const EmployeeList = () => {
                             <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none" size={16} />
                             <input
                                 type="text"
-                                placeholder="Job Title..."
+                                placeholder="Job Title "
                                 value={filters.post}
                                 onChange={(e) => setFilters(prev => ({ ...prev, post: e.target.value }))}
                                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"
@@ -292,18 +290,6 @@ const EmployeeList = () => {
                                     <option key={d} value={d}>{d}</option>
                                 ))}
                             </select>
-                        </div>
-
-                        {/* Manager Search */}
-                        <div className="relative group">
-                            <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
-                            <input
-                                type="text"
-                                placeholder="Manager..."
-                                value={filters.manager}
-                                onChange={(e) => setFilters(prev => ({ ...prev, manager: e.target.value }))}
-                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                            />
                         </div>
                     </div>
 
@@ -516,11 +502,10 @@ const EmployeeList = () => {
                                     <button
                                         key={p}
                                         onClick={() => setPage(p as number)}
-                                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-all ${
-                                            page === p
+                                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-all ${page === p
                                                 ? 'bg-indigo-600 text-white shadow-sm'
                                                 : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'
-                                        }`}
+                                            }`}
                                     >
                                         {p}
                                     </button>
@@ -564,7 +549,7 @@ const EmployeeList = () => {
                             </div>
                             {Object.values(filters).some(Boolean) && (
                                 <button
-                                    onClick={() => setFilters({ name: '', id: '', post: '', dept: '', manager: '' })}
+                                    onClick={() => setFilters({ name: '', id: '', post: '', dept: '' })}
                                     className="mt-4 px-6 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all text-sm"
                                 >
                                     Clear all filters

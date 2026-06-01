@@ -24,6 +24,7 @@ export const api = {
     // Expense Claims
     claims: `${API_BASE_URL}/api/claims`,
     claimMine: `${API_BASE_URL}/api/claims/mine`,
+    claimAll: `${API_BASE_URL}/api/claims/all`,
     claimPendingApprovals: `${API_BASE_URL}/api/claims/approvals/pending`,
     claimProfileProgress: `${API_BASE_URL}/api/claims/profile-progress`,
     claimDecision: (id: string) => `${API_BASE_URL}/api/claims/${id}/decision`,
