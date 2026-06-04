@@ -49,8 +49,10 @@ router.put('/records/:id',  ...auth(...EDIT_ROLES),    h(ctrl.updateRecord));
 router.post('/manual',      ...auth(...EDIT_ROLES),    h(ctrl.createManualRecord));
 router.get('/export',       ...auth(...MANAGER_ROLES), h(ctrl.exportCSV));
 router.get('/export/monthly', ...auth(...MANAGER_ROLES), h(ctrl.exportGlobalMonthly));
+router.get('/export/daily', ...auth(...MANAGER_ROLES), h(ctrl.exportGlobalDaily));
 router.get('/employee/:employeeId/monthly', ...auth(...ALL_ROLES), h(ctrl.getEmployeeMonthly));
 router.get('/employee/:employeeId/export/monthly', ...auth(...ALL_ROLES), h(ctrl.exportMonthly));
+router.get('/employee/:employeeId/export/daily', ...auth(...ALL_ROLES), h(ctrl.exportDaily));
 
 // ─── Live Feed ────────────────────────────────────────────────────────────────
 router.get('/live-feed', ...auth(...MANAGER_ROLES), h(ctrl.getLiveFeed));

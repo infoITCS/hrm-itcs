@@ -684,63 +684,24 @@ function escapeCsvField(value: any): string {
     return `"${str.replace(/"/g, '""')}"`;
 }
 
-export async function generateMonthlyCSV(monthStr: string, employeeId?: string): Promise<string> {
-    const start = `${monthStr}-01`;
-    const [year, month] = monthStr.split('-').map(Number);
-    const lastDay = new Date(year, month, 0).getDate();
-    const end = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
-
-    let records: any[] = [];
-    let employees: any[] = [];
-
-    if (employeeId) {
-        const [emp, recs] = await Promise.all([
-            repo.findEmployeeById(employeeId),
-            repo.findRecords({ employeeId, date: { from: start, to: end } }, 0, 1000)
-        ]);
-        if (!emp) throw new Error('Employee not found');
-        employees = [emp];
-        records = recs;
-    } else {
-        // Fetch employees and records with pagination to avoid truncation
-        const activeEmps = await repo.findActiveEmployees();
-        employees = activeEmps;
-        
-        let allRecs: any[] = [];
-        let skip = 0;
-        const limit = 5000;
-        
-        while (true) {
-            const batch = await repo.findRecords({ date: { from: start, to: end } }, skip, limit);
-            if (batch.length === 0) break;
-            allRecs = allRecs.concat(batch);
-            skip += limit;
-            if (batch.length < limit) break;
-        }
-        records = allRecs;
-    }
-
+function buildAttendanceExportCsv(employees: any[], records: any[], dates: string[]): string {
     const headers = ['Employee ID', 'Name', 'Date', 'Day', 'Status', 'Check In', 'Check Out', 'Work Hours', 'Late Mins'];
     const rows = [headers.join(',')];
 
-    // Map records for fast lookup
     const recordMap = new Map<string, any>();
     records.forEach(r => recordMap.set(`${r.employeeId}_${r.date}`, r));
 
     for (const emp of employees) {
-        for (let day = 1; day <= lastDay; day++) {
-            const dateStr = `${monthStr}-${String(day).padStart(2, '0')}`;
+        for (const dateStr of dates) {
             const record = recordMap.get(`${emp.employeeId}_${dateStr}`);
-            
             const dateObj = new Date(dateStr);
             const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-
             const checkIn = record?.checkIn ? new Date(record.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
             const checkOut = record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
             const workHrs = record?.workDurationMinutes ? (record.workDurationMinutes / 60).toFixed(2) : '0';
             const status = record?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent');
 
-            const row = [
+            rows.push([
                 escapeCsvField(emp.employeeId),
                 escapeCsvField(`${emp.firstName} ${emp.lastName || ''}`),
                 escapeCsvField(dateStr),
@@ -750,10 +711,58 @@ export async function generateMonthlyCSV(monthStr: string, employeeId?: string):
                 escapeCsvField(checkOut),
                 escapeCsvField(workHrs),
                 escapeCsvField(record?.lateMinutes || 0)
-            ];
-            rows.push(row.join(','));
+            ].join(','));
         }
     }
 
     return rows.join('\n');
+}
+
+async function fetchEmployeesAndRecords(
+    start: string,
+    end: string,
+    employeeId?: string
+): Promise<{ employees: any[]; records: any[] }> {
+    if (employeeId) {
+        const [emp, recs] = await Promise.all([
+            repo.findEmployeeById(employeeId),
+            repo.findRecords({ employeeId, date: { from: start, to: end } }, 0, 1000)
+        ]);
+        if (!emp) throw new Error('Employee not found');
+        return { employees: [emp], records: recs };
+    }
+
+    const employees = await repo.findActiveEmployees();
+    let records: any[] = [];
+    let skip = 0;
+    const limit = 5000;
+
+    while (true) {
+        const batch = await repo.findRecords({ date: { from: start, to: end } }, skip, limit);
+        if (batch.length === 0) break;
+        records = records.concat(batch);
+        skip += limit;
+        if (batch.length < limit) break;
+    }
+
+    return { employees, records };
+}
+
+export async function generateDailyCSV(dateStr: string, employeeId?: string): Promise<string> {
+    const { employees, records } = await fetchEmployeesAndRecords(dateStr, dateStr, employeeId);
+    return buildAttendanceExportCsv(employees, records, [dateStr]);
+}
+
+export async function generateMonthlyCSV(monthStr: string, employeeId?: string): Promise<string> {
+    const start = `${monthStr}-01`;
+    const [year, month] = monthStr.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+    const { employees, records } = await fetchEmployeesAndRecords(start, end, employeeId);
+    const dates = Array.from({ length: lastDay }, (_, i) =>
+        `${monthStr}-${String(i + 1).padStart(2, '0')}`
+    );
+
+    return buildAttendanceExportCsv(employees, records, dates);
 }

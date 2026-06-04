@@ -58,6 +58,7 @@ export default function EmployeeDashboard() {
     const [loading, setLoading] = useState(Boolean(user?.id));
     const [error, setError] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
+    const [downloadingDaily, setDownloadingDaily] = useState(false);
 
     const loadData = useCallback(async () => {
         if (!user?.id) {
@@ -77,6 +78,8 @@ export default function EmployeeDashboard() {
         }
     }, [user?.id, month]);
 
+    const todayStr = () => new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+
     const handleDownload = async () => {
         setDownloading(true);
         try {
@@ -86,6 +89,18 @@ export default function EmployeeDashboard() {
             alert(`Failed to download monthly sheet: ${err.message}`);
         } finally {
             setDownloading(false);
+        }
+    };
+
+    const handleDownloadDaily = async () => {
+        setDownloadingDaily(true);
+        try {
+            await attendanceApi.downloadDailyReport(todayStr(), 'me');
+        } catch (err: any) {
+            console.error('Download failed:', err);
+            alert(`Failed to download daily sheet: ${err.message}`);
+        } finally {
+            setDownloadingDaily(false);
         }
     };
 
@@ -155,6 +170,14 @@ export default function EmployeeDashboard() {
                             </button>
                         </div>
 
+                        <button
+                            onClick={handleDownloadDaily}
+                            disabled={downloadingDaily}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white/90 text-indigo-600 rounded-xl font-bold transition-all hover:bg-slate-50 active:scale-95 disabled:opacity-50 text-sm shadow-lg border border-white/50"
+                        >
+                            <Download size={16} className={downloadingDaily ? 'animate-bounce' : ''} />
+                            {downloadingDaily ? 'Preparing...' : 'Daily Sheet'}
+                        </button>
                         <button
                             onClick={handleDownload}
                             disabled={downloading}

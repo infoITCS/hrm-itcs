@@ -437,3 +437,35 @@ export async function exportGlobalMonthly(req: AuthRequest, res: Response) {
         res.status(200).send(csv);
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
 }
+
+export async function exportDaily(req: AuthRequest, res: Response) {
+    try {
+        let { employeeId } = req.params;
+
+        if (employeeId === 'me' || req.user?.role === 'employee') {
+            const emp = await repo.findEmployeeByUserId(req.user!.userId);
+            if (!emp) return res.status(404).json({ success: false, message: 'Employee profile not found' });
+
+            if (req.user?.role === 'employee' && employeeId !== 'me' && employeeId !== emp.employeeId) {
+                return res.status(403).json({ success: false, message: 'Access denied: You can only view your own records.' });
+            }
+            if (employeeId === 'me') employeeId = emp.employeeId;
+        }
+
+        const date = (req.query.date as string) || todayPKT();
+        const csv = await svc.generateDailyCSV(date, employeeId);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=attendance_${employeeId}_${date}.csv`);
+        res.status(200).send(csv);
+    } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
+}
+
+export async function exportGlobalDaily(req: AuthRequest, res: Response) {
+    try {
+        const date = (req.query.date as string) || todayPKT();
+        const csv = await svc.generateDailyCSV(date);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=attendance_all_${date}.csv`);
+        res.status(200).send(csv);
+    } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
+}

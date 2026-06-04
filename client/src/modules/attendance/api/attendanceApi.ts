@@ -114,6 +114,28 @@ export const attendanceApi = {
         window.URL.revokeObjectURL(url);
     },
 
+    downloadDailyReport: async (date: string, employeeId?: string) => {
+        const path = employeeId
+            ? `${V2}/employee/${employeeId}/export/daily`
+            : `${V2}/export/daily`;
+
+        const res = await fetch(`${path}${qs({ date })}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (!res.ok) throw new Error('Download failed');
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = employeeId ? `attendance_${employeeId}_${date}.csv` : `attendance_all_${date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    },
+
     // ── Records ────────────────────────────────────────────────────────────────
     getRecords: async (params: Record<string, string | number | undefined>, signal?: AbortSignal): Promise<{ data: AttendanceRecord[]; pagination: PaginationMeta }> => {
         const res = await fetch(`${V2}/records${qs(params)}`, { headers: headers(), signal });

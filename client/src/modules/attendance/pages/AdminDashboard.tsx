@@ -328,6 +328,13 @@ export default function AdminDashboard() {
                             <RefreshCw size={14} className={autoRefresh ? 'animate-spin [animation-duration:3s]' : ''} />
                             {autoRefresh ? 'Live' : 'Paused'}
                         </button>
+                            <button
+                                onClick={() => attendanceApi.downloadDailyReport(date)}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-white/90 text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all border border-white/50"
+                            >
+                                <Download size={16} />
+                                Daily Sheet
+                            </button>
                             <button 
                                 onClick={() => attendanceApi.downloadMonthlyReport(date.slice(0, 7))}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-white text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
