@@ -54,7 +54,7 @@ const Header = ({ title, onMenuClick }: {
     };
 
     return (
-        <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white h-14 min-[992px]:h-16 flex items-center justify-between px-4 min-[992px]:px-6 shadow-md sticky top-0 z-20 relative gap-2">
+        <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white h-14 min-[992px]:h-16 flex items-center justify-between px-4 min-[992px]:px-6 shadow-md fixed top-0 left-0 right-0 min-[992px]:left-64 z-20 transition-all duration-300 gap-2">
 
             {/* Hamburger: visible below 992px */}
             {onMenuClick && (

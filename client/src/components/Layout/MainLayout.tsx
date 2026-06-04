@@ -27,7 +27,7 @@ const MainLayout = () => {
                     isOpen={sidebarOpen}
                     onClose={closeSidebar}
                 />
-            <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300">
+            <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 pt-14 min-[992px]:pt-16 transition-all duration-300">
                 <Header
                     title={title}
                     onMenuClick={openSidebar}

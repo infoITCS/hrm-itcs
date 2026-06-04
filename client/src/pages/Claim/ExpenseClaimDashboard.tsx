@@ -3,7 +3,6 @@ import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import {
-    DollarSign,
     FileText,
     Inbox,
     PlusCircle,
@@ -12,6 +11,20 @@ import {
     X,
     History,
     Search,
+    Download,
+    Eye,
+    ZoomIn,
+    CheckCircle2,
+    XCircle,
+    Clock,
+    AlertTriangle,
+    Receipt,
+    User,
+    CalendarDays,
+    Tag,
+    MessageSquare,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
 
 type Category = 'Medical' | 'Training & Certification' | 'Travel' | 'Sales/Customer Gifts' | 'Other';
@@ -261,6 +274,7 @@ const ExpenseClaimDashboard = () => {
         if (forWhom === 'Self') setDependentId('');
     }, [forWhom]);
 
+
     const submitDisabledReason = useMemo(() => {
         if (loadingEmployee) return 'Loading employee...';
         const targetEmp = selectedEmployeeId 
@@ -354,7 +368,40 @@ const ExpenseClaimDashboard = () => {
     const [decisionAuthorizationBy, setDecisionAuthorizationBy] = useState('');
     const [deciding, setDeciding] = useState(false);
 
-    const openDecision = (c: any) => {
+    const decisionClaimRemainingLimit = useMemo(() => {
+        if (!decisionClaim || !decisionClaim.employeeId) return null;
+        if (decisionClaim.category !== 'Medical') return null;
+
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1).getTime();
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999).getTime();
+
+        const allLoadedClaims = [...history, ...approvals, ...mine];
+        const uniqueClaims = Array.from(new Map(allLoadedClaims.map(c => [c._id, c])).values());
+
+        const claimantClaims = uniqueClaims.filter((c: any) => {
+            if (c.employeeId !== decisionClaim.employeeId) return false;
+            if (c.category !== 'Medical') return false;
+            if (c.status === 'Draft' || c.status === 'Declined') return false;
+            if (c._id === decisionClaim._id) return false;
+            const createdAt = new Date(c.createdAt).getTime();
+            return createdAt >= startOfYear && createdAt <= endOfYear;
+        });
+
+        const claimedSoFar = claimantClaims.reduce((sum: number, c: any) => {
+            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            return sum + amount;
+        }, 0);
+
+        return Math.max(0, 60000 - claimedSoFar);
+    }, [decisionClaim, history, approvals, mine]);
+
+    // Receipt preview state
+    const [receiptBlobs, setReceiptBlobs] = useState<Record<string, string>>({});
+    const [loadingReceipts, setLoadingReceipts] = useState(false);
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+    const openDecision = async (c: any) => {
         setDecisionClaim(c);
         setDecision('Approved');
         setDecisionComments('');
@@ -362,7 +409,40 @@ const ExpenseClaimDashboard = () => {
         const initial = Math.min(c?.amountRequested || 0, allowed || 0);
         setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
         setDecisionAuthorizationBy('');
+        setReceiptBlobs({});
+        setLightboxIndex(null);
         setDecisionOpen(true);
+
+        // Pre-fetch all receipts so the reviewer can see them inline
+        const receipts: any[] = c?.receipts || [];
+        if (receipts.length === 0) return;
+        setLoadingReceipts(true);
+        const blobs: Record<string, string> = {};
+        await Promise.all(
+            receipts.map(async (r: any) => {
+                try {
+                    const resp = await fetch(api.claimReceipt(c._id, r._id), {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (!resp.ok) return;
+                    const blob = await resp.blob();
+                    blobs[r._id] = window.URL.createObjectURL(blob);
+                } catch {
+                    // ignore individual failures — download button still works
+                }
+            })
+        );
+        setReceiptBlobs(blobs);
+        setLoadingReceipts(false);
+    };
+
+    const closeDecision = () => {
+        setDecisionOpen(false);
+        // Revoke all blob URLs to free memory
+        Object.values(receiptBlobs).forEach(u => window.URL.revokeObjectURL(u));
+        setReceiptBlobs({});
+        setLightboxIndex(null);
+        setDecisionClaim(null);
     };
 
     const currentRequiresAuthorization = useMemo(() => {
@@ -410,6 +490,41 @@ const ExpenseClaimDashboard = () => {
     const [correctApprovedTotal, setCorrectApprovedTotal] = useState<number | ''>('');
     const [correcting, setCorrecting] = useState(false);
 
+    // Lock scroll on BOTH <html> and <body> when any modal is open.
+    // Some browsers scroll the <html> element, others scroll <body> — we cover both.
+    useEffect(() => {
+        const anyOpen = decisionOpen || correctOpen || lightboxIndex !== null;
+        const html = document.documentElement;
+        const body = document.body;
+        if (anyOpen) {
+            const scrollY = window.scrollY;
+            html.style.overflow = 'hidden';
+            body.style.overflow = 'hidden';
+            // Prevent layout shift from scrollbar disappearing
+            body.style.position = 'fixed';
+            body.style.top = `-${scrollY}px`;
+            body.style.width = '100%';
+        } else {
+            const scrollY = body.style.top;
+            html.style.overflow = '';
+            body.style.overflow = '';
+            body.style.position = '';
+            body.style.top = '';
+            body.style.width = '';
+            // Restore scroll position
+            if (scrollY) {
+                window.scrollTo(0, parseInt(scrollY || '0', 10) * -1);
+            }
+        }
+        return () => {
+            html.style.overflow = '';
+            body.style.overflow = '';
+            body.style.position = '';
+            body.style.top = '';
+            body.style.width = '';
+        };
+    }, [decisionOpen, correctOpen, lightboxIndex]);
+
     const openCorrect = (c: any) => {
         setCorrectClaim(c);
         setCorrectStatus(c?.status || 'Approved');
@@ -456,7 +571,7 @@ const ExpenseClaimDashboard = () => {
                     <div>
                         <div className="flex items-center gap-3 mb-2">
                             <div className="p-2.5 bg-white/20 backdrop-blur-sm rounded-xl">
-                                <DollarSign size={22} />
+                                <Receipt size={22} />
                             </div>
                             <span className="text-sm font-bold uppercase tracking-widest text-white/80">Expense Claims</span>
                         </div>
@@ -1092,102 +1207,491 @@ const ExpenseClaimDashboard = () => {
                 )}
             </div>
 
-            {decisionOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
-                        <div className="flex items-center justify-between p-5 border-b border-slate-100">
+            {/* ══════════════════════════════════════════════════════════════
+                  DOCUMENT REVIEW MODAL — HR / Admin full claim inspection
+            ══════════════════════════════════════════════════════════════ */}
+            {decisionOpen && decisionClaim && (
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-end min-[992px]:items-center justify-center bg-black/50 backdrop-blur-sm p-0 min-[992px]:p-6">
+                    {/* Main panel */}
+                    <div className="bg-white w-full min-[992px]:max-w-4xl max-h-[90vh] min-[992px]:max-h-[calc(100vh-5rem)] rounded-t-3xl min-[992px]:rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+
+                        {/* ── Header ─────────────────────────────────────────── */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-3xl sm:rounded-t-2xl flex-shrink-0">
                             <div>
-                                <div className="text-sm font-extrabold text-slate-800">Review Claim</div>
-                                <div className="text-xs text-slate-500">
-                                    {decisionClaim?.claimNo} • {decisionClaim?.employeeDetails 
-                                        ? `${decisionClaim.employeeDetails.firstName || ''} ${decisionClaim.employeeDetails.lastName || ''}`.trim() 
-                                        : 'Employee'} ({decisionClaim?.employeeId})
+                                <div className="text-base font-extrabold text-white flex items-center gap-2">
+                                    <Receipt size={18} />
+                                    Claim Review — {decisionClaim.claimNo}
+                                </div>
+                                <div className="text-xs text-white/75 mt-0.5">
+                                    {decisionClaim.employeeDetails
+                                        ? `${decisionClaim.employeeDetails.firstName || ''} ${decisionClaim.employeeDetails.lastName || ''}`.trim()
+                                        : 'Employee'}
+                                    {' '}({decisionClaim.employeeId})
                                 </div>
                             </div>
-                            <button onClick={() => setDecisionOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
+                            <button
+                                onClick={closeDecision}
+                                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            >
                                 <X size={18} />
                             </button>
                         </div>
-                        <div className="p-5 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600">Decision</label>
-                                    <select
-                                        value={decision}
-                                        onChange={e => setDecision(e.target.value as any)}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                    >
-                                        <option value="Approved">Approve</option>
-                                        <option value="Declined">Decline</option>
-                                    </select>
+
+                        {/* ── Scrollable body ────────────────────────────────── */}
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+
+                                {/* ── LEFT: Claim Details + Approval Trail ─────── */}
+                                <div className="p-6 space-y-5">
+
+                                    {/* Summary cards */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><Tag size={11} />CATEGORY</div>
+                                            <div className="font-bold text-slate-800 text-sm">{decisionClaim.category}</div>
+                                            {decisionClaim.subCategory && <div className="text-xs text-slate-500 mt-0.5">{decisionClaim.subCategory}</div>}
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><CalendarDays size={11} />EXPENSE DATE</div>
+                                            <div className="font-bold text-slate-800 text-sm">
+                                                {decisionClaim.expenseDate
+                                                    ? new Date(decisionClaim.expenseDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                    : '—'}
+                                            </div>
+                                        </div>
+                                        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                            <div className="flex items-center gap-1.5 text-indigo-400 text-[11px] font-bold mb-1">
+                                                <span className="text-[10px] font-black text-indigo-500/80 mr-0.5 leading-none">PKR</span>
+                                                REQUESTED
+                                            </div>
+                                            <div className="font-extrabold text-indigo-800 text-sm">{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</div>
+                                        </div>
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                            <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-bold mb-1">
+                                                <ShieldCheck size={11} />
+                                                {decisionClaim.category === 'Medical' ? 'REMAINING LIMIT' : 'POLICY LIMIT'}
+                                            </div>
+                                            <div className="font-bold text-emerald-700 text-sm">
+                                                {decisionClaim.category === 'Medical' && typeof decisionClaimRemainingLimit === 'number'
+                                                    ? formatMoney(decisionClaimRemainingLimit, decisionClaim.currency)
+                                                    : formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)
+                                                }
+                                            </div>
+                                            {decisionClaim.category === 'Medical' && typeof decisionClaimRemainingLimit === 'number' && decisionClaim.amountRequested > decisionClaimRemainingLimit && (
+                                                <div className="text-[10px] text-rose-500 font-bold mt-0.5">
+                                                    ↑ Over by {formatMoney(decisionClaim.amountRequested - decisionClaimRemainingLimit, decisionClaim.currency)}
+                                                </div>
+                                            )}
+                                            {decisionClaim.category !== 'Medical' && decisionClaim.amountRequested > decisionClaim.amountAllowed && (
+                                                <div className="text-[10px] text-rose-500 font-bold mt-0.5">
+                                                    ↑ Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* For whom */}
+                                    {(decisionClaim.forWhom || decisionClaim.dependentName) && (
+                                        <div className="flex items-start gap-2 text-sm">
+                                            <User size={14} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <span className="text-slate-500">For: </span>
+                                                <span className="font-semibold text-slate-700">
+                                                    {decisionClaim.forWhom === 'Dependent' && decisionClaim.dependentName
+                                                        ? `${decisionClaim.dependentName} (Dependent)`
+                                                        : decisionClaim.forWhom || 'Self'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Purpose */}
+                                    {decisionClaim.purpose && (
+                                        <div className="flex items-start gap-2 text-sm">
+                                            <MessageSquare size={14} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <span className="text-slate-500">Purpose: </span>
+                                                <span className="font-semibold text-slate-700">{decisionClaim.purpose}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Employee note */}
+                                    {decisionClaim.notes && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                            <div className="text-[11px] font-bold text-amber-700 mb-1 flex items-center gap-1.5"><MessageSquare size={11} />EMPLOYEE NOTE</div>
+                                            <div className="text-sm text-amber-900">{decisionClaim.notes}</div>
+                                        </div>
+                                    )}
+
+                                    {/* Eligibility flags */}
+                                    {(decisionClaim.eligibility?.flags || []).length > 0 && (
+                                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+                                            <div className="text-[11px] font-bold text-rose-700 mb-2 flex items-center gap-1.5"><AlertTriangle size={11} />ELIGIBILITY FLAGS</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(decisionClaim.eligibility.flags as string[]).map((f: string) => (
+                                                    <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">{f}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Approval trail */}
+                                    {(decisionClaim.approvals || []).length > 0 && (
+                                        <div>
+                                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Approval Trail</div>
+                                            <div className="space-y-2">
+                                                {(decisionClaim.approvals as any[]).map((appr: any, idx: number) => {
+                                                    const isPending = appr.status === 'Pending';
+                                                    const isApproved = appr.status === 'Approved';
+                                                    const isDeclined = appr.status === 'Declined';
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${
+                                                                isPending ? 'bg-amber-50 border-amber-200'
+                                                                : isApproved ? 'bg-emerald-50 border-emerald-200'
+                                                                : isDeclined ? 'bg-rose-50 border-rose-200'
+                                                                : 'bg-slate-50 border-slate-200'
+                                                            }`}
+                                                        >
+                                                            <div className="flex-shrink-0 mt-0.5">
+                                                                {isPending && <Clock size={15} className="text-amber-500" />}
+                                                                {isApproved && <CheckCircle2 size={15} className="text-emerald-500" />}
+                                                                {isDeclined && <XCircle size={15} className="text-rose-500" />}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="font-bold capitalize text-slate-700">
+                                                                    Stage {idx + 1}: {appr.stage?.replace(/([A-Z])/g, ' $1').trim()}
+                                                                </div>
+                                                                <div className={`text-xs font-semibold mt-0.5 ${
+                                                                    isPending ? 'text-amber-600' : isApproved ? 'text-emerald-600' : 'text-rose-600'
+                                                                }`}>{appr.status}</div>
+                                                                {appr.comments && <div className="text-xs text-slate-500 mt-1 italic">"{appr.comments}"</div>}
+                                                                {typeof appr.approvedAmount === 'number' && (
+                                                                    <div className="text-xs text-slate-600 mt-0.5">Approved: {formatMoney(appr.approvedAmount, decisionClaim.currency)}</div>
+                                                                )}
+                                                                {appr.decidedAt && (
+                                                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                                                        {new Date(appr.decidedAt).toLocaleString('en-PK')}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600">Approved Amount (optional)</label>
-                                    <input
-                                        type="number"
-                                        value={decisionApprovedAmount}
-                                        onChange={e => setDecisionApprovedAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                        disabled={decision === 'Declined'}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50"
-                                    />
-                                    <p className="text-[11px] text-slate-400 mt-1">
-                                        Requested: {formatMoney(decisionClaim?.amountRequested, decisionClaim?.currency)} • Allowed: {formatMoney(decisionClaim?.amountAllowed, decisionClaim?.currency)}
-                                        {decisionClaim?.amountRequested > decisionClaim?.amountAllowed && (
-                                            <span className="text-rose-500 font-bold ml-1.5">
-                                                (Disallowed: {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
-                                            </span>
+
+                                {/* ── RIGHT: Receipt / Document Viewer ──────────── */}
+                                <div className="p-6 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                                            <Receipt size={12} />
+                                            Uploaded Documents ({(decisionClaim.receipts || []).length})
+                                        </div>
+                                        {loadingReceipts && (
+                                            <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                                                <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                                Loading previews…
+                                            </div>
                                         )}
-                                    </p>
+                                    </div>
+
+                                    {(decisionClaim.receipts || []).length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-12 rounded-xl border-2 border-dashed border-slate-200">
+                                            <FileText size={36} className="text-slate-200 mb-3" />
+                                            <div className="text-sm font-semibold text-slate-400">No documents uploaded</div>
+                                            <div className="text-xs text-slate-300 mt-1 text-center max-w-48">
+                                                {decisionClaim.category === 'Medical'
+                                                    ? '⚠️ Medical claims should include receipts — flag for review'
+                                                    : 'This claim type may not require receipts'}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {(decisionClaim.receipts as any[]).map((r: any, idx: number) => {
+                                                const blobUrl = receiptBlobs[r._id];
+                                                const isImage = r.contentType?.startsWith('image/');
+                                                const isPdf = r.contentType === 'application/pdf';
+
+                                                return (
+                                                    <div key={r._id} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                                                        {/* File header bar */}
+                                                        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <div className={`p-1.5 rounded-lg flex-shrink-0 ${
+                                                                    isImage ? 'bg-indigo-100' : isPdf ? 'bg-rose-100' : 'bg-slate-100'
+                                                                }`}>
+                                                                    <FileText size={12} className={isImage ? 'text-indigo-600' : isPdf ? 'text-rose-600' : 'text-slate-600'} />
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <div className="text-xs font-bold text-slate-700 truncate">{r.fileName}</div>
+                                                                    <div className="text-[10px] text-slate-400">{r.contentType}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                                                {blobUrl && isPdf && (
+                                                                    <a
+                                                                        href={blobUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold hover:bg-rose-100 transition-colors"
+                                                                    >
+                                                                        <Eye size={11} /> View PDF
+                                                                    </a>
+                                                                )}
+                                                                {blobUrl && isImage && (
+                                                                    <button
+                                                                        onClick={() => setLightboxIndex(idx)}
+                                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold hover:bg-indigo-100 transition-colors"
+                                                                    >
+                                                                        <ZoomIn size={11} /> Enlarge
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => downloadReceipt(decisionClaim._id, r._id, r.fileName)}
+                                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white text-slate-700 border border-slate-200 text-[11px] font-bold hover:bg-slate-50 transition-colors"
+                                                                >
+                                                                    <Download size={11} /> Download
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Preview area */}
+                                                        {loadingReceipts && !blobUrl ? (
+                                                            <div className="flex items-center justify-center h-40 bg-slate-50">
+                                                                <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                                            </div>
+                                                        ) : blobUrl && isImage ? (
+                                                            <img
+                                                                src={blobUrl}
+                                                                alt={r.fileName}
+                                                                className="w-full max-h-72 object-contain bg-slate-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+                                                                onClick={() => setLightboxIndex(idx)}
+                                                                title="Click to enlarge"
+                                                            />
+                                                        ) : blobUrl && isPdf ? (
+                                                            <div className="flex flex-col items-center justify-center h-36 gap-3 bg-slate-50">
+                                                                <div className="p-4 bg-rose-50 rounded-2xl">
+                                                                    <FileText size={32} className="text-rose-400" />
+                                                                </div>
+                                                                <div className="text-xs font-semibold text-slate-500">PDF — click "View PDF" above to open</div>
+                                                            </div>
+                                                        ) : !loadingReceipts ? (
+                                                            <div className="flex items-center justify-center h-24 bg-slate-50 text-slate-300 text-xs">
+                                                                Preview unavailable — use Download
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* Verification checklist */}
+                                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mt-2">
+                                        <div className="flex items-start gap-2">
+                                            <ShieldCheck size={15} className="text-indigo-600 flex-shrink-0 mt-0.5" />
+                                            <div className="text-xs text-indigo-800">
+                                                <div className="font-bold mb-1.5">Verification Checklist</div>
+                                                <ul className="space-y-1 text-indigo-700">
+                                                    <li>✓ Receipt dates match the stated expense date</li>
+                                                    <li>✓ Receipt amounts match the claim amount</li>
+                                                    <li>✓ Patient / beneficiary name is correct</li>
+                                                    <li>✓ Document is legible and unaltered</li>
+                                                    <li>✓ Vendor / hospital name is visible and valid</li>
+                                                    {decisionClaim.forWhom === 'Dependent' && (
+                                                        <li className="font-semibold">✓ Dependent name ({decisionClaim.dependentName}) matches receipt</li>
+                                                    )}
+                                                    {decisionClaim.category === 'Medical' && (
+                                                        <li>✓ Official stamp / letterhead present on medical receipt</li>
+                                                    )}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            {decision === 'Approved' && currentRequiresAuthorization && (
+                            {/* ── Decision Form — full-width bottom strip ───────── */}
+                            <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-5 space-y-4">
+                                <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Your Decision</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
+                                        <div className="grid grid-cols-2 gap-2 mt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setDecision('Approved');
+                                                    if (decisionApprovedAmount === 0 || decisionApprovedAmount === '') {
+                                                        const initial = decisionClaim.amountAllowed;
+                                                        setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
+                                                    }
+                                                }}
+                                                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                    decision === 'Approved'
+                                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
+                                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <CheckCircle2 size={16} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
+                                                Approve
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setDecision('Declined');
+                                                    setDecisionApprovedAmount(0);
+                                                }}
+                                                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                    decision === 'Declined'
+                                                        ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
+                                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <XCircle size={16} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
+                                                Decline
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600">Approved Amount</label>
+                                        <input
+                                            type="number"
+                                            value={decisionApprovedAmount}
+                                            onChange={e => setDecisionApprovedAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            disabled={decision === 'Declined'}
+                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-100 bg-white"
+                                        />
+                                        <p className="text-[11px] text-slate-400 mt-1">
+                                            Requested: <strong>{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</strong>
+                                            {' '}• Allowed: <strong className="text-emerald-600">{formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}</strong>
+                                            {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
+                                                <span className="text-rose-500 font-bold ml-1.5">
+                                                    (Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {decision === 'Approved' && currentRequiresAuthorization && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600">Authorization (out-of-policy)</label>
+                                        <select
+                                            value={decisionAuthorizationBy}
+                                            onChange={e => setDecisionAuthorizationBy(e.target.value)}
+                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                        >
+                                            <option value="">Select authorization level</option>
+                                            <option value="HR">HR</option>
+                                            <option value="Senior Management">Senior Management</option>
+                                        </select>
+                                    </div>
+                                )}
+
                                 <div>
-                                    <label className="text-xs font-bold text-slate-600">Authorization for out-of-policy claim</label>
-                                    <select
-                                        value={decisionAuthorizationBy}
-                                        onChange={e => setDecisionAuthorizationBy(e.target.value)}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                    >
-                                        <option value="">Select authorization</option>
-                                        <option value="HR">HR</option>
-                                        <option value="Senior Management">Senior Management</option>
-                                    </select>
+                                    <label className="text-xs font-bold text-slate-600">Review Comments</label>
+                                    <textarea
+                                        value={decisionComments}
+                                        onChange={e => setDecisionComments(e.target.value)}
+                                        rows={3}
+                                        placeholder={decision === 'Declined' ? 'State the reason for declining…' : 'Optional note for the employee…'}
+                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white resize-none"
+                                    />
                                 </div>
-                            )}
 
-                            <div>
-                                <label className="text-xs font-bold text-slate-600">Comments (optional)</label>
-                                <textarea
-                                    value={decisionComments}
-                                    onChange={e => setDecisionComments(e.target.value)}
-                                    rows={3}
-                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
-                                    onClick={() => setDecisionOpen(false)}
-                                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={submitDecision}
-                                    disabled={deciding}
-                                    className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50"
-                                >
-                                    {deciding ? 'Saving…' : 'Submit'}
-                                </button>
+                                <div className="flex items-center justify-end gap-3">
+                                    <button
+                                        onClick={closeDecision}
+                                        className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-100 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={submitDecision}
+                                        disabled={deciding}
+                                        className={`px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                                            decision === 'Declined'
+                                                ? 'bg-rose-600 hover:bg-rose-700'
+                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                        }`}
+                                    >
+                                        {deciding ? (
+                                            'Saving…'
+                                        ) : decision === 'Approved' ? (
+                                            <>
+                                                <CheckCircle2 size={16} />
+                                                Approve Claim
+                                            </>
+                                        ) : (
+                                            <>
+                                                <XCircle size={16} />
+                                                Decline Claim
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* ── Full-screen image lightbox ──────────────────────────── */}
+                    {lightboxIndex !== null && (() => {
+                        const receipts: any[] = decisionClaim.receipts || [];
+                        const imageReceipts = receipts.filter((r: any) => r.contentType?.startsWith('image/'));
+                        const lr = imageReceipts[lightboxIndex];
+                        const lrUrl = lr ? receiptBlobs[lr._id] : null;
+                        return lrUrl ? (
+                            <div
+                                className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-[60] flex items-center justify-center bg-black/95 p-4"
+                                onClick={() => setLightboxIndex(null)}
+                            >
+                                <button
+                                    className="absolute top-4 right-4 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"
+                                    onClick={() => setLightboxIndex(null)}
+                                >
+                                    <X size={20} />
+                                </button>
+                                {imageReceipts.length > 1 && (
+                                    <>
+                                        <button
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                            disabled={lightboxIndex === 0}
+                                            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.max(0, (i ?? 1) - 1)); }}
+                                        >
+                                            <ChevronLeft size={24} />
+                                        </button>
+                                        <button
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                            disabled={lightboxIndex === imageReceipts.length - 1}
+                                            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.min(imageReceipts.length - 1, (i ?? 0) + 1)); }}
+                                        >
+                                            <ChevronRight size={24} />
+                                        </button>
+                                    </>
+                                )}
+                                <img
+                                    src={lrUrl}
+                                    alt={lr.fileName}
+                                    className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+                                    onClick={e => e.stopPropagation()}
+                                />
+                                <div className="absolute bottom-4 left-0 right-0 text-center text-white/50 text-xs">
+                                    {lr.fileName} • {lightboxIndex + 1} / {imageReceipts.length} • Click outside to close
+                                </div>
+                            </div>
+                        ) : null;
+                    })()}
                 </div>
             )}
 
             {correctOpen && isAdminLike && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/40 p-4">
                     <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
                         <div className="flex items-center justify-between p-5 border-b border-slate-100">
                             <div>
