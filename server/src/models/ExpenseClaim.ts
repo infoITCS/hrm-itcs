@@ -53,6 +53,7 @@ const ExpenseClaimSchema = new Schema(
 
         category: { type: String, required: true, enum: ['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'] },
         subCategory: { type: String },
+        expenseDate: { type: Date, default: Date.now },
 
         forWhom: { type: String, enum: ['Self', 'Dependent'], required: true, default: 'Self' },
         dependentId: { type: String }, // Employee.dependents[].id/_id stringified OR CNIC/identifier
@@ -104,6 +105,16 @@ ExpenseClaimSchema.pre('save', function (next) {
     
     next();
 });
+
+ExpenseClaimSchema.virtual('employeeDetails', {
+    ref: 'Employee',
+    localField: 'employeeId',
+    foreignField: 'employeeId',
+    justOne: true
+});
+
+ExpenseClaimSchema.set('toObject', { virtuals: true });
+ExpenseClaimSchema.set('toJSON', { virtuals: true });
 
 export default mongoose.model('ExpenseClaim', ExpenseClaimSchema);
 

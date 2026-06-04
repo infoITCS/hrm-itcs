@@ -11,12 +11,21 @@ import {
     ShieldCheck,
     X,
     History,
+    Search,
 } from 'lucide-react';
 
 type Category = 'Medical' | 'Training & Certification' | 'Travel' | 'Sales/Customer Gifts' | 'Other';
 type ForWhom = 'Self' | 'Dependent';
 
 type Claim = any;
+
+const SUB_CATEGORIES: Record<Category, string[]> = {
+    Medical: ['Consultation', 'Pharmacy / Medicines', 'Lab Test / Diagnostics', 'Hospitalization', 'Dental Treatment', 'Optical / Glasses', 'Other Medical'],
+    'Training & Certification': ['Course Fee', 'Certification Exam Fee', 'Books / Study Material', 'Workshop / Seminar Fee', 'Other Training'],
+    Travel: ['Hotel Accommodation', 'Flight / Train Ticket', 'Fuel / Mileage', 'Taxi / Ride Share', 'Meals / Per Diem', 'Other Travel'],
+    'Sales/Customer Gifts': ['Customer Lunch / Dinner', 'Client Entertainment', 'Corporate Gift Item', 'Other Sales Expense'],
+    Other: ['Office Supplies', 'Software Subscription', 'Internet / Mobile Bill', 'Miscellaneous']
+};
 
 const STATUS_COLORS: Record<string, string> = {
     'Pending Team Lead': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -77,15 +86,37 @@ const ExpenseClaimDashboard = () => {
     const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
 
-    const isApprover = role === 'manager' || role === 'admin' || role === 'super-admin';
-    const isAdminLike = role === 'admin' || role === 'super-admin';
+    // Admin/HR submission on behalf of employee
+    const [allEmployees, setAllEmployees] = useState<any[]>([]);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+
+    // New form fields
+    const [expenseDate, setExpenseDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+    // PIM-style filters state
+    const [filterClaimNo, setFilterClaimNo] = useState('');
+    const [filterEmployeeName, setFilterEmployeeName] = useState('');
+    const [filterCategory, setFilterCategory] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
+    const [filterStartDate, setFilterStartDate] = useState('');
+    const [filterEndDate, setFilterEndDate] = useState('');
+
+    const isApprover = role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr';
+    const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
 
     const remainingMedicalLimit = useMemo(() => {
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(currentYear, 0, 1).getTime();
         const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999).getTime();
 
-        const medicalClaims = mine.filter((c: any) => {
+        let relevantClaims: any[] = [];
+        if (isAdminLike && selectedEmployeeId) {
+            relevantClaims = history.filter((c: any) => c.employeeId === selectedEmployeeId);
+        } else {
+            relevantClaims = mine;
+        }
+
+        const medicalClaims = relevantClaims.filter((c: any) => {
             if (c.category !== 'Medical') return false;
             if (c.status === 'Draft' || c.status === 'Declined') return false;
             const createdAt = new Date(c.createdAt).getTime();
@@ -98,7 +129,7 @@ const ExpenseClaimDashboard = () => {
         }, 0);
 
         return Math.max(0, 60000 - claimedSoFar);
-    }, [mine]);
+    }, [mine, history, selectedEmployeeId, isAdminLike]);
 
     const fetchEmployee = useCallback(async () => {
         if (!user?.id) return;
@@ -171,13 +202,60 @@ const ExpenseClaimDashboard = () => {
         }
     }, [headers, isAdminLike]);
 
+    const fetchAllEmployees = useCallback(async () => {
+        if (!isAdminLike) return;
+        try {
+            const r = await fetch(api.employees, { headers });
+            const d = await r.json();
+            const empArray = Array.isArray(d) ? d : (d.employees || []);
+            setAllEmployees(empArray);
+        } catch {
+            // ignore
+        }
+    }, [headers, isAdminLike]);
+
+    const filterList = useCallback((list: any[]) => {
+        return list.filter(c => {
+            const matchesClaimNo = !filterClaimNo || (c.claimNo || '').toLowerCase().includes(filterClaimNo.toLowerCase());
+            const matchesCategory = !filterCategory || c.category === filterCategory;
+            const matchesStatus = !filterStatus || c.status === filterStatus;
+            
+            let matchesEmployee = true;
+            if (filterEmployeeName) {
+                const name = `${c.employeeDetails?.firstName || ''} ${c.employeeDetails?.lastName || ''}`.toLowerCase();
+                const empId = (c.employeeId || '').toLowerCase();
+                matchesEmployee = name.includes(filterEmployeeName.toLowerCase()) || empId.includes(filterEmployeeName.toLowerCase());
+            }
+            
+            let matchesDate = true;
+            const claimDate = c.expenseDate ? new Date(c.expenseDate) : new Date(c.createdAt);
+            if (filterStartDate) {
+                const start = new Date(filterStartDate);
+                start.setHours(0, 0, 0, 0);
+                matchesDate = matchesDate && claimDate >= start;
+            }
+            if (filterEndDate) {
+                const end = new Date(filterEndDate);
+                end.setHours(23, 59, 59, 999);
+                matchesDate = matchesDate && claimDate <= end;
+            }
+            
+            return matchesClaimNo && matchesCategory && matchesStatus && matchesEmployee && matchesDate;
+        });
+    }, [filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate]);
+
+    const filteredMine = useMemo(() => filterList(mine), [mine, filterList]);
+    const filteredApprovals = useMemo(() => filterList(approvals), [approvals, filterList]);
+    const filteredHistory = useMemo(() => filterList(history), [history, filterList]);
+
     useEffect(() => {
         fetchEmployee();
         fetchMine();
         fetchApprovals();
         fetchProgress();
         fetchHistory();
-    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory]);
+        fetchAllEmployees();
+    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees]);
 
     useEffect(() => {
         if (forWhom === 'Self') setDependentId('');
@@ -185,9 +263,15 @@ const ExpenseClaimDashboard = () => {
 
     const submitDisabledReason = useMemo(() => {
         if (loadingEmployee) return 'Loading employee...';
-        if (!employee?.employeeId) return 'Employee profile not found';
+        const targetEmp = selectedEmployeeId 
+            ? allEmployees.find(emp => emp.employeeId === selectedEmployeeId) 
+            : employee;
+        if (!targetEmp?.employeeId) return 'Employee profile not found';
         if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
-        if (forWhom === 'Dependent' && !dependentId) return 'Select a registered dependent';
+        if (category === 'Medical' && forWhom === 'Dependent' && !dependentId) return 'Select a registered dependent';
+        if (category === 'Medical' && amountRequested > remainingMedicalLimit && !isAdminLike) {
+            return `Amount exceeds remaining medical limit (${formatMoney(remainingMedicalLimit)}). Out-of-policy claims can only be submitted by HR or Admin.`;
+        }
         if (category === 'Medical' && receiptFiles.length === 0) return 'Receipt upload is required for Medical claims';
         if (['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category)) {
             const hasComment = notes.trim().length >= 5;
@@ -197,7 +281,7 @@ const ExpenseClaimDashboard = () => {
             }
         }
         return '';
-    }, [loadingEmployee, employee?.employeeId, amountRequested, forWhom, dependentId, category, notes, receiptFiles.length]);
+    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, forWhom, dependentId, category, remainingMedicalLimit, notes, receiptFiles.length]);
 
     const handleSubmit = async () => {
         if (submitDisabledReason) return;
@@ -206,8 +290,10 @@ const ExpenseClaimDashboard = () => {
             const receipts = await Promise.all(receiptFiles.map(readFileAsBase64));
 
             const payload = {
+                employeeId: selectedEmployeeId || undefined,
                 category,
                 subCategory: subCategory.trim() || undefined,
+                expenseDate,
                 forWhom,
                 dependentId: forWhom === 'Dependent' ? dependentId : undefined,
                 purpose: purpose.trim() || undefined,
@@ -221,7 +307,9 @@ const ExpenseClaimDashboard = () => {
             if (!r.ok) throw new Error(d?.message || 'Failed to submit claim');
 
             // Reset form
+            setSelectedEmployeeId('');
             setSubCategory('');
+            setExpenseDate(new Date().toISOString().split('T')[0]);
             setForWhom('Self');
             setDependentId('');
             setPurpose('');
@@ -434,18 +522,129 @@ const ExpenseClaimDashboard = () => {
                         </button>
                     ))}
                     <div className="ml-auto pr-2 text-xs text-slate-400 font-medium">
-                        {employee?.employeeId ? `Employee: ${employee.employeeId}` : '—'}
+                        {employee ? (
+                            `Employee: ${`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.employeeId} (${employee.employeeId})`
+                        ) : (
+                            '—'
+                        )}
                     </div>
                 </div>
+
+                {tab !== 'submit' && (
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                            <input
+                                type="text"
+                                placeholder="Search Claim #..."
+                                value={filterClaimNo}
+                                onChange={e => setFilterClaimNo(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                            />
+                        </div>
+
+                        {tab !== 'mine' && (
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                <input
+                                    type="text"
+                                    placeholder="Search Employee..."
+                                    value={filterEmployeeName}
+                                    onChange={e => setFilterEmployeeName(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                />
+                            </div>
+                        )}
+
+                        <select
+                            value={filterCategory}
+                            onChange={e => setFilterCategory(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                        >
+                            <option value="">All Categories</option>
+                            {['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'].map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+
+                        <select
+                            value={filterStatus}
+                            onChange={e => setFilterStatus(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                        >
+                            <option value="">All Statuses</option>
+                            {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'].map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+
+                        <input
+                            type="date"
+                            value={filterStartDate}
+                            onChange={e => setFilterStartDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                            title="Start Date"
+                        />
+
+                        <input
+                            type="date"
+                            value={filterEndDate}
+                            onChange={e => setFilterEndDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                            title="End Date"
+                        />
+                        
+                        <button
+                            onClick={() => {
+                                setFilterClaimNo('');
+                                setFilterEmployeeName('');
+                                setFilterCategory('');
+                                setFilterStatus('');
+                                setFilterStartDate('');
+                                setFilterEndDate('');
+                            }}
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                        >
+                            <X size={12} /> Clear
+                        </button>
+                    </div>
+                )}
 
                 {tab === 'submit' && (
                     <div className="p-6 space-y-6">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {isAdminLike && (
+                                <div className="lg:col-span-2">
+                                    <label className="text-xs font-bold text-slate-600">Apply On Behalf Of Employee (Admin/HR Only)</label>
+                                    <select
+                                        value={selectedEmployeeId}
+                                        onChange={e => {
+                                            const empId = e.target.value;
+                                            setSelectedEmployeeId(empId);
+                                            const emp = allEmployees.find(emp => emp.employeeId === empId);
+                                            if (emp) {
+                                                setDependents(Array.isArray(emp.dependents) ? emp.dependents : []);
+                                            } else {
+                                                setDependents(Array.isArray(employee?.dependents) ? employee.dependents : []);
+                                            }
+                                        }}
+                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                    >
+                                        <option value="">Myself ({employee ? `${employee.firstName} ${employee.lastName} (${employee.employeeId})` : 'Loading...' })</option>
+                                        {allEmployees.filter(emp => emp.employeeId !== employee?.employeeId).map(emp => (
+                                            <option key={emp.employeeId} value={emp.employeeId}>
+                                                {emp.firstName} {emp.lastName} ({emp.employeeId})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
                             {category === 'Medical' && (
                                 <div className="lg:col-span-2 p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-indigo-700 text-xs font-bold animate-fadeIn">
-                                    <span>Remaining Medical balance for {new Date().getFullYear()}:</span>
+                                    <span>Remaining Medical balance for {selectedEmployeeId ? "selected employee" : "you"} ({new Date().getFullYear()}):</span>
                                     <span className="text-sm font-extrabold">
-                                        {loadingMine ? 'Loading...' : formatMoney(remainingMedicalLimit)}
+                                        {(selectedEmployeeId ? loadingHistory : loadingMine) ? 'Loading...' : formatMoney(remainingMedicalLimit)}
                                     </span>
                                 </div>
                             )}
@@ -453,7 +652,11 @@ const ExpenseClaimDashboard = () => {
                                 <label className="text-xs font-bold text-slate-600">Category</label>
                                 <select
                                     value={category}
-                                    onChange={e => setCategory(e.target.value as Category)}
+                                    onChange={e => {
+                                        const cat = e.target.value as Category;
+                                        setCategory(cat);
+                                        setSubCategory('');
+                                    }}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 >
                                     {(['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'] as Category[]).map(c => (
@@ -462,44 +665,27 @@ const ExpenseClaimDashboard = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-600">Sub-category (optional)</label>
-                                <input
+                                <label className="text-xs font-bold text-slate-600">Sub-category</label>
+                                <select
                                     value={subCategory}
                                     onChange={e => setSubCategory(e.target.value)}
-                                    placeholder={category === 'Medical' ? 'e.g., Consultation / Lab / Pharmacy' : 'e.g., Course / Exam / Hotel'}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                />
+                                >
+                                    <option value="">Select Sub-category</option>
+                                    {(SUB_CATEGORIES[category] || []).map(sc => (
+                                        <option key={sc} value={sc}>{sc}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div>
-                                <label className="text-xs font-bold text-slate-600">For whom</label>
-                                <select
-                                    value={forWhom}
-                                    onChange={e => setForWhom(e.target.value as ForWhom)}
+                                <label className="text-xs font-bold text-slate-600">Expense/Medical Date</label>
+                                <input
+                                    type="date"
+                                    value={expenseDate}
+                                    onChange={e => setExpenseDate(e.target.value)}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                >
-                                    <option value="Self">Self</option>
-                                    <option value="Dependent">Dependent</option>
-                                </select>
-                                {forWhom === 'Dependent' && (
-                                    <div className="mt-2">
-                                        <select
-                                            value={dependentId}
-                                            onChange={e => setDependentId(e.target.value)}
-                                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                        >
-                                            <option value="">Select registered dependent</option>
-                                            {dependents.map(d => (
-                                                <option key={String(d._id)} value={String(d._id)}>
-                                                    {d.name} ({d.relation})
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <p className="text-[11px] text-slate-400 mt-1">
-                                            Claims for non-registered dependents are blocked automatically.
-                                        </p>
-                                    </div>
-                                )}
+                                />
                             </div>
 
                             <div>
@@ -517,6 +703,39 @@ const ExpenseClaimDashboard = () => {
                                 )}
                             </div>
 
+                            {category === 'Medical' && (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-600">For whom</label>
+                                    <select
+                                        value={forWhom}
+                                        onChange={e => setForWhom(e.target.value as ForWhom)}
+                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                    >
+                                        <option value="Self">Self</option>
+                                        <option value="Dependent">Dependent</option>
+                                    </select>
+                                    {forWhom === 'Dependent' && (
+                                        <div className="mt-2">
+                                            <select
+                                                value={dependentId}
+                                                onChange={e => setDependentId(e.target.value)}
+                                                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                            >
+                                                <option value="">Select registered dependent</option>
+                                                {dependents.map(d => (
+                                                    <option key={String(d._id)} value={String(d._id)}>
+                                                        {d.name} ({d.relation})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <p className="text-[11px] text-slate-400 mt-1">
+                                                Claims for non-registered dependents are blocked automatically.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
 
                             <div>
                                 <label className="text-xs font-bold text-slate-600">Amount Requested (PKR)</label>
@@ -530,7 +749,7 @@ const ExpenseClaimDashboard = () => {
                                  <p className="text-[11px] text-slate-400 mt-1">
                                      {category === 'Medical' ? (
                                          <span>
-                                             Claims exceeding your remaining <strong>{formatMoney(remainingMedicalLimit)}</strong> balance are flagged as out-of-policy.
+                                             Claims exceeding {selectedEmployeeId ? "the selected employee's" : "your"} remaining <strong>{formatMoney(remainingMedicalLimit)}</strong> balance are flagged as out-of-policy.
                                          </span>
                                      ) : (
                                          'Out-of-policy amounts are flagged and require HR/Senior Management authorization.'
@@ -594,7 +813,7 @@ const ExpenseClaimDashboard = () => {
                     <div className="p-6">
                         {loadingMine ? (
                             <div className="text-slate-400 text-sm">Loading…</div>
-                        ) : mine.length === 0 ? (
+                        ) : filteredMine.length === 0 ? (
                             <div className="text-center py-12 text-slate-400">
                                 <FileText size={42} className="mx-auto mb-3 text-slate-300" />
                                 <p className="font-semibold">No claims yet.</p>
@@ -619,11 +838,18 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {mine.map((c: any) => (
+                                        {filteredMine.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
                                                 <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">{formatMoney(c.amountRequested, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                    <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.amountRequested > c.amountAllowed && (
+                                                        <div className="text-[10px] text-rose-500 font-bold">
+                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3">
@@ -682,7 +908,7 @@ const ExpenseClaimDashboard = () => {
                     <div className="p-6">
                         {loadingApprovals ? (
                             <div className="text-slate-400 text-sm">Loading…</div>
-                        ) : approvals.length === 0 ? (
+                        ) : filteredApprovals.length === 0 ? (
                             <div className="text-center py-12 text-slate-400">
                                 <Inbox size={42} className="mx-auto mb-3 text-slate-300" />
                                 <p className="font-semibold">No pending approvals.</p>
@@ -704,12 +930,30 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {approvals.map((c: any) => (
+                                        {filteredApprovals.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
-                                                <td className="px-4 py-3 text-slate-600">{c.employeeId}</td>
+                                                 <td className="px-4 py-3 text-slate-600">
+                                                     {c.employeeDetails ? (
+                                                         <div>
+                                                             <div className="font-semibold text-slate-800">
+                                                                 {`${c.employeeDetails.firstName || ''} ${c.employeeDetails.lastName || ''}`.trim()}
+                                                             </div>
+                                                             <div className="text-[11px] text-slate-400">{c.employeeId}</div>
+                                                         </div>
+                                                     ) : (
+                                                         c.employeeId
+                                                     )}
+                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">{formatMoney(c.amountRequested, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                    <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.amountRequested > c.amountAllowed && (
+                                                        <div className="text-[10px] text-rose-500 font-bold">
+                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -748,7 +992,7 @@ const ExpenseClaimDashboard = () => {
                     <div className="p-6">
                         {loadingHistory ? (
                             <div className="text-slate-400 text-sm">Loading…</div>
-                        ) : history.length === 0 ? (
+                        ) : filteredHistory.length === 0 ? (
                             <div className="text-center py-12 text-slate-400">
                                 <History size={42} className="mx-auto mb-3 text-slate-300" />
                                 <p className="font-semibold">No claims in history.</p>
@@ -759,7 +1003,7 @@ const ExpenseClaimDashboard = () => {
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-100">
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee ID</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
@@ -771,12 +1015,30 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {history.map((c: any) => (
+                                        {filteredHistory.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
-                                                <td className="px-4 py-3 text-slate-600">{c.employeeId}</td>
+                                                 <td className="px-4 py-3 text-slate-600">
+                                                     {c.employeeDetails ? (
+                                                         <div>
+                                                             <div className="font-semibold text-slate-800">
+                                                                 {`${c.employeeDetails.firstName || ''} ${c.employeeDetails.lastName || ''}`.trim()}
+                                                             </div>
+                                                             <div className="text-[11px] text-slate-400">{c.employeeId}</div>
+                                                         </div>
+                                                     ) : (
+                                                         c.employeeId
+                                                     )}
+                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">{formatMoney(c.amountRequested, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                    <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.amountRequested > c.amountAllowed && (
+                                                        <div className="text-[10px] text-rose-500 font-bold">
+                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3">
@@ -836,7 +1098,11 @@ const ExpenseClaimDashboard = () => {
                         <div className="flex items-center justify-between p-5 border-b border-slate-100">
                             <div>
                                 <div className="text-sm font-extrabold text-slate-800">Review Claim</div>
-                                <div className="text-xs text-slate-500">{decisionClaim?.claimNo} • {decisionClaim?.employeeId}</div>
+                                <div className="text-xs text-slate-500">
+                                    {decisionClaim?.claimNo} • {decisionClaim?.employeeDetails 
+                                        ? `${decisionClaim.employeeDetails.firstName || ''} ${decisionClaim.employeeDetails.lastName || ''}`.trim() 
+                                        : 'Employee'} ({decisionClaim?.employeeId})
+                                </div>
                             </div>
                             <button onClick={() => setDecisionOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
                                 <X size={18} />
@@ -866,6 +1132,11 @@ const ExpenseClaimDashboard = () => {
                                     />
                                     <p className="text-[11px] text-slate-400 mt-1">
                                         Requested: {formatMoney(decisionClaim?.amountRequested, decisionClaim?.currency)} • Allowed: {formatMoney(decisionClaim?.amountAllowed, decisionClaim?.currency)}
+                                        {decisionClaim?.amountRequested > decisionClaim?.amountAllowed && (
+                                            <span className="text-rose-500 font-bold ml-1.5">
+                                                (Disallowed: {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
+                                            </span>
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -921,13 +1192,26 @@ const ExpenseClaimDashboard = () => {
                         <div className="flex items-center justify-between p-5 border-b border-slate-100">
                             <div>
                                 <div className="text-sm font-extrabold text-slate-800">Admin Correction</div>
-                                <div className="text-xs text-slate-500">{correctClaim?.claimNo} • {correctClaim?.employeeId}</div>
+                                <div className="text-xs text-slate-500">
+                                    {correctClaim?.claimNo} • {correctClaim?.employeeDetails 
+                                        ? `${correctClaim.employeeDetails.firstName || ''} ${correctClaim.employeeDetails.lastName || ''}`.trim() 
+                                        : 'Employee'} ({correctClaim?.employeeId})
+                                </div>
                             </div>
                             <button onClick={() => setCorrectOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
                                 <X size={18} />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
+                            <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200/50">
+                                <span className="font-bold">Requested:</span> {formatMoney(correctClaim?.amountRequested, correctClaim?.currency)} • <span className="font-bold">Allowed:</span> {formatMoney(correctClaim?.amountAllowed, correctClaim?.currency)}
+                                {correctClaim?.amountRequested > correctClaim?.amountAllowed && (
+                                    <div className="text-rose-500 font-bold mt-1">
+                                        Disallowed: {formatMoney(correctClaim.amountRequested - correctClaim.amountAllowed, correctClaim.currency)}
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs font-bold text-slate-600">Status</label>

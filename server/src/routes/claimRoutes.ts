@@ -79,12 +79,12 @@ async function generateClaimNo(): Promise<string> {
 
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {
     if (stage === 'teamLead' || stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin';
-    if (stage === 'hr') return role === 'admin' || role === 'super-admin';
-    return role === 'super-admin' || role === 'admin';
+    if (stage === 'hr') return role === 'admin' || role === 'super-admin' || role === 'hr';
+    return role === 'super-admin' || role === 'admin' || role === 'hr';
 }
 
 function isAdminLike(role: string) {
-    return role === 'super-admin' || role === 'admin';
+    return role === 'super-admin' || role === 'admin' || role === 'hr';
 }
 
 function isFinalStatus(status?: string) {
@@ -99,8 +99,10 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
         const {
+            employeeId: targetEmployeeId,
             category,
             subCategory,
+            expenseDate,
             forWhom,
             dependentId,
             purpose,
@@ -118,8 +120,20 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(400).json({ message: 'amountRequested must be a positive number' });
         }
 
-        const employee = await Employee.findOne({ userId }).lean() as any;
-        if (!employee) return res.status(404).json({ message: 'Employee record not found for this user' });
+        let employee: any;
+        let submitterUserId = userId;
+
+        if (targetEmployeeId && isAdminLike(role)) {
+            employee = await Employee.findOne({ employeeId: targetEmployeeId }).lean() as any;
+            if (!employee) return res.status(404).json({ message: `Employee record not found for ID ${targetEmployeeId}` });
+            submitterUserId = employee.userId;
+            if (!submitterUserId) {
+                return res.status(400).json({ message: 'The selected employee does not have a linked user account.' });
+            }
+        } else {
+            employee = await Employee.findOne({ userId }).lean() as any;
+            if (!employee) return res.status(404).json({ message: 'Employee record not found for this user' });
+        }
 
         let dependentName: string | undefined;
         const fw = (forWhom as string) || 'Self';
@@ -138,7 +152,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             const startOfYear = new Date(currentYear, 0, 1);
             const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
             const existingClaims = await ExpenseClaim.find({
-                employeeUserId: new mongoose.Types.ObjectId(String(userId)),
+                employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
                 category: 'Medical',
                 status: { $nin: ['Draft', 'Declined'] },
                 createdAt: { $gte: startOfYear, $lte: endOfYear }
@@ -154,7 +168,15 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
         const amountAllowed = Math.min(amountRequested, limit);
         const outOfPolicy = amountRequested > limit;
-        if (outOfPolicy) flags.push('OutOfPolicy');
+
+        if (outOfPolicy) {
+            if (!isAdminLike(role)) {
+                return res.status(400).json({
+                    message: `Claim amount exceeds the remaining limit of PKR ${limit.toLocaleString('en-PK')}. Out-of-policy claims can only be submitted by HR or Admin.`
+                });
+            }
+            flags.push('OutOfPolicy');
+        }
 
         const decodedReceipts = decodeReceipts(receipts as ReceiptInput[] | undefined);
         const hasComment = notes && String(notes).trim().length >= 5;
@@ -188,9 +210,10 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const doc = await ExpenseClaim.create({
             claimNo,
             employeeId: employee.employeeId,
-            employeeUserId: new mongoose.Types.ObjectId(String(userId)),
+            employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
             category: cat,
             subCategory,
+            expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
             forWhom: fw,
             dependentId: fw === 'Dependent' ? String(dependentId) : undefined,
             dependentName,
@@ -228,6 +251,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             // Managers already see it in approvals inbox; no email by default
         }
 
+        await doc.populate('employeeDetails', 'firstName lastName employeeId');
         res.status(201).json({ success: true, data: doc });
     } catch (err: any) {
         // Handle unique claimNo collisions (rare in concurrent submit)
@@ -246,6 +270,7 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
         const claims = await ExpenseClaim.find({ employeeUserId: userId })
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
+            .populate('employeeDetails', 'firstName lastName employeeId')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
@@ -279,6 +304,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             })
                 .select('-receipts.fileData')
                 .sort({ createdAt: -1 })
+                .populate('employeeDetails', 'firstName lastName employeeId')
                 .lean();
         } else {
             claims = await ExpenseClaim.find({
@@ -286,6 +312,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             })
                 .select('-receipts.fileData')
                 .sort({ createdAt: -1 })
+                .populate('employeeDetails', 'firstName lastName employeeId')
                 .lean();
         }
 
@@ -304,6 +331,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
         const claims = await ExpenseClaim.find({})
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
+            .populate('employeeDetails', 'firstName lastName employeeId')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
@@ -413,6 +441,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             for (const to of FINANCE_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
         }
 
+        await claim.populate('employeeDetails', 'firstName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
@@ -448,6 +477,7 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
         await claim.save();
 
+        await claim.populate('employeeDetails', 'firstName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
