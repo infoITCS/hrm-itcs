@@ -19,6 +19,7 @@ import {
     Clock,
     AlertTriangle,
     Receipt,
+    Upload,
     User,
     CalendarDays,
     Tag,
@@ -885,19 +886,37 @@ const ExpenseClaimDashboard = () => {
                             </div>
 
                             <div className="lg:col-span-2">
-                                <label className="text-xs font-bold text-slate-600">
+                                <span className="text-xs font-bold text-slate-600">
                                     Receipts {category === 'Medical' ? '(required)' : ['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) ? '(comment or receipt required)' : '(optional)'}
-                                </label>
-                                <input
-                                    type="file"
-                                    multiple
-                                    onChange={e => setReceiptFiles(Array.from(e.target.files || []))}
-                                    className="mt-1 w-full text-sm"
-                                />
+                                </span>
+                                <div className="mt-2 flex flex-wrap items-center gap-3">
+                                    <input
+                                        id="claim-receipt-upload"
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf,.png,.jpg,.jpeg,.webp"
+                                        onChange={e => setReceiptFiles(Array.from(e.target.files || []))}
+                                        className="sr-only"
+                                    />
+                                    <label
+                                        htmlFor="claim-receipt-upload"
+                                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] transition-all cursor-pointer"
+                                    >
+                                        <Upload size={18} />
+                                        {receiptFiles.length > 0 ? 'Add more receipts' : 'Upload receipts'}
+                                    </label>
+                                    {receiptFiles.length > 0 ? (
+                                        <span className="text-sm font-semibold text-indigo-600">
+                                            {receiptFiles.length} file{receiptFiles.length !== 1 ? 's' : ''} selected
+                                        </span>
+                                    ) : (
+                                        <span className="text-sm text-slate-500">No file chosen</span>
+                                    )}
+                                </div>
                                 {receiptFiles.length > 0 && (
                                     <div className="mt-2 flex flex-wrap gap-2">
                                         {receiptFiles.map(f => (
-                                            <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700">
+                                            <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-800">
                                                 {f.name}
                                             </span>
                                         ))}

@@ -64,7 +64,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
     const authReq = req as AuthRequest;
     try {
         const { role, userId } = authReq.user!;
-        if (role !== 'admin' && role !== 'manager') {
+        if (!['super-admin', 'admin', 'manager'].includes(role)) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
         let filter: any = {};
@@ -233,7 +233,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 router.put('/:id/status', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
-        if (authReq.user?.role !== 'admin' && authReq.user?.role !== 'manager') {
+        const user = authReq.user;
+        if (!user || !['super-admin', 'admin', 'manager'].includes(user.role)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
         const { status, adminNote } = req.body; // 'Approved' or 'Rejected'
@@ -243,7 +244,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
 
         const leave = await LeaveRequest.findById(req.params.id);
         if (!leave) return res.status(404).json({ message: 'Leave request not found' });
-        if (authReq.user.userId === leave.employeeId) {
+        if (user.userId === leave.employeeId) {
             return res.status(403).json({ message: 'Cannot approve/reject your own leave' });
         }
         if (leave.status !== 'Pending') {
@@ -254,7 +255,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
         try {
             await session.withTransaction(async () => {
                 leave.status = status;
-                leave.approvedBy = authReq.user?.userId;
+                leave.approvedBy = user.userId;
                 if (adminNote) leave.adminNote = adminNote;
 
                 const start = new Date(leave.startDate);

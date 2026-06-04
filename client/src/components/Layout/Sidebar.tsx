@@ -33,7 +33,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'] },
         { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
-        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager'] },
+        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin'] },
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee'] },

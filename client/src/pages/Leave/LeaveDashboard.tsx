@@ -108,6 +108,12 @@ const LeaveDashboard = () => {
         fetchLeaveData();
     }, []);
 
+    useEffect(() => {
+        if (!isManagement && activeTab === 'team-requests') {
+            setActiveTab('my-leaves');
+        }
+    }, [isManagement, activeTab]);
+
 const STATUS_COLORS: any = {
     Pending: 'bg-amber-50 text-amber-600 border-amber-100',
     Approved: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -137,11 +143,15 @@ const STATUS_COLORS: any = {
                             <div className="p-2 bg-white/20 backdrop-blur-md rounded-xl">
                                 <Calendar size={18} />
                             </div>
-                            <span className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-white/70">Leave Management</span>
+                            <span className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-white/70">
+                                {isManagement ? 'Leave Management' : 'My Leave'}
+                            </span>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Time Off Dashboard</h1>
                         <p className="text-white/70 mt-2 max-w-md text-xs sm:text-sm leading-relaxed">
-                            Manage your time off requests, check your available balance, and view your leave history all in one place.
+                            {isManagement
+                                ? 'Manage your time off, review team requests, and approve leave in one place.'
+                                : 'Apply for leave, check your balance, and view your leave history.'}
                         </p>
                     </div>
 

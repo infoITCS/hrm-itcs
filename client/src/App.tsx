@@ -110,6 +110,7 @@ function AppRoutes() {
         <Route path="directory" element={<Directory />} />
         <Route path="claim" element={<ExpenseClaimDashboard />} />
         <Route path="attendance" element={<AttendanceRouter />} />
+        <Route path="leave" element={<LeaveDashboard />} />
         
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
@@ -118,7 +119,6 @@ function AppRoutes() {
 
         {/* Restricted to Admins & Managers */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
-          <Route path="leave" element={<LeaveDashboard />} />
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
           <Route path="pim" element={<PIM />}>
             <Route index element={<EmployeeList />} />
