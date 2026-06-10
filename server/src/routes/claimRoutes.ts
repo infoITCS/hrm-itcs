@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import ExpenseClaim, { type ExpenseClaimApprovalStage, type ExpenseClaimCategory } from '../models/ExpenseClaim';
+import ExpenseClaim, { type ExpenseClaimApprovalStage } from '../models/ExpenseClaim';
+import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendHRNotificationEmail } from '../utils/email';
@@ -15,14 +16,6 @@ const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5MB each
 const HR_EMAILS = (process.env.EXPENSE_HR_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
 const FINANCE_EMAILS = (process.env.EXPENSE_FINANCE_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
 
-const POLICY_LIMITS: Record<ExpenseClaimCategory, number> = {
-    Medical: 60000,
-    'Training & Certification': 9999999,
-    Travel: 9999999,
-    'Sales/Customer Gifts': 9999999,
-    Other: 9999999,
-};
-
 function sanitizeClaimForJson(doc: any) {
     const obj = doc?.toObject ? (doc.toObject() as any) : (doc as any);
     if (Array.isArray(obj?.receipts)) {
@@ -31,7 +24,7 @@ function sanitizeClaimForJson(doc: any) {
     return obj;
 }
 
-function buildWorkflow(category: ExpenseClaimCategory): ExpenseClaimApprovalStage[] {
+function buildWorkflow(category: string): ExpenseClaimApprovalStage[] {
     if (category === 'Medical') return ['hr', 'finance'];
     if (category === 'Training & Certification') return ['teamLead', 'hr', 'finance'];
     if (category === 'Travel') return ['lineManager', 'hr', 'finance'];
@@ -101,7 +94,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const {
             employeeId: targetEmployeeId,
             category,
-            subCategory,
+            subCategories,
             expenseDate,
             forWhom,
             dependentId,
@@ -112,10 +105,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         } = req.body || {};
 
         if (!category) return res.status(400).json({ message: 'category is required' });
-        const cat = category as ExpenseClaimCategory;
-        if (!Object.prototype.hasOwnProperty.call(POLICY_LIMITS, cat)) {
+        
+        const catDoc = await ExpenseCategory.findOne({ name: category });
+        if (!catDoc) {
             return res.status(400).json({ message: 'Invalid category' });
         }
+        
         if (typeof amountRequested !== 'number' || amountRequested <= 0) {
             return res.status(400).json({ message: 'amountRequested must be a positive number' });
         }
@@ -145,15 +140,15 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
 
         const flags: string[] = [];
-        let limit = POLICY_LIMITS[cat];
+        let limit = catDoc.policyLimit && catDoc.policyLimit > 0 ? catDoc.policyLimit : 9999999;
 
-        if (cat === 'Medical') {
+        if (catDoc.policyLimit && catDoc.policyLimit > 0) {
             const currentYear = new Date().getFullYear();
             const startOfYear = new Date(currentYear, 0, 1);
             const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
             const existingClaims = await ExpenseClaim.find({
                 employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
-                category: 'Medical',
+                category: category,
                 status: { $nin: ['Draft', 'Declined'] },
                 createdAt: { $gte: startOfYear, $lte: endOfYear }
             }).lean() as any[];
@@ -163,7 +158,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 return sum + amount;
             }, 0);
 
-            limit = Math.max(0, 60000 - claimedSoFar);
+            limit = Math.max(0, catDoc.policyLimit - claimedSoFar);
         }
 
         const amountAllowed = Math.min(amountRequested, limit);
@@ -182,17 +177,16 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const hasComment = notes && String(notes).trim().length >= 5;
         const hasReceipt = decodedReceipts.length > 0;
 
-        if (cat === 'Medical') {
+        if (catDoc.requiresReceipt) {
             if (!hasReceipt) {
                 flags.push('MissingReceipt');
             }
-        } else if (cat === 'Training & Certification' || cat === 'Sales/Customer Gifts' || cat === 'Other') {
-            if (!hasComment && !hasReceipt) {
-                flags.push('MissingCommentOrReceipt');
-            }
+        } else if (!hasComment && !hasReceipt) {
+            // For other categories, at least one of comment or receipt is typically required
+            flags.push('MissingCommentOrReceipt');
         }
 
-        const workflow = buildWorkflow(cat);
+        const workflow = buildWorkflow(category);
         const reportingManagerId = employee?.jobInfo?.reportingManager ? String(employee.jobInfo.reportingManager) : '';
         const approvals = workflow.map(stage => ({
             stage,
@@ -211,8 +205,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             claimNo,
             employeeId: employee.employeeId,
             employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
-            category: cat,
-            subCategory,
+            category: category,
+            subCategories: Array.isArray(subCategories) ? subCategories : [],
             expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
             forWhom: fw,
             dependentId: fw === 'Dependent' ? String(dependentId) : undefined,
@@ -334,6 +328,131 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
             .populate('employeeDetails', 'firstName lastName employeeId')
             .lean();
         res.json({ success: true, data: claims });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.patch('/bulk-decision', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const { claimIds, decision, comments } = req.body || {};
+        if (!Array.isArray(claimIds) || claimIds.length === 0) {
+            return res.status(400).json({ message: 'claimIds array is required' });
+        }
+        if (!['Approved', 'Declined'].includes(decision)) {
+            return res.status(400).json({ message: 'decision must be Approved or Declined' });
+        }
+
+        const processedIds = [];
+        const failedIds = [];
+
+        for (const claimId of claimIds) {
+            try {
+                const claim = await ExpenseClaim.findById(claimId);
+                if (!claim || isFinalStatus(claim.status)) {
+                    failedIds.push(claimId);
+                    continue;
+                }
+
+                const currentStage = claim.approvals?.find((a: any) => a.status === 'Pending')?.stage as ExpenseClaimApprovalStage | undefined;
+                if (!currentStage) {
+                    failedIds.push(claimId);
+                    continue;
+                }
+
+                if (!isAdminLike(role) && !roleCanActOnStage(role, currentStage)) {
+                    failedIds.push(claimId);
+                    continue;
+                }
+
+                const idx = claim.approvals.findIndex((a: any) => a.status === 'Pending');
+                const pending = claim.approvals[idx] as any;
+
+                if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) {
+                    const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
+                    const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
+                    if (!managerEmployeeId || String(pending.assignedToEmployeeId || '') !== managerEmployeeId) {
+                        failedIds.push(claimId);
+                        continue;
+                    }
+                }
+
+                if (decision === 'Approved') {
+                    const allowed = typeof pending.amountAllowed === 'number' ? pending.amountAllowed : claim.amountAllowed;
+                    const requested = claim.amountRequested;
+                    pending.approvedAmount = Math.min(requested, allowed);
+                    pending.amountAllowed = allowed;
+                    // Note: If requiresAuthorization is true, it generally needs individual handling.
+                    // We'll skip such claims in bulk actions to avoid violating policy bypasses without explicit authorization text.
+                    if (pending.requiresAuthorization) {
+                        failedIds.push(claimId);
+                        continue;
+                    }
+                }
+
+                pending.status = decision;
+                pending.comments = comments;
+                pending.decidedAt = new Date();
+                pending.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+                if (decision === 'Declined') {
+                    claim.status = 'Declined';
+                    claim.approvedTotal = 0;
+                } else if (isAdminLike(role)) {
+                    claim.approvals.forEach((approval: any, approvalIdx: number) => {
+                        if (approvalIdx > idx && approval.status === 'Pending') {
+                            approval.status = 'Approved';
+                            approval.decidedAt = new Date();
+                            approval.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                            if (typeof approval.approvedAmount !== 'number') {
+                                approval.approvedAmount = pending.approvedAmount ?? claim.amountAllowed;
+                            }
+                        }
+                    });
+                    claim.status = 'Approved';
+                    claim.approvedTotal = typeof pending.approvedAmount === 'number' ? pending.approvedAmount : claim.amountAllowed;
+                } else {
+                    const nextPending = claim.approvals.find((a: any) => a.status === 'Pending');
+                    if (nextPending) {
+                        claim.status = stageToStatus(nextPending.stage) as any;
+                    } else {
+                        claim.status = 'Approved';
+                        const lastApprovedAmount = [...claim.approvals]
+                            .reverse()
+                            .find((a: any) => a.status === 'Approved' && typeof a.approvedAmount === 'number')?.approvedAmount;
+                        claim.approvedTotal = typeof lastApprovedAmount === 'number' ? lastApprovedAmount : claim.amountAllowed;
+                    }
+                }
+
+                (claim as any).audit = (claim as any).audit || {};
+                (claim as any).audit.lastUpdatedAt = new Date();
+                (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+                await claim.save();
+
+                if (claim.status === 'Pending HR' && HR_EMAILS.length) {
+                    const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
+                    const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+                    for (const to of HR_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
+                }
+                if (claim.status === 'Pending Finance' && FINANCE_EMAILS.length) {
+                    const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
+                    const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+                    for (const to of FINANCE_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
+                }
+
+                processedIds.push(claimId);
+            } catch (e) {
+                failedIds.push(claimId);
+            }
+        }
+
+        res.json({ success: true, processedCount: processedIds.length, failedCount: failedIds.length, failedIds });
     } catch (err) {
         next(err);
     }

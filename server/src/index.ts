@@ -54,9 +54,11 @@ import orgConfigRoutes from './routes/orgConfigRoutes';
 import attendanceV2Routes from './modules/attendance/attendance.routes';
 import admsRoutes from './modules/attendance/adms.routes';
 import claimRoutes from './routes/claimRoutes';
+import expenseCategoryRoutes from './routes/expenseCategoryRoutes';
 import leaveRoutes from './routes/leaveRoutes';
 import workShiftRoutes from './routes/workShiftRoutes';
 import cronRoutes from './routes/cronRoutes';
+import holidayRoutes from './routes/holidayRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -100,6 +102,7 @@ const corsOptions: cors.CorsOptions = {
 // Security middleware
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: false, // Disable default X-Frame-Options (SAMEORIGIN) to allow framing across different ports/domains
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
@@ -108,6 +111,25 @@ app.use(helmet({
             imgSrc: ["'self'", "data:", "blob:", "*"], // Allow images from any source (including our own API)
             connectSrc: ["'self'", "*"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            // Allow plugins (like Chrome's built-in PDF viewer) to load documents
+            objectSrc: ["'self'", "blob:"],
+            // Allow framing/child sources for previews
+            frameSrc: [
+                "'self'",
+                "blob:",
+                "http://localhost:5173",
+                "https://hrm-itcs-client.vercel.app",
+                process.env.FRONTEND_URL,
+                process.env.CLIENT_URL
+            ].filter(Boolean) as string[],
+            // Allow framing from backend itself, frontend dev server, vercel deployment, and config-based URLs
+            frameAncestors: [
+                "'self'",
+                "http://localhost:5173",
+                "https://hrm-itcs-client.vercel.app",
+                process.env.FRONTEND_URL,
+                process.env.CLIENT_URL
+            ].filter(Boolean) as string[],
         },
     }
 }));
@@ -278,6 +300,14 @@ async function connectDB(): Promise<void> {
             bufferCommands: true,
         });
         logger.info('✅ Connected to MongoDB (Cosmos DB)');
+        try {
+            const { seedLeaveTypes } = require('./utils/seedLeaves');
+            await seedLeaveTypes();
+            const { seedExpenseCategories } = require('./utils/seedExpenses');
+            await seedExpenseCategories();
+        } catch (seedErr) {
+            logger.error('Failed to seed defaults:', seedErr);
+        }
     } catch (err: any) {
         logger.error('❌ MongoDB Connection Error:', err);
         logger.info('👉 TIP: Check if your IP is whitelisted (0.0.0.0/0) in Cosmos DB / Networking.');
@@ -332,9 +362,11 @@ prefixes.forEach(p => {
     app.use(`${p}/config`, orgConfigRoutes);
     app.use(`${p}/v2/attendance`, attendanceV2Routes);
     app.use(`${p}/claims`, claimRoutes);
+    app.use(`${p}/expense-categories`, expenseCategoryRoutes);
     app.use(`${p}/leaves`, leaveRoutes);
     app.use(`${p}/work-shifts`, workShiftRoutes);
     app.use(`${p}/cron`, cronRoutes);
+    app.use(`${p}/holidays`, holidayRoutes);
 });
 
 app.get('/', (req, res) => {

@@ -135,7 +135,7 @@ export async function processEmployeePunches(
 // ─── Today Roster (smart first-in / last-out per employee) ─────────────────
 
 const VERIFY_LABELS: Record<number, string> = {
-    0: 'Password', 1: 'Fingerprint', 3: 'Card', 4: 'Face', 15: 'Face',
+    0: 'Password', 1: 'Fingerprint', 3: 'Card', 4: 'Face', 5: 'Dashboard', 15: 'Face',
 };
 
 export async function getTodayRoster(
@@ -295,7 +295,7 @@ export async function getTodayRoster(
             workDurationMinutes,
             lateMinutes,
             status,
-            verifyType: VERIFY_LABELS[firstPunch.verifyType] || 'Biometric',
+            verifyType: firstPunch.deviceSN === 'WEB-PORTAL' ? 'Dashboard' : (VERIFY_LABELS[firstPunch.verifyType] || 'Biometric'),
         });
     }
 

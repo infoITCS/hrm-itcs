@@ -21,12 +21,16 @@ export const api = {
     attendanceExport: `${API_BASE_URL}/api/attendance/export`,
     workShifts: `${API_BASE_URL}/api/work-shifts`,
 
-    // Expense Claims
+    // Expense Claims & Categories
+    expenseCategories: `${API_BASE_URL}/api/expense-categories`,
+    expenseCategoriesAll: `${API_BASE_URL}/api/expense-categories/all`,
+    expenseCategory: (id: string) => `${API_BASE_URL}/api/expense-categories/${id}`,
     claims: `${API_BASE_URL}/api/claims`,
     claimMine: `${API_BASE_URL}/api/claims/mine`,
     claimAll: `${API_BASE_URL}/api/claims/all`,
     claimPendingApprovals: `${API_BASE_URL}/api/claims/approvals/pending`,
     claimProfileProgress: `${API_BASE_URL}/api/claims/profile-progress`,
+    claimBulkDecision: `${API_BASE_URL}/api/claims/bulk-decision`,
     claimDecision: (id: string) => `${API_BASE_URL}/api/claims/${id}/decision`,
     claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
     claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,

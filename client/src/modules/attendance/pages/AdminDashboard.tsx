@@ -23,6 +23,7 @@ import { attendanceApi } from '../api/attendanceApi';
 import type { TodayRosterEntry, StatusFilter } from '../types';
 import MonthlyInsightsModal from '../components/MonthlyInsightsModal';
 import EditAttendanceModal from '../components/EditAttendanceModal';
+import SheetPreviewModal from '../components/SheetPreviewModal';
 import AlertModal from '../../../components/UI/AlertModal';
 import EmployeeDashboard from './EmployeeDashboard';
 
@@ -205,9 +206,9 @@ function ZktStatusBadge() {
         );
         return () => clearInterval(id);
     }, []);
-    if (reachable === null) return <div className="w-28 h-6 bg-white/10 animate-pulse rounded-full" />;
+    if (reachable === null) return <div className="w-28 h-6 bg-white/10 animate-pulse rounded-full shrink-0" />;
     return (
-        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-wider ${reachable ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100' : 'bg-rose-500/20 border-rose-400/50 text-rose-100'}`}>
+        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-wider shrink-0 whitespace-nowrap ${reachable ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100' : 'bg-rose-500/20 border-rose-400/50 text-rose-100'}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${reachable ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
             {reachable ? 'Machine Online' : 'Machine Offline'}
         </div>
@@ -225,6 +226,13 @@ export default function AdminDashboard() {
     const [selectedEmp, setSelectedEmp] = useState<{ id: string; name: string } | null>(null);
     const [editingEmp, setEditingEmp] = useState<TodayRosterEntry | null>(null);
     const [isAutoCloseModalOpen, setIsAutoCloseModalOpen] = useState(false);
+    const [previewConfig, setPreviewConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        subtitle?: string;
+        fetchData: () => Promise<string>;
+        downloadFileName: string;
+    } | null>(null);
     const weekend = isWeekendDay(date);
 
     const { data: summary, loading, refresh } = useAttendanceSummary(date, location);
@@ -296,19 +304,19 @@ export default function AdminDashboard() {
             {/* Dashboard Header */}
             <div className="rounded-2xl p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
                 <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <Activity size={20} />
                             <span className="text-sm font-bold uppercase tracking-widest text-white/80">Daily Attendance</span>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-bold">Monitoring Dashboard</h1>
-                        <div className="flex items-center gap-3 mt-1.5">
-                            <p className="text-white/70 text-sm">Live Sync · {location || 'All Locations'}</p>
+                        <div className="flex items-center gap-3 mt-1.5 flex-nowrap">
+                            <p className="text-white/70 text-sm whitespace-nowrap">Live Sync · {location || 'All Locations'}</p>
                             <ZktStatusBadge />
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 lg:mt-0 mt-4">
                         <div className="relative">
                             <select value={location || ''} onChange={(e) => setLocation(e.target.value || undefined)}
                                 className="appearance-none pl-8 pr-7 py-2 bg-white/20 border border-white/30 text-white text-sm font-semibold rounded-xl focus:outline-none">
@@ -329,14 +337,29 @@ export default function AdminDashboard() {
                             {autoRefresh ? 'Live' : 'Paused'}
                         </button>
                             <button
-                                onClick={() => attendanceApi.downloadDailyReport(date)}
+                                onClick={() => setPreviewConfig({
+                                    isOpen: true,
+                                    title: 'Daily Attendance Sheet Preview',
+                                    subtitle: `Daily report for ${date}`,
+                                    fetchData: () => attendanceApi.fetchDailyReportCsv(date),
+                                    downloadFileName: `attendance_all_${date}.csv`
+                                })}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-white/90 text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all border border-white/50"
                             >
                                 <Download size={16} />
                                 Daily Sheet
                             </button>
                             <button 
-                                onClick={() => attendanceApi.downloadMonthlyReport(date.slice(0, 7))}
+                                onClick={() => {
+                                    const monthVal = date.slice(0, 7);
+                                    setPreviewConfig({
+                                        isOpen: true,
+                                        title: 'Monthly Attendance Sheet Preview',
+                                        subtitle: `Monthly report for ${monthVal}`,
+                                        fetchData: () => attendanceApi.fetchMonthlyReportCsv(monthVal),
+                                        downloadFileName: `attendance_all_${monthVal}.csv`
+                                    });
+                                }}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-white text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
                             >
                                 <Download size={16} />
@@ -482,6 +505,17 @@ export default function AdminDashboard() {
                 <div className="p-2">
                     <EmployeeDashboard />
                 </div>
+            )}
+
+            {previewConfig && (
+                <SheetPreviewModal
+                    isOpen={previewConfig.isOpen}
+                    onClose={() => setPreviewConfig(null)}
+                    title={previewConfig.title}
+                    subtitle={previewConfig.subtitle}
+                    fetchData={previewConfig.fetchData}
+                    downloadFileName={previewConfig.downloadFileName}
+                />
             )}
         </div>
     );

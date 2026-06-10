@@ -18,14 +18,38 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
         type: 'Annual',
         reason: ''
     });
+    const [types, setTypes] = useState<any[]>([]);
 
-    const selectedType = formData.type.toLowerCase() as 'annual' | 'sick';
-    const currentBalance = balance ? balance[selectedType] : null;
-    const availableDays = currentBalance ? (currentBalance.total - currentBalance.used) : 0;
+    const selectedLeaveType = types.find(t => t.name === formData.type);
+    const selectedTypeCode = selectedLeaveType ? selectedLeaveType.code : (formData.type || '').toLowerCase();
+    const balCategory = balance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
+    const availableDays = balCategory ? Math.max(0, balCategory.total - (balCategory.used || 0) - (balCategory.pending || 0)) : 0;
+    const sandwichEnabled = selectedLeaveType ? selectedLeaveType.sandwichRuleEnabled !== false : true;
 
-    // Reset state when modal opens/closes
+    // Fetch active leave types and reset state when modal opens/closes
     useEffect(() => {
+        const fetchTypes = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${api.baseURL}/api/leaves/types?activeOnly=true`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.data) {
+                        setTypes(data.data);
+                        if (data.data.length > 0) {
+                            setFormData(prev => ({ ...prev, type: data.data[0].name }));
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch leave types:', err);
+            }
+        };
+
         if (isOpen) {
+            fetchTypes();
             setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '' });
             setError(null);
             setLoading(false);
@@ -54,15 +78,42 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                 return;
             }
 
-            // Calculate duration (inclusive, weekends excluded)
+            // Calculate duration (inclusive, weekends excluded unless sandwiched and sandwich rule is enabled)
             let diffDays = 0;
+            const dates: Date[] = [];
             let current = new Date(start);
             while (current <= end) {
-                const dayOfWeek = current.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Sunday, 6 = Saturday
-                    diffDays++;
-                }
+                dates.push(new Date(current));
                 current.setDate(current.getDate() + 1);
+            }
+
+            for (let i = 0; i < dates.length; i++) {
+                const d = dates[i];
+                const dayOfWeek = d.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    diffDays++;
+                } else if (sandwichEnabled) {
+                    // Sandwiched?
+                    let hasBefore = false;
+                    let hasAfter = false;
+                    for (let j = 0; j < i; j++) {
+                        const dayJ = dates[j].getDay();
+                        if (dayJ !== 0 && dayJ !== 6) {
+                            hasBefore = true;
+                            break;
+                        }
+                    }
+                    for (let j = i + 1; j < dates.length; j++) {
+                        const dayJ = dates[j].getDay();
+                        if (dayJ !== 0 && dayJ !== 6) {
+                            hasAfter = true;
+                            break;
+                        }
+                    }
+                    if (hasBefore && hasAfter) {
+                        diffDays++;
+                    }
+                }
             }
 
             if (diffDays === 0 && start.getTime() <= end.getTime()) {
@@ -182,8 +233,14 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                                 onChange={e => setFormData({...formData, type: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
                             >
-                                <option value="Annual">Annual Leave</option>
-                                <option value="Sick">Sick Leave</option>
+                                {types.map(t => (
+                                    <option key={t._id} value={t.name}>
+                                        {t.name.toLowerCase().includes('leave') ? t.name : `${t.name} Leave`}
+                                    </option>
+                                ))}
+                                {types.length === 0 && (
+                                    <option value="Annual">Annual Leave</option>
+                                )}
                             </select>
                         </div>
 
@@ -200,7 +257,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
 
                         <div className="flex items-center gap-2 px-1 text-indigo-600/70">
                             <AlertCircle size={12} />
-                            <p className="text-[9px] font-medium tracking-tight">Syncs automatically with attendance. Weekends excluded.</p>
+                            <p className="text-[9px] font-medium tracking-tight">
+                                Syncs automatically with attendance. Weekends {sandwichEnabled ? 'included if sandwiched' : 'excluded'}.
+                            </p>
                         </div>
 
                         <button 

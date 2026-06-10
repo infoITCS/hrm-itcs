@@ -9,6 +9,9 @@ interface AuthContextType {
     login: (userData: User | ((prev: User | null) => User)) => void;
     logout: () => void;
     isAuthenticated: boolean;
+    impersonate: (token: string, userData: User) => void;
+    stopImpersonating: () => Promise<void>;
+    isImpersonated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -16,6 +19,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isImpersonated, setIsImpersonated] = useState(!!localStorage.getItem('original_token'));
     const navigate = useNavigate();
 
     // Check if user is logged in on mount
@@ -35,7 +39,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                                  userData.avatar !== 'null' && 
                                  userData.avatar !== 'undefined')
                             ? userData.avatar
-                            : null,
+                            : '',
                         firstName: userData.firstName,
                         lastName: userData.lastName,
                         hasProfile: userData.hasProfile,
@@ -43,10 +47,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         microsoftId: userData.microsoftId
                     };
                     setUser(user);
+                    setIsImpersonated(!!localStorage.getItem('original_token'));
                 } catch (error) {
                     console.error('Auth check failed:', error);
                     localStorage.removeItem('token');
+                    localStorage.removeItem('original_token');
                     sessionStorage.clear();
+                    setIsImpersonated(false);
                 }
             }
             setLoading(false);
@@ -86,14 +93,87 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const logout = () => {
         localStorage.removeItem('token');
+        localStorage.removeItem('original_token');
         sessionStorage.clear();
         setUser(null);
+        setIsImpersonated(false);
         setStorageError(false);
         navigate('/login');
     };
 
+    const impersonate = (token: string, userData: User) => {
+        const currentToken = localStorage.getItem('token');
+        if (currentToken) {
+            localStorage.setItem('original_token', currentToken);
+        }
+        localStorage.setItem('token', token);
+        
+        const userObj: User = {
+            id: userData.id || userData._id || '',
+            name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
+            email: userData.email,
+            role: userData.role,
+            avatar: (userData.avatar && 
+                     userData.avatar.trim() !== '' && 
+                     userData.avatar !== 'null' && 
+                     userData.avatar !== 'undefined')
+                ? userData.avatar
+                : '',
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            hasProfile: userData.hasProfile,
+            needsPasswordSetup: userData.needsPasswordSetup,
+            microsoftId: userData.microsoftId
+        };
+        
+        setUser(userObj);
+        sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
+        sessionStorage.setItem('itcs_auth', 'true');
+        setIsImpersonated(true);
+    };
+
+    const stopImpersonating = async () => {
+        const originalToken = localStorage.getItem('original_token');
+        if (!originalToken) return;
+        
+        localStorage.setItem('token', originalToken);
+        localStorage.removeItem('original_token');
+        setIsImpersonated(false);
+        
+        setLoading(true);
+        try {
+            const userData = await APIService.getMe();
+            const userObj: User = {
+                id: userData.id || userData._id,
+                name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
+                email: userData.email,
+                role: userData.role,
+                avatar: (userData.avatar && 
+                         userData.avatar.trim() !== '' && 
+                         userData.avatar !== 'null' && 
+                         userData.avatar !== 'undefined')
+                    ? userData.avatar
+                    : '',
+                firstName: userData.firstName,
+                lastName: userData.lastName,
+                hasProfile: userData.hasProfile,
+                needsPasswordSetup: userData.needsPasswordSetup,
+                microsoftId: userData.microsoftId
+            };
+            setUser(userObj);
+            sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
+            sessionStorage.setItem('itcs_auth', 'true');
+            window.location.href = '/admin';
+        } catch (error) {
+            console.error('Failed to restore original session:', error);
+            logout();
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, impersonate, stopImpersonating, isImpersonated }}>
             {storageError && (
                 <div className="fixed top-4 right-4 z-[9999] bg-amber-50 border border-amber-200 p-4 rounded-2xl shadow-xl max-w-sm animate-in fade-in slide-in-from-top-4 duration-300">
                     <div className="flex gap-3">

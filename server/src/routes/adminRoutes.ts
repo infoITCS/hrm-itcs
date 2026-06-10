@@ -4,6 +4,7 @@ import { User } from '../models/User.model';
 import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
 import { AuthRequest } from '../middleware/auth';
+import { AuthUtils } from '../middleware/auth.utils';
 import crypto from 'crypto';
 import { sendWelcomeEmail } from '../utils/email';
 
@@ -359,6 +360,73 @@ router.post('/users/:id/link', authenticate, requireAdmin, async (req: Request, 
         }
 
         res.json({ success: true, message: 'User linked to employee successfully' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   POST /api/admin/users/:id/impersonate
+ * @desc    Impersonate a user
+ * @access  Private (Super Admin only)
+ */
+router.post('/users/:id/impersonate', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const targetUserId = req.params.id;
+
+        // Check if target user exists
+        const targetUser = await User.findById(targetUserId);
+        if (!targetUser) {
+            return res.status(404).json({ message: 'User to impersonate not found' });
+        }
+
+        // Generate token for target user
+        const token = AuthUtils.generateToken({
+            userId: targetUser._id.toString(),
+            email: targetUser.email,
+            role: targetUser.role,
+        });
+
+        // Fetch target user's associated employee record
+        const employee = await Employee.findOne({ userId: targetUser._id }).select('-attachments.fileData');
+
+        let avatarUrl = targetUser.avatar;
+        if (!avatarUrl && employee) {
+            const profilePic = employee.attachments?.find(
+                (att: any) => att.fileType === "Profile Picture"
+            );
+            if (profilePic) {
+                avatarUrl = `/api/employees/attachments/raw/${profilePic._id}`;
+            }
+        }
+
+        // Log this impersonation action
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'User',
+            targetId: targetUserId,
+            performedBy: authReq.user?.userId || 'System',
+            details: { 
+                action: 'IMPERSONATE_USER', 
+                impersonatorId: authReq.user?.userId,
+                impersonatedUserEmail: targetUser.email 
+            }
+        });
+
+        res.json({
+            token,
+            user: {
+                id: targetUser._id,
+                _id: targetUser._id,
+                email: targetUser.email,
+                role: targetUser.role,
+                firstName: targetUser.firstName || employee?.firstName,
+                lastName: targetUser.lastName || employee?.lastName,
+                avatar: avatarUrl,
+                hasProfile: !!employee,
+            }
+        });
     } catch (error) {
         next(error);
     }

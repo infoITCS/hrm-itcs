@@ -92,6 +92,28 @@ export const attendanceApi = {
     getEmployeeMonthly: (employeeId: string, month: string, options?: RequestInit) =>
         get<EmployeeMonthlyDetail>(`${V2}/employee/${employeeId}/monthly${qs({ month })}`, options),
 
+    fetchMonthlyReportCsv: async (month: string, employeeId?: string): Promise<string> => {
+        const path = employeeId 
+            ? `${V2}/employee/${employeeId}/export/monthly` 
+            : `${V2}/export/monthly`;
+        const res = await fetch(`${path}${qs({ month })}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch monthly report data');
+        return await res.text();
+    },
+
+    fetchDailyReportCsv: async (date: string, employeeId?: string): Promise<string> => {
+        const path = employeeId
+            ? `${V2}/employee/${employeeId}/export/daily`
+            : `${V2}/export/daily`;
+        const res = await fetch(`${path}${qs({ date })}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch daily report data');
+        return await res.text();
+    },
+
     downloadMonthlyReport: async (month: string, employeeId?: string) => {
         const path = employeeId 
             ? `${V2}/employee/${employeeId}/export/monthly` 
@@ -148,6 +170,9 @@ export const attendanceApi = {
 
     createManualRecord: (data: object) =>
         post<AttendanceRecord>(`${V2}/manual`, data),
+
+    selfPunch: () =>
+        post<{ message: string }>(`${V2}/punch`),
 
     exportCSV: async (params: Record<string, string | undefined>) => {
         const res = await fetch(`${V2}/export`, {

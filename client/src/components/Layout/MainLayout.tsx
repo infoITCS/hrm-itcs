@@ -2,9 +2,11 @@ import { useState, useCallback } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 const MainLayout = () => {
     const location = useLocation();
+    const { isImpersonated, user, stopImpersonating } = useAuth();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const closeSidebar = useCallback(() => setSidebarOpen(false), []);
     const openSidebar = useCallback(() => setSidebarOpen(true), []);
@@ -22,19 +24,32 @@ const MainLayout = () => {
 
     return (
         <div className="flex flex-col min-h-screen">
+            {isImpersonated && (
+                <div className="bg-amber-500 text-slate-900 py-2.5 px-4 text-center text-sm font-bold flex justify-center items-center gap-3 z-[9999] fixed top-0 left-0 right-0 h-10 shadow-md">
+                    <span>
+                        You are currently impersonating <strong>{user?.name || user?.email}</strong> (Role: <span className="capitalize">{user?.role}</span>)
+                    </span>
+                    <button 
+                        onClick={stopImpersonating}
+                        className="bg-slate-900 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm active:scale-95"
+                    >
+                        Switch Back
+                    </button>
+                </div>
+            )}
             <div className="flex flex-1 min-h-0">
                 <Sidebar
                     isOpen={sidebarOpen}
                     onClose={closeSidebar}
                 />
-            <div className="flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 pt-14 min-[992px]:pt-16 transition-all duration-300">
-                <Header
-                    title={title}
-                    onMenuClick={openSidebar}
-                />
-                <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
-                    <Outlet />
-                </main>
+                <div className={`flex-1 flex flex-col min-w-0 ml-0 min-[992px]:ml-64 transition-all duration-300 ${isImpersonated ? 'pt-[96px] min-[992px]:pt-[104px]' : 'pt-14 min-[992px]:pt-16'}`}>
+                    <Header
+                        title={title}
+                        onMenuClick={openSidebar}
+                    />
+                    <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
+                        <Outlet />
+                    </main>
                 </div>
             </div>
         </div>

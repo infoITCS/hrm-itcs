@@ -51,8 +51,8 @@ const ExpenseClaimSchema = new Schema(
         employeeId: { type: String, required: true, index: true },
         employeeUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
 
-        category: { type: String, required: true, enum: ['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'] },
-        subCategory: { type: String },
+        category: { type: String, required: true },
+        subCategories: [{ type: String }],
         expenseDate: { type: Date, default: Date.now },
 
         forWhom: { type: String, enum: ['Self', 'Dependent'], required: true, default: 'Self' },

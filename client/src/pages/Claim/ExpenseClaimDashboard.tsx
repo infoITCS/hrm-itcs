@@ -28,18 +28,9 @@ import {
     ChevronRight,
 } from 'lucide-react';
 
-type Category = 'Medical' | 'Training & Certification' | 'Travel' | 'Sales/Customer Gifts' | 'Other';
 type ForWhom = 'Self' | 'Dependent';
 
 type Claim = any;
-
-const SUB_CATEGORIES: Record<Category, string[]> = {
-    Medical: ['Consultation', 'Pharmacy / Medicines', 'Lab Test / Diagnostics', 'Hospitalization', 'Dental Treatment', 'Optical / Glasses', 'Other Medical'],
-    'Training & Certification': ['Course Fee', 'Certification Exam Fee', 'Books / Study Material', 'Workshop / Seminar Fee', 'Other Training'],
-    Travel: ['Hotel Accommodation', 'Flight / Train Ticket', 'Fuel / Mileage', 'Taxi / Ride Share', 'Meals / Per Diem', 'Other Travel'],
-    'Sales/Customer Gifts': ['Customer Lunch / Dinner', 'Client Entertainment', 'Corporate Gift Item', 'Other Sales Expense'],
-    Other: ['Office Supplies', 'Software Subscription', 'Internet / Mobile Bill', 'Miscellaneous']
-};
 
 const STATUS_COLORS: Record<string, string> = {
     'Pending Team Lead': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -71,7 +62,7 @@ const ExpenseClaimDashboard = () => {
     const token = localStorage.getItem('token');
     const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
 
-    type Tab = 'submit' | 'mine' | 'approvals' | 'history';
+    type Tab = 'submit' | 'mine' | 'approvals' | 'history' | 'settings';
     const [tab, setTab] = useState<Tab>('submit');
 
     const [employee, setEmployee] = useState<any>(null);
@@ -90,8 +81,9 @@ const ExpenseClaimDashboard = () => {
     const [loadingProgress, setLoadingProgress] = useState(false);
 
     // Form state
-    const [category, setCategory] = useState<Category>('Medical');
-    const [subCategory, setSubCategory] = useState('');
+    const [categories, setCategories] = useState<any[]>([]);
+    const [category, setCategory] = useState<string>('');
+    const [subCategories, setSubCategories] = useState<string[]>([]);
     const [forWhom, setForWhom] = useState<ForWhom>('Self');
     const [dependentId, setDependentId] = useState('');
     const [purpose, setPurpose] = useState('');
@@ -115,10 +107,31 @@ const ExpenseClaimDashboard = () => {
     const [filterStartDate, setFilterStartDate] = useState('');
     const [filterEndDate, setFilterEndDate] = useState('');
 
+    // Bulk actions state
+    const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
+    const [bulkDecisionOpen, setBulkDecisionOpen] = useState(false);
+    const [bulkDecisionType, setBulkDecisionType] = useState<'Approved' | 'Declined'>('Approved');
+    const [bulkComments, setBulkComments] = useState('');
+    const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+    // Category Settings state
+    const [editingCategory, setEditingCategory] = useState<any>(null);
+    const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+    const [catFormName, setCatFormName] = useState('');
+    const [catFormLimit, setCatFormLimit] = useState<number | ''>('');
+    const [catFormActive, setCatFormActive] = useState(true);
+    const [catFormReceipt, setCatFormReceipt] = useState(false);
+    const [catFormSubCats, setCatFormSubCats] = useState('');
+    const [catSubmitting, setCatSubmitting] = useState(false);
+
     const isApprover = role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr';
     const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
 
     const remainingMedicalLimit = useMemo(() => {
+        if (!category) return 0;
+        const selectedCat = categories.find(c => c.name === category);
+        if (!selectedCat || !selectedCat.policyLimit) return 0;
+
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(currentYear, 0, 1).getTime();
         const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999).getTime();
@@ -130,20 +143,20 @@ const ExpenseClaimDashboard = () => {
             relevantClaims = mine;
         }
 
-        const medicalClaims = relevantClaims.filter((c: any) => {
-            if (c.category !== 'Medical') return false;
+        const categoryClaims = relevantClaims.filter((c: any) => {
+            if (c.category !== category) return false;
             if (c.status === 'Draft' || c.status === 'Declined') return false;
             const createdAt = new Date(c.createdAt).getTime();
             return createdAt >= startOfYear && createdAt <= endOfYear;
         });
 
-        const claimedSoFar = medicalClaims.reduce((sum: number, c: any) => {
+        const claimedSoFar = categoryClaims.reduce((sum: number, c: any) => {
             const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
             return sum + amount;
         }, 0);
 
-        return Math.max(0, 60000 - claimedSoFar);
-    }, [mine, history, selectedEmployeeId, isAdminLike]);
+        return Math.max(0, selectedCat.policyLimit - claimedSoFar);
+    }, [category, categories, mine, history, selectedEmployeeId, isAdminLike]);
 
     const fetchEmployee = useCallback(async () => {
         if (!user?.id) return;
@@ -228,6 +241,22 @@ const ExpenseClaimDashboard = () => {
         }
     }, [headers, isAdminLike]);
 
+    const fetchCategories = useCallback(async () => {
+        try {
+            const endpoint = isAdminLike ? api.expenseCategoriesAll : api.expenseCategories;
+            const r = await fetch(endpoint, { headers });
+            const d = await r.json();
+            if (d?.success) {
+                setCategories(d.data || []);
+                if (d.data?.length > 0 && !category) {
+                    setCategory(d.data[0].name);
+                }
+            }
+        } catch {
+            // ignore
+        }
+    }, [headers, isAdminLike, category]);
+
     const filterList = useCallback((list: any[]) => {
         return list.filter(c => {
             const matchesClaimNo = !filterClaimNo || (c.claimNo || '').toLowerCase().includes(filterClaimNo.toLowerCase());
@@ -269,7 +298,8 @@ const ExpenseClaimDashboard = () => {
         fetchProgress();
         fetchHistory();
         fetchAllEmployees();
-    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees]);
+        fetchCategories();
+    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees, fetchCategories]);
 
     useEffect(() => {
         if (forWhom === 'Self') setDependentId('');
@@ -283,12 +313,21 @@ const ExpenseClaimDashboard = () => {
             : employee;
         if (!targetEmp?.employeeId) return 'Employee profile not found';
         if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
-        if (category === 'Medical' && forWhom === 'Dependent' && !dependentId) return 'Select a registered dependent';
-        if (category === 'Medical' && amountRequested > remainingMedicalLimit && !isAdminLike) {
-            return `Amount exceeds remaining medical limit (${formatMoney(remainingMedicalLimit)}). Out-of-policy claims can only be submitted by HR or Admin.`;
+        if (!category) return 'Select a category';
+        
+        const selectedCat = categories.find(c => c.name === category);
+        
+        if (selectedCat && selectedCat.requiresReceipt && receiptFiles.length === 0) {
+            return `Receipt upload is required for ${selectedCat.name} claims`;
         }
-        if (category === 'Medical' && receiptFiles.length === 0) return 'Receipt upload is required for Medical claims';
-        if (['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category)) {
+        
+        if (category === 'Medical' && forWhom === 'Dependent' && !dependentId) return 'Select a registered dependent';
+        
+        if (selectedCat && selectedCat.policyLimit > 0 && amountRequested > remainingMedicalLimit && !isAdminLike) {
+            return `Amount exceeds remaining limit (${formatMoney(remainingMedicalLimit)}). Out-of-policy claims can only be submitted by HR or Admin.`;
+        }
+
+        if (selectedCat && !selectedCat.requiresReceipt) {
             const hasComment = notes.trim().length >= 5;
             const hasReceipt = receiptFiles.length > 0;
             if (!hasComment && !hasReceipt) {
@@ -296,7 +335,7 @@ const ExpenseClaimDashboard = () => {
             }
         }
         return '';
-    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, forWhom, dependentId, category, remainingMedicalLimit, notes, receiptFiles.length]);
+    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, forWhom, dependentId, category, categories, remainingMedicalLimit, notes, receiptFiles.length]);
 
     const handleSubmit = async () => {
         if (submitDisabledReason) return;
@@ -307,7 +346,7 @@ const ExpenseClaimDashboard = () => {
             const payload = {
                 employeeId: selectedEmployeeId || undefined,
                 category,
-                subCategory: subCategory.trim() || undefined,
+                subCategories: subCategories,
                 expenseDate,
                 forWhom,
                 dependentId: forWhom === 'Dependent' ? dependentId : undefined,
@@ -323,7 +362,7 @@ const ExpenseClaimDashboard = () => {
 
             // Reset form
             setSelectedEmployeeId('');
-            setSubCategory('');
+            setSubCategories([]);
             setExpenseDate(new Date().toISOString().split('T')[0]);
             setForWhom('Self');
             setDependentId('');
@@ -484,6 +523,84 @@ const ExpenseClaimDashboard = () => {
         }
     };
 
+    const handleBulkDecision = async () => {
+        if (selectedClaimIds.length === 0) return;
+        setBulkSubmitting(true);
+        try {
+            const payload = {
+                claimIds: selectedClaimIds,
+                decision: bulkDecisionType,
+                comments: bulkComments.trim() || undefined,
+            };
+            const r = await fetch(api.claimBulkDecision, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to process bulk decision');
+            if (d.failedCount > 0) {
+                alert(`Processed ${d.processedCount} claims, but ${d.failedCount} claims failed or were skipped (e.g., out-of-policy claims require individual handling).`);
+            }
+            setBulkDecisionOpen(false);
+            setSelectedClaimIds([]);
+            setBulkComments('');
+            await fetchApprovals();
+            await fetchMine();
+            await fetchHistory();
+        } catch (e: any) {
+            alert(e?.message || 'Failed to process bulk decision');
+        } finally {
+            setBulkSubmitting(false);
+        }
+    };
+
+    const handleSaveCategory = async () => {
+        if (!catFormName) return alert('Name is required');
+        setCatSubmitting(true);
+        try {
+            const payload = {
+                name: catFormName,
+                policyLimit: typeof catFormLimit === 'number' ? catFormLimit : 0,
+                isActive: catFormActive,
+                requiresReceipt: catFormReceipt,
+                subCategories: catFormSubCats.split(',').map(s => s.trim()).filter(Boolean),
+            };
+
+            let r;
+            if (editingCategory) {
+                r = await fetch(api.expenseCategory(editingCategory._id), { method: 'PUT', headers, body: JSON.stringify(payload) });
+            } else {
+                r = await fetch(api.expenseCategories, { method: 'POST', headers, body: JSON.stringify(payload) });
+            }
+            
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to save category');
+            
+            setCategoryModalOpen(false);
+            await fetchCategories();
+        } catch (e: any) {
+            alert(e?.message || 'Failed to save category');
+        } finally {
+            setCatSubmitting(false);
+        }
+    };
+
+    const openEditCategory = (cat?: any) => {
+        if (cat) {
+            setEditingCategory(cat);
+            setCatFormName(cat.name);
+            setCatFormLimit(cat.policyLimit || '');
+            setCatFormActive(cat.isActive !== false);
+            setCatFormReceipt(cat.requiresReceipt === true);
+            setCatFormSubCats((cat.subCategories || []).join(', '));
+        } else {
+            setEditingCategory(null);
+            setCatFormName('');
+            setCatFormLimit('');
+            setCatFormActive(true);
+            setCatFormReceipt(false);
+            setCatFormSubCats('');
+        }
+        setCategoryModalOpen(true);
+    };
+
     // Admin correction modal
     const [correctOpen, setCorrectOpen] = useState(false);
     const [correctClaim, setCorrectClaim] = useState<any>(null);
@@ -561,6 +678,7 @@ const ExpenseClaimDashboard = () => {
         { id: 'mine' as const, label: 'My Claims', icon: FileText },
         ...(isApprover ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
         ...(isAdminLike ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
+        ...(isAdminLike ? [{ id: 'settings' as const, label: 'Category Settings', icon: Tag }] : []),
     ];
 
     return (
@@ -756,9 +874,9 @@ const ExpenseClaimDashboard = () => {
                                 </div>
                             )}
 
-                            {category === 'Medical' && (
+                            {categories.find(c => c.name === category)?.policyLimit > 0 && (
                                 <div className="lg:col-span-2 p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-indigo-700 text-xs font-bold animate-fadeIn">
-                                    <span>Remaining Medical balance for {selectedEmployeeId ? "selected employee" : "you"} ({new Date().getFullYear()}):</span>
+                                    <span>Remaining balance for {selectedEmployeeId ? "selected employee" : "you"} ({new Date().getFullYear()}):</span>
                                     <span className="text-sm font-extrabold">
                                         {(selectedEmployeeId ? loadingHistory : loadingMine) ? 'Loading...' : formatMoney(remainingMedicalLimit)}
                                     </span>
@@ -769,29 +887,40 @@ const ExpenseClaimDashboard = () => {
                                 <select
                                     value={category}
                                     onChange={e => {
-                                        const cat = e.target.value as Category;
-                                        setCategory(cat);
-                                        setSubCategory('');
+                                        setCategory(e.target.value);
+                                        setSubCategories([]);
                                     }}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 >
-                                    {(['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'] as Category[]).map(c => (
-                                        <option key={c} value={c}>{c}</option>
+                                    {categories.map(c => (
+                                        <option key={c._id} value={c.name}>{c.name}</option>
                                     ))}
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-600">Sub-category</label>
-                                <select
-                                    value={subCategory}
-                                    onChange={e => setSubCategory(e.target.value)}
-                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                >
-                                    <option value="">Select Sub-category</option>
-                                    {(SUB_CATEGORIES[category] || []).map(sc => (
-                                        <option key={sc} value={sc}>{sc}</option>
+                                <label className="text-xs font-bold text-slate-600">Sub-categories (Select multiple)</label>
+                                <div className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white overflow-y-auto max-h-32">
+                                    {categories.find(c => c.name === category)?.subCategories?.map((sc: string) => (
+                                        <label key={sc} className="flex items-center gap-2 py-1">
+                                            <input 
+                                                type="checkbox"
+                                                checked={subCategories.includes(sc)}
+                                                onChange={e => {
+                                                    if (e.target.checked) {
+                                                        setSubCategories(prev => [...prev, sc]);
+                                                    } else {
+                                                        setSubCategories(prev => prev.filter(item => item !== sc));
+                                                    }
+                                                }}
+                                                className="rounded text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span>{sc}</span>
+                                        </label>
                                     ))}
-                                </select>
+                                    {(!categories.find(c => c.name === category)?.subCategories || categories.find(c => c.name === category)?.subCategories.length === 0) && (
+                                        <div className="text-slate-400 italic">No sub-categories defined</div>
+                                    )}
+                                </div>
                             </div>
 
                             <div>
@@ -1053,6 +1182,20 @@ const ExpenseClaimDashboard = () => {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-100">
+                                            <th className="px-4 py-3 w-10 text-center">
+                                                <input 
+                                                    type="checkbox" 
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                    checked={filteredApprovals.length > 0 && selectedClaimIds.length === filteredApprovals.length}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedClaimIds(filteredApprovals.map((c: any) => c._id));
+                                                        } else {
+                                                            setSelectedClaimIds([]);
+                                                        }
+                                                    }}
+                                                />
+                                            </th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
@@ -1066,6 +1209,20 @@ const ExpenseClaimDashboard = () => {
                                     <tbody>
                                         {filteredApprovals.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-4 py-3 text-center">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        checked={selectedClaimIds.includes(c._id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedClaimIds(prev => [...prev, c._id]);
+                                                            } else {
+                                                                setSelectedClaimIds(prev => prev.filter(id => id !== c._id));
+                                                            }
+                                                        }}
+                                                    />
+                                                </td>
                                                 <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
                                                  <td className="px-4 py-3 text-slate-600">
                                                      {c.employeeDetails ? (
@@ -1117,6 +1274,75 @@ const ExpenseClaimDashboard = () => {
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+                        )}
+                        
+                        {/* Bulk Action Floating Toolbar */}
+                        {selectedClaimIds.length > 0 && (
+                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl border border-indigo-100 px-6 py-4 flex items-center gap-6 z-40 animate-fadeIn">
+                                <div className="text-sm font-bold text-slate-700">
+                                    <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md mr-2">{selectedClaimIds.length}</span>
+                                    claims selected
+                                </div>
+                                <div className="w-px h-6 bg-slate-200"></div>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setBulkDecisionType('Approved');
+                                            setBulkDecisionOpen(true);
+                                        }}
+                                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all flex items-center gap-2"
+                                    >
+                                        <CheckCircle2 size={16} /> Bulk Approve
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setBulkDecisionType('Declined');
+                                            setBulkDecisionOpen(true);
+                                        }}
+                                        className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-500/30 transition-all flex items-center gap-2"
+                                    >
+                                        <XCircle size={16} /> Bulk Decline
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Bulk Decision Modal */}
+                        {bulkDecisionOpen && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                                <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-scaleIn">
+                                    <div className={`px-6 py-4 border-b text-white flex justify-between items-center ${bulkDecisionType === 'Approved' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+                                        <div className="font-bold text-lg">Bulk {bulkDecisionType}</div>
+                                        <button onClick={() => setBulkDecisionOpen(false)} className="text-white/80 hover:text-white"><X size={20}/></button>
+                                    </div>
+                                    <div className="p-6">
+                                        <p className="text-sm text-slate-600 mb-4">
+                                            You are about to <strong>{bulkDecisionType.toLowerCase()}</strong> {selectedClaimIds.length} selected claims.
+                                        </p>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Comments (Optional)</label>
+                                            <textarea
+                                                className="mt-1 w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-300 outline-none resize-none"
+                                                rows={3}
+                                                placeholder="Add a comment for all selected claims..."
+                                                value={bulkComments}
+                                                onChange={e => setBulkComments(e.target.value)}
+                                            ></textarea>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                                        <button onClick={() => setBulkDecisionOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50">Cancel</button>
+                                        <button 
+                                            onClick={handleBulkDecision} 
+                                            disabled={bulkSubmitting}
+                                            className={`px-4 py-2 text-sm font-bold text-white rounded-xl shadow flex items-center gap-2 ${bulkDecisionType === 'Approved' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'} disabled:opacity-50`}
+                                        >
+                                            {bulkSubmitting && <RefreshCw size={14} className="animate-spin" />}
+                                            Confirm
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1224,6 +1450,136 @@ const ExpenseClaimDashboard = () => {
                         )}
                     </div>
                 )}
+
+                {tab === 'settings' && isAdminLike && (
+                    <div className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Expense Categories</h3>
+                                <p className="text-sm text-slate-500">Manage categories, limits, and sub-categories.</p>
+                            </div>
+                            <button
+                                onClick={() => openEditCategory()}
+                                className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                            >
+                                <PlusCircle size={16} /> New Category
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {categories.map((cat: any) => (
+                                <div key={cat._id} className={`p-5 rounded-2xl border ${cat.isActive ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-75'} shadow-sm flex flex-col`}>
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <div className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                                                {cat.name}
+                                                {!cat.isActive && <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 uppercase tracking-widest">Inactive</span>}
+                                            </div>
+                                            <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-4">
+                                                <span>Limit: {cat.policyLimit > 0 ? formatMoney(cat.policyLimit) : 'No limit'}</span>
+                                                {cat.requiresReceipt && <span className="text-indigo-600 flex items-center gap-1"><Receipt size={12}/> Receipt Req.</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 mt-2">
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Sub-categories</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {(cat.subCategories || []).length > 0 ? (cat.subCategories || []).map((sc: string) => (
+                                                <span key={sc} className="px-2 py-1 rounded bg-slate-100 text-slate-600 text-[11px] font-semibold border border-slate-200">{sc}</span>
+                                            )) : (
+                                                <span className="text-xs text-slate-400 italic">None defined</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-end">
+                                        <button 
+                                            onClick={() => openEditCategory(cat)}
+                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                                        >
+                                            Edit Category
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Category Modal */}
+                        {categoryModalOpen && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                                <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
+                                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                                        <div className="font-bold text-slate-800 text-lg">{editingCategory ? 'Edit Category' : 'New Category'}</div>
+                                        <button onClick={() => setCategoryModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                                    </div>
+                                    <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Category Name</label>
+                                            <input
+                                                type="text"
+                                                value={catFormName}
+                                                onChange={e => setCatFormName(e.target.value)}
+                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 outline-none"
+                                                placeholder="e.g., Variable Expense"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Annual Policy Limit (PKR)</label>
+                                            <input
+                                                type="number"
+                                                value={catFormLimit}
+                                                onChange={e => setCatFormLimit(e.target.value === '' ? '' : Number(e.target.value))}
+                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 outline-none"
+                                                placeholder="0 or empty for no limit"
+                                            />
+                                            <p className="text-[11px] text-slate-500 mt-1">If set &gt; 0, system tracks the user's total approved amount for this category in the current year and blocks submissions exceeding the limit (unless submitted by Admin).</p>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Sub-categories (comma separated)</label>
+                                            <textarea
+                                                value={catFormSubCats}
+                                                onChange={e => setCatFormSubCats(e.target.value)}
+                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 outline-none resize-none"
+                                                rows={3}
+                                                placeholder="e.g., Office Supplies, Software, Travel"
+                                            ></textarea>
+                                        </div>
+                                        <div className="flex flex-col gap-3 mt-2 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={catFormActive}
+                                                    onChange={e => setCatFormActive(e.target.checked)}
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-semibold text-slate-700">Category is Active</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={catFormReceipt}
+                                                    onChange={e => setCatFormReceipt(e.target.checked)}
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-semibold text-slate-700">Receipt Upload Required</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                                        <button onClick={() => setCategoryModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-900">Cancel</button>
+                                        <button 
+                                            onClick={handleSaveCategory} 
+                                            disabled={catSubmitting}
+                                            className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {catSubmitting && <RefreshCw size={14} className="animate-spin" />}
+                                            Save Category
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* ══════════════════════════════════════════════════════════════
@@ -1268,7 +1624,7 @@ const ExpenseClaimDashboard = () => {
                                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                                             <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><Tag size={11} />CATEGORY</div>
                                             <div className="font-bold text-slate-800 text-sm">{decisionClaim.category}</div>
-                                            {decisionClaim.subCategory && <div className="text-xs text-slate-500 mt-0.5">{decisionClaim.subCategory}</div>}
+                                            {decisionClaim.subCategories && decisionClaim.subCategories.length > 0 && <div className="text-xs text-slate-500 mt-0.5">{decisionClaim.subCategories.join(', ')}</div>}
                                         </div>
                                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                                             <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><CalendarDays size={11} />EXPENSE DATE</div>

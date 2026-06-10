@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { attendanceApi } from '../api/attendanceApi';
+import SheetPreviewModal from '../components/SheetPreviewModal';
 import type { EmployeeMonthlyDetail } from '../types';
 import {
     Clock, CheckCircle2, AlertTriangle, 
@@ -57,8 +58,14 @@ export default function EmployeeDashboard() {
     const [data, setData] = useState<EmployeeMonthlyDetail | null>(null);
     const [loading, setLoading] = useState(Boolean(user?.id));
     const [error, setError] = useState<string | null>(null);
-    const [downloading, setDownloading] = useState(false);
-    const [downloadingDaily, setDownloadingDaily] = useState(false);
+    const [punching, setPunching] = useState(false);
+    const [previewConfig, setPreviewConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        subtitle?: string;
+        fetchData: () => Promise<string>;
+        downloadFileName: string;
+    } | null>(null);
 
     const loadData = useCallback(async () => {
         if (!user?.id) {
@@ -80,27 +87,27 @@ export default function EmployeeDashboard() {
 
     const todayStr = () => new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
 
-    const handleDownload = async () => {
-        setDownloading(true);
-        try {
-            await attendanceApi.downloadMonthlyReport(month, 'me');
-        } catch (err: any) {
-            console.error('Download failed:', err);
-            alert(`Failed to download monthly sheet: ${err.message}`);
-        } finally {
-            setDownloading(false);
-        }
+    const handleShowPreviewMonthly = () => {
+        setPreviewConfig({
+            isOpen: true,
+            title: 'Monthly Attendance Sheet Preview',
+            subtitle: `Monthly report for ${month}`,
+            fetchData: () => attendanceApi.fetchMonthlyReportCsv(month, 'me'),
+            downloadFileName: `attendance_me_${month}.csv`
+        });
     };
 
-    const handleDownloadDaily = async () => {
-        setDownloadingDaily(true);
+
+    const handlePunch = async () => {
+        setPunching(true);
         try {
-            await attendanceApi.downloadDailyReport(todayStr(), 'me');
+            await attendanceApi.selfPunch();
+            await loadData();
         } catch (err: any) {
-            console.error('Download failed:', err);
-            alert(`Failed to download daily sheet: ${err.message}`);
+            console.error('Punch failed:', err);
+            alert(err.message || 'Failed to record punch');
         } finally {
-            setDownloadingDaily(false);
+            setPunching(false);
         }
     };
 
@@ -125,6 +132,12 @@ export default function EmployeeDashboard() {
     const isCurrentMonth = month === getLocalYearMonth(new Date());
     const [y, mNum] = month.split('-').map(Number);
     const monthLabel = new Date(y, mNum - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const todayVal = todayStr();
+    const todayRecord = data?.days.find(d => d.date === todayVal);
+    const hasCheckedIn = Boolean(todayRecord?.checkIn);
+    const hasCheckedOut = Boolean(todayRecord?.checkOut);
+    const isWorking = hasCheckedIn && !hasCheckedOut;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -170,21 +183,26 @@ export default function EmployeeDashboard() {
                             </button>
                         </div>
 
+                        {/* Live Punch Button */}
                         <button
-                            onClick={handleDownloadDaily}
-                            disabled={downloadingDaily}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-white/90 text-indigo-600 rounded-xl font-bold transition-all hover:bg-slate-50 active:scale-95 disabled:opacity-50 text-sm shadow-lg border border-white/50"
+                            onClick={handlePunch}
+                            disabled={punching}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-xl text-sm border border-white/20 ${
+                                isWorking 
+                                    ? 'bg-rose-500 hover:bg-rose-600 text-white' 
+                                    : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                            } ${punching ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
                         >
-                            <Download size={16} className={downloadingDaily ? 'animate-bounce' : ''} />
-                            {downloadingDaily ? 'Preparing...' : 'Daily Sheet'}
+                            {punching ? <RefreshCw size={16} className="animate-spin" /> : isWorking ? <LogOut size={16} /> : <LogIn size={16} />}
+                            {punching ? 'Recording...' : isWorking ? 'Check Out' : 'Check In'}
                         </button>
+
                         <button
-                            onClick={handleDownload}
-                            disabled={downloading}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-white text-indigo-600 rounded-xl font-bold transition-all hover:bg-slate-50 active:scale-95 disabled:opacity-50 text-sm shadow-xl"
+                            onClick={handleShowPreviewMonthly}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-white text-indigo-600 rounded-xl font-bold transition-all hover:bg-slate-50 active:scale-95 text-sm shadow-xl"
                         >
-                            <Download size={16} className={downloading ? 'animate-bounce' : ''} />
-                            {downloading ? 'Preparing...' : 'Monthly Sheet'}
+                            <Download size={16} />
+                            Monthly Sheet
                         </button>
                     </div>
                 </div>
@@ -308,6 +326,17 @@ export default function EmployeeDashboard() {
                     </div>
                 </>
             ) : null}
+
+            {previewConfig && (
+                <SheetPreviewModal
+                    isOpen={previewConfig.isOpen}
+                    onClose={() => setPreviewConfig(null)}
+                    title={previewConfig.title}
+                    subtitle={previewConfig.subtitle}
+                    fetchData={previewConfig.fetchData}
+                    downloadFileName={previewConfig.downloadFileName}
+                />
+            )}
         </div>
     );
 }

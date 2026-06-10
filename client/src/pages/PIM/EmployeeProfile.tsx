@@ -421,6 +421,52 @@ const EmployeeProfile = () => {
                                 ) : <p className="text-gray-400 italic text-sm">No social profiles linked</p>}
                             </div>
                         </div>
+
+                        {/* Certifications Display */}
+                        {employee.certifications?.length > 0 && (
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <FileText size={16} /> Certifications
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                    {employee.certifications.map((cert: any, idx: number) => {
+                                        const savedFile = employee.attachments?.find((a: any) => a.fileType === `Certification - ${idx}`);
+                                        return (
+                                            <div key={idx} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-3 group/cert hover:border-indigo-300 transition-all shadow-sm">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg shrink-0">
+                                                        <FileText size={16} />
+                                                    </div>
+                                                    <h4 className="font-semibold text-sm text-slate-700 truncate" title={cert.title}>{cert.title || 'Untitled Certification'}</h4>
+                                                </div>
+                                                {savedFile && (
+                                                    <div className="flex items-center gap-1 shrink-0 opacity-60 group-hover/cert:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => {
+                                                                const url = api.attachmentRaw(savedFile._id);
+                                                                const ext = savedFile.fileName?.split('.').pop()?.toLowerCase() || '';
+                                                                setPreviewDoc({ url, name: savedFile.fileName, type: ext });
+                                                            }}
+                                                            className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-all"
+                                                            title="Preview Certification"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDownload(savedFile._id, savedFile.fileName)}
+                                                            className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                            title="Download Certification"
+                                                        >
+                                                            <Download size={16} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

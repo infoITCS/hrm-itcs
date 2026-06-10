@@ -9,6 +9,7 @@ import { STATUS_LABELS } from '../types';
 import type { EmployeeMonthlyDetail, MonthlyDayEntry, TodayRosterEntry } from '../types';
 import { usePermissions } from '../../../hooks/usePermissions';
 import EditAttendanceModal from './EditAttendanceModal';
+import SheetPreviewModal from './SheetPreviewModal';
 
 // Deterministic class mappings for Tailwind JIT safety
 const STATUS_CLASS_MAP: Record<string, string> = {
@@ -54,7 +55,13 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
     const canEditAttendance = role === 'super-admin' || role === 'admin' || role === 'manager';
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isDownloading, setIsDownloading] = useState(false);
+    const [previewConfig, setPreviewConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        subtitle?: string;
+        fetchData: () => Promise<string>;
+        downloadFileName: string;
+    } | null>(null);
     const [data, setData] = useState<EmployeeMonthlyDetail | null>(null);
     const [editingDay, setEditingDay] = useState<MonthlyDayEntry | null>(null);
     const modalRef = useRef<HTMLDivElement>(null);
@@ -136,18 +143,7 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
         return () => controller.abort();
     }, [employeeId, currentMonth, retryKey]);
 
-    const handleDownload = async () => {
-        if (isDownloading) return;
-        setIsDownloading(true);
-        try {
-            await attendanceApi.downloadMonthlyReport(currentMonth, employeeId);
-        } catch (err: any) {
-            console.error('Download failed:', err);
-            alert(`Download failed: ${err.message || 'Unknown error'}`);
-        } finally {
-            setIsDownloading(false);
-        }
-    };
+    // Remove old handleDownload function
 
     const toEditableEntry = (day: MonthlyDayEntry): TodayRosterEntry => ({
         employeeId,
@@ -232,12 +228,17 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                         </div>
                         <div className="flex items-center gap-2 ml-auto">
                             <button 
-                                onClick={handleDownload}
-                                disabled={isDownloading}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100 disabled:opacity-50"
+                                onClick={() => setPreviewConfig({
+                                    isOpen: true,
+                                    title: 'Monthly Attendance Sheet Preview',
+                                    subtitle: `Monthly report for ${employeeName} (${currentMonth})`,
+                                    fetchData: () => attendanceApi.fetchMonthlyReportCsv(currentMonth, employeeId),
+                                    downloadFileName: `attendance_${employeeId}_${currentMonth}.csv`
+                                })}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
                             >
-                                <Download size={14} className={isDownloading ? 'animate-bounce' : ''} />
-                                {isDownloading ? 'Downloading...' : 'Monthly Sheet'}
+                                <Download size={14} />
+                                Monthly Sheet
                             </button>
                             <button 
                                 onClick={onClose}
@@ -381,6 +382,17 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                     setRetryKey((prev) => prev + 1);
                 }}
             />
+
+            {previewConfig && (
+                <SheetPreviewModal
+                    isOpen={previewConfig.isOpen}
+                    onClose={() => setPreviewConfig(null)}
+                    title={previewConfig.title}
+                    subtitle={previewConfig.subtitle}
+                    fetchData={previewConfig.fetchData}
+                    downloadFileName={previewConfig.downloadFileName}
+                />
+            )}
         </AnimatePresence>
     );
 };

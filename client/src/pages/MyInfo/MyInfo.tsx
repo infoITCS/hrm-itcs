@@ -11,6 +11,111 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import type { User as UserType } from '../../types';
 
+const DocumentPreview = ({
+    typeKey,
+    existingFile,
+    localFile,
+    onRemove,
+    onPreview,
+    inputId
+}: {
+    typeKey: string;
+    existingFile?: any;
+    localFile?: File;
+    onRemove: () => void;
+    onPreview: (url: string, name: string, type: string) => void;
+    inputId?: string;
+}) => {
+    const [localUrl, setLocalUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (localFile) {
+            const url = URL.createObjectURL(localFile);
+            setLocalUrl(url);
+            return () => {
+                URL.revokeObjectURL(url);
+            };
+        } else {
+            setLocalUrl(null);
+        }
+    }, [localFile]);
+
+    const url = localFile ? localUrl : (existingFile ? apiHelpers.attachmentRaw(existingFile._id) : null);
+    if (!url) return null;
+
+    const fileName = localFile ? localFile.name : existingFile.fileName;
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(extension);
+    const isPdf = extension === 'pdf';
+
+    return (
+        <div data-typekey={typeKey} className="w-full bg-white border border-slate-200/80 rounded-xl p-3 shadow-sm flex flex-col gap-3 group relative transition-all duration-300 hover:shadow-md hover:border-indigo-200 animate-fade-in z-10 text-left">
+            {/* Thumbnail */}
+            <div 
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onPreview(url, fileName, extension);
+                }}
+                className="w-full h-24 bg-slate-50 border border-slate-100 rounded-lg overflow-hidden flex items-center justify-center relative cursor-pointer"
+            >
+                {isImage ? (
+                    <img src={url} alt={fileName} className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300" />
+                ) : isPdf ? (
+                    <div className="flex flex-col items-center gap-1 text-rose-500 font-medium">
+                        <FileText size={24} />
+                        <span className="text-[9px] uppercase font-bold tracking-wider text-rose-500">PDF</span>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400 font-medium">
+                        <FileText size={24} />
+                        <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400">File</span>
+                    </div>
+                )}
+                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="text-white text-[10px] font-bold flex items-center gap-1 bg-slate-950/30 px-2.5 py-1 rounded-full backdrop-blur-sm">
+                        <Eye size={12} /> Preview
+                    </span>
+                </div>
+            </div>
+
+            {/* Info / Title */}
+            <div className="min-w-0">
+                <p className="text-[11px] font-bold text-slate-700 truncate" title={fileName}>{fileName}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${localFile ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">
+                        {localFile ? 'Staged Draft' : 'Saved Server'}
+                    </span>
+                </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[10px] font-bold mt-auto gap-2">
+                {inputId ? (
+                    <label 
+                        htmlFor={inputId}
+                        className="flex-1 text-center cursor-pointer text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded transition-colors"
+                    >
+                        Change
+                    </label>
+                ) : null}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onRemove();
+                    }}
+                    className={`text-center text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100/80 px-2 py-1 rounded transition-colors ${inputId ? 'flex-1' : 'w-full'}`}
+                >
+                    Delete
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const MyInfo = () => {
     const navigate = useNavigate();
     const { user, login } = useAuth();
@@ -41,6 +146,11 @@ const MyInfo = () => {
     });
     const [limitModalOpen, setLimitModalOpen] = useState(false);
     const [duplicateError, setDuplicateError] = useState<{ field: string; message: string } | null>(null);
+    const [lightboxFile, setLightboxFile] = useState<{
+        url: string;
+        fileName: string;
+        fileType: string;
+    } | null>(null);
     const [departments, setDepartments] = useState<string[]>([]);
     const [designations, setDesignations] = useState<string[]>([]);
     const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
@@ -1247,14 +1357,41 @@ const MyInfo = () => {
                                         <FileText size={16} /> Certifications
                                     </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                                        {rawEmployee.certifications.map((cert: any, idx: number) => (
-                                            <div key={idx} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center gap-3">
-                                                <div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg">
-                                                    <FileText size={16} />
+                                        {rawEmployee.certifications.map((cert: any, idx: number) => {
+                                            const savedFile = rawEmployee.attachments?.find((a: any) => a.fileType === `Certification - ${idx}`);
+                                            return (
+                                                <div key={idx} className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-3 group/cert hover:border-indigo-300 transition-all shadow-sm">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg shrink-0">
+                                                            <FileText size={16} />
+                                                        </div>
+                                                        <h4 className="font-semibold text-sm text-slate-700 truncate" title={cert.title}>{cert.title || 'Untitled Certification'}</h4>
+                                                    </div>
+                                                    {savedFile && (
+                                                        <div className="flex items-center gap-1 shrink-0 opacity-60 group-hover/cert:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const url = apiHelpers.attachmentRaw(savedFile._id);
+                                                                    const ext = savedFile.fileName?.split('.').pop()?.toLowerCase() || '';
+                                                                    setLightboxFile({ url, fileName: savedFile.fileName, fileType: ext });
+                                                                }}
+                                                                className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-all"
+                                                                title="Preview Certification"
+                                                            >
+                                                                <Eye size={16} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDownload(savedFile._id, savedFile.fileName)}
+                                                                className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                                title="Download Certification"
+                                                            >
+                                                                <Download size={16} />
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <h4 className="font-semibold text-sm text-slate-700">{cert.title || 'Untitled Certification'}</h4>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -1869,16 +2006,17 @@ const MyInfo = () => {
                                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                                     {['Profile Picture', 'Resume/CV', 'CNIC Front', 'CNIC Back'].map((label) => {
                                         const existingFile = rawEmployee?.attachments?.find((a: any) => a.fileType === label);
-                                        const hasNewFile = formData.files.some(f => f.type === label);
-                                        const displayFileName = hasNewFile ? formData.files.find(f => f.type === label)?.file.name : (existingFile?.fileName || null);
+                                        const localFileObj = formData.files.find(f => f.type === label);
+                                        const hasFile = !!existingFile || !!localFileObj;
+                                        const inputId = `file-input-${label.replace(/[^a-zA-Z0-9-]/g, '-')}`;
 
                                         return (
-                                            <div key={label} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors relative group">
+                                            <div key={label} className="relative flex flex-col h-full min-h-[160px]">
                                                 <input
                                                     type="file"
+                                                    id={inputId}
                                                     accept={label === 'Profile Picture' ? "image/*" : (label === 'Resume/CV' ? '.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp' : '.jpg,.jpeg,.png,.webp')}
-                                                    className="absolute inset-0 opacity-0 cursor-pointer z-20"
-                                                    tabIndex={-1}
+                                                    className="hidden"
                                                     onChange={(e) => {
                                                         if (e.target.files && e.target.files.length > 0) {
                                                             const file = e.target.files[0];
@@ -1893,52 +2031,78 @@ const MyInfo = () => {
                                                                     if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
                                                                     return previewUrl;
                                                                 });
-                                                                // Instant update to header for immediate feedback
-                                                                // Using Blob URL is safe for sessionStorage (it's a short string)
                                                                 login((prev: any) => prev ? { ...prev, avatar: previewUrl } : prev as any);
                                                             }
                                                         }
                                                     }}
                                                 />
-                                                {/* Profile Picture shows image preview instead of icon */}
-                                                {label === 'Profile Picture' && localAvatarPreview ? (
-                                                    <div className="relative z-10 pointer-events-none">
-                                                        <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2" />
-                                                        <button
-                                                            onClick={(e) => { 
-                                                                e.preventDefault(); 
-                                                                e.stopPropagation(); 
-                                                                setLocalAvatarPreview(null); 
-                                                                setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') })); 
-                                                                // Revert header to whatever is in rawEmployee (server state)
-                                                                const originalUrl = getAvatarUrl(rawEmployee);
-                                                                login((prev: any) => prev ? { ...prev, avatar: originalUrl } : prev as any);
-                                                            }}
-                                                            className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-30 pointer-events-auto"
-                                                            title="Remove"
-                                                        >×</button>
-                                                    </div>
-                                                ) : label === 'Profile Picture' && existingFile && !hasNewFile ? (
-                                                    <div className="relative z-10 pointer-events-none">
-                                                        <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
-                                                        <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <Upload className="text-white drop-shadow-md" size={24} />
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform pointer-events-none">
-                                                        <Upload size={20} />
-                                                    </div>
-                                                )}
 
-                                                <span className="text-sm font-medium text-gray-600 pointer-events-none">{label}</span>
-                                                {displayFileName && label !== 'Profile Picture' ? (
-                                                    <span className="text-xs text-emerald-600 font-medium mt-1 truncate max-w-full px-2 pointer-events-none">
-                                                        {displayFileName}
-                                                    </span>
-                                                ) : label !== 'Profile Picture' ? (
-                                                    <span className="text-xs text-gray-400 mt-1 pointer-events-none">Click to upload</span>
-                                                ) : null}
+                                                {hasFile ? (
+                                                    label === 'Profile Picture' ? (
+                                                        <div className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-colors h-full">
+                                                            {localAvatarPreview ? (
+                                                                <div className="relative cursor-pointer group/avatar" onClick={() => setLightboxFile({ url: localAvatarPreview, fileName: 'Profile Picture', fileType: 'png' })}>
+                                                                    <img src={localAvatarPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2" />
+                                                                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                                                                        <Eye className="text-white" size={18} />
+                                                                    </div>
+                                                                </div>
+                                                            ) : existingFile ? (
+                                                                <div className="relative cursor-pointer group/avatar" onClick={() => setLightboxFile({ url: apiHelpers.attachmentRaw(existingFile._id), fileName: existingFile.fileName, fileType: 'png' })}>
+                                                                    <img src={apiHelpers.attachmentRaw(existingFile._id)} alt="Existing Profile" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-300 shadow-md mb-2 opacity-80" />
+                                                                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                                                                        <Eye className="text-white" size={18} />
+                                                                    </div>
+                                                                </div>
+                                                            ) : null}
+                                                            <span className="text-xs font-semibold text-gray-500 mb-2">{label}</span>
+                                                            <div className="flex gap-2 w-full max-w-[150px]">
+                                                                <label htmlFor={inputId} className="flex-1 text-center cursor-pointer text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded transition-colors">
+                                                                    Change
+                                                                </label>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (localAvatarPreview) {
+                                                                            setLocalAvatarPreview(null);
+                                                                            setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== 'Profile Picture') }));
+                                                                            const originalUrl = getAvatarUrl(rawEmployee);
+                                                                            login((prev: any) => prev ? { ...prev, avatar: originalUrl } : prev as any);
+                                                                        } else if (existingFile) {
+                                                                            handleDeleteDocument(existingFile._id, existingFile.fileName);
+                                                                        }
+                                                                    }}
+                                                                    className="flex-1 text-center text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded transition-colors"
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <DocumentPreview
+                                                            typeKey={label}
+                                                            existingFile={existingFile}
+                                                            localFile={localFileObj?.file}
+                                                            inputId={inputId}
+                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                            onRemove={() => {
+                                                                if (localFileObj) {
+                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
+                                                                } else if (existingFile) {
+                                                                    handleDeleteDocument(existingFile._id, existingFile.fileName);
+                                                                }
+                                                            }}
+                                                        />
+                                                    )
+                                                ) : (
+                                                    <label htmlFor={inputId} className="border border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 hover:border-indigo-400 cursor-pointer transition-colors h-full group">
+                                                        <div className="p-2 bg-white rounded-full shadow-sm mb-2 text-indigo-500 group-hover:scale-110 transition-transform">
+                                                            <Upload size={20} />
+                                                        </div>
+                                                        <span className="text-sm font-medium text-gray-600">{label}</span>
+                                                        <span className="text-xs text-gray-400 mt-1">Click to upload</span>
+                                                    </label>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -2310,39 +2474,55 @@ const MyInfo = () => {
 
                                             {/* Document Upload */}
                                             <div className="mt-3 pt-3 border-t border-gray-100">
-                                                <div className="flex items-center gap-2">
-                                                    <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center">
-                                                        <Upload size={14} className="pointer-events-none" />
-                                                        <span className="truncate pointer-events-none">
-                                                            {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`)
-                                                                ? formData.files.find(f => f.type === `Immigration - ${doc.documentNumber || idx}`)?.file.name
-                                                                : 'Upload Document Scan (PDF / JPG / PNG)'}
-                                                        </span>
-                                                        <input
-                                                            type="file"
-                                                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                            className="hidden"
-                                                            onChange={(e) => {
-                                                                if (e.target.files && e.target.files.length > 0) {
-                                                                    const typeKey = `Immigration - ${doc.documentNumber || idx}`;
-                                                                    setFormData(prev => ({
-                                                                        ...prev,
-                                                                        files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                    }));
-                                                                }
-                                                            }}
-                                                        />
-                                                    </label>
-                                                    {formData.files.some(f => f.type === `Immigration - ${doc.documentNumber || idx}`) && (
-                                                        <button
-                                                            onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Immigration - ${doc.documentNumber || idx}`) }))}
-                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
-                                                            title="Remove File"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                                {(() => {
+                                                    const typeKey = `Immigration - ${doc.documentNumber || idx}`;
+                                                    const existingFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
+                                                    const localFileObj = formData.files.find(f => f.type === typeKey);
+                                                    const hasFile = !!existingFile || !!localFileObj;
+                                                    const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+
+                                                    return (
+                                                        <div className="flex flex-col gap-2">
+                                                            <input
+                                                                type="file"
+                                                                id={inputId}
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {hasFile ? (
+                                                                <DocumentPreview
+                                                                    typeKey={typeKey}
+                                                                    existingFile={existingFile}
+                                                                    localFile={localFileObj?.file}
+                                                                    inputId={inputId}
+                                                                    onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                                    onRemove={() => {
+                                                                        if (localFileObj) {
+                                                                            setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
+                                                                        } else if (existingFile) {
+                                                                            handleDeleteDocument(existingFile._id, existingFile.fileName);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center">
+                                                                    <Upload size={14} className="pointer-events-none" />
+                                                                    <span className="truncate pointer-events-none">Upload Document Scan (PDF / JPG / PNG)</span>
+                                                                </label>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
                                             </div>
                                         </div>
                                     ))}
@@ -2511,15 +2691,13 @@ const MyInfo = () => {
                                                             const typeKey = `Experience Letter - ${eh.companyName || idx}`;
                                                             const newFile = formData.files.find(f => f.type === typeKey);
                                                             const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
-                                                            const isUploaded = !!savedFile && !newFile;
+                                                            const hasFile = !!newFile || !!savedFile;
+                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
                                                             return (
-                                                                <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-indigo-300 bg-indigo-50/50 hover:bg-white text-indigo-600'}`}>
-                                                                    <Upload size={14} className="pointer-events-none" />
-                                                                    <span className="truncate pointer-events-none">
-                                                                        {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Experience Letter'}
-                                                                    </span>
+                                                                <div className="flex flex-col gap-2 w-full">
                                                                     <input
                                                                         type="file"
+                                                                        id={inputId}
                                                                         accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                         className="hidden"
                                                                         onChange={(e) => {
@@ -2531,18 +2709,30 @@ const MyInfo = () => {
                                                                             }
                                                                         }}
                                                                     />
-                                                                </label>
+                                                                    {hasFile ? (
+                                                                        <DocumentPreview
+                                                                            typeKey={typeKey}
+                                                                            existingFile={savedFile}
+                                                                            localFile={newFile?.file}
+                                                                            inputId={inputId}
+                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                                            onRemove={() => {
+                                                                                if (newFile) {
+                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
+                                                                                } else if (savedFile) {
+                                                                                    handleDeleteDocument(savedFile._id, savedFile.fileName);
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
+                                                                            <Upload size={14} className="pointer-events-none" />
+                                                                            <span className="truncate pointer-events-none">Upload Experience Letter</span>
+                                                                        </label>
+                                                                    )}
+                                                                </div>
                                                             );
                                                         })()}
-                                                        {formData.files.some(f => f.type === `Experience Letter - ${eh.companyName || idx}`) && (
-                                                            <button
-                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Experience Letter - ${eh.companyName || idx}`) }))}
-                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                                                                title="Remove File"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -2605,15 +2795,13 @@ const MyInfo = () => {
                                                             const typeKey = `Degree - ${edu.level || idx}`;
                                                             const newFile = formData.files.find(f => f.type === typeKey);
                                                             const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
-                                                            const isUploaded = !!savedFile && !newFile;
+                                                            const hasFile = !!newFile || !!savedFile;
+                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
                                                             return (
-                                                                <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed rounded-lg transition-all text-xs w-full justify-center ${isUploaded ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-gray-50 hover:bg-white text-gray-600'}`}>
-                                                                    <Upload size={14} className="pointer-events-none" />
-                                                                    <span className="truncate pointer-events-none">
-                                                                        {newFile ? newFile.file.name : isUploaded ? `✓ ${savedFile.fileName}` : 'Upload Degree/Transcript Scan'}
-                                                                    </span>
+                                                                <div className="flex flex-col gap-2 w-full">
                                                                     <input
                                                                         type="file"
+                                                                        id={inputId}
                                                                         accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
                                                                         className="hidden"
                                                                         onChange={(e) => {
@@ -2625,18 +2813,30 @@ const MyInfo = () => {
                                                                             }
                                                                         }}
                                                                     />
-                                                                </label>
+                                                                    {hasFile ? (
+                                                                        <DocumentPreview
+                                                                            typeKey={typeKey}
+                                                                            existingFile={savedFile}
+                                                                            localFile={newFile?.file}
+                                                                            inputId={inputId}
+                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                                            onRemove={() => {
+                                                                                if (newFile) {
+                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
+                                                                                } else if (savedFile) {
+                                                                                    handleDeleteDocument(savedFile._id, savedFile.fileName);
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
+                                                                            <Upload size={14} className="pointer-events-none" />
+                                                                            <span className="truncate pointer-events-none">Upload Degree/Transcript Scan</span>
+                                                                        </label>
+                                                                    )}
+                                                                </div>
                                                             );
                                                         })()}
-                                                        {formData.files.some(f => f.type === `Degree - ${edu.level || idx}`) && (
-                                                            <button
-                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Degree - ${edu.level || idx}`) }))}
-                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                                                                title="Remove File"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -2792,37 +2992,52 @@ const MyInfo = () => {
                                                 <div className="space-y-1 mt-2 pt-2 border-t md:border-none md:mt-0 md:pt-0 border-gray-50">
                                                     <label className="text-xs font-medium text-gray-500 md:opacity-0 hidden md:block">Upload</label>
                                                     <div className="flex items-center gap-2">
-                                                        <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-600 transition-all text-xs w-full justify-center">
-                                                            <Upload size={14} />
-                                                            <span className="truncate max-w-[150px]">
-                                                                {formData.files.some(f => f.type === `Certification - ${idx}`)
-                                                                    ? formData.files.find(f => f.type === `Certification - ${idx}`)?.file.name
-                                                                    : 'Upload Cert Scan'}
-                                                            </span>
-                                                            <input
-                                                                type="file"
-                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                                className="hidden"
-                                                                onChange={(e) => {
-                                                                    if (e.target.files && e.target.files.length > 0) {
-                                                                        const typeKey = `Certification - ${idx}`;
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                        }));
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </label>
-                                                        {formData.files.some(f => f.type === `Certification - ${idx}`) && (
-                                                            <button
-                                                                onClick={() => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== `Certification - ${idx}`) }))}
-                                                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors border border-transparent hover:border-red-100 rounded-md"
-                                                                title="Remove File"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )}
+                                                        {(() => {
+                                                            const typeKey = `Certification - ${idx}`;
+                                                            const newFile = formData.files.find(f => f.type === typeKey);
+                                                            const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
+                                                            const hasFile = !!newFile || !!savedFile;
+                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+                                                            return (
+                                                                <div className="flex flex-col gap-2 w-full">
+                                                                    <input
+                                                                        type="file"
+                                                                        id={inputId}
+                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                                                                        className="hidden"
+                                                                        onChange={(e) => {
+                                                                            if (e.target.files && e.target.files.length > 0) {
+                                                                                setFormData(prev => ({
+                                                                                    ...prev,
+                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
+                                                                                }));
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    {hasFile ? (
+                                                                        <DocumentPreview
+                                                                            typeKey={typeKey}
+                                                                            existingFile={savedFile}
+                                                                            localFile={newFile?.file}
+                                                                            inputId={inputId}
+                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                                            onRemove={() => {
+                                                                                if (newFile) {
+                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
+                                                                                } else if (savedFile) {
+                                                                                    handleDeleteDocument(savedFile._id, savedFile.fileName);
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
+                                                                            <Upload size={14} className="pointer-events-none" />
+                                                                            <span className="truncate pointer-events-none">Upload Cert Scan</span>
+                                                                        </label>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </div>
                                             </div>
@@ -3254,52 +3469,91 @@ const MyInfo = () => {
                                     {/* Existing Documents From Server */}
                                     {rawEmployee?.attachments?.length > 0 && (
                                         <div className="mb-12">
-                                            <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Your Documents</h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {rawEmployee.attachments.map((file: any, i: number) => (
-                                                    <div key={i} className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm group hover:border-indigo-200 transition-all">
-                                                        <div className="flex items-center gap-3 overflow-hidden">
-                                                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                                                                <FileText size={20} />
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <p className="text-sm font-bold text-gray-700 truncate">{file.fileName}</p>
-                                                                <div className="flex items-center gap-2">
-                                                                    <p className="text-[10px] font-bold text-gray-400 uppercase">{file.fileType}</p>
-                                                                    {file.status === 'approved' && <span className="text-[10px] text-emerald-600 font-bold px-1.5 bg-emerald-50 rounded italic">Approved</span>}
-                                                                    {file.status === 'pending' && <span className="text-[10px] text-amber-600 font-bold px-1.5 bg-amber-50 rounded italic">Pending Review</span>}
+                                            <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Your Saved Documents</h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                {rawEmployee.attachments.map((file: any, i: number) => {
+                                                    const hasLocalOverride = formData.files.some(f => f.type === file.fileType);
+                                                    if (hasLocalOverride) return null; // Render the staged draft instead
+
+                                                    const url = apiHelpers.attachmentRaw(file._id);
+                                                    const extension = file.fileName.split('.').pop()?.toLowerCase() || '';
+                                                    const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(extension);
+                                                    const isPdf = extension === 'pdf';
+                                                    const inputId = `replace-file-input-${file._id}`;
+
+                                                    return (
+                                                        <div key={i} className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-sm flex flex-col gap-3 group relative transition-all duration-300 hover:shadow-md hover:border-indigo-200 animate-fade-in">
+                                                            {/* Hidden Replace Input */}
+                                                            <input
+                                                                type="file"
+                                                                id={inputId}
+                                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    if (e.target.files && e.target.files.length > 0) {
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== file.fileType), { file: e.target.files![0], type: file.fileType }]
+                                                                        }));
+                                                                    }
+                                                                }}
+                                                            />
+                                                            {/* Thumbnail */}
+                                                            <div 
+                                                                onClick={() => setLightboxFile({ url, fileName: file.fileName, fileType: extension })}
+                                                                className="w-full h-24 bg-slate-50 border border-slate-100 rounded-lg overflow-hidden flex items-center justify-center relative cursor-pointer"
+                                                            >
+                                                                {isImage ? (
+                                                                    <img src={url} alt={file.fileName} className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300" />
+                                                                ) : isPdf ? (
+                                                                    <div className="flex flex-col items-center gap-1 text-rose-500 font-medium">
+                                                                        <FileText size={24} />
+                                                                        <span className="text-[9px] uppercase font-bold tracking-wider">PDF</span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col items-center gap-1 text-slate-400 font-medium">
+                                                                        <FileText size={24} />
+                                                                        <span className="text-[9px] uppercase font-bold tracking-wider">File</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                                    <span className="text-white text-[10px] font-bold flex items-center gap-1 bg-slate-950/30 px-2.5 py-1 rounded-full backdrop-blur-sm">
+                                                                        <Eye size={12} /> Preview
+                                                                    </span>
                                                                 </div>
                                                             </div>
+
+                                                            {/* Info */}
+                                                            <div className="min-w-0">
+                                                                <p className="text-[11px] font-bold text-slate-700 truncate" title={file.fileName}>{file.fileName}</p>
+                                                                <div className="flex items-center gap-2 mt-0.5">
+                                                                    <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-wider">{file.fileType}</span>
+                                                                    {file.status === 'approved' && <span className="text-[8px] text-emerald-600 font-bold px-1 bg-emerald-50 rounded italic">Approved</span>}
+                                                                    {file.status === 'pending' && <span className="text-[8px] text-amber-600 font-bold px-1 bg-amber-50 rounded italic">Pending Review</span>}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Actions */}
+                                                            <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[10px] font-bold mt-auto gap-2">
+                                                                <label 
+                                                                    htmlFor={inputId}
+                                                                    className="flex-1 text-center cursor-pointer text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/80 px-2 py-1 rounded transition-colors"
+                                                                >
+                                                                    Change
+                                                                </label>
+                                                                {!( (file.fileType === 'Contract' || file.fileType === 'Signed Contract') && !isAdmin) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteDocument(file._id, file.fileName)}
+                                                                        className="flex-1 text-center text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100/80 px-2 py-1 rounded transition-colors"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <a 
-                                                            href={apiHelpers.attachmentRaw(file._id)} 
-                                                            target="_blank" 
-                                                            rel="noopener noreferrer"
-                                                            className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                                            title="View"
-                                                        >
-                                                            <Eye size={18} />
-                                                        </a>
-                                                        <a 
-                                                            href={apiHelpers.attachmentRaw(file._id)} 
-                                                            target="_blank" 
-                                                            rel="noopener noreferrer"
-                                                            className="p-2 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                                            title="Download"
-                                                        >
-                                                            <Download size={18} />
-                                                        </a>
-                                                        {!( (file.fileType === 'Contract' || file.fileType === 'Signed Contract') && !isAdmin) && (
-                                                            <button
-                                                                onClick={() => handleDeleteDocument(file._id, file.fileName)}
-                                                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 size={18} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     )}
@@ -3308,79 +3562,118 @@ const MyInfo = () => {
                                     <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Documents</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Document Categories */}
-                                        {(['Signed Contract', 'Other Documents'] as string[]).map((label) => (
-                                            <div key={label} className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer">
-                                                <input
-                                                    type="file"
-                                                    multiple={label === 'Other Documents'}
-                                                    accept=".pdf,.doc,.docx,.jpg,.png"
-                                                    className="absolute inset-0 opacity-0 cursor-pointer z-0"
-                                                    onChange={(e) => {
-                                                        if (e.target.files && e.target.files.length > 0) {
-                                                            const newFiles = Array.from(e.target.files);
-                                                            if (label === 'Other Documents') {
-                                                                const currentOtherDocsCount = formData.files.filter(f => f.type === label).length;
-                                                                if (currentOtherDocsCount + newFiles.length > 5) {
-                                                                    setLimitModalOpen(true);
-                                                                    return;
-                                                                }
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    files: [...prev.files, ...newFiles.map(f => ({ file: f, type: label }))]
-                                                                }));
-                                                            } else {
-                                                                const file = newFiles[0];
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    files: [...prev.files.filter(f => f.type !== label), { file, type: label }]
-                                                                }));
-                                                            }
-                                                        }
-                                                    }}
-                                                />
-                                                <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0">
-                                                    <Upload size={28} />
-                                                </div>
-                                                <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
-                                                {label === 'Signed Contract' && !isAdmin && (
-                                                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
-                                                )}
-                                                {label === 'Signed Contract' && isAdmin && (
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
-                                                )}
+                                        {(['Signed Contract', 'Other Documents'] as string[]).map((label) => {
+                                            const existingFile = rawEmployee?.attachments?.find((a: any) => a.fileType === label);
+                                            const localFiles = formData.files.filter(f => f.type === label);
+                                            const hasFile = (label === 'Signed Contract' && (!!existingFile || localFiles.length > 0));
+                                            const inputId = `file-input-${label.replace(/[^a-zA-Z0-9-]/g, '-')}`;
 
-                                                {formData.files.some(f => f.type === label) ? (
-                                                    <div className="mt-3 flex flex-col gap-2 w-full max-h-[120px] overflow-y-auto custom-scrollbar px-1 relative z-10">
-                                                        {formData.files.filter(f => f.type === label).map((fObj, idx) => (
-                                                            <div key={idx} className="flex items-center justify-between gap-1 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-[10px] font-bold w-full">
-                                                                <div className="flex items-center gap-1.5 overflow-hidden">
-                                                                    <Check size={12} className="shrink-0" />
-                                                                    <span className="truncate">{fObj.file.name}</span>
-                                                                </div>
-                                                                <button 
-                                                                    onClick={(e) => {
-                                                                        e.preventDefault();
-                                                                        e.stopPropagation();
+                                            if (hasFile && label === 'Signed Contract') {
+                                                const localFileObj = localFiles[0];
+                                                return (
+                                                    <div key={label} className="flex flex-col gap-2">
+                                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+                                                        <input
+                                                            type="file"
+                                                            id={inputId}
+                                                            accept=".pdf,.doc,.docx,.jpg,.png"
+                                                            className="hidden"
+                                                            onChange={(e) => {
+                                                                if (e.target.files && e.target.files.length > 0) {
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        files: [...prev.files.filter(f => f.type !== label), { file: e.target.files![0], type: label }]
+                                                                    }));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <DocumentPreview
+                                                            typeKey={label}
+                                                            existingFile={existingFile}
+                                                            localFile={localFileObj?.file}
+                                                            inputId={inputId}
+                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                            onRemove={() => {
+                                                                if (localFileObj) {
+                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== label) }));
+                                                                } else if (existingFile) {
+                                                                    handleDeleteDocument(existingFile._id, existingFile.fileName);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+                                                );
+                                            }
+
+                                            return (
+                                                <div key={label} className="flex flex-col gap-4">
+                                                    <div className="border border-dashed border-gray-300 rounded-2xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-white hover:border-indigo-400 hover:shadow-xl hover:shadow-indigo-50 transition-all relative group cursor-pointer h-full min-h-[160px]">
+                                                        <input
+                                                            type="file"
+                                                            id={inputId}
+                                                            multiple={label === 'Other Documents'}
+                                                            accept=".pdf,.doc,.docx,.jpg,.png"
+                                                            className="absolute inset-0 opacity-0 cursor-pointer z-20"
+                                                            onChange={(e) => {
+                                                                if (e.target.files && e.target.files.length > 0) {
+                                                                    const newFiles = Array.from(e.target.files);
+                                                                    if (label === 'Other Documents') {
+                                                                        const currentOtherDocsCount = formData.files.filter(f => f.type === label).length;
+                                                                        if (currentOtherDocsCount + newFiles.length > 5) {
+                                                                            setLimitModalOpen(true);
+                                                                            return;
+                                                                        }
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files, ...newFiles.map(f => ({ file: f, type: label }))]
+                                                                        }));
+                                                                    } else {
+                                                                        const file = newFiles[0];
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            files: [...prev.files.filter(f => f.type !== label), { file: file, type: label }]
+                                                                        }));
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-4 text-indigo-500 group-hover:scale-110 group-hover:rotate-3 transition-all relative z-0">
+                                                            <Upload size={28} />
+                                                        </div>
+                                                        <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
+                                                        {label === 'Signed Contract' && !isAdmin && (
+                                                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
+                                                        )}
+                                                        {label === 'Signed Contract' && isAdmin && (
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
+                                                        )}
+                                                        {label === 'Other Documents' && (
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Click to upload (Max 5)</span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Local Staged Lists */}
+                                                    {label === 'Other Documents' && localFiles.length > 0 && (
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                                                            {localFiles.map((fObj, localIdx) => (
+                                                                <DocumentPreview
+                                                                    key={localIdx}
+                                                                    typeKey={label}
+                                                                    localFile={fObj.file}
+                                                                    onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                                    onRemove={() => {
                                                                         setFormData(p => ({
                                                                             ...p,
                                                                             files: p.files.filter(fItem => fItem !== fObj)
                                                                         }));
                                                                     }}
-                                                                    className="hover:text-red-500 shrink-0 p-1"
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                        {label === 'Other Documents' && formData.files.filter(f => f.type === label).length < 5 && (
-                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 text-center cursor-pointer pointer-events-none">Click to add more</span>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 relative z-0">{label === 'Other Documents' ? 'Click to upload (Max 5)' : 'Click to upload'}</span>
-                                                )}
-                                            </div>
-                                        ))}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </div>
@@ -3500,6 +3793,80 @@ const MyInfo = () => {
                             >
                                 Got it
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Lightbox Modal */}
+            {lightboxFile && (
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fade-in">
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                            <div className="min-w-0">
+                                <h3 className="text-sm font-bold text-slate-800 truncate" title={lightboxFile.fileName}>
+                                    {lightboxFile.fileName}
+                                </h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                    {lightboxFile.fileType} Document
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={lightboxFile.url}
+                                    download={lightboxFile.fileName}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                    title="Download / Open in New Tab"
+                                >
+                                    <Download size={18} />
+                                </a>
+                                <button
+                                    onClick={() => setLightboxFile(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+                                    title="Close"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content Body */}
+                        <div className="flex-1 bg-slate-900/5 flex items-center justify-center p-6 overflow-auto min-h-[300px]">
+                            {['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(lightboxFile.fileType.toLowerCase()) ? (
+                                <img 
+                                    src={lightboxFile.url} 
+                                    alt={lightboxFile.fileName} 
+                                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-md bg-white" 
+                                />
+                            ) : lightboxFile.fileType.toLowerCase() === 'pdf' ? (
+                                <iframe 
+                                    src={lightboxFile.url} 
+                                    className="w-full h-[70vh] rounded-lg border border-slate-200/50 shadow-sm bg-white" 
+                                    title={lightboxFile.fileName} 
+                                />
+                            ) : (
+                                <div className="text-center p-8 max-w-sm">
+                                    <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-200/50 shadow-inner">
+                                        <FileText size={32} />
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-700 mb-1">Preview not supported</h4>
+                                    <p className="text-xs text-slate-400 mb-6">
+                                        This document type ({lightboxFile.fileType.toUpperCase()}) cannot be previewed directly in the browser.
+                                    </p>
+                                    <a
+                                        href={lightboxFile.url}
+                                        download={lightboxFile.fileName}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-100 hover:shadow-lg hover:shadow-indigo-200"
+                                    >
+                                        <Download size={16} /> Download to View
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

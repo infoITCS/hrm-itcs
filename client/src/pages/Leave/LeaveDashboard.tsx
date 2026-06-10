@@ -7,6 +7,10 @@ import { api } from '../../utils/api';
 import ApplyLeaveModal from './ApplyLeaveModal';
 import TeamRequestsTable from './TeamRequestsTable';
 import { usePermissions } from '../../hooks/usePermissions';
+import ManageLeaveTypes from './ManageLeaveTypes';
+import HolidayCalendar from './HolidayCalendar';
+import ManageHolidays from './ManageHolidays';
+import AllLeaveBalances from './AllLeaveBalances';
 
 // ── Components ──────────────────────────────────────────────────────────────
 
@@ -60,15 +64,17 @@ import LeaveDetailsModal from './LeaveDetailsModal';
 const LeaveDashboard = () => {
     const [balance, setBalance] = useState<any>(null);
     const [history, setHistory] = useState<any[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showApplyModal, setShowApplyModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests'>('my-leaves');
+    const [activeTab, setActiveTab] = useState<'my-leaves' | 'holidays' | 'team-requests' | 'settings' | 'holiday-settings' | 'balances'>('my-leaves');
     const [statusFilter, setStatusFilter] = useState('All');
     const { role } = usePermissions();
     const isManagement = ['super-admin', 'admin', 'manager'].includes(role);
+    const isAdmin = ['super-admin', 'admin'].includes(role);
 
     const filteredHistory = history.filter(item => 
         statusFilter === 'All' || item.status === statusFilter
@@ -79,23 +85,29 @@ const LeaveDashboard = () => {
         setError(null);
         try {
             const token = localStorage.getItem('token');
-            const [balRes, histRes] = await Promise.all([
+            const [balRes, histRes, typesRes] = await Promise.all([
                 fetch(`${api.baseURL}/api/leaves/balance`, { headers: { Authorization: `Bearer ${token}` } }),
-                fetch(`${api.baseURL}/api/leaves/mine`, { headers: { Authorization: `Bearer ${token}` } })
+                fetch(`${api.baseURL}/api/leaves/mine`, { headers: { Authorization: `Bearer ${token}` } }),
+                fetch(`${api.baseURL}/api/leaves/types?activeOnly=true`, { headers: { Authorization: `Bearer ${token}` } })
             ]);
             
-            if (!balRes.ok || !histRes.ok) {
-                throw new Error(`Failed to load data. Server returned ${balRes.status}/${histRes.status}`);
+            if (!balRes.ok || !histRes.ok || !typesRes.ok) {
+                throw new Error(`Failed to load data. Server returned ${balRes.status}/${histRes.status}/${typesRes.status}`);
             }
 
-            const [balData, histData] = await Promise.all([balRes.json(), histRes.json()]);
+            const [balData, histData, typesData] = await Promise.all([
+                balRes.json(),
+                histRes.json(),
+                typesRes.json()
+            ]);
 
-            if (!balData.success || !histData.success) {
-                throw new Error(balData.message || histData.message || 'API reported failure');
+            if (!balData.success || !histData.success || !typesData.success) {
+                throw new Error(balData.message || histData.message || typesData.message || 'API reported failure');
             }
 
             setBalance(balData.data);
             setHistory(histData.data);
+            setLeaveTypes(typesData.data);
         } catch (err: any) {
             console.error('Leave fetch error:', err);
             setError(err.message || 'Could not fetch leave data. Please try again.');
@@ -112,7 +124,26 @@ const LeaveDashboard = () => {
         if (!isManagement && activeTab === 'team-requests') {
             setActiveTab('my-leaves');
         }
-    }, [isManagement, activeTab]);
+        if (!isAdmin && (activeTab === 'settings' || activeTab === 'holiday-settings' || activeTab === 'balances')) {
+            setActiveTab('my-leaves');
+        }
+    }, [isManagement, isAdmin, activeTab]);
+
+    const getCardStyling = (code: string, index: number) => {
+        const colorPalette = ['indigo', 'rose', 'emerald', 'amber'];
+        let color = colorPalette[index % colorPalette.length];
+        
+        if (code === 'annual') color = 'indigo';
+        else if (code === 'sick') color = 'rose';
+        else if (code === 'casual') color = 'amber';
+        
+        let icon = FileText;
+        if (code === 'annual') icon = Plane;
+        else if (code === 'sick') icon = Heart;
+        else if (code === 'casual') icon = Calendar;
+
+        return { color, icon };
+    };
 
 const STATUS_COLORS: any = {
     Pending: 'bg-amber-50 text-amber-600 border-amber-100',
@@ -184,21 +215,27 @@ const STATUS_COLORS: any = {
             )}
 
             {/* Balances Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl">
-                <BalanceCard 
-                    title="Annual Leave" 
-                    used={balance?.annual?.used || 0} 
-                    total={balance?.annual?.total || 20} 
-                    icon={Plane} 
-                    color="indigo" 
-                />
-                <BalanceCard 
-                    title="Sick Leave" 
-                    used={balance?.sick?.used || 0} 
-                    total={balance?.sick?.total || 10} 
-                    icon={Heart} 
-                    color="rose" 
-                />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {balance?.balances?.filter((b: any) => leaveTypes.some(t => t.code === b.leaveTypeCode)).map((balCategory: any, idx: number) => {
+                    const typeDetails = leaveTypes.find(t => t.code === balCategory.leaveTypeCode);
+                    const title = typeDetails ? typeDetails.name : (balCategory.leaveTypeCode.charAt(0).toUpperCase() + balCategory.leaveTypeCode.slice(1));
+                    const { color, icon } = getCardStyling(balCategory.leaveTypeCode, idx);
+                    return (
+                        <BalanceCard 
+                            key={balCategory.leaveTypeCode}
+                            title={title.toLowerCase().includes('leave') ? title : `${title} Leave`} 
+                            used={balCategory.used || 0} 
+                            total={balCategory.total || 0} 
+                            icon={icon} 
+                            color={color} 
+                        />
+                    );
+                })}
+                {(!balance?.balances || balance.balances.length === 0) && (
+                    <div className="col-span-full py-10 text-center bg-white border border-slate-100 rounded-2xl">
+                        <p className="text-sm text-slate-400 font-bold">No leave balances initialized.</p>
+                    </div>
+                )}
             </div>
 
             {/* Main Content Area */}
@@ -212,6 +249,14 @@ const STATUS_COLORS: any = {
                             My Leave History
                             {activeTab === 'my-leaves' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                         </button>
+
+                        <button 
+                            onClick={() => setActiveTab('holidays')}
+                            className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'holidays' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Holidays
+                            {activeTab === 'holidays' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                        </button>
                         
                         {isManagement && (
                             <button 
@@ -222,27 +267,75 @@ const STATUS_COLORS: any = {
                                 {activeTab === 'team-requests' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
+
+                        {isAdmin && (
+                            <button 
+                                onClick={() => setActiveTab('settings')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Leave Settings
+                                {activeTab === 'settings' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
+
+                        {isAdmin && (
+                            <button 
+                                onClick={() => setActiveTab('holiday-settings')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'holiday-settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Holiday Settings
+                                {activeTab === 'holiday-settings' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
+
+                        {isAdmin && (
+                            <button 
+                                onClick={() => setActiveTab('balances')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'balances' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Employee Balances
+                                {activeTab === 'balances' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
                     </div>
 
-                    <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
-                        <select 
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            aria-label="Filter history by status"
-                            className="bg-transparent text-xs font-bold text-slate-500 outline-none px-2 py-1 cursor-pointer"
-                        >
-                            <option value="All">All Status</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Approved">Approved</option>
-                            <option value="Rejected">Rejected</option>
-                        </select>
-                        <Filter size={14} className="text-slate-400 mr-2" />
-                    </div>
+                    {activeTab === 'my-leaves' && (
+                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                            <select 
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                aria-label="Filter history by status"
+                                className="bg-transparent text-xs font-bold text-slate-500 outline-none px-2 py-1 cursor-pointer"
+                            >
+                                <option value="All">All Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Approved">Approved</option>
+                                <option value="Rejected">Rejected</option>
+                            </select>
+                            <Filter size={14} className="text-slate-400 mr-2" />
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-0 overflow-x-auto">
                     {activeTab === 'team-requests' ? (
                         <TeamRequestsTable />
+                    ) : activeTab === 'settings' ? (
+                        <div className="p-6">
+                            <ManageLeaveTypes />
+                        </div>
+                    ) : activeTab === 'holidays' ? (
+                        <div className="p-6">
+                            <HolidayCalendar />
+                        </div>
+                    ) : activeTab === 'holiday-settings' ? (
+                        <div className="p-6">
+                            <ManageHolidays />
+                        </div>
+                    ) : activeTab === 'balances' ? (
+                        <div className="p-6">
+                            <AllLeaveBalances />
+                        </div>
                     ) : (
                         <table className="w-full text-left border-collapse">
                             <thead>
@@ -263,7 +356,9 @@ const STATUS_COLORS: any = {
                                                 <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
                                                     <FileText size={16} />
                                                 </div>
-                                                <span className="font-bold text-slate-700">{leave.type} Leave</span>
+                                                <span className="font-bold text-slate-700">
+                                                    {leave.type.toLowerCase().includes('leave') ? leave.type : `${leave.type} Leave`}
+                                                </span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">

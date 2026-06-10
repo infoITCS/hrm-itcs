@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth';
+import { nowPKT } from '../../shared/utils/dateUtils';
 import * as svc from './attendance.service';
 import * as repo from './attendance.repository';
 import { runZktSync, checkServerStatus, fetchEmployees, fetchTransactions, fetchReport } from '../../services/zktCloudService';
@@ -207,6 +208,33 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
         });
         res.json({ success: true, data: record });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
+}
+
+export async function selfPunch(req: AuthRequest, res: Response) {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+        const emp = await repo.findEmployeeByUserId(userId);
+        if (!emp) return res.status(404).json({ success: false, message: 'Employee profile not found' });
+
+        const now = new Date();
+        const dateStr = todayPKT();
+
+        await repo.upsertPunch('WEB-PORTAL', emp.employeeId, now, {
+            employeeId: emp.employeeId,
+            employeeName: `${emp.firstName} ${emp.lastName || ''}`.trim(),
+            location: 'Web Portal',
+            verifyType: 5,
+        });
+
+        await svc.processEmployeePunches(emp.employeeId, dateStr, 'WEB-PORTAL');
+
+        res.json({ success: true, message: 'Punch recorded successfully' });
+    } catch (err: any) { 
+        logger.error('[selfPunch] Error:', err);
+        res.status(500).json({ success: false, message: err.message }); 
+    }
 }
 
 export async function getLiveFeed(req: AuthRequest, res: Response) {

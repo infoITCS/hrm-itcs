@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface UserData {
     _id: string;
@@ -25,6 +26,7 @@ interface UserData {
 
 const UserManagement = () => {
     const { role: currentUserRole } = usePermissions();
+    const { impersonate } = useAuth();
     const [users, setUsers] = useState<UserData[]>([]);
     const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -266,6 +268,43 @@ const UserManagement = () => {
         }
     };
 
+    const handleImpersonate = async (userId: string) => {
+        setAlertConfig({
+            isOpen: true,
+            title: 'Confirm Impersonation',
+            message: 'Are you sure you want to impersonate this user? You will see the system exactly as they see it. You can switch back to your Super Admin account at any time.',
+            type: 'confirm',
+            onConfirm: async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const res = await fetch(`${api.baseURL}/api/admin/users/${userId}/impersonate`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (!res.ok) {
+                        const data = await res.json();
+                        throw new Error(data.message || 'Failed to impersonate');
+                    }
+
+                    const data = await res.json();
+                    impersonate(data.token, data.user);
+                    window.location.href = '/dashboard';
+                } catch (err: any) {
+                    setAlertConfig({
+                        isOpen: true,
+                        title: 'Impersonation Failed',
+                        message: err.message,
+                        type: 'error'
+                    });
+                }
+            }
+        });
+    };
+
     const getRoleBadgeColor = (role: string) => {
         switch (role) {
             case 'super-admin': return 'bg-purple-100 text-purple-700 border-purple-200';
@@ -453,6 +492,15 @@ const UserManagement = () => {
                                                         title="Reset Password"
                                                     >
                                                         <Key size={10} /> Reset Password
+                                                    </button>
+                                                )}
+                                                {currentUserRole === 'super-admin' && user.role !== 'super-admin' && (
+                                                    <button
+                                                        onClick={() => handleImpersonate(user._id)}
+                                                        className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
+                                                        title="Impersonate User"
+                                                    >
+                                                        <Eye size={10} /> Impersonate
                                                     </button>
                                                 )}
                                             </div>

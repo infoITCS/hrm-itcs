@@ -47,6 +47,7 @@ router.get('/records',      ...auth(...ALL_ROLES),     h(ctrl.getRecords));
 router.get('/punches',      ...auth(...MANAGER_ROLES), h(ctrl.getPunches));
 router.put('/records/:id',  ...auth(...EDIT_ROLES),    h(ctrl.updateRecord));
 router.post('/manual',      ...auth(...EDIT_ROLES),    h(ctrl.createManualRecord));
+router.post('/punch',       ...auth(...ALL_ROLES),     h(ctrl.selfPunch));
 router.get('/export',       ...auth(...MANAGER_ROLES), h(ctrl.exportCSV));
 router.get('/export/monthly', ...auth(...MANAGER_ROLES), h(ctrl.exportGlobalMonthly));
 router.get('/export/daily', ...auth(...MANAGER_ROLES), h(ctrl.exportGlobalDaily));

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -26,6 +27,7 @@ interface SidebarProps {
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const location = useLocation();
     const { role } = usePermissions();
+    const { isImpersonated } = useAuth();
 
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
@@ -58,16 +60,17 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                 onClick={onClose}
                 className={`fixed inset-0 bg-black/50 z-30 transition-opacity duration-300 min-[992px]:hidden ${
                     isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                }`}
+                } ${isImpersonated ? 'top-10' : 'top-0'}`}
             />
 
             {/* Sidebar panel: below 992px slide in when isOpen, above 992px always visible */}
             <aside
                 className={`
-                    w-64 max-w-[85vw] sm:max-w-none bg-white shadow-xl h-screen fixed left-0 top-0 overflow-y-auto flex flex-col z-40 border-r border-slate-200/50
+                    w-64 max-w-[85vw] sm:max-w-none bg-white shadow-xl fixed left-0 overflow-y-auto flex flex-col z-40 border-r border-slate-200/50
                     transition-transform duration-300 ease-out
                     min-[992px]:translate-x-0
                     ${isOpen ? 'translate-x-0' : 'max-[991px]:-translate-x-full'}
+                    ${isImpersonated ? 'top-10 h-[calc(100vh-2.5rem)]' : 'top-0 h-screen'}
                 `}
             >
                 <div className="p-4 min-[992px]:p-6 border-b border-gray-100/50 flex items-center justify-between shrink-0">

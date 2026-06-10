@@ -1,37 +1,28 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+export interface ILeaveBalanceCategory {
+    leaveTypeCode: string;
+    total: number;
+    used: number;
+    pending: number;
+}
+
 export interface ILeaveBalance extends Document {
     employeeId: string;
     year: number;
-    annual: { total: number; used: number; pending: number };
-    sick: { total: number; used: number; pending: number };
-    casual: { total: number; used: number; pending: number };
-    unpaid: { total: number; used: number; pending: number };
+    balances: ILeaveBalanceCategory[];
+    [key: string]: any; // Allow indexing dynamically or legacy virtuals
 }
 
 const LeaveBalanceSchema: Schema = new Schema({
     employeeId: { type: String, required: true },
     year: { type: Number, required: true },
-    annual: {
-        total: { type: Number, default: 20 },
+    balances: [{
+        leaveTypeCode: { type: String, required: true },
+        total: { type: Number, required: true, default: 0 },
         used: { type: Number, default: 0 },
         pending: { type: Number, default: 0 }
-    },
-    sick: {
-        total: { type: Number, default: 10 },
-        used: { type: Number, default: 0 },
-        pending: { type: Number, default: 0 }
-    },
-    casual: {
-        total: { type: Number, default: 10 },
-        used: { type: Number, default: 0 },
-        pending: { type: Number, default: 0 }
-    },
-    unpaid: {
-        total: { type: Number, default: 0 },
-        used: { type: Number, default: 0 },
-        pending: { type: Number, default: 0 }
-    }
+    }]
 }, { timestamps: true });
 
 // Prevent duplicate balances for the same employee in the same year
