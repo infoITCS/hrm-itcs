@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -40,6 +40,22 @@ const STATUS_COLORS: Record<string, string> = {
     Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     Declined: 'bg-rose-50 text-rose-700 border-rose-200',
 };
+
+const FLAG_LABELS: Record<string, string> = {
+    OutOfPolicy: 'Amount exceeds policy limit',
+    MissingReceipt: 'Receipt not uploaded',
+    MissingCommentOrReceipt: 'Comment or receipt required',
+    ReceiptOlderThan45Days: 'Receipt older than 45 days',
+    ReceiptTotalExceedsQuota: 'Receipt total exceeds allowed quota',
+    ReceiptTotalExceedsRequested: 'Receipt total exceeds requested amount',
+    ReceiptDateUnreadable: 'Receipt date could not be read',
+    ReceiptExtractionFailed: 'Could not read receipt (manual review needed)',
+    ReceiptDateMismatch: 'Receipt date does not match expense date',
+};
+
+function flagLabel(flag: string) {
+    return FLAG_LABELS[flag] || flag;
+}
 
 function formatMoney(amount?: number, currency = 'PKR') {
     if (typeof amount !== 'number') return '—';
@@ -90,7 +106,47 @@ const ExpenseClaimDashboard = () => {
     const [amountRequested, setAmountRequested] = useState<number>(0);
     const [notes, setNotes] = useState('');
     const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+    const [scanningReceipts, setScanningReceipts] = useState(false);
+    const [receiptPreview, setReceiptPreview] = useState<{
+        flags: string[];
+        receiptAnalysis: any;
+        receipts: any[];
+    } | null>(null);
+    const [submitPreviewIndex, setSubmitPreviewIndex] = useState<number | null>(null);
+    const uploadInputRef = useRef<HTMLInputElement>(null);
     const [submitting, setSubmitting] = useState(false);
+
+    const submitReceiptUrls = useMemo(
+        () => receiptFiles.map(f => URL.createObjectURL(f)),
+        [receiptFiles]
+    );
+
+    useEffect(() => {
+        return () => {
+            submitReceiptUrls.forEach(u => URL.revokeObjectURL(u));
+        };
+    }, [submitReceiptUrls]);
+
+    const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const incoming = Array.from(e.target.files || []);
+        if (incoming.length === 0) return;
+        setReceiptFiles(prev => {
+            const combined = [...prev, ...incoming];
+            return combined.slice(0, 5);
+        });
+        if (uploadInputRef.current) uploadInputRef.current.value = '';
+    };
+
+    const removeReceiptAt = (index: number) => {
+        setReceiptFiles(prev => prev.filter((_, i) => i !== index));
+        setSubmitPreviewIndex(prev => {
+            if (prev === null) return null;
+            if (prev === index) return null;
+            if (prev > index) return prev - 1;
+            return prev;
+        });
+        if (uploadInputRef.current) uploadInputRef.current.value = '';
+    };
 
     // Admin/HR submission on behalf of employee
     const [allEmployees, setAllEmployees] = useState<any[]>([]);
@@ -305,6 +361,44 @@ const ExpenseClaimDashboard = () => {
         if (forWhom === 'Self') setDependentId('');
     }, [forWhom]);
 
+    // Scan receipts on upload / when amount or date changes — show flags BEFORE submit
+    useEffect(() => {
+        if (receiptFiles.length === 0) {
+            setReceiptPreview(null);
+            return;
+        }
+        if (!amountRequested || amountRequested <= 0 || !category) {
+            setReceiptPreview(null);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setScanningReceipts(true);
+            try {
+                const receipts = await Promise.all(receiptFiles.map(readFileAsBase64));
+                const payload = {
+                    employeeId: selectedEmployeeId || undefined,
+                    category,
+                    amountRequested,
+                    expenseDate,
+                    receipts,
+                };
+                const r = await fetch(api.claimPreviewReceipts, { method: 'POST', headers, body: JSON.stringify(payload) });
+                const d = await r.json();
+                if (r.ok && d?.success) {
+                    setReceiptPreview(d.data);
+                } else {
+                    setReceiptPreview(null);
+                }
+            } catch {
+                setReceiptPreview(null);
+            } finally {
+                setScanningReceipts(false);
+            }
+        }, 600);
+
+        return () => clearTimeout(timer);
+    }, [receiptFiles, amountRequested, category, expenseDate, selectedEmployeeId, headers]);
 
     const submitDisabledReason = useMemo(() => {
         if (loadingEmployee) return 'Loading employee...';
@@ -370,6 +464,8 @@ const ExpenseClaimDashboard = () => {
             setAmountRequested(0);
             setNotes('');
             setReceiptFiles([]);
+            setReceiptPreview(null);
+            setSubmitPreviewIndex(null);
 
             await fetchMine();
             await fetchApprovals();
@@ -611,7 +707,7 @@ const ExpenseClaimDashboard = () => {
     // Lock scroll on BOTH <html> and <body> when any modal is open.
     // Some browsers scroll the <html> element, others scroll <body> — we cover both.
     useEffect(() => {
-        const anyOpen = decisionOpen || correctOpen || lightboxIndex !== null;
+        const anyOpen = decisionOpen || correctOpen || lightboxIndex !== null || submitPreviewIndex !== null;
         const html = document.documentElement;
         const body = document.body;
         if (anyOpen) {
@@ -641,7 +737,7 @@ const ExpenseClaimDashboard = () => {
             body.style.top = '';
             body.style.width = '';
         };
-    }, [decisionOpen, correctOpen, lightboxIndex]);
+    }, [decisionOpen, correctOpen, lightboxIndex, submitPreviewIndex]);
 
     const openCorrect = (c: any) => {
         setCorrectClaim(c);
@@ -1020,19 +1116,28 @@ const ExpenseClaimDashboard = () => {
                                 </span>
                                 <div className="mt-2 flex flex-wrap items-center gap-3">
                                     <input
+                                        ref={uploadInputRef}
                                         id="claim-receipt-upload"
                                         type="file"
                                         multiple
                                         accept="image/*,.pdf,.png,.jpg,.jpeg,.webp"
-                                        onChange={e => setReceiptFiles(Array.from(e.target.files || []))}
+                                        onChange={handleReceiptUpload}
                                         className="sr-only"
                                     />
                                     <label
                                         htmlFor="claim-receipt-upload"
-                                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] transition-all cursor-pointer"
+                                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-bold shadow-md transition-all ${
+                                            receiptFiles.length >= 5
+                                                ? 'bg-slate-300 cursor-not-allowed pointer-events-none'
+                                                : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] cursor-pointer'
+                                        }`}
                                     >
                                         <Upload size={18} />
-                                        {receiptFiles.length > 0 ? 'Add more receipts' : 'Upload receipts'}
+                                        {receiptFiles.length >= 5
+                                            ? 'Maximum 5 receipts'
+                                            : receiptFiles.length > 0
+                                                ? 'Add more receipts'
+                                                : 'Upload receipts'}
                                     </label>
                                     {receiptFiles.length > 0 ? (
                                         <span className="text-sm font-semibold text-indigo-600">
@@ -1043,18 +1148,171 @@ const ExpenseClaimDashboard = () => {
                                     )}
                                 </div>
                                 {receiptFiles.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        {receiptFiles.map(f => (
-                                            <span key={f.name} className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-800">
-                                                {f.name}
-                                            </span>
-                                        ))}
+                                    <div className="mt-3 space-y-2">
+                                        {receiptFiles.map((f, idx) => {
+                                            const url = submitReceiptUrls[idx];
+                                            const isImage = f.type.startsWith('image/');
+                                            const isPdf = f.type === 'application/pdf';
+                                            const scan = receiptPreview?.receipts?.[idx];
+                                            return (
+                                                <div
+                                                    key={`${f.name}-${f.size}-${idx}`}
+                                                    className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-sm"
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSubmitPreviewIndex(idx)}
+                                                        className="flex-shrink-0 w-14 h-14 rounded-lg border border-slate-100 overflow-hidden bg-slate-50 flex items-center justify-center hover:ring-2 hover:ring-indigo-300 transition-all"
+                                                        title="Preview receipt"
+                                                    >
+                                                        {isImage && url ? (
+                                                            <img src={url} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <FileText size={22} className={isPdf ? 'text-rose-500' : 'text-slate-400'} />
+                                                        )}
+                                                    </button>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-semibold text-slate-800 truncate">{f.name}</div>
+                                                        <div className="text-[11px] text-slate-400">
+                                                            {(f.size / 1024).toFixed(0)} KB
+                                                            {scan?.extractedAmount != null && (
+                                                                <span className="ml-2 text-indigo-600 font-semibold">
+                                                                    · Scanned: {formatMoney(scan.extractedAmount, scan.extractedCurrency || 'PKR')}
+                                                                </span>
+                                                            )}
+                                                            {scan?.extractedDate && (
+                                                                <span className="ml-1 text-slate-500">
+                                                                    · {new Date(scan.extractedDate).toLocaleDateString('en-PK')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSubmitPreviewIndex(idx)}
+                                                            className="p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                            title="Preview"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeReceiptAt(idx)}
+                                                            className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                                                            title="Remove receipt"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                                 <p className="text-[11px] text-slate-400 mt-1">
-                                    Up to 5 receipts, 5MB each.
+                                    Up to 5 receipts, 5MB each. Tap preview or thumbnail to view. Remove wrong uploads before submitting.
                                 </p>
                             </div>
+
+                            {/* Pre-submit receipt scan results */}
+                            {(scanningReceipts || receiptPreview) && receiptFiles.length > 0 && (
+                                <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+                                    <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                        {scanningReceipts ? (
+                                            <>
+                                                <RefreshCw size={16} className="animate-spin text-indigo-600" />
+                                                Scanning receipts…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Receipt size={16} className="text-indigo-600" />
+                                                Receipt Scan Results
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {!scanningReceipts && receiptPreview && (
+                                        <>
+                                            {receiptPreview.receipts?.map((r: any, idx: number) => (
+                                                <div key={idx} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs bg-white rounded-lg border border-slate-100 px-3 py-2">
+                                                    <span className="font-semibold text-slate-700 truncate max-w-[160px]">{r.fileName}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSubmitPreviewIndex(idx)}
+                                                        className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+                                                    >
+                                                        <Eye size={12} /> Preview
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeReceiptAt(idx)}
+                                                        className="text-rose-600 hover:text-rose-800 font-semibold flex items-center gap-1"
+                                                    >
+                                                        <X size={12} /> Remove
+                                                    </button>
+                                                    <span>
+                                                        Date:{' '}
+                                                        <strong className={typeof r.receiptAgeDays === 'number' && r.receiptAgeDays > 45 ? 'text-rose-600' : 'text-slate-800'}>
+                                                            {r.extractedDate
+                                                                ? `${new Date(r.extractedDate).toLocaleDateString('en-PK')}${typeof r.receiptAgeDays === 'number' ? ` (${r.receiptAgeDays}d old)` : ''}`
+                                                                : '—'}
+                                                        </strong>
+                                                    </span>
+                                                    <span>
+                                                        Amount:{' '}
+                                                        <strong className="text-slate-800">
+                                                            {typeof r.extractedAmount === 'number'
+                                                                ? formatMoney(r.extractedAmount, r.extractedCurrency || 'PKR')
+                                                                : '—'}
+                                                        </strong>
+                                                    </span>
+                                                    {r.extractionStatus === 'failed' && (
+                                                        <span className="text-amber-600 font-semibold">Could not read — verify manually</span>
+                                                    )}
+                                                </div>
+                                            ))}
+
+                                            {receiptPreview.receiptAnalysis && typeof receiptPreview.receiptAnalysis.totalExtractedAmount === 'number' && (
+                                                <div className="text-xs text-slate-600">
+                                                    Total from receipts:{' '}
+                                                    <strong>{formatMoney(receiptPreview.receiptAnalysis.totalExtractedAmount)}</strong>
+                                                    {' · '}
+                                                    Allowed quota:{' '}
+                                                    <strong className="text-emerald-700">{formatMoney(receiptPreview.receiptAnalysis.amountAllowed)}</strong>
+                                                </div>
+                                            )}
+
+                                            {(receiptPreview.flags || []).length > 0 ? (
+                                                <div className="bg-rose-50 border border-rose-200 rounded-lg p-3">
+                                                    <div className="text-[11px] font-bold text-rose-700 mb-2 flex items-center gap-1.5">
+                                                        <AlertTriangle size={12} />
+                                                        ISSUES FOUND — review before submitting
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2 mb-2">
+                                                        {receiptPreview.flags.map((f: string) => (
+                                                            <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
+                                                                {flagLabel(f)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                    {(receiptPreview.receiptAnalysis?.issues || []).map((issue: string, i: number) => (
+                                                        <div key={i} className="text-xs text-rose-700 flex items-start gap-1.5 mt-1">
+                                                            <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+                                                            {issue}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 text-xs text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                                                    <CheckCircle2 size={14} />
+                                                    Receipt scan passed — no issues detected
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-between gap-3">
@@ -1066,7 +1324,7 @@ const ExpenseClaimDashboard = () => {
                                 disabled={!!submitDisabledReason || submitting}
                                 className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors"
                             >
-                                {submitting ? 'Submitting…' : 'Submit Claim'}
+                                {submitting ? 'Scanning receipts & submitting…' : 'Submit Claim'}
                             </button>
                         </div>
                     </div>
@@ -1123,8 +1381,8 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
-                                                                {f}
+                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" title={f}>
+                                                                {flagLabel(f)}
                                                             </span>
                                                         )) : (
                                                             <span className="text-xs text-slate-400">—</span>
@@ -1254,8 +1512,8 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
-                                                                {f}
+                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" title={f}>
+                                                                {flagLabel(f)}
                                                             </span>
                                                         )) : (
                                                             <span className="text-xs text-slate-400">—</span>
@@ -1699,13 +1957,58 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                     )}
 
+                                    {/* OCR receipt analysis */}
+                                    {decisionClaim.receiptAnalysis && (decisionClaim.receipts || []).length > 0 && (
+                                        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                            <div className="text-[11px] font-bold text-indigo-700 mb-2 flex items-center gap-1.5">
+                                                <Receipt size={11} />RECEIPT SCAN ANALYSIS
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                                                <div>
+                                                    <span className="text-slate-500">Receipt total (from images):</span>{' '}
+                                                    <span className="font-bold text-slate-800">
+                                                        {typeof decisionClaim.receiptAnalysis.totalExtractedAmount === 'number'
+                                                            ? formatMoney(decisionClaim.receiptAnalysis.totalExtractedAmount, decisionClaim.currency)
+                                                            : '—'}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-500">Oldest receipt age:</span>{' '}
+                                                    <span className={`font-bold ${(decisionClaim.receiptAnalysis.maxReceiptAgeDays ?? 0) > 45 ? 'text-rose-600' : 'text-slate-800'}`}>
+                                                        {typeof decisionClaim.receiptAnalysis.maxReceiptAgeDays === 'number'
+                                                            ? `${decisionClaim.receiptAnalysis.maxReceiptAgeDays} days`
+                                                            : '—'}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-500">Requested:</span>{' '}
+                                                    <span className="font-bold">{formatMoney(decisionClaim.receiptAnalysis.amountRequested, decisionClaim.currency)}</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-slate-500">Allowed quota:</span>{' '}
+                                                    <span className="font-bold text-emerald-700">{formatMoney(decisionClaim.receiptAnalysis.amountAllowed, decisionClaim.currency)}</span>
+                                                </div>
+                                            </div>
+                                            {(decisionClaim.receiptAnalysis.issues || []).length > 0 && (
+                                                <ul className="space-y-1 mt-2">
+                                                    {(decisionClaim.receiptAnalysis.issues as string[]).map((issue: string, i: number) => (
+                                                        <li key={i} className="text-xs text-rose-700 flex items-start gap-1.5">
+                                                            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                                                            {issue}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Eligibility flags */}
                                     {(decisionClaim.eligibility?.flags || []).length > 0 && (
                                         <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
                                             <div className="text-[11px] font-bold text-rose-700 mb-2 flex items-center gap-1.5"><AlertTriangle size={11} />ELIGIBILITY FLAGS</div>
                                             <div className="flex flex-wrap gap-2">
                                                 {(decisionClaim.eligibility.flags as string[]).map((f: string) => (
-                                                    <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">{f}</span>
+                                                    <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">{flagLabel(f)}</span>
                                                 ))}
                                             </div>
                                         </div>
@@ -1805,6 +2108,21 @@ const ExpenseClaimDashboard = () => {
                                                                 <div className="min-w-0">
                                                                     <div className="text-xs font-bold text-slate-700 truncate">{r.fileName}</div>
                                                                     <div className="text-[10px] text-slate-400">{r.contentType}</div>
+                                                                    {(r.extractedAmount != null || r.extractedDate) && (
+                                                                        <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">
+                                                                            {r.extractedAmount != null && `Amount: ${formatMoney(r.extractedAmount, r.extractedCurrency || decisionClaim.currency)}`}
+                                                                            {r.extractedAmount != null && r.extractedDate && ' · '}
+                                                                            {r.extractedDate && `Date: ${new Date(r.extractedDate).toLocaleDateString('en-PK')}`}
+                                                                            {typeof r.receiptAgeDays === 'number' && (
+                                                                                <span className={r.receiptAgeDays > 45 ? ' text-rose-600' : ' text-slate-500'}>
+                                                                                    {' '}({r.receiptAgeDays}d old)
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {r.extractionStatus === 'failed' && (
+                                                                        <div className="text-[10px] text-amber-600 font-semibold mt-0.5">Could not read receipt — verify manually</div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
@@ -2064,6 +2382,80 @@ const ExpenseClaimDashboard = () => {
                     })()}
                 </div>
             )}
+
+            {/* Submit form — receipt preview lightbox */}
+            {submitPreviewIndex !== null && receiptFiles[submitPreviewIndex] && (() => {
+                const f = receiptFiles[submitPreviewIndex];
+                const url = submitReceiptUrls[submitPreviewIndex];
+                const isImage = f.type.startsWith('image/');
+                const isPdf = f.type === 'application/pdf';
+                return (
+                    <div
+                        className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-[60] flex items-center justify-center bg-black/95 p-4"
+                        onClick={() => setSubmitPreviewIndex(null)}
+                    >
+                        <button
+                            type="button"
+                            className="absolute top-4 right-4 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"
+                            onClick={() => setSubmitPreviewIndex(null)}
+                        >
+                            <X size={20} />
+                        </button>
+                        {receiptFiles.length > 1 && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                    disabled={submitPreviewIndex === 0}
+                                    onClick={e => { e.stopPropagation(); setSubmitPreviewIndex(i => Math.max(0, (i ?? 1) - 1)); }}
+                                >
+                                    <ChevronLeft size={24} />
+                                </button>
+                                <button
+                                    type="button"
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                    disabled={submitPreviewIndex === receiptFiles.length - 1}
+                                    onClick={e => { e.stopPropagation(); setSubmitPreviewIndex(i => Math.min(receiptFiles.length - 1, (i ?? 0) + 1)); }}
+                                >
+                                    <ChevronRight size={24} />
+                                </button>
+                            </>
+                        )}
+                        <div className="max-w-4xl w-full max-h-[85vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+                            {isImage && url ? (
+                                <img
+                                    src={url}
+                                    alt={f.name}
+                                    className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl"
+                                />
+                            ) : isPdf && url ? (
+                                <iframe
+                                    src={url}
+                                    title={f.name}
+                                    className="w-full h-[75vh] rounded-xl bg-white shadow-2xl"
+                                />
+                            ) : (
+                                <div className="bg-white rounded-xl p-8 text-center text-slate-600">
+                                    <FileText size={48} className="mx-auto mb-3 text-slate-300" />
+                                    Preview not available for this file type.
+                                </div>
+                            )}
+                            <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                                <span className="text-white/70 text-xs">
+                                    {f.name} • {submitPreviewIndex + 1} / {receiptFiles.length}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeReceiptAt(submitPreviewIndex)}
+                                    className="px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold flex items-center gap-1.5"
+                                >
+                                    <X size={14} /> Remove this receipt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {correctOpen && isAdminLike && (
                 <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/40 p-4">

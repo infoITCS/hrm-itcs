@@ -41,6 +41,7 @@
         "passport-microsoft": "^2.1.0",
         "pdf-parse": "^1.1.1",
         "sanitize-filename": "^1.6.3",
+        "tesseract.js": "^7.0.0",
         "winston": "^3.13.0",
         "winston-daily-rotate-file": "^5.0.0",
         "zod": "^4.3.6"
@@ -49,16 +50,16 @@
         "@types/bcryptjs": "^2.4.6",
         "@types/cors": "^2.8.17",
         "@types/express": "^4.17.21",
+        "@types/jest": "^29.5.12",
         "@types/lodash": "^4.17.24",
         "@types/multer": "^2.0.0",
         "@types/node": "^20.12.12",
         "@types/node-cron": "^3.0.11",
         "@vercel/node": "^3.0.0",
-        "nodemon": "^3.1.0",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.4.5",
         "jest": "^29.7.0",
+        "nodemon": "^3.1.0",
         "ts-jest": "^29.1.2",
-        "@types/jest": "^29.5.12"
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.5"
     }
 }

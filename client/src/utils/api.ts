@@ -31,6 +31,7 @@ export const api = {
     claimPendingApprovals: `${API_BASE_URL}/api/claims/approvals/pending`,
     claimProfileProgress: `${API_BASE_URL}/api/claims/profile-progress`,
     claimBulkDecision: `${API_BASE_URL}/api/claims/bulk-decision`,
+    claimPreviewReceipts: `${API_BASE_URL}/api/claims/preview-receipts`,
     claimDecision: (id: string) => `${API_BASE_URL}/api/claims/${id}/decision`,
     claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
     claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,

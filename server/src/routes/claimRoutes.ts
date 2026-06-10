@@ -5,6 +5,7 @@ import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendHRNotificationEmail } from '../utils/email';
+import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
 
 const router = express.Router();
 
@@ -83,6 +84,120 @@ function isAdminLike(role: string) {
 function isFinalStatus(status?: string) {
     return status === 'Approved' || status === 'Declined';
 }
+
+async function resolveClaimLimits(
+    category: string,
+    submitterUserId: string,
+    amountRequested: number
+): Promise<{ catDoc: any; amountAllowed: number; limit: number; outOfPolicy: boolean }> {
+    const catDoc = await ExpenseCategory.findOne({ name: category });
+    if (!catDoc) throw Object.assign(new Error('Invalid category'), { status: 400 });
+
+    let limit = catDoc.policyLimit && catDoc.policyLimit > 0 ? catDoc.policyLimit : 9999999;
+
+    if (catDoc.policyLimit && catDoc.policyLimit > 0) {
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1);
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+        const existingClaims = await ExpenseClaim.find({
+            employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
+            category,
+            status: { $nin: ['Draft', 'Declined'] },
+            createdAt: { $gte: startOfYear, $lte: endOfYear },
+        }).lean() as any[];
+
+        const claimedSoFar = existingClaims.reduce((sum, c) => {
+            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            return sum + amount;
+        }, 0);
+
+        limit = Math.max(0, catDoc.policyLimit - claimedSoFar);
+    }
+
+    const amountAllowed = Math.min(amountRequested, limit);
+    const outOfPolicy = amountRequested > limit;
+    return { catDoc, amountAllowed, limit, outOfPolicy };
+}
+
+// Preview receipt scan + flags BEFORE submit (no claim created)
+router.post('/preview-receipts', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const { employeeId: targetEmployeeId, category, amountRequested, expenseDate, receipts } = req.body || {};
+
+        if (!category) return res.status(400).json({ message: 'category is required' });
+        if (typeof amountRequested !== 'number' || amountRequested <= 0) {
+            return res.status(400).json({ message: 'amountRequested must be a positive number' });
+        }
+
+        let submitterUserId = userId;
+        if (targetEmployeeId && isAdminLike(role)) {
+            const employee = await Employee.findOne({ employeeId: targetEmployeeId }).lean() as any;
+            if (!employee?.userId) return res.status(404).json({ message: 'Employee not found' });
+            submitterUserId = employee.userId;
+        }
+
+        const { catDoc, amountAllowed, outOfPolicy } = await resolveClaimLimits(category, submitterUserId, amountRequested);
+        const flags: string[] = [];
+
+        if (outOfPolicy && !isAdminLike(role)) {
+            return res.status(400).json({
+                message: 'Amount exceeds remaining policy limit',
+            });
+        }
+        if (outOfPolicy) flags.push('OutOfPolicy');
+
+        const decodedReceipts = decodeReceipts(receipts as ReceiptInput[] | undefined);
+        if (decodedReceipts.length === 0) {
+            return res.json({
+                success: true,
+                data: { flags, receiptAnalysis: null, receipts: [] },
+            });
+        }
+
+        const parsedExpenseDate = expenseDate ? new Date(expenseDate) : null;
+        const analysis = await extractAndAnalyzeReceipts(
+            decodedReceipts.map((r: any) => ({
+                fileName: r.fileName,
+                contentType: r.contentType,
+                fileData: r.fileData,
+            })),
+            amountRequested,
+            amountAllowed,
+            parsedExpenseDate
+        );
+
+        for (const f of analysis.flags) {
+            if (!flags.includes(f)) flags.push(f);
+        }
+
+        res.json({
+            success: true,
+            data: {
+                flags,
+                receiptAnalysis: analysis.receiptAnalysis,
+                receipts: analysis.receipts.map(r => ({
+                    fileName: r.fileName,
+                    extractedDate: r.extractedDate,
+                    extractedAmount: r.extractedAmount,
+                    extractedCurrency: r.extractedCurrency,
+                    merchantName: r.merchantName,
+                    receiptAgeDays: r.receiptAgeDays,
+                    extractionStatus: r.extractionStatus,
+                    extractionError: r.extractionError,
+                    extractionConfidence: r.extractionConfidence,
+                })),
+            },
+        });
+    } catch (err: any) {
+        if (err?.status === 400) return res.status(400).json({ message: err.message });
+        next(err);
+    }
+});
 
 router.post('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
@@ -186,6 +301,38 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             flags.push('MissingCommentOrReceipt');
         }
 
+        // Local OCR: extract date + amount from each uploaded receipt (no third-party AI)
+        let receiptAnalysis: any = undefined;
+        let finalReceipts = decodedReceipts;
+        const parsedExpenseDate = expenseDate ? new Date(expenseDate) : null;
+        if (decodedReceipts.length > 0) {
+            const analysis = await extractAndAnalyzeReceipts(
+                decodedReceipts.map((r: any) => ({
+                    fileName: r.fileName,
+                    contentType: r.contentType,
+                    fileData: r.fileData,
+                })),
+                amountRequested,
+                amountAllowed,
+                parsedExpenseDate
+            );
+            finalReceipts = analysis.receipts.map((r, i) => ({
+                ...decodedReceipts[i],
+                extractedDate: r.extractedDate,
+                extractedAmount: r.extractedAmount,
+                extractedCurrency: r.extractedCurrency,
+                merchantName: r.merchantName,
+                receiptAgeDays: r.receiptAgeDays,
+                extractionStatus: r.extractionStatus,
+                extractionError: r.extractionError,
+                extractionConfidence: r.extractionConfidence,
+            }));
+            receiptAnalysis = analysis.receiptAnalysis;
+            for (const f of analysis.flags) {
+                if (!flags.includes(f)) flags.push(f);
+            }
+        }
+
         const workflow = buildWorkflow(category);
         const reportingManagerId = employee?.jobInfo?.reportingManager ? String(employee.jobInfo.reportingManager) : '';
         const approvals = workflow.map(stage => ({
@@ -216,7 +363,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             amountAllowed,
             approvedTotal: undefined,
             notes,
-            receipts: decodedReceipts,
+            receipts: finalReceipts,
+            receiptAnalysis,
             status: stageToStatus(firstStage) as any,
             eligibility: { eligible: flags.length === 0, flags },
             approvals,

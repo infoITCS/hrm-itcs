@@ -40,8 +40,32 @@ const ReceiptSchema = new Schema(
         contentType: { type: String },
         fileData: { type: Buffer, required: true },
         uploadedAt: { type: Date, default: Date.now },
+        // AI-extracted from receipt image/PDF
+        extractedDate: { type: Date },
+        extractedAmount: { type: Number, min: 0 },
+        extractedCurrency: { type: String, default: 'PKR' },
+        merchantName: { type: String },
+        receiptAgeDays: { type: Number, min: 0 },
+        extractionStatus: { type: String, enum: ['success', 'partial', 'failed'], default: 'failed' },
+        extractionError: { type: String },
+        extractionConfidence: { type: String, enum: ['high', 'medium', 'low', 'none'] },
     },
     { _id: true }
+);
+
+const ReceiptAnalysisSchema = new Schema(
+    {
+        analyzedAt: { type: Date },
+        receiptCount: { type: Number, default: 0 },
+        successfulExtractions: { type: Number, default: 0 },
+        totalExtractedAmount: { type: Number, min: 0 },
+        oldestReceiptDate: { type: Date },
+        maxReceiptAgeDays: { type: Number, min: 0 },
+        amountRequested: { type: Number },
+        amountAllowed: { type: Number },
+        issues: { type: [String], default: [] },
+    },
+    { _id: false }
 );
 
 const ExpenseClaimSchema = new Schema(
@@ -79,8 +103,10 @@ const ExpenseClaimSchema = new Schema(
 
         eligibility: {
             eligible: { type: Boolean, default: true },
-            flags: { type: [String], default: [] }, // "OutOfPolicy", "Extra", "MissingReceipt", ...
+            flags: { type: [String], default: [] }, // OutOfPolicy, MissingReceipt, ReceiptOlderThan45Days, ReceiptTotalExceedsQuota, ...
         },
+
+        receiptAnalysis: { type: ReceiptAnalysisSchema },
 
         approvals: { type: [ApprovalSchema], default: [] },
 
