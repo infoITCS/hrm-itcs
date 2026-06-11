@@ -994,29 +994,23 @@ const ExpenseClaimDashboard = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-600">Sub-categories (Select multiple)</label>
-                                <div className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white overflow-y-auto max-h-32">
+                                <label className="text-xs font-bold text-slate-600">Sub-category</label>
+                                <select
+                                    value={subCategories[0] || ''}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setSubCategories(val ? [val] : []);
+                                    }}
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                >
+                                    <option value="">Select a sub-category</option>
                                     {categories.find(c => c.name === category)?.subCategories?.map((sc: string) => (
-                                        <label key={sc} className="flex items-center gap-2 py-1">
-                                            <input 
-                                                type="checkbox"
-                                                checked={subCategories.includes(sc)}
-                                                onChange={e => {
-                                                    if (e.target.checked) {
-                                                        setSubCategories(prev => [...prev, sc]);
-                                                    } else {
-                                                        setSubCategories(prev => prev.filter(item => item !== sc));
-                                                    }
-                                                }}
-                                                className="rounded text-indigo-600 focus:ring-indigo-500"
-                                            />
-                                            <span>{sc}</span>
-                                        </label>
+                                        <option key={sc} value={sc}>{sc}</option>
                                     ))}
-                                    {(!categories.find(c => c.name === category)?.subCategories || categories.find(c => c.name === category)?.subCategories.length === 0) && (
-                                        <div className="text-slate-400 italic">No sub-categories defined</div>
-                                    )}
-                                </div>
+                                </select>
+                                {(!categories.find(c => c.name === category)?.subCategories || categories.find(c => c.name === category)?.subCategories.length === 0) && (
+                                    <p className="text-[11px] text-slate-400 mt-1 italic">No sub-categories defined for this category.</p>
+                                )}
                             </div>
 
                             <div>

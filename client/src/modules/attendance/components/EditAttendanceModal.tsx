@@ -24,8 +24,10 @@ const toLocalIsoString = (dateStr?: string) => {
 };
 
 export default function EditAttendanceModal({ isOpen, onClose, date, employee, onSuccess }: EditAttendanceModalProps) {
-    const [checkIn, setCheckIn] = useState('');
-    const [checkOut, setCheckOut] = useState('');
+    const [checkInDate, setCheckInDate] = useState('');
+    const [checkInTime, setCheckInTime] = useState('');
+    const [checkOutDate, setCheckOutDate] = useState('');
+    const [checkOutTime, setCheckOutTime] = useState('');
     const [status, setStatus] = useState<AttendanceStatus>('Present');
     const [note, setNote] = useState('');
     const [loading, setLoading] = useState(false);
@@ -33,13 +35,32 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
 
     useEffect(() => {
         if (isOpen && employee) {
-            setCheckIn(toLocalIsoString(employee.checkIn));
-            setCheckOut(toLocalIsoString(employee.checkOut));
+            const checkInLocal = toLocalIsoString(employee.checkIn);
+            const checkOutLocal = toLocalIsoString(employee.checkOut);
+
+            if (checkInLocal) {
+                const [d, t] = checkInLocal.split('T');
+                setCheckInDate(d);
+                setCheckInTime(t);
+            } else {
+                setCheckInDate(date);
+                setCheckInTime('');
+            }
+
+            if (checkOutLocal) {
+                const [d, t] = checkOutLocal.split('T');
+                setCheckOutDate(d);
+                setCheckOutTime(t);
+            } else {
+                setCheckOutDate(date);
+                setCheckOutTime('');
+            }
+
             setStatus(employee.status || 'Present');
             setNote('');
             setError('');
         }
-    }, [isOpen, employee]);
+    }, [isOpen, employee, date]);
 
     if (!isOpen || !employee) return null;
 
@@ -49,9 +70,12 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
         setLoading(true);
 
         try {
+            const checkInDateTime = checkInDate && checkInTime ? `${checkInDate}T${checkInTime}` : '';
+            const checkOutDateTime = checkOutDate && checkOutTime ? `${checkOutDate}T${checkOutTime}` : '';
+
             // Sending standard ISO strings ensures correct backend parsing
-            const cIn = checkIn ? new Date(checkIn).toISOString() : undefined;
-            const cOut = checkOut ? new Date(checkOut).toISOString() : undefined;
+            const cIn = checkInDateTime ? new Date(checkInDateTime).toISOString() : undefined;
+            const cOut = checkOutDateTime ? new Date(checkOutDateTime).toISOString() : undefined;
 
             await attendanceApi.createManualRecord({
                 employeeId: employee.employeeId,
@@ -100,28 +124,44 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                                 <Clock size={12} /> Check In
                             </label>
-                            <input 
-                                type="datetime-local" 
-                                value={checkIn}
-                                onChange={(e) => setCheckIn(e.target.value)}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                            />
+                            <div className="grid grid-cols-2 gap-3">
+                                <input 
+                                    type="date" 
+                                    value={checkInDate}
+                                    onChange={(e) => setCheckInDate(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                />
+                                <input 
+                                    type="time" 
+                                    value={checkInTime}
+                                    onChange={(e) => setCheckInTime(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                                 <Clock size={12} /> Check Out
                             </label>
-                            <input 
-                                type="datetime-local" 
-                                value={checkOut}
-                                onChange={(e) => setCheckOut(e.target.value)}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                            />
+                            <div className="grid grid-cols-2 gap-3">
+                                <input 
+                                    type="date" 
+                                    value={checkOutDate}
+                                    onChange={(e) => setCheckOutDate(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                />
+                                <input 
+                                    type="time" 
+                                    value={checkOutTime}
+                                    onChange={(e) => setCheckOutTime(e.target.value)}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                />
+                            </div>
                         </div>
                     </div>
 
