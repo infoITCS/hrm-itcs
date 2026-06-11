@@ -101,13 +101,16 @@ function parseNumericDate(parts: number[]): Date | null {
 
 /** Fix common OCR digit mistakes in number strings (S→5, O→0, etc.) */
 function sanitizeOcrNumberString(raw: string): string {
-    return raw
+    // Remove currency prefixes first to avoid turning the 's' in 'Rs' into '5'
+    const withoutCurrency = raw.replace(/(?:rs\.?|pkr|₨)/gi, '');
+
+    return withoutCurrency
         .replace(/[Oo]/g, '0')
         .replace(/[Ss](?=\d)/g, '5')
         .replace(/[Il|](?=\d)/g, '1')
         .replace(/[Bb](?=\d)/g, '8')
         .replace(/[Zz](?=\d)/g, '2')
-        .replace(/[^\d.,]/g, '');
+        .replace(/[^\d., ]/g, ''); // Keep spaces to prevent merging numbers on the same line
 }
 
 function parseNamedMonthDate(day: number, monthStr: string, year: number, referenceDate: Date): Date | null {
@@ -257,22 +260,106 @@ function extractAmountFromLine(line: string, requireDecimal = false): number | n
     if (isDateOrTimeLine(line)) return null;
 
     const sanitized = sanitizeOcrNumberString(line);
-    // Prefer amounts with 2 decimal places (508.02) — exclude time-like values (10.25)
-    const decimalMatches = [...sanitized.matchAll(/(\d{1,6}\.\d{2})/g)];
+    // Remove commas before matching regex (e.g. 2,333.24 becomes 2333.24)
+    const cleanForRegex = sanitized.replace(/,/g, '');
+
+    // Prefer amounts with 1 or 2 decimal places (508.2, 508.02) — exclude time-like values (10.25)
+    const decimalMatches = [...cleanForRegex.matchAll(/(\d{1,8}\.\d{1,2})/g)];
     if (decimalMatches.length > 0) {
         const amounts = decimalMatches
             .map(m => parseFloat(m[1]))
-            .filter(n => n >= 1 && n < 1_000_000 && !(n < 24 && sanitized.includes(':')));
+            .filter(n => n >= 1 && n < 1_000_000 && !(n < 24 && cleanForRegex.includes(':')));
         if (amounts.length > 0) return Math.max(...amounts);
     }
     if (requireDecimal) return null;
 
-    const intMatches = [...sanitized.matchAll(/(\d{2,6})/g)];
+    const intMatches = [...cleanForRegex.matchAll(/(\d{2,8})/g)];
     const ints = intMatches.map(m => parseFloat(m[1])).filter(n => n >= 10 && n < 1_000_000);
     return ints.length > 0 ? Math.max(...ints) : null;
 }
 
-function extractTotalAmount(text: string): { amount: number | null; confidence: 'high' | 'medium' | 'low' } {
+function extractAllAmounts(text: string): number[] {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const found: number[] = [];
+    for (const line of lines) {
+        if (isDateOrTimeLine(line)) continue;
+        const sanitized = sanitizeOcrNumberString(line);
+        const cleanForRegex = sanitized.replace(/,/g, '');
+        
+        // Find decimal amounts (allow 1 or 2 decimal digits to handle OCR misreads like 333.4)
+        const decimalMatches = [...cleanForRegex.matchAll(/(\d{1,8}\.\d{1,2})/g)];
+        for (const m of decimalMatches) {
+            const val = parseFloat(m[1]);
+            if (Number.isFinite(val) && val >= 1 && val < 1_000_000) {
+                found.push(val);
+            }
+        }
+        
+        // Find integer amounts
+        const intMatches = [...cleanForRegex.matchAll(/(\d{2,8})/g)];
+        for (const m of intMatches) {
+            const val = parseFloat(m[1]);
+            if (Number.isFinite(val) && val >= 10 && val < 1_000_000) {
+                found.push(val);
+            }
+        }
+    }
+    // Return unique values
+    return found.filter((val, i, arr) => arr.indexOf(val) === i);
+}
+
+function getCorrectedOcrAmount(priorityAmount: number, allCandidates: number[]): number {
+    let best = priorityAmount;
+    for (const cand of allCandidates) {
+        if (cand <= priorityAmount) continue;
+        
+        const priStr = priorityAmount.toFixed(2);
+        const candStr = cand.toFixed(2);
+        
+        // Suffix match (e.g. 333.24 matches 2333.24)
+        if (candStr.endsWith(priStr)) {
+            return cand;
+        }
+        
+        // Match if the difference is a round thousand
+        const diff = cand - priorityAmount;
+        if (diff > 0 && diff % 1000 === 0) {
+            return cand;
+        }
+        
+        // Match if integer part is a suffix (e.g. 333 matches 2333)
+        const priInt = Math.floor(priorityAmount).toString();
+        const candInt = Math.floor(cand).toString();
+        
+        // Require at least 3 digits to avoid accidental small match (e.g. 10 matching 1010)
+        if (priInt.length >= 3 && candInt.endsWith(priInt)) {
+            return cand;
+        }
+    }
+    return best;
+}
+
+function extractTotalAmount(text: string, amountHint?: number | null): { amount: number | null; confidence: 'high' | 'medium' | 'low' } {
+    // If a hint is provided, search all candidate amounts for one close to the hint
+    if (amountHint && amountHint > 0) {
+        const candidates = extractAllAmounts(text);
+        let bestCandidate: number | null = null;
+        let bestDiff = Infinity;
+        
+        for (const cand of candidates) {
+            const diff = Math.abs(cand - amountHint);
+            // Allow up to 15% discrepancy or matching digits
+            if (diff < bestDiff && (diff / amountHint < 0.15 || Math.abs(cand - amountHint) < 50)) {
+                bestDiff = diff;
+                bestCandidate = cand;
+            }
+        }
+        
+        if (bestCandidate !== null) {
+            return { amount: bestCandidate, confidence: 'high' };
+        }
+    }
+
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
     // Priority-ordered keywords — PK pharmacy receipts (tolerant of OCR typos like "valle")
@@ -280,6 +367,7 @@ function extractTotalAmount(text: string): { amount: number | null; confidence: 
         { pattern: /net\s*val\w*\s*after\s*discount/i, confidence: 'high' },
         { pattern: /net\s*total/i, confidence: 'high', requireDecimal: true },
         { pattern: /grand\s*total|gross\s*total/i, confidence: 'high', requireDecimal: true },
+        { pattern: /invoice\s*val\w*/i, confidence: 'high' },
         { pattern: /gross\s*r\w*\s*val\w*/i, confidence: 'medium' },
         { pattern: /amount\s*due|payable|balance\s*due/i, confidence: 'medium' },
     ];
@@ -325,6 +413,12 @@ function extractTotalAmount(text: string): { amount: number | null; confidence: 
         }
     }
 
+    // Run suffix alignment/left-cutoff correction heuristics
+    if (bestAmount !== null) {
+        const allCandidates = extractAllAmounts(text);
+        bestAmount = getCorrectedOcrAmount(bestAmount, allCandidates);
+    }
+
     return { amount: bestAmount, confidence: bestConfidence };
 }
 
@@ -338,7 +432,8 @@ function extractMerchantName(text: string): string | null {
 export function parseReceiptText(
     text: string,
     referenceDate: Date = new Date(),
-    expenseDateHint?: Date | null
+    expenseDateHint?: Date | null,
+    amountHint?: number | null
 ): Omit<ReceiptExtractionResult, 'extractionError'> {
     if (!text || text.trim().length < 5) {
         return {
@@ -353,7 +448,7 @@ export function parseReceiptText(
 
     const { dates, labeledDate } = extractDatesFromText(text, referenceDate);
     const extractedDate = pickBestReceiptDate(dates, referenceDate, labeledDate, expenseDateHint);
-    const { amount: extractedAmount, confidence: amountConfidence } = extractTotalAmount(text);
+    const { amount: extractedAmount, confidence: amountConfidence } = extractTotalAmount(text, amountHint);
     const merchantName = extractMerchantName(text);
 
     const hasDate = extractedDate !== null;
@@ -383,11 +478,12 @@ export async function extractReceiptData(
     buffer: Buffer,
     fileName: string,
     contentType?: string,
-    expenseDateHint?: Date | null
+    expenseDateHint?: Date | null,
+    amountHint?: number | null
 ): Promise<ReceiptExtractionResult> {
     try {
         const text = await extractTextFromBuffer(buffer, contentType);
-        const parsed = parseReceiptText(text, new Date(), expenseDateHint);
+        const parsed = parseReceiptText(text, new Date(), expenseDateHint, amountHint);
 
         if (parsed.extractionStatus === 'failed') {
             logger.warn(`[ReceiptOCR] Low text yield from ${fileName} (${text.length} chars)`);
@@ -544,7 +640,7 @@ export async function extractAndAnalyzeReceipts(
     const analyzed: AnalyzedReceipt[] = [];
 
     for (const r of rawReceipts) {
-        const extraction = await extractReceiptData(r.fileData, r.fileName, r.contentType, expenseDate);
+        const extraction = await extractReceiptData(r.fileData, r.fileName, r.contentType, expenseDate, amountRequested);
         analyzed.push({
             fileName: r.fileName,
             contentType: r.contentType,
