@@ -54,15 +54,35 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
     
     passport.use(
         new MicrosoftStrategy(
-            strategyOptions,
-            async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+            { ...strategyOptions, passReqToCallback: true },
+            async (req: any, accessToken: string, refreshToken: string, profile: any, done: any) => {
                 try {
+                    const forceSync = req.session?.force_ms_sync === true;
+                    if (req.session) {
+                        req.session.force_ms_sync = false;
+                    }
                     // Extract email from profile
                     const email = profile.emails?.[0]?.value || profile._json?.mail || profile._json?.userPrincipalName;
 
                     if (!email) {
                         logger.error('❌ No email found in Microsoft profile');
                         return done(null, false, { message: 'No email found in Microsoft profile' });
+                    }
+
+                    // Fetch Profile Photo from Microsoft Graph API
+                    let profilePhotoBase64 = null;
+                    try {
+                        const photoResponse = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+                            headers: { Authorization: `Bearer ${accessToken}` }
+                        });
+                        if (photoResponse.ok) {
+                            const arrayBuffer = await photoResponse.arrayBuffer();
+                            const buffer = Buffer.from(arrayBuffer);
+                            const contentType = photoResponse.headers.get('content-type') || 'image/jpeg';
+                            profilePhotoBase64 = `data:${contentType};base64,${buffer.toString('base64')}`;
+                        }
+                    } catch (photoErr: any) {
+                        logger.warn(`⚠️ Failed to fetch Microsoft profile photo: ${photoErr?.message}`);
                     }
 
                     // Find existing user or create new one
@@ -77,6 +97,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                             firstName: profile.name?.givenName || 'Unknown',
                             lastName: profile.name?.familyName || 'User',
                             microsoftId: profile.id,
+                            avatar: profilePhotoBase64 || undefined,
                             needsPasswordSetup: true // Prompt user to set a password on first login
                         });
                     } else if (!user.isActive) {
@@ -91,6 +112,14 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                             changed = true;
                         }
 
+                        // Sync Avatar if Microsoft gave us one, and user hasn't manually uploaded one locally
+                        if (profilePhotoBase64) {
+                            if (forceSync || !user.avatar || user.avatar.startsWith('data:image')) {
+                                user.avatar = profilePhotoBase64;
+                                changed = true;
+                            }
+                        }
+
                         // If the user has no real bcrypt password yet, flag them for password setup.
                         const hasRealPassword = user.password && user.password.startsWith('$2') && user.password.length === 60;
                         if (!hasRealPassword && !user.needsPasswordSetup) {
@@ -99,6 +128,21 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                         }
 
                         if (changed) await user.save();
+                    }
+
+                    // Attempt to sync the avatar to the Employee profile as well
+                    if (profilePhotoBase64) {
+                        try {
+                            const mongoose = require('mongoose');
+                            const Employee = mongoose.model('Employee');
+                            const emp = await Employee.findOne({ userId: user._id });
+                            if (emp && (forceSync || !emp.avatar || emp.avatar.startsWith('data:image'))) {
+                                emp.avatar = profilePhotoBase64;
+                                await emp.save();
+                            }
+                        } catch (syncErr) {
+                            // Silently fail employee sync if employee model not loaded or not found
+                        }
                     }
 
                     return done(null, user);

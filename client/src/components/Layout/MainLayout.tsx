@@ -25,13 +25,13 @@ const MainLayout = () => {
     return (
         <div className="flex flex-col min-h-screen">
             {isImpersonated && (
-                <div className="bg-amber-500 text-slate-900 py-2.5 px-4 text-center text-sm font-bold flex justify-center items-center gap-3 z-[9999] fixed top-0 left-0 right-0 h-10 shadow-md">
+                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2.5 px-4 text-center text-sm font-bold flex justify-center items-center gap-3 z-[9999] fixed top-0 left-0 right-0 h-10 shadow-md">
                     <span>
                         You are currently impersonating <strong>{user?.name || user?.email}</strong> (Role: <span className="capitalize">{user?.role}</span>)
                     </span>
                     <button 
                         onClick={stopImpersonating}
-                        className="bg-slate-900 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm active:scale-95"
+                        className="bg-white text-indigo-600 px-3 py-1 rounded-lg text-xs font-bold hover:bg-indigo-50 transition-colors shadow-sm active:scale-95"
                     >
                         Switch Back
                     </button>

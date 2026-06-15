@@ -598,7 +598,8 @@ const Dashboard = () => {
                                         <Avatar 
                                             src={getAvatarUrl(leave.avatar)} 
                                             name={leave.employeeName} 
-                                            size="w-10 h-10" 
+                                            size="w-10 h-10"
+                                            initialsClassName="bg-indigo-600 text-xs" 
                                         />
                                         <div className="min-w-0 flex-1">
                                             <p className="font-bold text-sm text-slate-800 truncate">{leave.employeeName}</p>

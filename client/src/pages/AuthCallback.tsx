@@ -68,6 +68,14 @@ export const AuthCallback: React.FC = () => {
                 // Log the user in first so they are authenticated
                 login(user);
 
+                // Check if we need to redirect back to a specific page (e.g. MyInfo sync)
+                const redirectTarget = localStorage.getItem('auth_redirect');
+                if (redirectTarget) {
+                    localStorage.removeItem('auth_redirect');
+                    navigate(redirectTarget, { replace: true });
+                    return;
+                }
+
                 // If first-time Microsoft user, redirect to dashboard with a flag
                 // The Dashboard will detect this and show the password setup modal stably
                 if (userData.needsPasswordSetup) {

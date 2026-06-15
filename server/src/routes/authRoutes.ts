@@ -279,6 +279,10 @@ router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
     // Also store in query for passport to pick up
     req.query.prompt = prompt;
   }
+  
+  if (req.query.sync === 'true') {
+      (req as any).session.force_ms_sync = true;
+  }
 
   try {
     // Create a wrapper that ensures prompt is passed

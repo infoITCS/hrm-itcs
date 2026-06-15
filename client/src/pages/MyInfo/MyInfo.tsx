@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation, Cloud } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -1146,6 +1146,14 @@ const MyInfo = () => {
         }
     };
 
+    const handleSyncMicrosoftPhoto = () => {
+        // Set the redirect target so AuthCallback knows where to send us back!
+        localStorage.setItem('auth_redirect', '/my-info');
+        
+        // Directly redirect the main window instead of opening a popup
+        window.location.href = `${api.baseURL.replace(/\/$/, '')}/api/auth/microsoft?prompt=select_account&sync=true`;
+    };
+
     const allSteps = [
         { id: 1, title: 'Personal', icon: User },
         { id: 2, title: 'Contact & Dependents', icon: Users },
@@ -1257,6 +1265,13 @@ const MyInfo = () => {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleSyncMicrosoftPhoto}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-600 text-white rounded-xl hover:from-blue-700 hover:to-sky-700 transition-all font-semibold shadow-md shadow-blue-100 hover:shadow-lg hover:scale-[1.02] active:scale-95"
+                            title="Sync profile picture from Microsoft 365"
+                        >
+                            <Cloud size={18} /> Sync MS Photo
+                        </button>
                         <button
                             onClick={() => { setIsEditing(true); setStep(1); }}
                             className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all font-semibold shadow-md shadow-indigo-100 hover:shadow-lg hover:scale-[1.02] active:scale-95"

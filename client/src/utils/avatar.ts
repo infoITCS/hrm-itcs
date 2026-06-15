@@ -4,16 +4,24 @@ import { api } from './api';
  * Returns the correct URL for an employee avatar.
  * Appends ?token= to attachment URLs so browser <img> tags can authenticate.
  */
-export const getAvatarUrl = (emp: any) => {
-    if (!emp) return null;
+export const getAvatarUrl = (empOrString: any) => {
+    if (!empOrString) return null;
 
     const token = localStorage.getItem('token');
     const tokenSuffix = token ? `?token=${token}` : '';
 
+    // Handle string inputs (direct avatar URL)
+    if (typeof empOrString === 'string') {
+        if (empOrString.startsWith('http') || empOrString.startsWith('data:')) return empOrString;
+        const url = `${api.baseURL.replace(/\/$/, '')}${empOrString.startsWith('/') ? '' : '/'}${empOrString}`;
+        return empOrString.includes('/attachments/raw/') ? `${url}${tokenSuffix}` : url;
+    }
+
+    const emp = empOrString;
     // 1. Check direct avatar field (could be a relative /api/employees/attachments/raw/... path)
     if (emp.avatar) {
-        if (emp.avatar.startsWith('http')) return emp.avatar;
-        const url = `${api.baseURL}${emp.avatar}`;
+        if (emp.avatar.startsWith('http') || emp.avatar.startsWith('data:')) return emp.avatar;
+        const url = `${api.baseURL.replace(/\/$/, '')}${emp.avatar.startsWith('/') ? '' : '/'}${emp.avatar}`;
         // Append token only for attachment endpoints
         return emp.avatar.includes('/attachments/raw/') ? `${url}${tokenSuffix}` : url;
     }
