@@ -602,7 +602,9 @@ const Dashboard = () => {
                                         />
                                         <div className="min-w-0 flex-1">
                                             <p className="font-bold text-sm text-slate-800 truncate">{leave.employeeName}</p>
-                                            <p className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">{leave.type} Leave</p>
+                                            <p className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
+                                                {leave.type}{leave.type.toLowerCase().includes('leave') ? '' : ' Leave'}
+                                            </p>
                                         </div>
                                     </div>
                                 ))}

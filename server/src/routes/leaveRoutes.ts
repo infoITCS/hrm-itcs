@@ -133,7 +133,14 @@ router.get('/today', authenticate, async (req: Request, res: Response, next: Nex
             if (e.userId) avatarMap.set(e.userId, avatar);
         });
 
-        const todayLeaves = leaves.map(l => ({
+        const uniqueLeavesMap = new Map();
+        leaves.forEach((l: any) => {
+            if (!uniqueLeavesMap.has(l.employeeId)) {
+                uniqueLeavesMap.set(l.employeeId, l);
+            }
+        });
+
+        const todayLeaves = Array.from(uniqueLeavesMap.values()).map((l: any) => ({
             id: l._id,
             employeeName: empMap.get(l.employeeId) || 'Unknown',
             avatar: avatarMap.get(l.employeeId),
