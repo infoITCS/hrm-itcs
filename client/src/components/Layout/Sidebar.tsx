@@ -11,7 +11,7 @@ import {
     BookOpen,
     Settings,
     DollarSign,
-    Shield,
+    // Shield,
     X,
     ScanFace,
 } from 'lucide-react';

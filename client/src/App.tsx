@@ -12,7 +12,7 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import { SignIn } from './pages/SignIn';
 import { AuthCallback } from './pages/AuthCallback';
 import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
-import AuditLogs from './pages/Admin/AuditLogs';
+// import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminSettings from './pages/Admin/AdminSettings';
 import Directory from './pages/Directory/Directory';
