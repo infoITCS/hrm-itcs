@@ -283,6 +283,12 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             employeeData.employeeId = `${PREFIX}${nextNum.toString().padStart(3, '0')}`;
         }
 
+        // Sanitize jobInfo.shift: if it's an empty string, set it to null 
+        // to avoid BSONError/CastError when converting to ObjectId
+        if (employeeData.jobInfo && employeeData.jobInfo.shift === '') {
+            employeeData.jobInfo.shift = null;
+        }
+
         const employee = new Employee({
             ...employeeData,
             jobInfo: {

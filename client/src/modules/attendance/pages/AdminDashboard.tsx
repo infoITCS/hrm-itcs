@@ -281,17 +281,18 @@ export default function AdminDashboard() {
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                            className={`flex items-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
                                 activeTab === tab.id
                                     ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
                                     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                             }`}
                         >
                             <tab.icon size={16} />
-                            {tab.label}
+                            <span className="hidden sm:inline">{tab.label}</span>
+                            <span className="sm:hidden">{tab.id === 'overview' ? 'Overview' : 'My Att.'}</span>
                         </button>
                     ))}
-                    <div className="ml-auto pr-3">
+                    <div className="ml-auto pr-2 hidden sm:block">
                         <span className="text-xs font-bold text-slate-400">
                             {new Date().toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long' })}
                         </span>
@@ -302,21 +303,21 @@ export default function AdminDashboard() {
             {activeTab === 'overview' && (
                 <>
             {/* Dashboard Header */}
-            <div className="rounded-2xl p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
+            <div className="rounded-2xl p-4 sm:p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
                 <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <Activity size={20} />
-                            <span className="text-sm font-bold uppercase tracking-widest text-white/80">Daily Attendance</span>
+                            <span className="text-xs sm:text-sm font-bold uppercase tracking-widest text-white/80">Daily Attendance</span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl font-bold">Monitoring Dashboard</h1>
-                        <div className="flex items-center gap-3 mt-1.5 flex-nowrap">
-                            <p className="text-white/70 text-sm whitespace-nowrap">Live Sync · {location || 'All Locations'}</p>
+                        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Monitoring Dashboard</h1>
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <p className="text-white/70 text-sm">Live Sync · {location || 'All Locations'}</p>
                             <ZktStatusBadge />
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 lg:mt-0 mt-4">
+                    <div className="flex flex-wrap items-center gap-2">
                         <div className="relative">
                             <select value={location || ''} onChange={(e) => setLocation(e.target.value || undefined)}
                                 className="appearance-none pl-8 pr-7 py-2 bg-white/20 border border-white/30 text-white text-sm font-semibold rounded-xl focus:outline-none">
@@ -334,43 +335,43 @@ export default function AdminDashboard() {
                         <button onClick={() => { setAutoRefresh((p) => !p); refresh(); refreshRoster(); }}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-bold transition-all ${autoRefresh ? 'bg-white/25 border-white/40' : 'bg-white/10 border-white/20 text-white/60'}`}>
                             <RefreshCw size={14} className={autoRefresh ? 'animate-spin [animation-duration:3s]' : ''} />
-                            {autoRefresh ? 'Live' : 'Paused'}
+                            <span className="hidden sm:inline">{autoRefresh ? 'Live' : 'Paused'}</span>
                         </button>
-                            <button
-                                onClick={() => setPreviewConfig({
+                        <button
+                            onClick={() => setPreviewConfig({
+                                isOpen: true,
+                                title: 'Daily Attendance Sheet Preview',
+                                subtitle: `Daily report for ${date}`,
+                                fetchData: () => attendanceApi.fetchDailyReportCsv(date),
+                                downloadFileName: `attendance_all_${date}.csv`
+                            })}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white/90 text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all border border-white/50"
+                        >
+                            <Download size={16} />
+                            <span className="hidden sm:inline">Daily Sheet</span>
+                        </button>
+                        <button 
+                            onClick={() => {
+                                const monthVal = date.slice(0, 7);
+                                setPreviewConfig({
                                     isOpen: true,
-                                    title: 'Daily Attendance Sheet Preview',
-                                    subtitle: `Daily report for ${date}`,
-                                    fetchData: () => attendanceApi.fetchDailyReportCsv(date),
-                                    downloadFileName: `attendance_all_${date}.csv`
-                                })}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-white/90 text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all border border-white/50"
-                            >
-                                <Download size={16} />
-                                Daily Sheet
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    const monthVal = date.slice(0, 7);
-                                    setPreviewConfig({
-                                        isOpen: true,
-                                        title: 'Monthly Attendance Sheet Preview',
-                                        subtitle: `Monthly report for ${monthVal}`,
-                                        fetchData: () => attendanceApi.fetchMonthlyReportCsv(monthVal),
-                                        downloadFileName: `attendance_all_${monthVal}.csv`
-                                    });
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-white text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
-                            >
-                                <Download size={16} />
-                                Monthly Sheet
-                            </button>
+                                    title: 'Monthly Attendance Sheet Preview',
+                                    subtitle: `Monthly report for ${monthVal}`,
+                                    fetchData: () => attendanceApi.fetchMonthlyReportCsv(monthVal),
+                                    downloadFileName: `attendance_all_${monthVal}.csv`
+                                });
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white text-indigo-600 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                        >
+                            <Download size={16} />
+                            <span className="hidden sm:inline">Monthly Sheet</span>
+                        </button>
                     </div>
                 </div>
             </div>
 
             {/* Performance Overview Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
                 <StatCard title="On Time" value={loading ? '…' : String(summary?.totalPresent ?? 0)}
                     subtitle={`${pct}% on-time rate`} icon={UserCheck} colorClass="bg-emerald-100 text-emerald-600"
                     active={statusFilter === 'OnTime'} onClick={() => handleStatClick('OnTime')} />

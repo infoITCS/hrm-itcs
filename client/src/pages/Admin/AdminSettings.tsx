@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
@@ -190,34 +191,34 @@ const AdminSettings = () => {
 
             {/* Tabs & Search */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-full lg:w-auto lg:shrink-0">
+                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-full lg:w-auto overflow-x-auto scrollbar-none">
                     <button 
                         onClick={() => setActiveTab('departments')}
-                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'departments' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'departments' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <Building2 size={18} />
-                        Departments
+                        <Building2 size={16} />
+                        <span>Departments</span>
                     </button>
                     <button 
                         onClick={() => setActiveTab('designations')}
-                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'designations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'designations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <Briefcase size={18} />
-                        Designations
+                        <Briefcase size={16} />
+                        <span>Designations</span>
                     </button>
                     <button 
                         onClick={() => setActiveTab('shifts')}
-                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'shifts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'shifts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <Clock size={18} />
-                        Work Shifts
+                        <Clock size={16} />
+                        <span>Work Shifts</span>
                     </button>
                     <button 
                         onClick={() => setActiveTab('locations')}
-                        className={`flex items-center gap-2 flex-1 lg:flex-none py-2.5 px-6 rounded-xl text-sm font-bold transition-all ${activeTab === 'locations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'locations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <MapPin size={18} />
-                        Locations
+                        <MapPin size={16} />
+                        <span>Locations</span>
                     </button>
                 </div>
 
@@ -241,6 +242,7 @@ const AdminSettings = () => {
                 <LocationManagement />
             ) : (
                 <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
+                    <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         {/* Existing Table Content */}
                     <thead className="bg-slate-50/80 border-b border-slate-100">
@@ -328,6 +330,7 @@ const AdminSettings = () => {
                     </tbody>
                 </table>
             </div>
+            </div>
             )}
 
             {/* Warning Box */}
@@ -344,7 +347,7 @@ const AdminSettings = () => {
             </div>
 
             {/* Create/Edit Modal */}
-            {isModalOpen && (
+            {isModalOpen && createPortal(
                 <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn overflow-y-auto">
                     <div className="bg-white rounded-[32px] shadow-2xl max-w-md w-full my-8 overflow-hidden animate-scaleIn border border-white/20">
                         <div className="p-8">
@@ -431,7 +434,8 @@ const AdminSettings = () => {
                             </form>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
             {/* Other modals... */}
             <AlertModal 

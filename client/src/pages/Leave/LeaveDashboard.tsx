@@ -14,11 +14,11 @@ import AllLeaveBalances from './AllLeaveBalances';
 
 // ── Components ──────────────────────────────────────────────────────────────
 
-const BalanceCard = ({ title, used, total, icon: Icon, color }: any) => {
+const BalanceCard = ({ title, used, pending, total, icon: Icon, color }: any) => {
     const totalSafe = Math.max(0.1, total || 0);
-    const usedSafe = Math.max(0, used || 0);
+    const usedSafe = Math.max(0, (used || 0) + (pending || 0));
     const percentage = Math.min(100, (usedSafe / totalSafe) * 100);
-    const available = Math.max(0, (total || 0) - (used || 0));
+    const available = Math.max(0, (total || 0) - usedSafe);
 
     const colors: any = {
         indigo: 'from-indigo-500 to-blue-600 shadow-indigo-100',
@@ -47,7 +47,7 @@ const BalanceCard = ({ title, used, total, icon: Icon, color }: any) => {
             </div>
             
             <h3 className="font-bold text-slate-700 mb-1">{title}</h3>
-            <p className="text-xs text-slate-400 mb-4">{used} days used of {total}</p>
+            <p className="text-xs text-slate-400 mb-4">{used} used, {pending || 0} pending of {total}</p>
 
             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <div 
@@ -70,8 +70,9 @@ const LeaveDashboard = () => {
     const [showApplyModal, setShowApplyModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'my-leaves' | 'holidays' | 'team-requests' | 'settings' | 'holiday-settings' | 'balances'>('my-leaves');
+    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings'>('my-leaves');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [refreshCounter, setRefreshCounter] = useState(0);
     const { role } = usePermissions();
     const isManagement = ['super-admin', 'admin', 'manager'].includes(role);
     const isAdmin = ['super-admin', 'admin'].includes(role);
@@ -124,7 +125,7 @@ const LeaveDashboard = () => {
         if (!isManagement && activeTab === 'team-requests') {
             setActiveTab('my-leaves');
         }
-        if (!isAdmin && (activeTab === 'settings' || activeTab === 'holiday-settings' || activeTab === 'balances')) {
+        if (!isAdmin && (activeTab === 'settings' || activeTab === 'holiday-settings')) {
             setActiveTab('my-leaves');
         }
     }, [isManagement, isAdmin, activeTab]);
@@ -225,6 +226,7 @@ const STATUS_COLORS: any = {
                             key={balCategory.leaveTypeCode}
                             title={title.toLowerCase().includes('leave') ? title : `${title} Leave`} 
                             used={balCategory.used || 0} 
+                            pending={balCategory.pending || 0}
                             total={balCategory.total || 0} 
                             icon={icon} 
                             color={color} 
@@ -240,72 +242,55 @@ const STATUS_COLORS: any = {
 
             {/* Main Content Area */}
             <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="border-b border-slate-50 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-6">
+                <div className="border-b border-slate-50 p-4 sm:p-6 flex flex-col gap-4">
+                    {/* Scrollable Tab Bar */}
+                    <div className="flex overflow-x-auto scrollbar-none gap-2 sm:gap-6 pb-1">
                         <button 
                             onClick={() => setActiveTab('my-leaves')}
-                            className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            My Leave History
-                            {activeTab === 'my-leaves' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
-                        </button>
-
-                        <button 
-                            onClick={() => setActiveTab('holidays')}
-                            className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'holidays' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Holidays
-                            {activeTab === 'holidays' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            My Leave Request
+                            {activeTab === 'my-leaves' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                         </button>
                         
-                        {isManagement && (
-                            <button 
-                                onClick={() => setActiveTab('team-requests')}
-                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'team-requests' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                            >
-                                {role === 'manager' ? 'Team Requests' : 'Employee Requests'}
-                                {activeTab === 'team-requests' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
-                            </button>
-                        )}
-
                         {isAdmin && (
                             <button 
                                 onClick={() => setActiveTab('settings')}
-                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Leave Settings
-                                {activeTab === 'settings' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                                {activeTab === 'settings' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
 
                         {isAdmin && (
                             <button 
                                 onClick={() => setActiveTab('holiday-settings')}
-                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'holiday-settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'holiday-settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Holiday Settings
-                                {activeTab === 'holiday-settings' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                                {activeTab === 'holiday-settings' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
 
-                        {isAdmin && (
+                        {isManagement && (
                             <button 
-                                onClick={() => setActiveTab('balances')}
-                                className={`pb-1 text-sm font-bold transition-all duration-300 relative ${activeTab === 'balances' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                onClick={() => setActiveTab('team-requests')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'team-requests' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
-                                Employee Balances
-                                {activeTab === 'balances' && <div className="absolute -bottom-6 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                                Leave Requests
+                                {activeTab === 'team-requests' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
                     </div>
 
                     {activeTab === 'my-leaves' && (
-                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100 w-fit self-end">
                             <select 
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                                 aria-label="Filter history by status"
-                                className="bg-transparent text-xs font-bold text-slate-500 outline-none px-2 py-1 cursor-pointer"
+                                className="bg-transparent text-xs font-bold text-slate-500 outline-none px-2 pr-8 py-1 cursor-pointer"
                             >
                                 <option value="All">All Status</option>
                                 <option value="Pending">Pending</option>
@@ -317,24 +302,31 @@ const STATUS_COLORS: any = {
                     )}
                 </div>
 
-                <div className="p-0 overflow-x-auto">
+                <div className="overflow-x-auto">
                     {activeTab === 'team-requests' ? (
-                        <TeamRequestsTable />
+                        <TeamRequestsTable 
+                            onStatusChange={() => {
+                                fetchLeaveData();
+                                setRefreshCounter(prev => prev + 1);
+                            }}
+                        />
                     ) : activeTab === 'settings' ? (
-                        <div className="p-6">
-                            <ManageLeaveTypes />
-                        </div>
-                    ) : activeTab === 'holidays' ? (
-                        <div className="p-6">
-                            <HolidayCalendar />
+                        <div className="flex flex-col gap-6 p-6 bg-slate-50/50">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <ManageLeaveTypes />
+                            </div>
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <AllLeaveBalances refreshTrigger={refreshCounter} />
+                            </div>
                         </div>
                     ) : activeTab === 'holiday-settings' ? (
-                        <div className="p-6">
-                            <ManageHolidays />
-                        </div>
-                    ) : activeTab === 'balances' ? (
-                        <div className="p-6">
-                            <AllLeaveBalances />
+                        <div className="flex flex-col gap-6 p-6 bg-slate-50/50">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <ManageHolidays />
+                            </div>
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <HolidayCalendar />
+                            </div>
                         </div>
                     ) : (
                         <table className="w-full text-left border-collapse">
@@ -363,14 +355,18 @@ const STATUS_COLORS: any = {
                                         </td>
                                         <td className="px-6 py-5">
                                             <span className="text-slate-600 font-medium">
-                                                {/* Calculate days roughly for now */}
-                                                {Math.ceil((new Date(leave.endDate).getTime() - new Date(leave.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
+                                                {leave.totalDays !== undefined ? leave.totalDays : Math.ceil((new Date(leave.endDate).getTime() - new Date(leave.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} Days
                                             </span>
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex flex-col">
                                                 <span className="text-sm font-bold text-slate-700">{new Date(leave.startDate).toLocaleDateString()}</span>
                                                 <span className="text-[10px] text-slate-400">to {new Date(leave.endDate).toLocaleDateString()}</span>
+                                                {leave.duration && leave.duration !== 'Full Day' && (
+                                                    <span className="text-[10px] text-indigo-500 font-bold mt-0.5">
+                                                        {leave.duration} {leave.duration === 'Specify Time' ? `(${leave.startTime} - ${leave.endTime})` : ''}
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5">
@@ -418,7 +414,10 @@ const STATUS_COLORS: any = {
             <ApplyLeaveModal 
                 isOpen={showApplyModal} 
                 onClose={() => setShowApplyModal(false)}
-                onSuccess={fetchLeaveData}
+                onSuccess={() => {
+                    fetchLeaveData();
+                    setRefreshCounter(prev => prev + 1);
+                }}
                 balance={balance}
             />
 

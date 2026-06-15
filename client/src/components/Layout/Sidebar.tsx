@@ -33,7 +33,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'] },
-        { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
+        // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
@@ -41,7 +41,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
+        // { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
         { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
     ];
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertCircle, Calendar, Send } from 'lucide-react';
 import { api } from '../../utils/api';
 
@@ -16,7 +17,10 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
         startDate: '',
         endDate: '',
         type: 'Annual',
-        reason: ''
+        reason: '',
+        duration: 'Full Day',
+        startTime: '',
+        endTime: ''
     });
     const [types, setTypes] = useState<any[]>([]);
 
@@ -50,11 +54,17 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
 
         if (isOpen) {
             fetchTypes();
-            setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '' });
+            setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '', duration: 'Full Day', startTime: '', endTime: '' });
             setError(null);
             setLoading(false);
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        if (formData.duration !== 'Full Day' && formData.startDate && formData.startDate !== formData.endDate) {
+            setFormData(prev => ({ ...prev, endDate: prev.startDate }));
+        }
+    }, [formData.duration, formData.startDate]);
 
     if (!isOpen) return null;
 
@@ -164,7 +174,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
         }
     };
 
-    return (
+    if (!isOpen) return null;
+
+    const modalContent = (
         <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex justify-center p-2 sm:p-4 items-center" onClick={onClose}>
             <div 
                 className="bg-white rounded-3xl w-full max-w-md relative z-10 shadow-2xl animate-zoomIn border border-white/20"
@@ -215,11 +227,51 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                                         required
                                         value={formData.endDate}
                                         onChange={e => setFormData({...formData, endDate: e.target.value})}
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-600"
+                                        disabled={formData.duration !== 'Full Day'}
+                                        className={`w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium ${formData.duration !== 'Full Day' ? 'text-slate-400 cursor-not-allowed opacity-70' : 'text-slate-600'}`}
                                     />
                                 </div>
                             </div>
                         </div>
+
+                        <div className="space-y-1">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Duration</label>
+                            <select 
+                                value={formData.duration}
+                                onChange={e => setFormData({...formData, duration: e.target.value})}
+                                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 pr-8 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
+                            >
+                                <option value="Full Day">Full Day</option>
+                                <option value="Half Day - Morning">Half Day - Morning</option>
+                                <option value="Half Day - Afternoon">Half Day - Afternoon</option>
+                                <option value="Specify Time">Specify Time</option>
+                            </select>
+                        </div>
+
+                        {formData.duration === 'Specify Time' && (
+                            <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1">
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Time</label>
+                                    <input 
+                                        type="time"
+                                        required
+                                        value={formData.startTime}
+                                        onChange={e => setFormData({...formData, startTime: e.target.value})}
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-600"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">End Time</label>
+                                    <input 
+                                        type="time"
+                                        required
+                                        value={formData.endTime}
+                                        onChange={e => setFormData({...formData, endTime: e.target.value})}
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-600"
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         <div className="space-y-1">
                             <div className="flex justify-between items-center ml-1">
@@ -231,7 +283,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                             <select 
                                 value={formData.type}
                                 onChange={e => setFormData({...formData, type: e.target.value})}
-                                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
+                                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 pr-8 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
                             >
                                 {types.map(t => (
                                     <option key={t._id} value={t.name}>
@@ -281,6 +333,8 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 };
 
 export default ApplyLeaveModal;

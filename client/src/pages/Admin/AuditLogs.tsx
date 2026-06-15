@@ -106,21 +106,21 @@ const AuditLogs = () => {
     return (
         <div className="space-y-6 animate-slide-up">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
                         <Shield className="text-indigo-600" /> System Audit Logs
                     </h2>
-                    <p className="text-gray-500">Track all administrative actions ({totalLogs} total events)</p>
+                    <p className="text-gray-500 text-sm mt-1">Track all administrative actions ({totalLogs} total events)</p>
                 </div>
                 
-                <div className="flex items-center gap-3">
-                    <div className="relative">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="relative w-full sm:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                         <input 
                             type="text" 
                             placeholder="Search in this page..."
-                            className="pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none transition-all w-64 shadow-sm"
+                            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none transition-all shadow-sm"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
@@ -136,7 +136,7 @@ const AuditLogs = () => {
             )}
 
             {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Action Type</label>
                     <select 
@@ -246,7 +246,7 @@ const AuditLogs = () => {
 
                 {/* Pagination Controls */}
                 {!loading && totalPages > 1 && (
-                    <div className="px-6 py-4 bg-slate-50/50 border-t border-gray-100 flex items-center justify-between">
+                    <div className="px-4 sm:px-6 py-4 bg-slate-50/50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
                         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
                             Page {page} of {totalPages}
                         </p>

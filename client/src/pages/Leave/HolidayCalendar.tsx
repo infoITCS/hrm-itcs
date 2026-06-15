@@ -85,35 +85,36 @@ const HolidayCalendar = () => {
     }).sort((a, b) => a.startDate.localeCompare(b.startDate));
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-2">
             {/* Left/Middle Column: Monthly Calendar View */}
-            <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm space-y-6">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-                            <CalendarIcon size={20} />
+            <div className="lg:col-span-8 bg-gradient-to-br from-white to-slate-50/50 rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-200/20 space-y-8 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+                <div className="flex items-center justify-between relative z-10">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg shadow-indigo-200">
+                            <CalendarIcon size={24} />
                         </div>
                         <div>
-                            <h2 className="text-lg font-bold text-slate-800">Holiday Calendar</h2>
-                            <p className="text-xs text-slate-400">View upcoming company-wide holidays</p>
+                            <h2 className="text-xl font-black text-slate-800 tracking-tight">Holiday Calendar</h2>
+                            <p className="text-sm font-medium text-slate-500">Company-wide observed holidays</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100">
                         <button
                             onClick={handlePrevMonth}
-                            className="p-2 hover:bg-slate-100 rounded-xl transition-colors border border-slate-150 text-slate-500"
+                            className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-indigo-600 active:scale-95"
                         >
-                            <ChevronLeft size={16} />
+                            <ChevronLeft size={18} strokeWidth={3} />
                         </button>
-                        <span className="text-sm font-bold text-slate-700 min-w-[120px] text-center">
+                        <span className="text-base font-black text-slate-700 min-w-[140px] text-center tracking-wide">
                             {monthNames[month]} {year}
                         </span>
                         <button
                             onClick={handleNextMonth}
-                            className="p-2 hover:bg-slate-100 rounded-xl transition-colors border border-slate-150 text-slate-500"
+                            className="p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-indigo-600 active:scale-95"
                         >
-                            <ChevronRight size={16} />
+                            <ChevronRight size={18} strokeWidth={3} />
                         </button>
                     </div>
                 </div>
@@ -168,18 +169,18 @@ const HolidayCalendar = () => {
                                 return (
                                     <div
                                         key={day}
-                                        className={`aspect-square rounded-2xl border p-2 flex flex-col justify-between transition-all relative group ${
+                                        className={`aspect-square rounded-[1.25rem] p-2 sm:p-3 flex flex-col justify-between transition-all duration-300 relative group border ${
                                             hasHoliday
-                                                ? 'bg-rose-50 border-rose-150 text-rose-700 shadow-sm shadow-rose-50/50'
+                                                ? 'bg-gradient-to-br from-rose-500 to-pink-600 border-transparent text-white shadow-lg shadow-rose-200/50 hover:-translate-y-0.5'
                                                 : isToday
-                                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-black'
-                                                    : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50/50'
+                                                    ? 'bg-gradient-to-br from-indigo-600 to-violet-700 border-transparent text-white font-black shadow-lg shadow-indigo-200/50 hover:-translate-y-0.5'
+                                                    : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200 hover:shadow-md hover:-translate-y-0.5'
                                         }`}
                                     >
-                                        <span className="font-bold text-left">{day}</span>
+                                        <span className={`font-black text-left ${hasHoliday || isToday ? 'text-white' : 'text-slate-700'}`}>{day}</span>
                                         {hasHoliday && (
-                                            <div className="w-full">
-                                                <span className="block text-[8px] bg-rose-600 text-white rounded px-1.5 py-0.5 truncate text-center font-bold tracking-tight shadow-sm hover:scale-105 transition-transform" title={dayHolidays[0].name}>
+                                            <div className="w-full mt-1">
+                                                <span className="block text-[9px] bg-white/20 text-white rounded-lg px-1.5 py-1 truncate text-center font-bold tracking-tight backdrop-blur-sm shadow-sm" title={dayHolidays[0].name}>
                                                     {dayHolidays[0].name}
                                                 </span>
                                                 {/* Tooltip for overflow or details */}
@@ -203,46 +204,46 @@ const HolidayCalendar = () => {
             </div>
 
             {/* Right Column: Upcoming Holidays List */}
-            <div className="lg:col-span-4 bg-white rounded-3xl border border-slate-100 p-6 shadow-sm flex flex-col justify-between min-h-[400px]">
+            <div className="lg:col-span-4 bg-white rounded-[2rem] border border-slate-100 p-8 shadow-xl shadow-slate-200/20 flex flex-col justify-between min-h-[400px]">
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
-                        <h3 className="font-bold text-slate-800 text-sm tracking-tight">Upcoming Holidays</h3>
+                        <h3 className="font-black text-slate-800 text-lg tracking-tight">Upcoming</h3>
                         <button 
                             onClick={fetchHolidays}
-                            className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-indigo-600 rounded-lg transition-colors"
+                            className="p-2 bg-slate-50 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 rounded-xl transition-all active:scale-95"
                             title="Refresh"
                         >
-                            <RefreshCw size={14} />
+                            <RefreshCw size={16} strokeWidth={3} />
                         </button>
                     </div>
 
                     {loading ? (
-                        <p className="text-xs text-slate-400 py-6 text-center">Loading list...</p>
+                        <p className="text-sm font-bold text-slate-400 py-10 text-center animate-pulse">Loading list...</p>
                     ) : upcomingHolidays.length > 0 ? (
-                        <div className="space-y-3.5 max-h-[360px] overflow-y-auto pr-1">
+                        <div className="space-y-4 max-h-[360px] overflow-y-auto pr-2 scrollbar-none">
                             {upcomingHolidays.map((h) => {
                                 const hDate = new Date(h.startDate);
                                 const dayStr = hDate.toLocaleDateString('en-US', { day: 'numeric' });
                                 const monthStr = hDate.toLocaleDateString('en-US', { month: 'short' });
                                 
                                 return (
-                                    <div key={h._id} className="p-3.5 bg-slate-50/50 hover:bg-slate-50 rounded-2xl border border-slate-100 flex gap-3.5 items-center transition-all group">
-                                        <div className="bg-rose-50 text-rose-600 rounded-xl px-2.5 py-1.5 text-center min-w-[45px] border border-rose-100 group-hover:scale-105 transition-transform">
-                                            <span className="block text-[9px] uppercase font-black tracking-widest">{monthStr}</span>
-                                            <span className="block text-base font-black leading-none mt-0.5">{dayStr}</span>
+                                    <div key={h._id} className="p-4 bg-white hover:bg-slate-50/80 rounded-2xl border border-slate-100 flex gap-4 items-center transition-all group shadow-sm hover:shadow-md cursor-default">
+                                        <div className="bg-gradient-to-br from-rose-50 to-pink-50 text-rose-600 rounded-2xl px-3 py-2 text-center min-w-[55px] border border-rose-100/50 group-hover:scale-105 transition-transform shadow-inner shadow-white">
+                                            <span className="block text-[10px] uppercase font-black tracking-widest">{monthStr}</span>
+                                            <span className="block text-xl font-black leading-none mt-1">{dayStr}</span>
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <h4 className="font-bold text-slate-700 text-xs truncate capitalize">{h.name}</h4>
-                                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                            <h4 className="font-black text-slate-800 text-sm leading-snug break-words pr-2 capitalize group-hover:text-indigo-600 transition-colors">{h.name}</h4>
+                                            <p className="text-[10px] text-slate-400 font-bold mt-1">
                                                 {h.startDate === h.endDate ? (
                                                     new Date(h.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
                                                 ) : (
                                                     `${new Date(h.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${new Date(h.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
                                                 )}
                                             </p>
-                                            <div className="flex items-center gap-3 mt-1.5">
-                                                <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
-                                                    <MapPin size={10} />
+                                            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                                                <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1 whitespace-nowrap">
+                                                    <MapPin size={10} className="shrink-0" />
                                                     {h.location || 'All Offices'}
                                                 </span>
                                                 {h.isRecurring && (

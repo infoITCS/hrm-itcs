@@ -167,7 +167,7 @@ const EmployeeList = () => {
     return (
         <div className="space-y-8 animate-fadeIn pb-12 bg-slate-50/30 min-h-screen">
             {/* 1. Analytics Header */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                 {stats.map((stat, i) => {
                     const colorMap: Record<string, any> = {
                         indigo: {
@@ -224,23 +224,23 @@ const EmployeeList = () => {
             </div>
 
             {/* 2. Sleek Filter Bar */}
-            <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-slate-200/60 sticky top-20 z-20">
-                <div className="flex border-b border-slate-200 mb-5 pb-1 gap-6">
+            <div className="bg-white/80 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/60 sticky top-20 z-20">
+                <div className="flex overflow-x-auto scrollbar-none border-b border-slate-200 mb-4 sm:mb-5 pb-1 gap-4 sm:gap-6">
                     <button
                         onClick={() => setStatusFilter('active')}
-                        className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'active' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        className={`pb-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap shrink-0 ${statusFilter === 'active' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                     >
                         Active Employees
                     </button>
                     <button
                         onClick={() => setStatusFilter('past')}
-                        className={`pb-3 text-sm font-bold border-b-2 transition-all ${statusFilter === 'past' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        className={`pb-3 text-sm font-bold border-b-2 transition-all whitespace-nowrap shrink-0 ${statusFilter === 'past' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                     >
                         Past Employees (Offboarded)
                     </button>
                 </div>
-                <div className="flex flex-col xl:flex-row gap-6 items-start xl:items-center justify-between">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 flex-1 w-full">
+                <div className="flex flex-col xl:flex-row gap-4 sm:gap-6 items-start xl:items-center justify-between">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 flex-1 w-full">
                         {/* Name Search */}
                         <div className="relative group">
                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
@@ -475,13 +475,13 @@ const EmployeeList = () => {
 
                 {/* Pagination */}
                 {!loading && totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-6 bg-white rounded-2xl border border-slate-200/60 shadow-sm px-6 py-3">
-                        <p className="text-sm text-slate-500">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6 bg-white rounded-2xl border border-slate-200/60 shadow-sm px-4 sm:px-6 py-3">
+                        <p className="text-sm text-slate-500 text-center sm:text-left">
                             Showing <span className="font-bold text-slate-700">{Math.min((page - 1) * ITEMS_PER_PAGE + 1, filteredEmployees.length)}</span> –{' '}
                             <span className="font-bold text-slate-700">{Math.min(page * ITEMS_PER_PAGE, filteredEmployees.length)}</span> of{' '}
                             <span className="font-bold text-slate-700">{filteredEmployees.length}</span> employees
                         </p>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-wrap justify-center">
                             <button
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1}

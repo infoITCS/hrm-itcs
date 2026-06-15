@@ -1,4 +1,4 @@
-
+import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertCircle, Info, Phone, Copy, X } from 'lucide-react';
 
 interface AlertModalProps {
@@ -57,7 +57,7 @@ const AlertModal: React.FC<AlertModalProps> = ({
         // We could show a tiny toast here
     };
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
             <div className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20 relative">
                 <button 
@@ -125,7 +125,8 @@ const AlertModal: React.FC<AlertModalProps> = ({
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

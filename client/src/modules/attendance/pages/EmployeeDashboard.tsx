@@ -151,7 +151,7 @@ export default function EmployeeDashboard() {
                             {user?.name?.slice(0,1).toUpperCase() || <User size={24} />}
                         </div>
                         <div>
-                            <h1 className="text-2xl font-extrabold tracking-tight">Personal Attendance</h1>
+                            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">Personal Attendance</h1>
                             <p className="text-white/80 text-sm font-medium mt-1 flex items-center gap-1.5">
                                 <MapPin size={14} className="text-white/60" />
                                 {user?.name || 'Employee Profile'}
@@ -233,7 +233,7 @@ export default function EmployeeDashboard() {
             ) : data ? (
                 <>
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                         <StatCard title="Present Days" value={data.summary.presentDays} icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" />
                         <StatCard title="Late Arrivals" value={data.summary.lateDays} icon={AlertTriangle} colorClass="bg-amber-50 text-amber-600" />
                         <StatCard title="Absent Days" value={data.summary.absentDays} icon={XCircle} colorClass="bg-rose-50 text-rose-600" />

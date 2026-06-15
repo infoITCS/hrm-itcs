@@ -226,10 +226,19 @@ const AddEmployeeWizard = () => {
         const hasCNICBack = formData.files.some(f => f.type === 'CNIC Back') || formData.existingAttachments.some(a => a.fileType === 'CNIC Back');
         const hasResume = formData.files.some(f => f.type === 'Resume/CV') || formData.existingAttachments.some(a => a.fileType === 'Resume/CV');
 
-        // Text fields required in both modes
+        // Text fields strictly required for EVERYONE
         const hasCoreFields = !!(
             formData.firstName?.trim() &&
-            formData.lastName?.trim() &&
+            formData.lastName?.trim()
+        );
+
+        // If admin, they only need first and last name
+        if (isAdmin) {
+            return hasCoreFields;
+        }
+
+        // Additional text fields for Employees
+        const hasExtendedFields = !!(
             formData.cnic?.trim() &&
             formData.dateOfBirth &&
             formData.fatherName?.trim() &&
@@ -242,10 +251,10 @@ const AddEmployeeWizard = () => {
 
         // Files are only rigidly required upon First Time creation, not during future edits
         if (!isEditMode) {
-            return hasCoreFields && hasProfilePicture && hasCNICFront && hasCNICBack && hasResume;
+            return hasCoreFields && hasExtendedFields && hasProfilePicture && hasCNICFront && hasCNICBack && hasResume;
         }
 
-        return hasCoreFields;
+        return hasCoreFields && hasExtendedFields;
     };
 
     const getMissingFields = (s: number = step): string[] => {
@@ -318,23 +327,27 @@ const AddEmployeeWizard = () => {
         const hasCNICBack = formData.files.some(f => f.type === 'CNIC Back') || formData.existingAttachments.some(a => a.fileType === 'CNIC Back');
         const hasResume = formData.files.some(f => f.type === 'Resume/CV') || formData.existingAttachments.some(a => a.fileType === 'Resume/CV');
 
-        // if (!formData.employeeId?.trim()) err.push('Employee ID');
+        // Core required fields for both Admin and Employee
         if (!formData.firstName?.trim()) err.push('First Name');
         if (!formData.lastName?.trim()) err.push('Last Name');
-        if (!formData.cnic?.trim()) err.push('CNIC / Govt ID');
-        if (!formData.dateOfBirth) err.push('Date of Birth');
-        if (!formData.fatherName?.trim()) err.push('Father Name');
-        if (!formData.religion?.trim()) err.push('Religion');
-        if (!formData.nationality?.trim()) err.push('Nationality');
-        if (!formData.domicile?.trim()) err.push('Domicile');
-        if (!formData.gender) err.push('Gender');
-        if (!formData.maritalStatus) err.push('Marital Status');
 
-        if (!isEditMode && !isAdmin) {
-            if (!hasProfilePicture) err.push('Profile Picture');
-            if (!hasResume) err.push('Resume/CV');
-            if (!hasCNICFront) err.push('CNIC Front Image');
-            if (!hasCNICBack) err.push('CNIC Back Image');
+        // Only enforce additional strict validation if it is NOT an admin
+        if (!isAdmin) {
+            if (!formData.cnic?.trim()) err.push('CNIC / Govt ID');
+            if (!formData.dateOfBirth) err.push('Date of Birth');
+            if (!formData.fatherName?.trim()) err.push('Father Name');
+            if (!formData.religion?.trim()) err.push('Religion');
+            if (!formData.nationality?.trim()) err.push('Nationality');
+            if (!formData.domicile?.trim()) err.push('Domicile');
+            if (!formData.gender) err.push('Gender');
+            if (!formData.maritalStatus) err.push('Marital Status');
+
+            if (!isEditMode) {
+                if (!hasProfilePicture) err.push('Profile Picture');
+                if (!hasResume) err.push('Resume/CV');
+                if (!hasCNICFront) err.push('CNIC Front Image');
+                if (!hasCNICBack) err.push('CNIC Back Image');
+            }
         }
 
         return err;
@@ -707,8 +720,9 @@ const AddEmployeeWizard = () => {
             // 1. Create or Update Employee (without files - files are uploaded separately)
             const { files, ...employeeData } = formData;
 
-            // Automatically link the authenticated user's ID if creating a new record
-            if (!isEditMode && authUser?.id) {
+            // Automatically link the authenticated user's ID if they are creating their own onboarding record
+            const params = new URLSearchParams(window.location.search);
+            if (!isEditMode && authUser?.id && params.get('onboarding') === 'true') {
                 (employeeData as any).userId = authUser.id;
             }
 

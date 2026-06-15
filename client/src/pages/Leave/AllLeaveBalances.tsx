@@ -21,7 +21,7 @@ interface EmployeeBalance {
     balances: LeaveBalanceItem[];
 }
 
-const AllLeaveBalances = () => {
+const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) => {
     const [balances, setBalances] = useState<EmployeeBalance[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ const AllLeaveBalances = () => {
 
     useEffect(() => {
         fetchAllBalances();
-    }, [selectedYear]);
+    }, [selectedYear, refreshTrigger]);
 
     const filteredBalances = balances.filter(item => {
         const name = (item.name || '').toLowerCase();
@@ -107,10 +107,10 @@ const AllLeaveBalances = () => {
                     <select
                         value={selectedYear}
                         onChange={e => setSelectedYear(Number(e.target.value))}
-                        className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 outline-none cursor-pointer focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
+                        className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 pr-8 text-xs font-bold text-slate-600 outline-none cursor-pointer focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500"
                     >
-                        <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
                         <option value={new Date().getFullYear() - 1}>{new Date().getFullYear() - 1}</option>
+                        <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
                         <option value={new Date().getFullYear() + 1}>{new Date().getFullYear() + 1}</option>
                     </select>
 

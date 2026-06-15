@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -366,7 +367,13 @@ const UserManagement = () => {
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                         <span className="text-sm font-bold text-slate-500 uppercase tracking-widest hidden sm:block w-full text-right sm:w-auto">Filter by Role:</span>
                         <select 
-                            className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none w-full sm:w-auto focus:ring-4 focus:ring-indigo-500/10"
+                            className={`bg-white border border-slate-200 rounded-xl pl-3 pr-6 py-2 text-sm font-medium text-slate-700 outline-none w-full focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer ${
+                                filterRole === 'super-admin' ? 'sm:w-[122px]' :
+                                filterRole === 'employee' ? 'sm:w-[104px]' :
+                                filterRole === 'manager' ? 'sm:w-[96px]' :
+                                filterRole === 'admin' ? 'sm:w-[86px]' :
+                                'sm:w-[96px]'
+                            }`}
                             value={filterRole}
                             onChange={(e) => setFilterRole(e.target.value)}
                         >
@@ -525,10 +532,10 @@ const UserManagement = () => {
             </div>
 
             {/* Create User Modal */}
-            {showInviteModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start sm:items-center justify-center p-4 animate-in fade-in overflow-y-auto">
-                    <div className="bg-white rounded-3xl w-full max-w-md my-8 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 bg-slate-50 relative">
+            {showInviteModal && createPortal(
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)]">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50 relative shrink-0">
                             <h3 className="text-xl font-bold text-slate-800">Add New User</h3>
                             <p className="text-sm text-slate-500 mt-1">Create a user credential so they can log in.</p>
                             <button 
@@ -539,7 +546,7 @@ const UserManagement = () => {
                             </button>
                         </div>
                         
-                        <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+                        <form onSubmit={handleCreateUser} className="p-6 space-y-4 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">First Name</label>
@@ -627,14 +634,15 @@ const UserManagement = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Reset Password Modal */}
-            {showResetModal && resettingUser && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 bg-amber-50 relative">
+            {showResetModal && resettingUser && createPortal(
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)]">
+                        <div className="p-6 border-b border-slate-100 bg-amber-50 relative shrink-0">
                             <h3 className="text-xl font-bold text-amber-800 flex items-center gap-2">
                                 <Key size={20} /> Reset User Password
                             </h3>
@@ -650,7 +658,7 @@ const UserManagement = () => {
                             </button>
                         </div>
                         
-                        <form onSubmit={handlePasswordReset} className="p-6 space-y-4">
+                        <form onSubmit={handlePasswordReset} className="p-6 space-y-4 overflow-y-auto">
                             <div className="space-y-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">New Password</label>
                                 <input 
@@ -692,16 +700,17 @@ const UserManagement = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
 
             {/* Modal components... */}
             {/* Link Employee Modal */}
-            {showLinkModal && linkingUser && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 bg-indigo-50 relative">
+            {showLinkModal && linkingUser && createPortal(
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)]">
+                        <div className="p-6 border-b border-slate-100 bg-indigo-50 relative shrink-0">
                             <h3 className="text-xl font-bold text-indigo-800 flex items-center gap-2">
                                 <Briefcase size={20} /> Link Employee Profile
                             </h3>
@@ -718,7 +727,7 @@ const UserManagement = () => {
                             </button>
                         </div>
                         
-                        <form onSubmit={handleLinkUser} className="p-6 space-y-4">
+                        <form onSubmit={handleLinkUser} className="p-6 space-y-4 overflow-y-auto">
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Select Employee</label>
                                 <select 
@@ -766,7 +775,8 @@ const UserManagement = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <AlertModal 

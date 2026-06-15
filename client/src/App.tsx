@@ -136,9 +136,9 @@ function AppRoutes() {
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="admin/settings" element={<AdminSettings />} />
-          <Route path="admin/audit" element={<AuditLogs />} />
+          {/* <Route path="admin/audit" element={<AuditLogs />} /> */}
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
-          <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} />
+          {/* <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} /> */}
         </Route>
         <Route path="*" element={<div className="p-4">Page Not Found</div>} />
       </Route>

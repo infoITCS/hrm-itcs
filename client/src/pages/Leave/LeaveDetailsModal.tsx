@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare } from 'lucide-react';
 
 const STATUS_COLORS: any = {
@@ -37,7 +38,7 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
 
     if (!isOpen || !leave) return null;
 
-    return (
+    const modalContent = (
         <div 
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in fade-in"
             onClick={onClose}
@@ -100,7 +101,14 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
                                 <p className="text-xs sm:text-sm font-bold text-slate-800">
                                     {formatDate(leave.startDate)} — {formatDate(leave.endDate)}
                                 </p>
-                                <p className="text-[9px] sm:text-[10px] text-emerald-600 font-bold">Total Days: {calculateDays(leave.startDate, leave.endDate)}</p>
+                                <p className="text-[9px] sm:text-[10px] text-emerald-600 font-bold">
+                                    Total Days: {leave.totalDays !== undefined ? leave.totalDays : calculateDays(leave.startDate, leave.endDate)}
+                                </p>
+                                {leave.duration && leave.duration !== 'Full Day' && (
+                                    <p className="text-[9px] sm:text-[10px] text-indigo-500 font-bold mt-0.5">
+                                        {leave.duration} {leave.duration === 'Specify Time' ? `(${leave.startTime} - ${leave.endTime})` : ''}
+                                    </p>
+                                )}
                             </div>
                         </div>
 
@@ -110,7 +118,9 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
                             </div>
                             <div>
                                 <p className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">Leave Type</p>
-                                <p className="text-xs sm:text-sm font-bold text-slate-800">{leave.type} Leave</p>
+                                <p className="text-xs sm:text-sm font-bold text-slate-800">
+                                    {leave.type.toLowerCase().includes('leave') ? leave.type : `${leave.type} Leave`}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -150,6 +160,8 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 };
 
 export default LeaveDetailsModal;

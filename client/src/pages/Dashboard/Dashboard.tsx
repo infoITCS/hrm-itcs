@@ -40,6 +40,7 @@ const Dashboard = () => {
     const [pendingTasks, setPendingTasks] = useState<any[]>([]);
     const [newHiresCount, setNewHiresCount] = useState<number>(0);
     const [highlights, setHighlights] = useState<any[]>([]);
+    const [todayLeaves, setTodayLeaves] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSetPassword, setShowSetPassword] = useState(false);
 
@@ -183,6 +184,19 @@ const Dashboard = () => {
                         items2.push({ id: 'empty', type: 'info', name: 'No special events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
                     }
                     setHighlights(items2.slice(0, 3));
+                }
+
+                // Fetch Today's Leaves
+                try {
+                    const leavesRes = await fetch(`${api.baseURL}/api/leaves/today`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (leavesRes.ok) {
+                        const leavesData = await leavesRes.json();
+                        setTodayLeaves(leavesData.data || []);
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch today leaves', e);
                 }
             } catch (err) {
                 console.error('Failed to fetch dashboard stats', err);
@@ -564,7 +578,47 @@ const Dashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Activity */}
+                {/* Right/Side Widget: Today's Leaves */}
+                <div className="lg:col-span-1 flex flex-col gap-6">
+                    <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
+                                <Calendar size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">On Leave Today</h3>
+                                <p className="text-xs text-slate-500 font-medium">{todayLeaves.length} {todayLeaves.length === 1 ? 'employee' : 'employees'} out</p>
+                            </div>
+                        </div>
+
+                        {todayLeaves.length > 0 ? (
+                            <div className="space-y-4">
+                                {todayLeaves.map((leave, idx) => (
+                                    <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                        <Avatar 
+                                            src={getAvatarUrl(leave.avatar)} 
+                                            name={leave.employeeName} 
+                                            size="w-10 h-10" 
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-bold text-sm text-slate-800 truncate">{leave.employeeName}</p>
+                                            <p className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">{leave.type} Leave</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8">
+                                <div className="w-12 h-12 bg-indigo-100 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Users size={24} />
+                                </div>
+                                <p className="text-sm font-bold text-slate-600">Everyone's Here!</p>
+                                <p className="text-xs text-slate-400 mt-1">No one is on leave today.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 {/* Activity or Manager Widgets */}
                 <div className="lg:col-span-2 flex flex-col gap-6">
                     {role === 'manager' && (

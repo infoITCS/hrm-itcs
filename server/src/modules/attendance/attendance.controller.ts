@@ -5,7 +5,7 @@ import * as svc from './attendance.service';
 import * as repo from './attendance.repository';
 import { runZktSync, checkServerStatus, fetchEmployees, fetchTransactions, fetchReport } from '../../services/zktCloudService';
 import { generateCSV } from '../../utils/csv';
-import { todayPKT } from '../../shared/utils/dateUtils';
+import { todayPKT, pktHHMMtoUtc } from '../../shared/utils/dateUtils';
 import logger from '../../utils/logger';
 import type { RecordFilter } from './attendance.types';
 import { AttendanceStatus } from '../../models/AttendanceRecord';
@@ -159,6 +159,25 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         if (status) (record as any).status = status;
         if (note !== undefined) (record as any).note = note;
 
+        if (finalIn) {
+            const employee = await repo.findEmployeeWithShift((record as any).employeeId);
+            const deviceConfig = await repo.findDeviceConfig((record as any).location);
+            const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+            
+            const shiftStartTime = pktHHMMtoUtc((record as any).date, cfg.shiftStart);
+            const shiftEndTime = pktHHMMtoUtc((record as any).date, cfg.shiftEnd);
+
+            const diffMins = Math.floor((finalIn.getTime() - shiftStartTime.getTime()) / 60000);
+            (record as any).lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
+            
+            if (finalOut) {
+                const otDiff = Math.floor((finalOut.getTime() - shiftEndTime.getTime()) / 60000);
+                (record as any).overtimeMinutes = otDiff > 0 ? otDiff : 0;
+            } else {
+                (record as any).overtimeMinutes = 0;
+            }
+        }
+
         if ((record as any).checkIn && (record as any).checkOut) {
             (record as any).workDurationMinutes = Math.floor(
                 ((record as any).checkOut.getTime() - (record as any).checkIn.getTime()) / 60000
@@ -195,11 +214,33 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             ? Math.max(0, Math.floor((dOut.getTime() - dIn.getTime()) / 60000))
             : 0;
 
+        let lateMinutes = 0;
+        let overtimeMinutes = 0;
+
+        if (dIn) {
+            const employee = await repo.findEmployeeWithShift(employeeId);
+            const deviceConfig = await repo.findDeviceConfig(location ?? 'ISB-Office');
+            const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+            
+            const shiftStartTime = pktHHMMtoUtc(date, cfg.shiftStart);
+            const shiftEndTime = pktHHMMtoUtc(date, cfg.shiftEnd);
+
+            const diffMins = Math.floor((dIn.getTime() - shiftStartTime.getTime()) / 60000);
+            lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
+            
+            if (dOut) {
+                const otDiff = Math.floor((dOut.getTime() - shiftEndTime.getTime()) / 60000);
+                overtimeMinutes = otDiff > 0 ? otDiff : 0;
+            }
+        }
+
         const record = await repo.upsertRecord(employeeId, date, {
             location: location ?? 'ISB-Office',
             checkIn: dIn ?? undefined,
             checkOut: dOut ?? undefined,
             workDurationMinutes,
+            lateMinutes,
+            overtimeMinutes,
             allPunches,
             status: status ?? 'Present',
             note,

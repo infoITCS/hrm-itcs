@@ -110,9 +110,9 @@ const Directory = () => {
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fadeIn space-y-8">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 sm:gap-6">
                 <div className="space-y-2">
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tight">Organization Directory</h1>
+                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight">Organization Directory</h1>
                     <p className="text-slate-500 font-medium tracking-wide">Connect with your colleagues across the company.</p>
                 </div>
 
@@ -251,6 +251,7 @@ const Directory = () => {
                     </div>
                 ) : (
                     <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
                                 <tr>
@@ -323,6 +324,7 @@ const Directory = () => {
                                 ))}
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 )
             ) : (

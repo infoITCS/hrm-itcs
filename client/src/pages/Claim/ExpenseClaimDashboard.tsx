@@ -779,7 +779,7 @@ const ExpenseClaimDashboard = () => {
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            <div className="rounded-2xl p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
+            <div className="rounded-2xl p-4 sm:p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
                 <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                 <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -836,24 +836,24 @@ const ExpenseClaimDashboard = () => {
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-                <div className="flex items-center gap-1 p-2 border-b border-slate-100">
+                <div className="flex overflow-x-auto scrollbar-none items-center gap-1 p-2 border-b border-slate-100">
                     {tabs.map(t => (
                         <button
                             key={t.id}
                             onClick={() => setTab(t.id)}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
                                 tab === t.id
                                     ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
                                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                             }`}
                         >
-                            <t.icon size={16} />
+                            <t.icon size={15} />
                             {t.label}
                         </button>
                     ))}
-                    <div className="ml-auto pr-2 text-xs text-slate-400 font-medium">
+                    <div className="ml-auto pr-2 text-xs text-slate-400 font-medium hidden md:block shrink-0">
                         {employee ? (
-                            `Employee: ${`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.employeeId} (${employee.employeeId})`
+                            `${`${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.employeeId} (${employee.employeeId})`
                         ) : (
                             '—'
                         )}

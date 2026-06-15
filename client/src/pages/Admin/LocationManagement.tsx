@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { MapPin, Plus, Edit2, ShieldAlert, X, Cpu, Clock } from 'lucide-react';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
 import AlertModal from '../../components/UI/AlertModal';
@@ -210,10 +211,10 @@ const LocationManagement = () => {
             </div>
 
             {/* Device Modal */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
-                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 bg-slate-50 relative">
+            {showModal && createPortal(
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-start justify-center p-4 pt-8 sm:pt-12 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)]">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50 relative shrink-0">
                             <h3 className="text-xl font-bold text-slate-800">{isEditing ? 'Edit Device Mapping' : 'Register New Device'}</h3>
                             <p className="text-sm text-slate-500 mt-1">Map a machine SN to a physical location and set default timings.</p>
                             <button 
@@ -224,7 +225,7 @@ const LocationManagement = () => {
                             </button>
                         </div>
                         
-                        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Device Serial Number (SN)</label>
@@ -321,7 +322,8 @@ const LocationManagement = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <AlertModal 

@@ -12,6 +12,10 @@ export interface ILeaveRequest extends Document {
     startDate: Date;     // YYYY-MM-DD
     endDate: Date;       // YYYY-MM-DD
     status: LeaveStatus;
+    duration: string;
+    startTime?: string;
+    endTime?: string;
+    totalDays: number;
     reason?: string;
     /**
      * @sensitive May contain personal/medical info. DO NOT log this field.
@@ -29,6 +33,10 @@ const LeaveRequestSchema: Schema = new Schema({
     type: { type: String, required: true },
     startDate: { type: Date, required: true, index: true },
     endDate: { type: Date, required: true, index: true },
+    duration: { type: String, enum: ['Full Day', 'Half Day - Morning', 'Half Day - Afternoon', 'Specify Time'], default: 'Full Day' },
+    startTime: { type: String },
+    endTime: { type: String },
+    totalDays: { type: Number, required: true },
     status: { type: String, enum: Object.values(LeaveStatus), default: LeaveStatus.PENDING },
     reason: { type: String },
     adminNote: { type: String }, // [SENSITIVE] Private admin-only commentary

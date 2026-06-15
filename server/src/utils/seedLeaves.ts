@@ -3,29 +3,17 @@ import logger from '../utils/logger';
 
 export async function seedLeaveTypes() {
     try {
-        const annualCount = await LeaveType.countDocuments({ code: 'annual' });
-        if (annualCount === 0) {
-            await LeaveType.create({
-                name: 'Annual Leave',
-                code: 'annual',
-                defaultDays: 20,
-                isPaid: true,
-                isActive: true
-            });
-            logger.info('Seeded default Annual Leave');
-        }
+        await LeaveType.updateOne(
+            { name: 'Annual Leave' },
+            { $setOnInsert: { code: 'annual', defaultDays: 20, isPaid: true, isActive: true } },
+            { upsert: true }
+        );
 
-        const sickCount = await LeaveType.countDocuments({ code: 'sick' });
-        if (sickCount === 0) {
-            await LeaveType.create({
-                name: 'Sick Leave',
-                code: 'sick',
-                defaultDays: 10,
-                isPaid: true,
-                isActive: true
-            });
-            logger.info('Seeded default Sick Leave');
-        }
+        await LeaveType.updateOne(
+            { name: 'Sick Leave' },
+            { $setOnInsert: { code: 'sick', defaultDays: 10, isPaid: true, isActive: true } },
+            { upsert: true }
+        );
     } catch (err) {
         logger.error('Error seeding leave types:', err);
     }

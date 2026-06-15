@@ -43,13 +43,13 @@ export function isWeekend(dateStr: string): boolean {
 /**
  * The checkout heuristic used throughout the system:
  * A punch only counts as checkout if it is at least
- * 120 minutes after check-in.
+ * 5 minutes after check-in to prevent double-taps.
  */
 export function isValidCheckout(checkIn: Date, lastPunch: Date): boolean {
     const minutesSinceCheckIn = Math.floor(
         (lastPunch.getTime() - checkIn.getTime()) / 60000
     );
-    return minutesSinceCheckIn >= 120;
+    return minutesSinceCheckIn >= 5;
 }
 
 /** If worked more than 5 hours, deduct 60 mins for lunch. */
