@@ -101,7 +101,11 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[]): boolean =>
 router.get('/today', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const today = new Date();
-        const startOfDayStr = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().split('T')[0];
+        // Get today's date string in YYYY-MM-DD format based on local server time, without UTC shift
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const startOfDayStr = `${year}-${month}-${day}`;
         
         // Find leaves that cover today and are Approved
         const leaves = await LeaveRequest.find({
