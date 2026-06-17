@@ -42,11 +42,14 @@ async function getOcrWorker(): Promise<Worker> {
             } catch (err) {
                 logger.warn(`[ReceiptOCR] Failed to create cache dir: ${err}`);
             }
+            const distCorePath = path.join(process.cwd(), 'dist', 'tesseract-core');
+            const corePath = fs.existsSync(distCorePath) ? distCorePath : undefined;
+
             const worker = await createWorker('eng', 1, {
                 cachePath,
                 langPath: process.cwd(),
-                workerPath: 'https://unpkg.com/tesseract.js@v7.0.0/dist/worker.min.js',
-                corePath: 'https://unpkg.com/tesseract.js-core@v7.0.0'
+                gzip: false,
+                ...(corePath ? { corePath } : {})
             });
             return worker;
         })();
@@ -67,7 +70,7 @@ async function extractTextFromBuffer(buffer: Buffer, contentType?: string): Prom
     if (mimeType.startsWith('image/')) {
         const worker = await getOcrWorker();
         await worker.setParameters({
-            tessedit_pageseg_mode: 6 as any, // PSM.SINGLE_BLOCK — uniform text block (thermal receipts)
+            tessedit_pageseg_mode: 4 as any, // PSM.SINGLE_COLUMN — much better for receipts than SINGLE_BLOCK
         });
         const { data } = await worker.recognize(buffer);
         return (data?.text || '').trim();
@@ -356,26 +359,6 @@ function getCorrectedOcrAmount(priorityAmount: number, allCandidates: number[]):
 }
 
 function extractTotalAmount(text: string, amountHint?: number | null): { amount: number | null; confidence: 'high' | 'medium' | 'low' } {
-    // If a hint is provided, search all candidate amounts for one close to the hint
-    if (amountHint && amountHint > 0) {
-        const candidates = extractAllAmounts(text);
-        let bestCandidate: number | null = null;
-        let bestDiff = Infinity;
-        
-        for (const cand of candidates) {
-            const diff = Math.abs(cand - amountHint);
-            // Allow up to 15% discrepancy or matching digits
-            if (diff < bestDiff && (diff / amountHint < 0.15 || Math.abs(cand - amountHint) < 50)) {
-                bestDiff = diff;
-                bestCandidate = cand;
-            }
-        }
-        
-        if (bestCandidate !== null) {
-            return { amount: bestCandidate, confidence: 'high' };
-        }
-    }
-
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
     // Priority-ordered keywords — PK pharmacy receipts (tolerant of OCR typos like "valle")
