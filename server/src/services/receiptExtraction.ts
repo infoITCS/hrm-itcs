@@ -45,6 +45,8 @@ async function getOcrWorker(): Promise<Worker> {
             const worker = await createWorker('eng', 1, {
                 cachePath,
                 langPath: process.cwd(),
+                workerPath: 'https://unpkg.com/tesseract.js@v7.0.0/dist/worker.min.js',
+                corePath: 'https://unpkg.com/tesseract.js-core@v7.0.0'
             });
             return worker;
         })();
