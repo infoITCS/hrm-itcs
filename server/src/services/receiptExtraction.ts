@@ -44,6 +44,7 @@ async function getOcrWorker(): Promise<Worker> {
             }
             const worker = await createWorker('eng', 1, {
                 cachePath,
+                langPath: process.cwd(),
             });
             return worker;
         })();
