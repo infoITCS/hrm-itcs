@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation, Cloud } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
@@ -3760,7 +3761,7 @@ const MyInfo = () => {
                 </div>
             )}
             {/* Delete Confirmation Modal */}
-            {deleteModal.isOpen && (
+            {deleteModal.isOpen && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
                         <div className="p-8 text-center">
@@ -3788,10 +3789,10 @@ const MyInfo = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
 
             {/* Limit Modal */}
-            {limitModalOpen && (
+            {limitModalOpen && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-white/20">
                         <div className="p-8 text-center">
@@ -3811,10 +3812,10 @@ const MyInfo = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
 
             {/* Lightbox Modal */}
-            {lightboxFile && (
+            {lightboxFile && createPortal(
                 <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fade-in">
                     <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-scale-up">
                         {/* Header */}
@@ -3885,7 +3886,7 @@ const MyInfo = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
         </div>
     );
 };

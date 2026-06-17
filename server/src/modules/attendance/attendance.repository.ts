@@ -240,9 +240,53 @@ export async function findApprovedLeavesForDate(
         endDate: { $gte: dateStr },
         status: LeaveStatus.APPROVED,
     };
-    if (employeeIds) filter.employeeId = { $in: employeeIds };
+    
+    if (employeeIds) {
+        // Resolve both readable employeeId and userIds to check in LeaveRequest
+        const emps = await Employee.find({
+            $or: [
+                { employeeId: { $in: employeeIds } },
+                { userId: { $in: employeeIds.filter(id => id.length === 24) } }
+            ]
+        }).select('employeeId userId').lean();
+
+        const allPossibleIds = new Set<string>();
+        employeeIds.forEach(id => allPossibleIds.add(id));
+        emps.forEach(e => {
+            if (e.employeeId) allPossibleIds.add(e.employeeId);
+            if (e.userId) allPossibleIds.add(e.userId);
+        });
+
+        filter.employeeId = { $in: Array.from(allPossibleIds) };
+    }
+
     const leaves = await LeaveRequest.find(filter).lean() as any[];
-    return new Map(leaves.map((l) => [l.employeeId, l.type]));
+    const resultMap = new Map<string, string>();
+
+    if (leaves.length > 0) {
+        const leaveEmpIds = leaves.map(l => l.employeeId);
+        const emps = await Employee.find({
+            $or: [
+                { employeeId: { $in: leaveEmpIds } },
+                { userId: { $in: leaveEmpIds.filter(id => id.length === 24) } }
+            ]
+        }).select('employeeId userId').lean();
+
+        const idToReadable = new Map<string, string>();
+        emps.forEach(e => {
+            if (e.userId) idToReadable.set(e.userId, e.employeeId);
+        });
+
+        leaves.forEach((l) => {
+            resultMap.set(l.employeeId, l.type);
+            const readableId = idToReadable.get(l.employeeId);
+            if (readableId) {
+                resultMap.set(readableId, l.type);
+            }
+        });
+    }
+
+    return resultMap;
 }
 
 export async function findHolidayForDate(dateStr: string, location?: string): Promise<string | null> {

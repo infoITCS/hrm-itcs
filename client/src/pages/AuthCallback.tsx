@@ -49,7 +49,7 @@ export const AuthCallback: React.FC = () => {
                     email: userData.email,
                     role: userData.role as UserRole,
                     avatar: userData.avatar
-                        ? (userData.avatar.startsWith('http')
+                        ? (userData.avatar.startsWith('http') || userData.avatar.startsWith('data:')
                             ? userData.avatar
                             : `${api.baseURL.replace(/\/$/, '')}${userData.avatar}${userData.avatar.includes('/attachments/raw/') ? `?token=${token}` : ''}`)
                         : null,

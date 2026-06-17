@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, LogOut, User as UserIcon, Menu, KeyRound, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -174,7 +175,7 @@ const Header = ({ title, onMenuClick }: {
             </div>
 
             {/* Change Password Modal */}
-            {showPasswordModal && (
+            {showPasswordModal && createPortal(
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-scaleIn">
                         <div className="flex justify-between items-center p-6 border-b border-slate-100">
@@ -248,7 +249,7 @@ const Header = ({ title, onMenuClick }: {
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
         </header>
     );
 };

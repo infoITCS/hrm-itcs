@@ -4,7 +4,7 @@ import ExpenseClaim, { type ExpenseClaimApprovalStage } from '../models/ExpenseC
 import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { sendHRNotificationEmail } from '../utils/email';
+import { sendHRNotificationEmail, sendExpenseClaimSubmittedEmail, sendExpenseClaimStatusEmail } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
 
 const router = express.Router();
@@ -389,8 +389,26 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         };
         if (doc.status === 'Pending HR') void notify(HR_EMAILS);
         if (doc.status === 'Pending Finance') void notify(FINANCE_EMAILS);
-        if (role === 'manager' && (doc.status === 'Pending Line Manager' || doc.status === 'Pending Team Lead')) {
-            // Managers already see it in approvals inbox; no email by default
+        if (doc.status === 'Pending Team Lead' || doc.status === 'Pending Line Manager') {
+            (async () => {
+                try {
+                    if (reportingManagerId) {
+                        const manager = await Employee.findOne({ employeeId: reportingManagerId });
+                        const managerEmail = manager?.workEmail || manager?.email;
+                        if (managerEmail) {
+                            await sendExpenseClaimSubmittedEmail(
+                                managerEmail,
+                                employeeName,
+                                category,
+                                amountRequested,
+                                req.headers.origin as string
+                            );
+                        }
+                    }
+                } catch (emailErr) {
+                    console.error('[Expense Email] Failed to send submission email to manager:', emailErr);
+                }
+            })();
         }
 
         await doc.populate('employeeDetails', 'firstName lastName employeeId');
@@ -583,6 +601,34 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
 
                 await claim.save();
 
+                // Trigger employee notification email asynchronously
+                (async () => {
+                    try {
+                        const emp = await Employee.findOne({
+                            $or: [
+                                { userId: claim.employeeUserId },
+                                { employeeId: claim.employeeId },
+                                { _id: claim.employeeUserId }
+                            ]
+                        });
+                        const employeeEmail = emp?.workEmail || emp?.email;
+                        if (employeeEmail) {
+                            await sendExpenseClaimStatusEmail(
+                                employeeEmail,
+                                emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                                claim.category,
+                                claim.amountRequested,
+                                claim.status,
+                                claim.approvedTotal ?? undefined,
+                                comments,
+                                req.headers.origin as string
+                            );
+                        }
+                    } catch (emailErr) {
+                        console.error('[Expense Email] Failed to send status email in bulk decision:', emailErr);
+                    }
+                })();
+
                 if (claim.status === 'Pending HR' && HR_EMAILS.length) {
                     const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
                     const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
@@ -696,6 +742,34 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
 
         await claim.save();
 
+        // Trigger employee notification email asynchronously
+        (async () => {
+            try {
+                const emp = await Employee.findOne({
+                    $or: [
+                        { userId: claim.employeeUserId },
+                        { employeeId: claim.employeeId },
+                        { _id: claim.employeeUserId }
+                    ]
+                });
+                const employeeEmail = emp?.workEmail || emp?.email;
+                if (employeeEmail) {
+                    await sendExpenseClaimStatusEmail(
+                        employeeEmail,
+                        emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                        claim.category,
+                        claim.amountRequested,
+                        claim.status,
+                        claim.approvedTotal ?? undefined,
+                        comments || pending.comments,
+                        req.headers.origin as string
+                    );
+                }
+            } catch (emailErr) {
+                console.error('[Expense Email] Failed to send status email to employee:', emailErr);
+            }
+        })();
+
         // Notify HR/Finance when entering their queues
         if (claim.status === 'Pending HR' && HR_EMAILS.length) {
             const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
@@ -743,6 +817,34 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
         (claim as any).audit.lastUpdatedAt = new Date();
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
         await claim.save();
+
+        // Trigger employee notification email asynchronously
+        (async () => {
+            try {
+                const emp = await Employee.findOne({
+                    $or: [
+                        { userId: claim.employeeUserId },
+                        { employeeId: claim.employeeId },
+                        { _id: claim.employeeUserId }
+                    ]
+                });
+                const employeeEmail = emp?.workEmail || emp?.email;
+                if (employeeEmail) {
+                    await sendExpenseClaimStatusEmail(
+                        employeeEmail,
+                        emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                        claim.category,
+                        claim.amountRequested,
+                        claim.status,
+                        claim.approvedTotal ?? undefined,
+                        notes || claim.notes,
+                        req.headers.origin as string
+                    );
+                }
+            } catch (emailErr) {
+                console.error('[Expense Email] Failed to send correction status email to employee:', emailErr);
+            }
+        })();
 
         await claim.populate('employeeDetails', 'firstName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });

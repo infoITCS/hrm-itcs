@@ -8,11 +8,16 @@ interface ApplyLeaveModalProps {
     onClose: () => void;
     onSuccess: () => void;
     balance: any;
+    isAdminLike?: boolean;
+    allEmployees?: any[];
 }
 
-const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModalProps) => {
+const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees }: ApplyLeaveModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+    const [localBalance, setLocalBalance] = useState<any>(null);
+    const [loadingBalance, setLoadingBalance] = useState(false);
     const [formData, setFormData] = useState({
         startDate: '',
         endDate: '',
@@ -26,9 +31,35 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
 
     const selectedLeaveType = types.find(t => t.name === formData.type);
     const selectedTypeCode = selectedLeaveType ? selectedLeaveType.code : (formData.type || '').toLowerCase();
-    const balCategory = balance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
+    const activeBalance = localBalance || balance;
+    const balCategory = activeBalance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
     const availableDays = balCategory ? Math.max(0, balCategory.total - (balCategory.used || 0) - (balCategory.pending || 0)) : 0;
     const sandwichEnabled = selectedLeaveType ? selectedLeaveType.sandwichRuleEnabled !== false : true;
+
+    useEffect(() => {
+        const fetchLocalBalance = async () => {
+            if (!selectedEmployeeId) {
+                setLocalBalance(null);
+                return;
+            }
+            setLoadingBalance(true);
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${api.baseURL}/api/leaves/balance?employeeId=${selectedEmployeeId}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) setLocalBalance(data.data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch selected employee balance:', err);
+            } finally {
+                setLoadingBalance(false);
+            }
+        };
+        fetchLocalBalance();
+    }, [selectedEmployeeId]);
 
     // Fetch active leave types and reset state when modal opens/closes
     useEffect(() => {
@@ -55,6 +86,8 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
         if (isOpen) {
             fetchTypes();
             setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '', duration: 'Full Day', startTime: '', endTime: '' });
+            setSelectedEmployeeId('');
+            setLocalBalance(null);
             setError(null);
             setLoading(false);
         }
@@ -145,13 +178,14 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                 return;
             }
 
+            const payload = { ...formData, employeeId: selectedEmployeeId || undefined };
             const res = await fetch(`${api.baseURL}/api/leaves`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(payload)
             });
 
             if (!res.ok) {
@@ -177,17 +211,18 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
     if (!isOpen) return null;
 
     const modalContent = (
-        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex justify-center p-2 sm:p-4 items-center" onClick={onClose}>
-            <div 
-                className="bg-white rounded-3xl w-full max-w-md relative z-10 shadow-2xl animate-zoomIn border border-white/20"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="p-5 sm:p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">Apply For Leave</h2>
-                            <p className="text-[10px] text-slate-400">Fill the details below to submit</p>
-                        </div>
+        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="min-h-full flex items-center justify-center p-4 sm:p-6">
+                <div 
+                    className="bg-white rounded-3xl w-full max-w-md relative shadow-2xl animate-zoomIn border border-white/20 my-4"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="p-5 sm:p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">Apply For Leave</h2>
+                                <p className="text-[10px] text-slate-400">Fill the details below to submit</p>
+                            </div>
                         <button 
                             onClick={onClose}
                             className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-all"
@@ -204,6 +239,23 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-3.5">
+                        {isAdminLike && allEmployees && (
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Apply On Behalf Of (Admin/HR Only)</label>
+                                <select
+                                    value={selectedEmployeeId}
+                                    onChange={e => setSelectedEmployeeId(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">Myself</option>
+                                    {allEmployees.map(emp => (
+                                        <option key={emp.employeeId} value={emp.employeeId}>
+                                            {emp.firstName} {emp.lastName} ({emp.employeeId})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Date</label>
@@ -277,7 +329,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                             <div className="flex justify-between items-center ml-1">
                                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Leave Category</label>
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-md border border-indigo-100">
-                                    {availableDays} Available
+                                    {loadingBalance ? 'Loading...' : `${availableDays} Available`}
                                 </span>
                             </div>
                             <select 
@@ -329,6 +381,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance }: ApplyLeaveModa
                             )}
                         </button>
                     </form>
+                    </div>
                 </div>
             </div>
         </div>

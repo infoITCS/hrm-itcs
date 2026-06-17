@@ -60,7 +60,9 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 email: response.data.user.email,
                 role: response.data.user.role as UserRole,
                 avatar: response.data.user.avatar 
-                    ? (response.data.user.avatar.startsWith('http') ? response.data.user.avatar : `${api.baseURL.replace(/\/$/, '')}${response.data.user.avatar}`)
+                    ? (response.data.user.avatar.startsWith('http') || response.data.user.avatar.startsWith('data:')
+                        ? response.data.user.avatar 
+                        : `${api.baseURL.replace(/\/$/, '')}${response.data.user.avatar}`)
                     : null,
                 firstName: response.data.user.firstName,
                 lastName: response.data.user.lastName,

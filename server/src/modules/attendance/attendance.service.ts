@@ -1,6 +1,7 @@
 import * as repo from './attendance.repository';
 import { fetchReport } from '../../services/zktCloudService';
 import logger from '../../utils/logger';
+import { sendAutoCloseAlertEmail } from '../../utils/email';
 import {
     pktHHMMtoUtc, isWeekend, applyLunchDeduction,
     isValidCheckout, toPKTTimeString, startOfDay, endOfDay, todayPKT, nowPKT
@@ -32,21 +33,27 @@ export async function processEmployeePunches(
     deviceSN: string
 ): Promise<void> {
     try {
+        let resolvedEmployeeId = employeeId;
+        if (employeeId && employeeId.length === 24) {
+            const emp = await repo.findEmployeeByUserId(employeeId);
+            if (emp) resolvedEmployeeId = emp.employeeId;
+        }
+
         const [deviceConfig, employee] = await Promise.all([
             repo.findDeviceConfig(deviceSN),
-            repo.findEmployeeWithShift(employeeId),
+            repo.findEmployeeWithShift(resolvedEmployeeId),
         ]);
 
         const cfg: ShiftConfig = repo.resolveShiftConfig(employee, deviceConfig);
-        const punches = await repo.findPunchesForDay(employeeId, dateStr);
+        const punches = await repo.findPunchesForDay(resolvedEmployeeId, dateStr);
 
         // ── No punches: classify as Absent / On Leave / Holiday / Weekend ──
         if (punches.length === 0) {
             const [holidayName, leaveMap] = await Promise.all([
                 repo.findHolidayForDate(dateStr, cfg.locationName),
-                repo.findApprovedLeavesForDate(dateStr, [employeeId]),
+                repo.findApprovedLeavesForDate(dateStr, [resolvedEmployeeId]),
             ]);
-            const leaveType = leaveMap.get(employeeId) ?? null;
+            const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
             const weekend = isWeekend(dateStr);
 
             let status: AttendanceStatus = 'Absent';
@@ -54,7 +61,7 @@ export async function processEmployeePunches(
             else if (leaveType) status = 'On Leave';
             else if (weekend) status = 'Weekend';
 
-            await repo.upsertRecord(employeeId, dateStr, {
+            await repo.upsertRecord(resolvedEmployeeId, dateStr, {
                 location: cfg.locationName,
                 status,
                 shiftStart: cfg.shiftStart,
@@ -101,8 +108,8 @@ export async function processEmployeePunches(
             if (earlyDiff > 10) isEarlyLeave = true;
         }
 
-        const leaveMap = await repo.findApprovedLeavesForDate(dateStr, [employeeId]);
-        const leaveType = leaveMap.get(employeeId) ?? null;
+        const leaveMap = await repo.findApprovedLeavesForDate(dateStr, [resolvedEmployeeId]);
+        const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
 
         const status = computeStatus(
             lateMinutes,
@@ -110,7 +117,7 @@ export async function processEmployeePunches(
             !!checkOut
         );
 
-        await repo.upsertRecord(employeeId, dateStr, {
+        await repo.upsertRecord(resolvedEmployeeId, dateStr, {
             location: cfg.locationName,
             checkIn,
             checkOut,
@@ -125,7 +132,7 @@ export async function processEmployeePunches(
             allPunches: allPunchTimes,
         });
 
-        await repo.markPunchesProcessed(employeeId, dateStr);
+        await repo.markPunchesProcessed(resolvedEmployeeId, dateStr);
     } catch (err) {
         logger.error(`[AttendanceService] Error processing ${employeeId} on ${dateStr}:`, err);
         throw err; // Re-throw to allow caller to handle failure
@@ -543,6 +550,21 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
             location: entry.location,
             manuallyAdjusted: false
         });
+
+        // Trigger email notification asynchronously
+        if (employee) {
+            const empEmail = employee.workEmail || employee.email;
+            if (empEmail) {
+                sendAutoCloseAlertEmail(
+                    empEmail,
+                    employee.firstName,
+                    dateStr,
+                    checkOutStr
+                ).catch(err => {
+                    logger.error(`[AutoClose Alert] Failed to send email to ${empEmail}:`, err);
+                });
+            }
+        }
 
         processed++;
         details.push({ employeeId: entry.employeeId, autoCheckOut: checkOutStr, status });

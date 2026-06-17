@@ -130,19 +130,73 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                         if (changed) await user.save();
                     }
 
-                    // Attempt to sync the avatar to the Employee profile as well
-                    if (profilePhotoBase64) {
-                        try {
-                            const mongoose = require('mongoose');
-                            const Employee = mongoose.model('Employee');
-                            const emp = await Employee.findOne({ userId: user._id });
-                            if (emp && (forceSync || !emp.avatar || emp.avatar.startsWith('data:image'))) {
-                                emp.avatar = profilePhotoBase64;
-                                await emp.save();
+                    // ── SSO AUTO-PROVISIONING / LINKING WORKFLOW ──
+                    try {
+                        const mongoose = require('mongoose');
+                        const Employee = mongoose.model('Employee');
+                        const Counter = mongoose.model('Counter');
+
+                        // 1. Check if employee profile is already linked to this userId
+                        let employeeDoc = await Employee.findOne({ userId: user._id.toString() });
+
+                        if (!employeeDoc) {
+                            // 2. If not linked, check if an employee record exists with this email/workEmail
+                            employeeDoc = await Employee.findOne({
+                                $or: [
+                                    { email: { $regex: new RegExp('^' + email.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') } },
+                                    { workEmail: { $regex: new RegExp('^' + email.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') } }
+                                ]
+                            });
+
+                            if (employeeDoc) {
+                                // 3. Auto-link existing profile
+                                employeeDoc.userId = user._id.toString();
+                                if (profilePhotoBase64 && (!employeeDoc.avatar || employeeDoc.avatar.startsWith('data:image'))) {
+                                    employeeDoc.avatar = profilePhotoBase64;
+                                }
+                                await employeeDoc.save();
+                                logger.info(`[SSO Link] Linked existing employee ${employeeDoc.employeeId} to user ${user._id}`);
+                            } else {
+                                // 4. Auto-provision a new employee record
+                                const PREFIX = 'itcs-';
+                                const counter = await Counter.findOneAndUpdate(
+                                    { key: 'employeeId' },
+                                    { $inc: { seq: 1 } },
+                                    { upsert: true, new: true }
+                                );
+                                
+                                const nextNum = counter.seq;
+                                const employeeId = `${PREFIX}${nextNum.toString().padStart(3, '0')}`;
+
+                                employeeDoc = await Employee.create({
+                                    employeeId,
+                                    userId: user._id.toString(),
+                                    firstName: user.firstName || 'Unknown',
+                                    lastName: user.lastName || 'User',
+                                    email: user.email,
+                                    workEmail: user.email,
+                                    avatar: profilePhotoBase64 || undefined,
+                                    jobInfo: {
+                                        designation: 'Employee',
+                                        department: 'General',
+                                        joiningDate: new Date(),
+                                    },
+                                    employmentStatus: {
+                                        status: 'Probation',
+                                        probationEndDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                                    }
+                                });
+                                logger.info(`[SSO Provision] Created new employee profile ${employeeId} for user ${user._id}`);
                             }
-                        } catch (syncErr) {
-                            // Silently fail employee sync if employee model not loaded or not found
+                        } else {
+                            // Sync avatar to existing linked employee if forced or not set
+                            if (profilePhotoBase64 && (forceSync || !employeeDoc.avatar || employeeDoc.avatar.startsWith('data:image'))) {
+                                employeeDoc.avatar = profilePhotoBase64;
+                                await employeeDoc.save();
+                            }
                         }
+                    } catch (provErr: any) {
+                        logger.error(`[SSO Auto-Provision] Error provisioning employee for user ${user._id}:`, provErr.message);
                     }
 
                     return done(null, user);

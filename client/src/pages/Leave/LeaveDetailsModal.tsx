@@ -1,11 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
+import { api } from '../../utils/api';
 
 const STATUS_COLORS: any = {
     Pending: 'bg-amber-50 text-amber-600 border-amber-100',
     Approved: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     Rejected: 'bg-rose-50 text-rose-600 border-rose-100',
+    Cancelled: 'bg-slate-50 text-slate-500 border-slate-200',
 };
 
 const formatDate = (dateString: string) => {
@@ -24,9 +28,14 @@ interface LeaveDetailsModalProps {
     isOpen: boolean;
     onClose: () => void;
     leave: any;
+    onSuccess?: () => void;
 }
 
-const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) => {
+const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsModalProps) => {
+    const { user } = useAuth();
+    const { role } = usePermissions();
+    const [isActionLoading, setIsActionLoading] = useState(false);
+
     // Close on Escape key
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
@@ -37,6 +46,67 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
     }, [onClose]);
 
     if (!isOpen || !leave) return null;
+
+    const isOwner = user && leave && leave.employeeId === user.id;
+    const isManagerOrAdmin = ['super-admin', 'admin', 'manager'].includes(role);
+
+    const showCancelButton = (leave.status === 'Pending' && (isOwner || isManagerOrAdmin)) || (leave.status === 'Approved' && isManagerOrAdmin);
+    const showDeleteButton = isManagerOrAdmin;
+    const cancelBtnText = leave.status === 'Approved' ? 'Cancel Leave' : 'Cancel Request';
+
+    const handleCancel = async () => {
+        if (!window.confirm('Are you sure you want to cancel this leave request?')) return;
+        setIsActionLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/leaves/${leave._id}/cancel`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert('Leave request cancelled successfully');
+                onSuccess?.();
+                onClose();
+            } else {
+                alert(data.message || 'Failed to cancel leave request');
+            }
+        } catch (error: any) {
+            alert(error.message || 'An error occurred');
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!window.confirm('Are you sure you want to permanently delete this leave request? This action cannot be undone.')) return;
+        setIsActionLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/leaves/${leave._id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert('Leave request deleted successfully');
+                onSuccess?.();
+                onClose();
+            } else {
+                alert(data.message || 'Failed to delete leave request');
+            }
+        } catch (error: any) {
+            alert(error.message || 'An error occurred');
+        } finally {
+            setIsActionLoading(false);
+        }
+    };
 
     const modalContent = (
         <div 
@@ -149,10 +219,33 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave }: LeaveDetailsModalProps) =
                 </div>
 
                 {/* Footer */}
-                <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+                <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0 gap-2">
+                    <div className="flex items-center gap-2">
+                        {showDeleteButton && (
+                            <button
+                                onClick={handleDelete}
+                                disabled={isActionLoading}
+                                className="px-4 py-2 bg-rose-600 text-white rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold hover:bg-rose-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {isActionLoading && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5" />}
+                                Delete Request
+                            </button>
+                        )}
+                        {showCancelButton && (
+                            <button
+                                onClick={handleCancel}
+                                disabled={isActionLoading}
+                                className="px-4 py-2 border border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-100/50 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {isActionLoading && <span className="w-3 h-3 border-2 border-rose-600 border-t-transparent rounded-full animate-spin mr-1.5" />}
+                                {cancelBtnText}
+                            </button>
+                        )}
+                    </div>
                     <button 
                         onClick={onClose}
-                        className="px-5 sm:px-6 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
+                        disabled={isActionLoading}
+                        className="px-5 sm:px-6 py-2 sm:py-2.5 bg-white border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95 disabled:opacity-50"
                     >
                         Close
                     </button>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -1285,7 +1286,7 @@ const ExpenseClaimDashboard = () => {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 mb-2">
                                                         {receiptPreview.flags.map((f: string) => (
-                                                            <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
+                                                            <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold" style={{ whiteSpace: 'nowrap' }}>
                                                                 {flagLabel(f)}
                                                             </span>
                                                         ))}
@@ -1336,7 +1337,7 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         ) : (
                             <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm">
+                                <table className="w-full text-sm min-w-[1100px]">
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-100">
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
@@ -1345,7 +1346,7 @@ const ExpenseClaimDashboard = () => {
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Flags</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
                                             {isAdminLike && (
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Admin</th>
@@ -1355,9 +1356,9 @@ const ExpenseClaimDashboard = () => {
                                     <tbody>
                                         {filteredMine.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
-                                                <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
@@ -1365,17 +1366,17 @@ const ExpenseClaimDashboard = () => {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
-                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.approvedTotal, c.currency)}</td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
+                                                <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                                                         {c.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex flex-wrap gap-1.5">
+                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
+                                                    <div className="flex flex-wrap gap-1.5" style={{ minWidth: '300px' }}>
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" title={f}>
+                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
                                                                 {flagLabel(f)}
                                                             </span>
                                                         )) : (
@@ -1383,14 +1384,15 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 align-middle">
                                                     {(c.receipts || []).length ? (
                                                         <div className="flex flex-col gap-1">
                                                             {(c.receipts || []).map((r: any) => (
                                                                 <button
                                                                     key={r._id}
                                                                     onClick={() => downloadReceipt(c._id, r._id, r.fileName)}
-                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs"
+                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs truncate max-w-[150px] block whitespace-nowrap"
+                                                                    title={r.fileName}
                                                                 >
                                                                     {r.fileName}
                                                                 </button>
@@ -1401,7 +1403,7 @@ const ExpenseClaimDashboard = () => {
                                                     )}
                                                 </td>
                                                 {isAdminLike && (
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-3 align-middle">
                                                         <button
                                                             onClick={() => openCorrect(c)}
                                                             className="text-xs font-bold text-slate-600 hover:text-slate-900"
@@ -1431,7 +1433,7 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         ) : (
                             <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm">
+                                <table className="w-full text-sm min-w-[1100px]">
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-100">
                                             <th className="px-4 py-3 w-10 text-center">
@@ -1454,14 +1456,14 @@ const ExpenseClaimDashboard = () => {
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Flags</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {filteredApprovals.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-4 py-3 text-center">
+                                                <td className="px-4 py-3 text-center align-middle">
                                                     <input 
                                                         type="checkbox" 
                                                         className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
@@ -1475,8 +1477,8 @@ const ExpenseClaimDashboard = () => {
                                                         }}
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
-                                                 <td className="px-4 py-3 text-slate-600">
+                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                 <td className="px-4 py-3 text-slate-600 align-middle">
                                                      {c.employeeDetails ? (
                                                          <div>
                                                              <div className="font-semibold text-slate-800">
@@ -1488,8 +1490,8 @@ const ExpenseClaimDashboard = () => {
                                                          c.employeeId
                                                      )}
                                                  </td>
-                                                <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
@@ -1497,16 +1499,16 @@ const ExpenseClaimDashboard = () => {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
+                                                <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                                                         {c.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex flex-wrap gap-1.5">
+                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
+                                                    <div className="flex flex-wrap gap-1.5" style={{ minWidth: '300px' }}>
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" title={f}>
+                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
                                                                 {flagLabel(f)}
                                                             </span>
                                                         )) : (
@@ -1514,7 +1516,7 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 align-middle">
                                                     <button
                                                         onClick={() => openDecision(c)}
                                                         className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
@@ -1561,7 +1563,7 @@ const ExpenseClaimDashboard = () => {
                         )}
 
                         {/* Bulk Decision Modal */}
-                        {bulkDecisionOpen && (
+                        {bulkDecisionOpen && createPortal(
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                                 <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-scaleIn">
                                     <div className={`px-6 py-4 border-b text-white flex justify-between items-center ${bulkDecisionType === 'Approved' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
@@ -1596,7 +1598,7 @@ const ExpenseClaimDashboard = () => {
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        , document.body)}
                     </div>
                 )}
 
@@ -1611,7 +1613,7 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         ) : (
                             <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm">
+                                <table className="w-full text-sm min-w-[1100px]">
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-100">
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
@@ -1629,8 +1631,8 @@ const ExpenseClaimDashboard = () => {
                                     <tbody>
                                         {filteredHistory.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-slate-800">{c.claimNo || '—'}</td>
-                                                 <td className="px-4 py-3 text-slate-600">
+                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                 <td className="px-4 py-3 text-slate-600 align-middle">
                                                      {c.employeeDetails ? (
                                                          <div>
                                                              <div className="font-semibold text-slate-800">
@@ -1642,8 +1644,8 @@ const ExpenseClaimDashboard = () => {
                                                          c.employeeId
                                                      )}
                                                  </td>
-                                                <td className="px-4 py-3 text-slate-600">{c.category}</td>
-                                                <td className="px-4 py-3 text-slate-700 font-semibold">
+                                                <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
+                                                <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
@@ -1651,24 +1653,24 @@ const ExpenseClaimDashboard = () => {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.amountAllowed, c.currency)}</td>
-                                                <td className="px-4 py-3 text-slate-600">{formatMoney(c.approvedTotal, c.currency)}</td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
+                                                <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                                                         {c.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-500">
+                                                <td className="px-4 py-3 text-slate-500 align-middle">
                                                     {c.audit?.submittedAt ? new Date(c.audit.submittedAt).toLocaleDateString('en-PK') : new Date(c.createdAt).toLocaleDateString('en-PK')}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 align-middle">
                                                     {(c.receipts || []).length ? (
                                                         <div className="flex flex-col gap-1">
                                                             {(c.receipts || []).map((r: any) => (
                                                                 <button
                                                                     key={r._id}
                                                                     onClick={() => downloadReceipt(c._id, r._id, r.fileName)}
-                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs"
+                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs truncate max-w-[150px] block whitespace-nowrap" title={r.fileName}
                                                                 >
                                                                     {r.fileName}
                                                                 </button>
@@ -1678,7 +1680,7 @@ const ExpenseClaimDashboard = () => {
                                                         <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 flex gap-2">
+                                                <td className="px-4 py-3 flex gap-2 align-middle">
                                                     {c.status !== 'Approved' && c.status !== 'Declined' && (
                                                         <button
                                                             onClick={() => openDecision(c)}
@@ -1756,7 +1758,7 @@ const ExpenseClaimDashboard = () => {
                         </div>
 
                         {/* Category Modal */}
-                        {categoryModalOpen && (
+                        {categoryModalOpen && createPortal(
                             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                                 <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
                                     <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -1829,7 +1831,7 @@ const ExpenseClaimDashboard = () => {
                                     </div>
                                 </div>
                             </div>
-                        )}
+                        , document.body)}
                     </div>
                 )}
             </div>
@@ -1837,7 +1839,7 @@ const ExpenseClaimDashboard = () => {
             {/* ══════════════════════════════════════════════════════════════
                   DOCUMENT REVIEW MODAL — HR / Admin full claim inspection
             ══════════════════════════════════════════════════════════════ */}
-            {decisionOpen && decisionClaim && (
+            {decisionOpen && decisionClaim && createPortal(
                 <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-end min-[992px]:items-center justify-center bg-black/50 backdrop-blur-sm p-0 min-[992px]:p-6">
                     {/* Main panel */}
                     <div className="bg-white w-full min-[992px]:max-w-4xl max-h-[90vh] min-[992px]:max-h-[calc(100vh-5rem)] rounded-t-3xl min-[992px]:rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
@@ -2002,7 +2004,7 @@ const ExpenseClaimDashboard = () => {
                                             <div className="text-[11px] font-bold text-rose-700 mb-2 flex items-center gap-1.5"><AlertTriangle size={11} />ELIGIBILITY FLAGS</div>
                                             <div className="flex flex-wrap gap-2">
                                                 {(decisionClaim.eligibility.flags as string[]).map((f: string) => (
-                                                    <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">{flagLabel(f)}</span>
+                                                    <span key={f} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold" style={{ whiteSpace: 'nowrap' }}>{flagLabel(f)}</span>
                                                 ))}
                                             </div>
                                         </div>
@@ -2375,7 +2377,7 @@ const ExpenseClaimDashboard = () => {
                         ) : null;
                     })()}
                 </div>
-            )}
+            , document.body)}
 
             {/* Submit form — receipt preview lightbox */}
             {submitPreviewIndex !== null && receiptFiles[submitPreviewIndex] && (() => {
@@ -2383,7 +2385,7 @@ const ExpenseClaimDashboard = () => {
                 const url = submitReceiptUrls[submitPreviewIndex];
                 const isImage = f.type.startsWith('image/');
                 const isPdf = f.type === 'application/pdf';
-                return (
+                return createPortal(
                     <div
                         className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-[60] flex items-center justify-center bg-black/95 p-4"
                         onClick={() => setSubmitPreviewIndex(null)}
@@ -2448,10 +2450,10 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         </div>
                     </div>
-                );
+                , document.body);
             })()}
 
-            {correctOpen && isAdminLike && (
+            {correctOpen && isAdminLike && createPortal(
                 <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/40 p-4">
                     <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
                         <div className="flex items-center justify-between p-5 border-b border-slate-100">
@@ -2519,7 +2521,7 @@ const ExpenseClaimDashboard = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
         </div>
     );
 };

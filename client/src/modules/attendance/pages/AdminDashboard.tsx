@@ -84,7 +84,7 @@ function RosterRow({
 
     // Build full avatar URL if relative
     const avatarUrl = entry.avatar 
-        ? (entry.avatar.startsWith('http') ? entry.avatar : `${BASE_URL}${entry.avatar.startsWith('/') ? '' : '/'}${entry.avatar}`)
+        ? (entry.avatar.startsWith('http') || entry.avatar.startsWith('data:') ? entry.avatar : `${BASE_URL}${entry.avatar.startsWith('/') ? '' : '/'}${entry.avatar}`)
         : null;
 
     const clickable = onClick && entry.employeeId && !entry.employeeId.startsWith('unlinked_');

@@ -73,8 +73,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 // If the avatar is a massive base64 string, don't persist it to storage
                 // (keeps storage light and prevents QuotaExceededError)
                 let storageUser = newUser;
-                if (newUser?.avatar && newUser.avatar.startsWith('data:')) {
-                    storageUser = { ...newUser, avatar: prev?.avatar || '' };
+                if (newUser?.avatar && (
+                    newUser.avatar.startsWith('data:') || 
+                    newUser.avatar.includes(';base64,') || 
+                    newUser.avatar.length > 1000
+                )) {
+                    storageUser = { ...newUser, avatar: '' };
                 }
                 
                 sessionStorage.setItem('itcs_user', JSON.stringify(storageUser));

@@ -401,6 +401,7 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                     setSelectedLeave(null);
                 }}
                 leave={selectedLeave}
+                onSuccess={onStatusChange}
             />
         </div>
         </div>

@@ -6,6 +6,7 @@ import LeaveBalance from '../models/LeaveBalance';
 import LeaveType from '../models/LeaveType';
 import Employee from '../models/Employee';
 import { processEmployeePunches } from '../services/attendanceProcessor';
+import { sendLeaveSubmittedEmail, sendLeaveStatusEmail } from '../utils/email';
 
 const router = express.Router();
 
@@ -494,7 +495,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const authReq = req as AuthRequest;
     try {
         const { startDate, endDate, type, reason, duration = 'Full Day', startTime, endTime } = req.body;
-        const employeeId = authReq.user?.userId; 
+        let employeeId = authReq.user?.userId; 
+        if (req.body.employeeId) {
+            if (!['admin', 'super-admin', 'hr'].includes(authReq.user?.role || '')) {
+                return res.status(403).json({ message: 'Forbidden: Cannot apply on behalf of others' });
+            }
+            employeeId = req.body.employeeId;
+        }
         if (!employeeId) return res.status(401).json({ message: 'Unauthorized' });
 
         const start = new Date(startDate);
@@ -594,6 +601,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         // 3. Atomically check balances and reserve pending
         const session = await mongoose.startSession();
         let createdLeave: any = null;
+        let totalDeducted = 0;
         try {
             await session.withTransaction(async () => {
                 const activeTypes = await LeaveType.find({ isActive: true }).session(session);
@@ -623,7 +631,6 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 }
 
                 // Create Request
-                let totalDeducted = 0;
                 for (const days of yearDaysMap.values()) {
                     totalDeducted += days;
                 }
@@ -639,6 +646,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                     endTime: duration === 'Specify Time' ? endTime : undefined,
                     totalDays: totalDeducted,
                     status: 'Pending',
+                    appliedBy: authReq.user?.userId,
                     appliedOn: new Date()
                 }], { session });
                 
@@ -646,6 +654,36 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             });
 
             res.status(201).json({ success: true, message: 'Leave requested successfully', data: createdLeave });
+
+            // Trigger manager notification email asynchronously
+            (async () => {
+                try {
+                    const emp = await Employee.findOne({
+                        $or: [
+                            { userId: employeeId },
+                            { employeeId: employeeId },
+                            { _id: employeeId.length === 24 ? employeeId : new mongoose.Types.ObjectId() }
+                        ]
+                    });
+                    if (emp && emp.jobInfo?.reportingManager) {
+                        const manager = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager });
+                        const managerEmail = manager?.workEmail || manager?.email;
+                        if (managerEmail) {
+                            await sendLeaveSubmittedEmail(
+                                managerEmail,
+                                `${emp.firstName} ${emp.lastName}`,
+                                leaveType.name,
+                                new Date(startDate).toLocaleDateString(),
+                                new Date(endDate).toLocaleDateString(),
+                                totalDeducted,
+                                req.headers.origin as string
+                            );
+                        }
+                    }
+                } catch (emailErr) {
+                    console.error('[Leave Email] Failed to send submission email to manager:', emailErr);
+                }
+            })();
         } catch (error: any) {
             return res.status(400).json({ success: false, message: error.message });
         } finally {
@@ -759,6 +797,34 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
             });
 
             res.json({ success: true, message: `Leave ${status.toLowerCase()} successfully`, data: leave });
+
+            // Trigger employee notification email asynchronously
+            (async () => {
+                try {
+                    const emp = await Employee.findOne({
+                        $or: [
+                            { userId: leave.employeeId },
+                            { employeeId: leave.employeeId },
+                            { _id: leave.employeeId.length === 24 ? leave.employeeId : new mongoose.Types.ObjectId() }
+                        ]
+                    });
+                    const employeeEmail = emp?.workEmail || emp?.email;
+                    if (employeeEmail) {
+                        await sendLeaveStatusEmail(
+                            employeeEmail,
+                            emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                            leave.type,
+                            new Date(leave.startDate).toLocaleDateString(),
+                            new Date(leave.endDate).toLocaleDateString(),
+                            status,
+                            adminNote || leave.adminNote,
+                            req.headers.origin as string
+                        );
+                    }
+                } catch (emailErr) {
+                    console.error('[Leave Email] Failed to send status email to employee:', emailErr);
+                }
+            })();
 
             if (status === 'Approved') {
                 try {
@@ -900,6 +966,293 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
                     }
                 } catch (err) {
                     console.error('[Leave Sync] Error updating attendance on revert:', err);
+                }
+            }
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        } finally {
+            session.endSession();
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PUT /api/leaves/:id/cancel - Cancel Leave Request
+router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const user = authReq.user;
+        if (!user) return res.status(401).json({ message: 'Unauthorized' });
+
+        const leave = await LeaveRequest.findById(req.params.id);
+        if (!leave) return res.status(404).json({ message: 'Leave request not found' });
+
+        const isOwner = user.userId === leave.employeeId;
+        const isManagerOrAdmin = ['super-admin', 'admin', 'manager'].includes(user.role);
+
+        if (!isOwner && !isManagerOrAdmin) {
+            return res.status(403).json({ message: 'Forbidden: Cannot cancel this leave request' });
+        }
+
+        if (leave.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Leave is already cancelled' });
+        }
+
+        if (leave.status === 'Rejected') {
+            return res.status(400).json({ message: 'Cannot cancel a rejected leave' });
+        }
+
+        if (leave.status === 'Approved' && !isManagerOrAdmin) {
+            return res.status(403).json({ message: 'Only Admins or Managers can cancel approved leaves' });
+        }
+
+        const oldStatus = leave.status;
+        const session = await mongoose.startSession();
+        try {
+            await session.withTransaction(async () => {
+                leave.status = 'Cancelled';
+                leave.approvedBy = user.userId; // track who performed the cancellation action
+
+                const start = new Date(leave.startDate);
+                const end = new Date(leave.endDate);
+                const requestedTypeCode = leave.type.toLowerCase().trim();
+                const leaveType = await LeaveType.findOne({ 
+                    $or: [{ name: leave.type }, { code: requestedTypeCode }]
+                }).session(session);
+                const leaveTypeCode = leaveType ? leaveType.code : requestedTypeCode;
+
+                // Calculate days per year
+                const yearDaysMap = new Map<number, number>();
+                const dates: Date[] = [];
+                let cur = new Date(start);
+                while (cur <= end) {
+                    dates.push(new Date(cur));
+                    cur.setDate(cur.getDate() + 1);
+                }
+
+                for (let i = 0; i < dates.length; i++) {
+                    const d = dates[i];
+                    const dayOfWeek = d.getDay();
+                    let isSandwiched = false;
+                    
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        isSandwiched = true;
+                    } else {
+                        let hasBefore = false;
+                        let hasAfter = false;
+                        for (let j = 0; j < i; j++) {
+                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                                hasBefore = true;
+                                break;
+                            }
+                        }
+                        for (let j = i + 1; j < dates.length; j++) {
+                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                                hasAfter = true;
+                                break;
+                            }
+                        }
+                        if (hasBefore && hasAfter) {
+                            isSandwiched = true;
+                        }
+                    }
+
+                    if (isSandwiched) {
+                        const year = d.getFullYear();
+                        let dayDeduction = 1;
+                        if (leave.duration && leave.duration !== 'Full Day' && dates.length === 1) {
+                            dayDeduction = leave.totalDays || 0.5;
+                        }
+                        yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
+                    }
+                }
+
+                for (const [year, days] of yearDaysMap.entries()) {
+                    const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                    if (balance) {
+                        const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
+                        if (category) {
+                            if (oldStatus === 'Pending') {
+                                category.pending -= days;
+                                if (category.pending < 0) category.pending = 0;
+                            } else if (oldStatus === 'Approved') {
+                                category.used -= days;
+                                if (category.used < 0) category.used = 0;
+                            }
+                            balance.markModified('balances');
+                            await balance.save({ session });
+                        }
+                    }
+                }
+
+                await leave.save({ session });
+            });
+
+            res.json({ success: true, message: 'Leave cancelled successfully', data: leave });
+
+            // Trigger email notification asynchronously
+            (async () => {
+                try {
+                    const emp = await Employee.findOne({
+                        $or: [
+                            { userId: leave.employeeId },
+                            { employeeId: leave.employeeId },
+                            { _id: leave.employeeId.length === 24 ? leave.employeeId : new mongoose.Types.ObjectId() }
+                        ]
+                    });
+                    const employeeEmail = emp?.workEmail || emp?.email;
+                    if (employeeEmail) {
+                        await sendLeaveStatusEmail(
+                            employeeEmail,
+                            emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                            leave.type,
+                            new Date(leave.startDate).toLocaleDateString(),
+                            new Date(leave.endDate).toLocaleDateString(),
+                            'Cancelled',
+                            `Cancelled by ${isOwner ? 'Employee' : 'Admin/Manager'}`,
+                            req.headers.origin as string
+                        );
+                    }
+                } catch (emailErr) {
+                    console.error('[Leave Email] Failed to send status email to employee:', emailErr);
+                }
+            })();
+
+            // If it was Approved, re-process employee punches to remove the leave day
+            if (oldStatus === 'Approved') {
+                try {
+                    const start = new Date(leave.startDate);
+                    const end = new Date(leave.endDate);
+                    const cur = new Date(start);
+                    while (cur <= end) {
+                        const dateStr = cur.toISOString().split('T')[0];
+                        await processEmployeePunches(leave.employeeId, dateStr, 'INTERNAL');
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                } catch (err) {
+                    console.error('[Leave Sync] Error updating attendance on cancel:', err);
+                }
+            }
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        } finally {
+            session.endSession();
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
+// DELETE /api/leaves/:id - Delete Leave Request (Admin/Manager only)
+router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const user = authReq.user;
+        if (!user || !['super-admin', 'admin', 'manager'].includes(user.role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin/Manager access required' });
+        }
+
+        const leave = await LeaveRequest.findById(req.params.id);
+        if (!leave) return res.status(404).json({ message: 'Leave request not found' });
+
+        const oldStatus = leave.status;
+        const session = await mongoose.startSession();
+        try {
+            await session.withTransaction(async () => {
+                if (oldStatus === 'Pending' || oldStatus === 'Approved') {
+                    const start = new Date(leave.startDate);
+                    const end = new Date(leave.endDate);
+                    const requestedTypeCode = leave.type.toLowerCase().trim();
+                    const leaveType = await LeaveType.findOne({ 
+                        $or: [{ name: leave.type }, { code: requestedTypeCode }]
+                    }).session(session);
+                    const leaveTypeCode = leaveType ? leaveType.code : requestedTypeCode;
+
+                    // Calculate days per year
+                    const yearDaysMap = new Map<number, number>();
+                    const dates: Date[] = [];
+                    let cur = new Date(start);
+                    while (cur <= end) {
+                        dates.push(new Date(cur));
+                        cur.setDate(cur.getDate() + 1);
+                    }
+
+                    for (let i = 0; i < dates.length; i++) {
+                        const d = dates[i];
+                        const dayOfWeek = d.getDay();
+                        let isSandwiched = false;
+                        
+                        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                            isSandwiched = true;
+                        } else {
+                            let hasBefore = false;
+                            let hasAfter = false;
+                            for (let j = 0; j < i; j++) {
+                                if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                                    hasBefore = true;
+                                    break;
+                                }
+                            }
+                            for (let j = i + 1; j < dates.length; j++) {
+                                if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                                    hasAfter = true;
+                                    break;
+                                }
+                            }
+                            if (hasBefore && hasAfter) {
+                                isSandwiched = true;
+                            }
+                        }
+
+                        if (isSandwiched) {
+                            const year = d.getFullYear();
+                            let dayDeduction = 1;
+                            if (leave.duration && leave.duration !== 'Full Day' && dates.length === 1) {
+                                dayDeduction = leave.totalDays || 0.5;
+                            }
+                            yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
+                        }
+                    }
+
+                    for (const [year, days] of yearDaysMap.entries()) {
+                        const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                        if (balance) {
+                            const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
+                            if (category) {
+                                if (oldStatus === 'Pending') {
+                                    category.pending -= days;
+                                    if (category.pending < 0) category.pending = 0;
+                                } else if (oldStatus === 'Approved') {
+                                    category.used -= days;
+                                    if (category.used < 0) category.used = 0;
+                                }
+                                balance.markModified('balances');
+                                await balance.save({ session });
+                            }
+                        }
+                    }
+                }
+
+                // Delete the leave document
+                await LeaveRequest.findByIdAndDelete(req.params.id).session(session);
+            });
+
+            res.json({ success: true, message: 'Leave request deleted successfully' });
+
+            // If it was Approved, re-process employee punches to remove the leave day
+            if (oldStatus === 'Approved') {
+                try {
+                    const start = new Date(leave.startDate);
+                    const end = new Date(leave.endDate);
+                    const cur = new Date(start);
+                    while (cur <= end) {
+                        const dateStr = cur.toISOString().split('T')[0];
+                        await processEmployeePunches(leave.employeeId, dateStr, 'INTERNAL');
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                } catch (err) {
+                    console.error('[Leave Sync] Error updating attendance on delete:', err);
                 }
             }
         } catch (error: any) {

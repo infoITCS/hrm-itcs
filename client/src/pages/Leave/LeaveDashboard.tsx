@@ -65,6 +65,7 @@ const LeaveDashboard = () => {
     const [balance, setBalance] = useState<any>(null);
     const [history, setHistory] = useState<any[]>([]);
     const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+    const [allEmployees, setAllEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showApplyModal, setShowApplyModal] = useState(false);
@@ -76,6 +77,7 @@ const LeaveDashboard = () => {
     const { role } = usePermissions();
     const isManagement = ['super-admin', 'admin', 'manager'].includes(role);
     const isAdmin = ['super-admin', 'admin'].includes(role);
+    const isAdminLike = ['super-admin', 'admin', 'hr'].includes(role);
 
     const filteredHistory = history.filter(item => 
         statusFilter === 'All' || item.status === statusFilter
@@ -109,6 +111,7 @@ const LeaveDashboard = () => {
             setBalance(balData.data);
             setHistory(histData.data);
             setLeaveTypes(typesData.data);
+            // employee fetching removed from here
         } catch (err: any) {
             console.error('Leave fetch error:', err);
             setError(err.message || 'Could not fetch leave data. Please try again.');
@@ -120,6 +123,24 @@ const LeaveDashboard = () => {
     useEffect(() => {
         fetchLeaveData();
     }, []);
+
+    useEffect(() => {
+        const fetchEmployees = async () => {
+            if (!isAdminLike) return;
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(api.employees, { headers: { Authorization: `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    const empArray = Array.isArray(data) ? data : (data.employees || []);
+                    setAllEmployees(empArray);
+                }
+            } catch (err) {
+                console.error('Failed to fetch employees for leave dashboard:', err);
+            }
+        };
+        fetchEmployees();
+    }, [isAdminLike]);
 
     useEffect(() => {
         if (!isManagement && activeTab === 'team-requests') {
@@ -419,6 +440,8 @@ const STATUS_COLORS: any = {
                     setRefreshCounter(prev => prev + 1);
                 }}
                 balance={balance}
+                isAdminLike={isAdminLike}
+                allEmployees={allEmployees}
             />
 
             <LeaveDetailsModal 
@@ -428,6 +451,10 @@ const STATUS_COLORS: any = {
                     setSelectedLeave(null);
                 }}
                 leave={selectedLeave}
+                onSuccess={() => {
+                    fetchLeaveData();
+                    setRefreshCounter(prev => prev + 1);
+                }}
             />
         </div>
     );

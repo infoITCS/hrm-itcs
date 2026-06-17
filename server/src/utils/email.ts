@@ -272,3 +272,202 @@ export const sendWorkAnniversaryEmail = async (to: string, firstName: string, ye
         return false;
     }
 };
+
+export const sendLeaveSubmittedEmail = async (to: string, employeeName: string, leaveType: string, startDate: string, endDate: string, totalDays: number, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `New Leave Request: ${employeeName}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">New Leave Request</h2>
+                <p style="color: #4b5563; font-size: 16px;"><strong>${employeeName}</strong> has requested <strong>${leaveType}</strong>.</p>
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #f3f4f6;">
+                    <p style="margin: 0; font-size: 14px; color: #4b5563;"><strong>Start Date:</strong> ${startDate}</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563;"><strong>End Date:</strong> ${endDate}</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Total Days:</strong> ${totalDays}</p>
+                </div>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/leave" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Review Leave Requests</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= LEAVE SUBMITTED EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Leave Type: ${leaveType}, Days: ${totalDays}`);
+        logger.info(`==================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending leave submitted email:', error);
+        return false;
+    }
+};
+
+export const sendLeaveStatusEmail = async (to: string, employeeName: string, leaveType: string, startDate: string, endDate: string, status: string, adminNote?: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const statusColor = status === 'Approved' ? '#10b981' : (status === 'Rejected' ? '#ef4444' : '#6b7280');
+    
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Leave Request Update: ${status}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">Leave Request Update</h2>
+                <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
+                <p style="color: #4b5563; font-size: 16px;">Your request for <strong>${leaveType}</strong> (${startDate} to ${endDate}) has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
+                ${adminNote ? `
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Note:</strong> "${adminNote}"</p>
+                </div>
+                ` : ''}
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/leave" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">View Leave History</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= LEAVE STATUS EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, Note: ${adminNote}`);
+        logger.info(`================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending leave status email:', error);
+        return false;
+    }
+};
+
+export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: string, category: string, amount: number, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `New Expense Claim: ${employeeName}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">New Expense Claim Submitted</h2>
+                <p style="color: #4b5563; font-size: 16px;"><strong>${employeeName}</strong> has submitted a new expense claim for review.</p>
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #f3f4f6;">
+                    <p style="margin: 0; font-size: 14px; color: #4b5563;"><strong>Category:</strong> ${category}</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Amount:</strong> PKR ${amount.toLocaleString()}</p>
+                </div>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/claim" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Review Claim</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= EXPENSE CLAIM SUBMITTED EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Category: ${category}, Amount: PKR ${amount}`);
+        logger.info(`========================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending expense claim submitted email:', error);
+        return false;
+    }
+};
+
+export const sendExpenseClaimStatusEmail = async (to: string, employeeName: string, category: string, amount: number, status: string, approvedAmount?: number, adminNote?: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const statusColor = status === 'Approved' ? '#10b981' : (status === 'Declined' ? '#ef4444' : '#6b7280');
+    
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Expense Claim Update: ${status}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">Expense Claim Update</h2>
+                <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
+                <p style="color: #4b5563; font-size: 16px;">Your expense claim for <strong>${category}</strong> (PKR ${amount.toLocaleString()}) has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
+                ${status === 'Approved' && approvedAmount !== undefined ? `
+                <p style="color: #4b5563; font-size: 16px;"><strong>Approved Amount:</strong> PKR ${approvedAmount.toLocaleString()}</p>
+                ` : ''}
+                ${adminNote ? `
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Comment:</strong> "${adminNote}"</p>
+                </div>
+                ` : ''}
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/claim" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">View Claims History</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= EXPENSE CLAIM STATUS EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, Approved Amount: ${approvedAmount}, Note: ${adminNote}`);
+        logger.info(`======================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending expense claim status email:', error);
+        return false;
+    }
+};
+
+export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dateStr: string, autoCheckOutTime: string) => {
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Attendance Notice: Shift Auto-Closed`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #fffbeb;">
+                <h2 style="color: #b45309; text-align: center;">Forgot to Clock Out? ⏰</h2>
+                <p style="color: #4b5563; font-size: 16px;">Hello ${firstName},</p>
+                <p style="color: #4b5563; font-size: 16px;">We noticed you checked in on <strong>${dateStr}</strong> but did not check out. The system has automatically closed your shift for today at <strong>${autoCheckOutTime}</strong>.</p>
+                <p style="color: #4b5563; font-size: 14px;">If this automatic checkout time is incorrect or you worked additional hours, please submit an attendance correction or contact your reporting manager.</p>
+                <div style="text-align: center; font-size: 14px; color: #9ca3af; margin-top: 30px;">
+                    Best regards,<br/>The ITCS HRM Team
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= AUTO CLOSE ALERT EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${firstName}, Date: ${dateStr}, Closed At: ${autoCheckOutTime}`);
+        logger.info(`===================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending auto close alert email:', error);
+        return false;
+    }
+};

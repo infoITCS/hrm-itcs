@@ -48,8 +48,22 @@ export async function checkHoliday(dateStr: string, location?: string): Promise<
 
 /** Check if an employee is on approved leave for a specific date */
 export async function checkLeave(employeeId: string, dateStr: string): Promise<string | null> {
+    let readableId = employeeId;
+    let userId = employeeId;
+
+    if (employeeId && employeeId.length === 24) {
+        const emp = await Employee.findOne({ userId: employeeId }).lean() as any;
+        if (emp) readableId = emp.employeeId;
+    } else {
+        const emp = await Employee.findOne({ employeeId }).lean() as any;
+        if (emp && emp.userId) userId = emp.userId;
+    }
+
     const leave = await LeaveRequest.findOne({
-        employeeId,
+        $or: [
+            { employeeId: readableId },
+            { employeeId: userId }
+        ],
         startDate: { $lte: dateStr },
         endDate: { $gte: dateStr },
         status: LeaveStatus.APPROVED
@@ -66,10 +80,16 @@ export async function processEmployeePunches(
     deviceSN: string
 ): Promise<void> {
     try {
+        let resolvedEmployeeId = employeeId;
+        if (employeeId && employeeId.length === 24) {
+            const emp = await Employee.findOne({ userId: employeeId }).lean() as any;
+            if (emp) resolvedEmployeeId = emp.employeeId;
+        }
+
         const deviceConfig = await DeviceLocation.findOne({ deviceSN, isActive: true });
         
         // [NEW] Multi-Shift Support: Fetch employee's assigned shift
-        const employee = await Employee.findOne({ employeeId }).populate('jobInfo.shift').lean() as any;
+        const employee = await Employee.findOne({ employeeId: resolvedEmployeeId }).populate('jobInfo.shift').lean() as any;
         const empShift = employee?.jobInfo?.shift;
 
         // Shift Configuration Priority: 1. Employee Shift -> 2. Device Location -> 3. Hardcoded Defaults
@@ -83,13 +103,13 @@ export async function processEmployeePunches(
         const dayEnd   = new Date(dateStr + 'T23:59:59.999Z');
 
         const punches = await AttendancePunch
-            .find({ employeeId, punchTime: { $gte: dayStart, $lte: dayEnd } })
+            .find({ employeeId: resolvedEmployeeId, punchTime: { $gte: dayStart, $lte: dayEnd } })
             .sort({ punchTime: 1 })
             .lean() as any[];
 
         if (punches.length === 0) {
             const holidayName = await checkHoliday(dateStr, locationName);
-            const leaveType   = await checkLeave(employeeId, dateStr);
+            const leaveType   = await checkLeave(resolvedEmployeeId, dateStr);
             const weekend     = isWeekend(dateStr);
 
             let zeroStatus: AttendanceStatus = 'Absent';
@@ -98,10 +118,10 @@ export async function processEmployeePunches(
             else if (weekend)     zeroStatus = 'Weekend';
 
             await AttendanceRecord.findOneAndUpdate(
-                { employeeId, date: dateStr },
+                { employeeId: resolvedEmployeeId, date: dateStr },
                 {
                     $set: {
-                        employeeId,
+                        employeeId: resolvedEmployeeId,
                         date: dateStr,
                         location: locationName,
                         status: zeroStatus,
@@ -172,7 +192,7 @@ export async function processEmployeePunches(
             if (otDiff > 0) overtimeMinutes = otDiff;
         }
 
-        const leaveType = await checkLeave(employeeId, dateStr);
+        const leaveType = await checkLeave(resolvedEmployeeId, dateStr);
 
         // Suggestion 1: Early Leave Status
         let status: AttendanceStatus;
@@ -189,10 +209,10 @@ export async function processEmployeePunches(
         }
 
         await AttendanceRecord.findOneAndUpdate(
-            { employeeId, date: dateStr },
+            { employeeId: resolvedEmployeeId, date: dateStr },
             {
                 $set: {
-                    employeeId,
+                    employeeId: resolvedEmployeeId,
                     date: dateStr,
                     location: locationName,
                     checkIn,
@@ -212,7 +232,7 @@ export async function processEmployeePunches(
         );
 
         await AttendancePunch.updateMany(
-            { employeeId, punchTime: { $gte: dayStart, $lte: dayEnd } },
+            { employeeId: resolvedEmployeeId, punchTime: { $gte: dayStart, $lte: dayEnd } },
             { $set: { processed: true } }
         );
 

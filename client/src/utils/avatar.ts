@@ -35,7 +35,9 @@ export const getAvatarUrl = (empOrString: any) => {
 
     // 3. Check userId-based avatar (from Auth context)
     if (emp.userAvatar) {
-        return emp.userAvatar.startsWith('http') ? emp.userAvatar : `${api.baseURL}${emp.userAvatar}`;
+        return emp.userAvatar.startsWith('http') || emp.userAvatar.startsWith('data:') 
+            ? emp.userAvatar 
+            : `${api.baseURL}${emp.userAvatar.startsWith('/') ? '' : '/'}${emp.userAvatar}`;
     }
 
     return null;
