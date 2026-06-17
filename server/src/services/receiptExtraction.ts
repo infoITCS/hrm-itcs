@@ -1,4 +1,7 @@
 import { createWorker, type Worker } from 'tesseract.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import logger from '../utils/logger';
 
 export const RECEIPT_MAX_AGE_DAYS = 45;
@@ -31,7 +34,17 @@ let ocrWorkerPromise: Promise<Worker> | null = null;
 async function getOcrWorker(): Promise<Worker> {
     if (!ocrWorkerPromise) {
         ocrWorkerPromise = (async () => {
-            const worker = await createWorker('eng');
+            const cachePath = path.join(os.tmpdir(), 'tesseract-cache');
+            try {
+                if (!fs.existsSync(cachePath)) {
+                    fs.mkdirSync(cachePath, { recursive: true });
+                }
+            } catch (err) {
+                logger.warn(`[ReceiptOCR] Failed to create cache dir: ${err}`);
+            }
+            const worker = await createWorker('eng', 1, {
+                cachePath,
+            });
             return worker;
         })();
     }
