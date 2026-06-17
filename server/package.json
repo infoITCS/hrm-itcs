@@ -7,7 +7,8 @@
         "start": "node dist/index.js",
         "dev": "nodemon src/index.ts",
         "test": "jest",
-        "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); fs.cpSync('node_modules/tesseract.js-core', 'dist/tesseract-core', {recursive:true}); if(!fs.existsSync('public')) fs.mkdirSync('public'); fs.writeFileSync('public/index.html', 'API Server')\""
+        "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); if(!fs.existsSync('public')) fs.mkdirSync('public'); fs.writeFileSync('public/index.html', 'API Server')\"",
+        "postinstall": "node -e \"const fs=require('fs'); if(!fs.existsSync('wasm')) fs.mkdirSync('wasm'); fs.readdirSync('node_modules/tesseract.js-core').forEach(f=>{ if(f.endsWith('.wasm')||f.endsWith('.js')) fs.copyFileSync('node_modules/tesseract.js-core/'+f, 'wasm/'+f) })\""
     },
     "keywords": [],
     "author": "",

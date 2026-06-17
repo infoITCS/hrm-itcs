@@ -7,7 +7,7 @@
       "config": {
         "includeFiles": [
           "eng.traineddata",
-          "dist/tesseract-core/*"
+          "wasm/*"
         ]
       }
     }

@@ -42,8 +42,8 @@ async function getOcrWorker(): Promise<Worker> {
             } catch (err) {
                 logger.warn(`[ReceiptOCR] Failed to create cache dir: ${err}`);
             }
-            const distCorePath = path.join(process.cwd(), 'dist', 'tesseract-core');
-            const corePath = fs.existsSync(distCorePath) ? distCorePath : undefined;
+            const wasmCorePath = path.join(process.cwd(), 'wasm');
+            const corePath = fs.existsSync(wasmCorePath) ? wasmCorePath : undefined;
 
             const worker = await createWorker('eng', 1, {
                 cachePath,
