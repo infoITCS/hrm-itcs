@@ -43,16 +43,20 @@ async function getOcrWorker(): Promise<Worker> {
                 logger.warn(`[ReceiptOCR] Failed to create cache dir: ${err}`);
             }
 
+            // Safely resolve the root 'server' directory in both Vercel (/var/task/server) and local environments
+            const serverRoot = path.join(__dirname, '..', '..');
+
             // Force Vercel NFT to bundle WASM files from node_modules
             // We use fs.readFileSync because require.resolve fails on packages without exports
             try {
-                fs.readFileSync(path.join(process.cwd(), 'node_modules', 'tesseract.js-core', 'tesseract-core-relaxedsimd.wasm'));
-                fs.readFileSync(path.join(process.cwd(), 'node_modules', 'tesseract.js-core', 'tesseract-core.wasm'));
+                fs.readFileSync(path.join(serverRoot, 'node_modules', 'tesseract.js-core', 'tesseract-core-relaxedsimd.wasm'));
+                fs.readFileSync(path.join(serverRoot, 'node_modules', 'tesseract.js-core', 'tesseract-core.wasm'));
             } catch (e) {}
 
             const worker = await createWorker('eng', 1, {
                 cachePath,
-                langPath: process.cwd(),
+                langPath: serverRoot,
+                cacheMethod: 'none',
                 gzip: false
             });
             return worker;
