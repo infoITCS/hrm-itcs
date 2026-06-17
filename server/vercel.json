@@ -1,17 +1,13 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "eng.traineddata",
-          "src/services/tesseract-core/*"
-        ]
-      }
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": [
+        "node_modules/tesseract.js-core/*.wasm",
+        "eng.traineddata"
+      ]
     }
-  ],
+  },
   "routes": [
     {
       "src": "/api/cron/(.*)",

@@ -46,7 +46,6 @@ async function getOcrWorker(): Promise<Worker> {
             const worker = await createWorker('eng', 1, {
                 cachePath,
                 langPath: process.cwd(),
-                corePath: path.join(process.cwd(), 'src', 'services', 'tesseract-core'),
                 gzip: false
             });
             return worker;
