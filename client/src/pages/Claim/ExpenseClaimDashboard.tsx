@@ -1374,7 +1374,7 @@ const ExpenseClaimDashboard = () => {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
-                                                    <div className="flex flex-wrap gap-1.5" style={{ minWidth: '300px' }}>
+                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
                                                             <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
                                                                 {flagLabel(f)}
@@ -1506,7 +1506,7 @@ const ExpenseClaimDashboard = () => {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
-                                                    <div className="flex flex-wrap gap-1.5" style={{ minWidth: '300px' }}>
+                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
                                                             <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
                                                                 {flagLabel(f)}
