@@ -269,6 +269,17 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             }
         }
 
+        // Prevent duplicate work emails
+        if (employeeData.workEmail) {
+            // we should also trim it and maybe check case insensitively, but keeping it simple as requested or maybe just use the raw value since it could be lowercased before saving
+            const existingEmailEmp = await Employee.findOne({ 
+                workEmail: { $regex: new RegExp(`^${employeeData.workEmail}$`, 'i') } 
+            });
+            if (existingEmailEmp) {
+                return res.status(400).json({ message: 'An employee with this work email already exists. Unable to create a new record.' });
+            }
+        }
+
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
             // H3 FIX: Atomic Counter implementation using findOneAndUpdate to prevent race conditions

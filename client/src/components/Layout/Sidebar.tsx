@@ -14,6 +14,8 @@ import {
     // Shield,
     X,
     ScanFace,
+    Inbox,
+    ClipboardList,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -43,6 +45,8 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         // { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
         { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
+        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin'] },
     ];
 
     const menuItems = allMenuItems.filter(item => item.roles.includes(role));

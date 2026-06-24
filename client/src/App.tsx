@@ -30,6 +30,9 @@ import Terms from './pages/Terms';
 // NEW V2 Attendance Pages
 import AttendanceRouter from './modules/attendance/AttendanceRouter';
 import V2ZktMonitor from './modules/attendance/pages/ZktMonitor';
+import MyRequests from './pages/MyRequests/MyRequests';
+import AdminRequests from './pages/MyRequests/AdminRequests';
+import DocumentVerification from './pages/DocumentVerification/DocumentVerification';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -87,6 +90,10 @@ function AppRoutes() {
         element={<Terms />}
       />
       <Route
+        path="/verify/:documentId"
+        element={<DocumentVerification />}
+      />
+      <Route
         path="/onboarding"
         element={
           <ProtectedRoute>
@@ -133,8 +140,11 @@ function AppRoutes() {
           <Route path="admin" element={<UserManagement />} />
         </Route>
 
+        <Route path="my-requests" element={<MyRequests />} />
+        
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
+          <Route path="my-requests/manage" element={<AdminRequests />} />
           <Route path="admin/settings" element={<AdminSettings />} />
           {/* <Route path="admin/audit" element={<AuditLogs />} /> */}
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />

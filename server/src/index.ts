@@ -59,6 +59,9 @@ import leaveRoutes from './routes/leaveRoutes';
 import workShiftRoutes from './routes/workShiftRoutes';
 import cronRoutes from './routes/cronRoutes';
 import holidayRoutes from './routes/holidayRoutes';
+import employeeRequestRoutes from './routes/employeeRequestRoutes';
+import documentRoutes from './routes/documentRoutes';
+import customRequestCategoryRoutes from './routes/customRequestCategoryRoutes';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -305,6 +308,8 @@ async function connectDB(): Promise<void> {
             await seedLeaveTypes();
             const { seedExpenseCategories } = require('./utils/seedExpenses');
             await seedExpenseCategories();
+            const { seedRequestCategories } = require('./utils/seedCategories');
+            await seedRequestCategories();
         } catch (seedErr) {
             logger.error('Failed to seed defaults:', seedErr);
         }
@@ -367,6 +372,9 @@ prefixes.forEach(p => {
     app.use(`${p}/work-shifts`, workShiftRoutes);
     app.use(`${p}/cron`, cronRoutes);
     app.use(`${p}/holidays`, holidayRoutes);
+    app.use(`${p}/my-requests`, employeeRequestRoutes);
+    app.use(`${p}/documents`, documentRoutes);
+    app.use(`${p}/request-categories`, customRequestCategoryRoutes);
 });
 
 app.get('/', (req, res) => {

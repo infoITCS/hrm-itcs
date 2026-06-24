@@ -629,7 +629,10 @@ const AddEmployeeWizard = () => {
  
     // Pre-fill for New Employees (Onboarding)
     useEffect(() => {
-        if (!isEditMode && authUser) {
+        const params = new URLSearchParams(window.location.search);
+        const isOnboarding = params.get('onboarding') === 'true';
+
+        if (!isEditMode && authUser && isOnboarding) {
             setFormData(prev => ({
                 ...prev,
                 workEmail: authUser.email || '',
