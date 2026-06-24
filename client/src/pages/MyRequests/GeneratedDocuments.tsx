@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
-import { FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { FileText, CheckCircle, XCircle } from 'lucide-react';
 
 const GeneratedDocuments = () => {
     const [documents, setDocuments] = useState<any[]>([]);
