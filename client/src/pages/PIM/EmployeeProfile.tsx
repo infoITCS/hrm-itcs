@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
@@ -971,18 +972,22 @@ const EmployeeProfile = () => {
             )}
 
             {/* Document Preview Modal */}
-            {previewDoc && (
-                <div className="fixed inset-0 z-[9999] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+            {previewDoc && createPortal(
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-indigo-50">
-                            <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                            <div className="min-w-0 flex items-center gap-3">
                                 <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
                                     <FileText size={20} />
                                 </div>
                                 <div>
-                                    <h3 className="text-base font-bold text-gray-800">{previewDoc.name}</h3>
-                                    <p className="text-xs text-gray-400 uppercase">{previewDoc.type} file</p>
+                                    <h3 className="text-sm font-bold text-slate-800 truncate" title={previewDoc.name}>
+                                        {previewDoc.name}
+                                    </h3>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                        {previewDoc.type} file
+                                    </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -991,53 +996,59 @@ const EmployeeProfile = () => {
                                     download={previewDoc.name}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
+                                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                    title="Download / Open in New Tab"
                                 >
-                                    <Download size={14} /> Download
+                                    <Download size={18} />
                                 </a>
                                 <button
                                     onClick={() => setPreviewDoc(null)}
-                                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+                                    title="Close"
                                 >
-                                    <X size={20} />
+                                    <X size={18} />
                                 </button>
                             </div>
                         </div>
-                        {/* Content */}
-                        <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center" style={{ minHeight: '500px' }}>
-                            {['pdf'].includes(previewDoc.type) ? (
-                                <iframe
-                                    src={previewDoc.url}
-                                    className="w-full h-full border-0"
-                                    style={{ minHeight: '500px' }}
-                                    title="Document Preview"
+
+                        {/* Content Body */}
+                        <div className="flex-1 bg-slate-900/5 flex items-center justify-center p-6 overflow-auto min-h-[300px]">
+                            {['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(previewDoc.type.toLowerCase()) ? (
+                                <img 
+                                    src={previewDoc.url} 
+                                    alt={previewDoc.name} 
+                                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-md bg-white" 
                                 />
-                            ) : ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(previewDoc.type) ? (
-                                <img
-                                    src={previewDoc.url}
-                                    alt={previewDoc.name}
-                                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm m-4"
+                            ) : previewDoc.type.toLowerCase() === 'pdf' ? (
+                                <iframe 
+                                    src={previewDoc.url} 
+                                    className="w-full h-[70vh] rounded-lg border border-slate-200/50 shadow-sm bg-white" 
+                                    title={previewDoc.name} 
                                 />
                             ) : (
-                                <div className="text-center p-12">
-                                    <FileText size={64} className="mx-auto text-gray-300 mb-4" />
-                                    <p className="text-gray-500 font-medium mb-2">Preview not available for .{previewDoc.type} files</p>
-                                    <p className="text-sm text-gray-400 mb-6">Please download the file to view it.</p>
+                                <div className="text-center p-8 max-w-sm">
+                                    <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-200/50 shadow-inner">
+                                        <FileText size={32} />
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-700 mb-1">Preview not supported</h4>
+                                    <p className="text-xs text-slate-400 mb-6">
+                                        This document type ({previewDoc.type.toUpperCase()}) cannot be previewed directly in the browser.
+                                    </p>
                                     <a
                                         href={previewDoc.url}
                                         download={previewDoc.name}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
+                                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-100 hover:shadow-lg hover:shadow-indigo-200"
                                     >
-                                        <Download size={16} /> Download File
+                                        <Download size={16} /> Download to View
                                     </a>
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
-            )}
+            , document.body)}
             {/* Delete Confirmation Modal */}
             <DeleteModal
                 isOpen={showDeleteModal}

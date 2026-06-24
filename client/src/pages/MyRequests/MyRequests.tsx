@@ -29,6 +29,15 @@ const MyRequests = () => {
 
     const fetchCustomCategories = async () => {
         try {
+            const cached = localStorage.getItem('requestCategories');
+            if (cached) {
+                try {
+                    setCustomCategories(JSON.parse(cached));
+                    setCategoriesLoading(false);
+                } catch (e) {
+                    // Ignore parse error
+                }
+            }
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/request-categories`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -36,6 +45,7 @@ const MyRequests = () => {
             if (res.ok) {
                 const data = await res.json();
                 setCustomCategories(data);
+                localStorage.setItem('requestCategories', JSON.stringify(data));
             }
         } catch (err) {
             console.error('Failed to fetch categories', err);
