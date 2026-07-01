@@ -144,7 +144,7 @@ const MyRequests = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ documentType: selectedOption })
+                body: JSON.stringify({ documentType: selectedOption, reason })
             });
 
             if (res.ok) {
@@ -520,18 +520,21 @@ const MyRequests = () => {
                                 </>
                             )}
 
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    {activeCategory.systemType === 'document' ? 'Purpose / Detail (Optional)' : 'Reason / Purpose'}
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
+                                    value={reason}
+                                    onChange={(e) => setReason(e.target.value)}
+                                    placeholder={activeCategory.systemType === 'document' ? 'e.g. applying for a visa / opening a bank account' : 'Explain why you are making this request...'}
+                                />
+                            </div>
+
                             {activeCategory.systemType !== 'document' && (
                                 <>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Reason / Purpose</label>
-                                        <textarea
-                                            rows={3}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
-                                            value={reason}
-                                            onChange={(e) => setReason(e.target.value)}
-                                            placeholder="Explain why you are making this request..."
-                                        />
-                                    </div>
 
                                     {/* Attachment Section */}
                                     <div className="space-y-2">
