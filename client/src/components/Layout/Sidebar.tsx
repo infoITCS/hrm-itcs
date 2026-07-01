@@ -11,6 +11,7 @@ import {
     BookOpen,
     Settings,
     DollarSign,
+    Banknote,
     // Shield,
     X,
     ScanFace,
@@ -45,6 +46,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         // { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
         { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'Payroll', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin'] },
     ];

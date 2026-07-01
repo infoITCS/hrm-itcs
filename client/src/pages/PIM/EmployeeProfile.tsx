@@ -708,6 +708,19 @@ const EmployeeProfile = () => {
                             )}
                         </div>
 
+                        {/* Provident Fund Balance */}
+                        <div className="pt-8 border-t border-slate-100">
+                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <Banknote size={16} className="text-emerald-500" /> Provident Fund Details
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                                <Field 
+                                    label="Current PF Balance" 
+                                    value={employee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(employee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0'} 
+                                />
+                            </div>
+                        </div>
+
                         <div className="pt-8 border-t border-slate-100">
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                                 <Banknote size={16} /> Bank Account Details

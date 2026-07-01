@@ -2,9 +2,9 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IEmployeeRequest extends Document {
     employeeId: string;
-    category: 'Document' | 'Asset' | 'Loan';
+    category: string;
     requestType: string;
-    status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
+    status: 'Pending' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled';
     details: any;
     adminComments?: string;
     requestedAt: Date;
@@ -16,7 +16,7 @@ const employeeRequestSchema = new Schema<IEmployeeRequest>({
     employeeId: { type: String, required: true },
     category: { type: String, required: true },
     requestType: { type: String, required: true },
-    status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Completed'], default: 'Pending' },
+    status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'], default: 'Pending' },
     details: { type: Schema.Types.Mixed, default: {} },
     adminComments: { type: String },
     requestedAt: { type: Date, default: Date.now },

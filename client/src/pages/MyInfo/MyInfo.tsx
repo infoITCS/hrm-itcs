@@ -1537,6 +1537,14 @@ const MyInfo = () => {
                                 </div>
                             </div>
 
+                            {/* Provident Fund Details */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Provident Fund Details</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                                    {renderField('Current PF Balance', rawEmployee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0')}
+                                </div>
+                            </div>
+
                             <div className="pt-8 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Bank Account Details</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">

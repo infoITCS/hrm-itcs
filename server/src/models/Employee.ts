@@ -64,6 +64,7 @@ export interface IEmployee extends Document {
         iban?: string;
         swiftCode?: string;
     };
+    providentFundBalance?: number;
     socialProfiles?: {
         platform: string;
         link: string;
@@ -208,6 +209,7 @@ const EmployeeSchema: Schema = new Schema({
         iban: { type: String },
         swiftCode: { type: String }
     },
+    providentFundBalance: { type: Number, default: 0 },
     socialProfiles: [{
         platform: { type: String },
         link: { type: String }

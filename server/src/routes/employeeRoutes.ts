@@ -743,7 +743,8 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         const ADMIN_EXTRA_FIELDS = [
             'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
             'maritalStatus', 'nationality', 'domicile', 'cnic', 'jobInfo', 'employmentStatus',
-            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin'
+            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin',
+            'providentFundBalance'
         ];
 
         const allowedFields = isAdmin

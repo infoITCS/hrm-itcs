@@ -424,7 +424,8 @@ const AddEmployeeWizard = () => {
             swiftCode: ''
         },
         benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
-        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[]
+        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[],
+        providentFundBalance: 0
     });
 
     // Fetch Data for Edit Mode
@@ -604,7 +605,8 @@ const AddEmployeeWizard = () => {
                                     ...sh,
                                     effectiveDate: formatDate(sh.effectiveDate)
                                 }))
-                                : []
+                                : [],
+                            providentFundBalance: found.providentFundBalance || 0
                         });
 
                         // Track fields that were already filled to lock them for non-admins
@@ -2492,6 +2494,26 @@ const AddEmployeeWizard = () => {
 
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+
+                        {/* Provident Fund Details */}
+                        <div className="pt-8 border-t border-gray-100">
+                            <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
+                                <Banknote size={20} className="text-emerald-500" />
+                                Provident Fund
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-gray-500">Provident Fund Balance (Rs.)</label>
+                                    <input
+                                        type="number"
+                                        placeholder="e.g. 150000"
+                                        value={formData.providentFundBalance || ''}
+                                        onChange={(e) => setFormData(p => ({ ...p, providentFundBalance: Number(e.target.value) }))}
+                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                    />
+                                </div>
                             </div>
                         </div>
 

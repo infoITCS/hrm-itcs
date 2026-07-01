@@ -33,6 +33,8 @@ import V2ZktMonitor from './modules/attendance/pages/ZktMonitor';
 import MyRequests from './pages/MyRequests/MyRequests';
 import AdminRequests from './pages/MyRequests/AdminRequests';
 import DocumentVerification from './pages/DocumentVerification/DocumentVerification';
+import PayrollDashboard from './pages/Payroll/PayrollDashboard';
+import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -118,10 +120,12 @@ function AppRoutes() {
         <Route path="claim" element={<ExpenseClaimDashboard />} />
         <Route path="attendance" element={<AttendanceRouter />} />
         <Route path="leave" element={<LeaveDashboard />} />
+        <Route path="payroll" element={<PayrollDashboard />} />
         
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="zkt-monitor" element={<V2ZktMonitor />} />
+          <Route path="payroll/runs/:id" element={<PayrollRunDetail />} />
         </Route>
 
         {/* Restricted to Admins & Managers */}
@@ -142,9 +146,12 @@ function AppRoutes() {
 
         <Route path="my-requests" element={<MyRequests />} />
         
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
+          <Route path="my-requests/manage" element={<AdminRequests />} />
+        </Route>
+        
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
-          <Route path="my-requests/manage" element={<AdminRequests />} />
           <Route path="admin/settings" element={<AdminSettings />} />
           {/* <Route path="admin/audit" element={<AuditLogs />} /> */}
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />

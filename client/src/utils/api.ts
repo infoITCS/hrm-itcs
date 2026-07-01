@@ -36,6 +36,15 @@ export const api = {
     claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
     claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,
 
+    // Payroll
+    payrollRuns: `${API_BASE_URL}/api/payroll`,
+    payrollRun: (id: string) => `${API_BASE_URL}/api/payroll/${id}`,
+    payrollGenerate: (id: string) => `${API_BASE_URL}/api/payroll/${id}/generate`,
+    payrollApprove: (id: string) => `${API_BASE_URL}/api/payroll/${id}/approve`,
+    payrollDisburse: (id: string) => `${API_BASE_URL}/api/payroll/${id}/disburse`,
+    payrollMyPayslips: `${API_BASE_URL}/api/payroll/my-payslips`,
+    payslip: (id: string) => `${API_BASE_URL}/api/payroll/payslips/${id}`,
+
     // ZKTeco Cloud API proxy endpoints (server proxies to 192.168.0.74:8081)
     zktStatus:       `${API_BASE_URL}/api/attendance/zkt/status`,
     zktEmployees:    `${API_BASE_URL}/api/attendance/zkt/employees`,
