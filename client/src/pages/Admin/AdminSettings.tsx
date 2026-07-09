@@ -3,13 +3,15 @@ import { createPortal } from 'react-dom';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
-    Info, Clock, MapPin
+    Info, Clock, MapPin, FileText
 } from 'lucide-react';
 import api from '../../utils/api'; // Fix import to use default or named correctly
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
 import ShiftManagement from './ShiftManagement';
 import LocationManagement from './LocationManagement';
+import CompanyManagement from './CompanyManagement';
+import TemplateManagement from './TemplateManagement';
 
 type ConfigItem = {
     _id: string;
@@ -22,7 +24,7 @@ const AdminSettings = () => {
     const { role } = usePermissions();
     const isAdmin = role === 'super-admin' || role === 'admin';
     
-    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts' | 'locations'>('departments');
+    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts' | 'locations' | 'company' | 'templates'>('departments');
     const [items, setItems] = useState<ConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -178,7 +180,7 @@ const AdminSettings = () => {
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Configuration</h1>
                     <p className="text-slate-500 mt-1">Manage departments, designations, and work shifts to maintain system-wide data consistency.</p>
                 </div>
-                {activeTab !== 'shifts' && activeTab !== 'locations' && (
+                {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && (
                     <button 
                         onClick={() => handleOpenModal()}
                         className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
@@ -220,9 +222,23 @@ const AdminSettings = () => {
                         <MapPin size={16} />
                         <span>Locations</span>
                     </button>
+                    <button 
+                        onClick={() => setActiveTab('company')}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'company' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Building2 size={16} />
+                        <span>Company Branding</span>
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('templates')}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'templates' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <FileText size={16} />
+                        <span>Document Templates</span>
+                    </button>
                 </div>
 
-                {activeTab !== 'shifts' && activeTab !== 'locations' && (
+                {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && (
                     <div className="relative w-full lg:w-80 group">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
                         <input 
@@ -240,6 +256,10 @@ const AdminSettings = () => {
                 <ShiftManagement />
             ) : activeTab === 'locations' ? (
                 <LocationManagement />
+            ) : activeTab === 'company' ? (
+                <CompanyManagement />
+            ) : activeTab === 'templates' ? (
+                <TemplateManagement />
             ) : (
                 <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
                     <div className="overflow-x-auto">

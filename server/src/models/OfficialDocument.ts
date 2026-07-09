@@ -8,6 +8,7 @@ export interface IOfficialDocument extends Document {
     status: 'Valid' | 'Revoked';
     details: any; // e.g. snapshot of salary, designation at the time of issue
     generatedBy: string; // userId who requested it
+    companyId?: mongoose.Types.ObjectId;
 }
 
 const officialDocumentSchema = new Schema<IOfficialDocument>({
@@ -17,7 +18,8 @@ const officialDocumentSchema = new Schema<IOfficialDocument>({
     issueDate: { type: Date, default: Date.now },
     status: { type: String, enum: ['Valid', 'Revoked'], default: 'Valid' },
     details: { type: Schema.Types.Mixed, default: {} },
-    generatedBy: { type: String, required: true }
+    generatedBy: { type: String, required: true },
+    companyId: { type: Schema.Types.ObjectId, ref: 'Company' }
 });
 
 export default mongoose.model<IOfficialDocument>('OfficialDocument', officialDocumentSchema);

@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
-    Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye 
+    Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
+    ChevronDown, ChevronUp
 } from 'lucide-react';
+import AlertModal from '../../components/UI/AlertModal';
 
 const ICON_MAP: Record<string, any> = {
     Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote
@@ -16,12 +18,43 @@ const MyRequests = () => {
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<any>(null);
     
+    // Alert configurations
+    const [alertConfig, setAlertConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error';
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const triggerAlert = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+        setAlertConfig({ isOpen: true, title, message, type });
+    };
+    
     // Form fields
     const [selectedOption, setSelectedOption] = useState('');
     const [quantity, setQuantity] = useState(1);
     const [loanAmount, setLoanAmount] = useState('');
     const [monthlyDeduction, setMonthlyDeduction] = useState('');
     const [reason, setReason] = useState('');
+    
+    // Custom dropdown open state
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
     
     // Custom Categories state
     const [customCategories, setCustomCategories] = useState<any[]>([]);
@@ -129,7 +162,7 @@ const MyRequests = () => {
             }
         } catch (err) {
             console.error(err);
-            alert('Error uploading file');
+            triggerAlert('Upload Error', 'Failed to upload attachment file.', 'error');
         } finally {
             setUploadingFile(false);
         }
@@ -160,11 +193,13 @@ const MyRequests = () => {
                 window.URL.revokeObjectURL(url);
                 setShowModal(false);
             } else {
-                alert('Failed to generate document');
+                const data = await res.json().catch(() => ({}));
+                const errMsg = data.message || `Failed to generate '${selectedOption}' document template.`;
+                triggerAlert('Configuration Required', errMsg, 'warning');
             }
         } catch (err) {
             console.error(err);
-            alert('Error generating document');
+            triggerAlert('Generation Error', 'An unexpected error occurred while requesting document generation.', 'error');
         }
     };
 
@@ -293,6 +328,7 @@ const MyRequests = () => {
                                 setMonthlyDeduction('');
                                 setReason('');
                                 setUploadedFiles([]);
+                                setDropdownOpen(false);
                                 setShowModal(true); 
                             }}
                             className={`bg-gradient-to-br ${
@@ -488,23 +524,58 @@ const MyRequests = () => {
                                 </>
                             ) : (
                                 <>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">{activeCategory.systemType === 'document' ? 'Document Type' : 'Option'}</label>
-                                        <select 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
-                                            value={selectedOption}
-                                            onChange={(e) => setSelectedOption(e.target.value)}
-                                        >
-                                            {activeCategory.options
-                                                .filter((opt: string) => !(activeCategory.hiddenOptions || []).includes(opt))
-                                                .map((opt: string, i: number) => (
-                                                    <option key={i} value={opt}>{opt}</option>
-                                            ))}
-                                            {activeCategory.options.filter((opt: string) => !(activeCategory.hiddenOptions || []).includes(opt)).length === 0 && (
-                                                <option value="" disabled>No options available</option>
-                                            )}
-                                        </select>
-                                    </div>
+                                     <div className="relative" ref={dropdownRef}>
+                                         <label className="block text-sm font-medium text-gray-700 mb-1">
+                                             {activeCategory.systemType === 'document' ? 'Document Type' : 'Option'}
+                                         </label>
+                                         <button
+                                             type="button"
+                                             onClick={() => setDropdownOpen(!dropdownOpen)}
+                                             className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-left text-sm transition-all text-gray-800 font-medium"
+                                         >
+                                             <span className="truncate">{selectedOption || "Select option"}</span>
+                                             {dropdownOpen ? (
+                                                 <ChevronUp size={16} className="text-gray-400 shrink-0 ml-2" />
+                                             ) : (
+                                                 <ChevronDown size={16} className="text-gray-400 shrink-0 ml-2" />
+                                             )}
+                                         </button>
+                                         
+                                         {dropdownOpen && (
+                                             <div className="absolute z-50 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 divide-y divide-gray-50 text-sm">
+                                                 {activeCategory.options
+                                                     .filter((opt: string) => !(activeCategory.hiddenOptions || []).includes(opt))
+                                                     .map((opt: string, i: number) => {
+                                                         const isSelected = selectedOption === opt;
+                                                         return (
+                                                             <button
+                                                                 key={i}
+                                                                 type="button"
+                                                                 onClick={() => {
+                                                                     setSelectedOption(opt);
+                                                                     setDropdownOpen(false);
+                                                                 }}
+                                                                 className={`w-full text-left px-4 py-2.5 transition-colors flex items-center justify-between ${
+                                                                     isSelected 
+                                                                         ? 'bg-indigo-50 text-indigo-700 font-semibold' 
+                                                                         : 'text-gray-700 hover:bg-slate-50'
+                                                                 }`}
+                                                             >
+                                                                 <span>{opt}</span>
+                                                                 {isSelected && (
+                                                                     <CheckCircle size={14} className="text-indigo-600 shrink-0 ml-2" />
+                                                                 )}
+                                                             </button>
+                                                         );
+                                                     })}
+                                                 {activeCategory.options.filter((opt: string) => !(activeCategory.hiddenOptions || []).includes(opt)).length === 0 && (
+                                                     <div className="px-4 py-3 text-gray-400 italic text-center">
+                                                         No options available
+                                                     </div>
+                                                 )}
+                                             </div>
+                                         )}
+                                     </div>
                                     {activeCategory.systemType !== 'document' && (
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity (Optional)</label>
@@ -747,6 +818,15 @@ const MyRequests = () => {
                     </div>
                 </div>
             )}
+
+            {/* Custom Theme Alert Modal */}
+            <AlertModal
+                isOpen={alertConfig.isOpen}
+                onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+            />
         </div>
     );
 };

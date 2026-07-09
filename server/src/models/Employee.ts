@@ -133,11 +133,10 @@ export interface IEmployee extends Document {
             type: 'fixed' | 'variable';
         }[];
     }[];
-    // Soft-delete fields — use these instead of hard-deleting to preserve
-    // audit logs, attendance history, and expense claim references
     isDeleted?: boolean;
     deletedAt?: Date;
     deletedBy?: string; // userId of the admin who performed the delete
+    companyId?: Types.ObjectId;
 }
 
 const EmployeeSchema: Schema = new Schema({
@@ -184,11 +183,10 @@ const EmployeeSchema: Schema = new Schema({
         probationEndDate: { type: Date },
         autoUpdated: { type: Boolean, default: false }
     },
-    // Soft-delete: never permanently destroy employee records
-    // Preserves attendance history, audit log linkages, expense claim references
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
     deletedBy: { type: String }, // userId of admin who performed the delete
+    companyId: { type: Schema.Types.ObjectId, ref: 'Company' },
     jobInfo: {
         designation: { type: String },
         department: { type: String },

@@ -21,6 +21,7 @@ export interface IUser extends Document {
     needsPasswordSetup?: boolean;
     resetPasswordToken?: string;
     resetPasswordExpires?: Date;
+    companyId?: mongoose.Types.ObjectId;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -36,6 +37,7 @@ const UserSchema: Schema = new Schema({
     needsPasswordSetup: { type: Boolean, default: false },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    companyId: { type: Schema.Types.ObjectId, ref: 'Company' },
 }, { timestamps: true });
 
 UserSchema.pre<IUser>('save', async function (next) {

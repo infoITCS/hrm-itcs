@@ -21,13 +21,15 @@ import {
     Rocket,
     Check,
     AlertCircle,
-    X
+    X,
+    FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import Avatar from '../../components/UI/Avatar';
 import { getAvatarUrl } from '../../utils/avatar';
+import CompanyProfileModal from '../../components/CompanyProfileModal';
 
 type RoleType = 'admin' | 'manager' | 'employee';
 
@@ -43,6 +45,7 @@ const Dashboard = () => {
     const [todayLeaves, setTodayLeaves] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSetPassword, setShowSetPassword] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Detect ?setup-password=1 injected by AuthCallback OR check user profile state
     useEffect(() => {
@@ -367,15 +370,18 @@ const Dashboard = () => {
         admin: [
             { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
             { title: 'Recruitment', desc: 'New hires and open positions', icon: UserPlus, path: '/recruitment' },
+            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
             { title: 'Company Policy', desc: 'Read latest updates and rules', icon: BookOpen, path: '/directory' },
         ],
         manager: [
             { title: 'My Team (PIM)', desc: 'View and manage direct reports', icon: Users, path: '/pim' },
             { title: 'Leave Management', desc: 'Approve and track team leave', icon: Calendar, path: '/leave' },
+            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
             { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
         ],
         employee: [
             { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
+            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
             { title: 'Company Policy', desc: 'Read latest updates and rules', icon: BookOpen, path: '/directory' },
         ],
     };
@@ -386,6 +392,12 @@ const Dashboard = () => {
 
     return (
         <div className="space-y-6 animate-fadeIn">
+            {/* Company Profile Modal */}
+            <CompanyProfileModal 
+                isOpen={showProfileModal} 
+                onClose={() => setShowProfileModal(false)} 
+            />
+
             {/* Password Setup Modal for first-time Microsoft users */}
             {showSetPassword && (
                 <SetPasswordModal
@@ -817,7 +829,7 @@ const Dashboard = () => {
                             {quickLinks.map((link, i) => (
                                 <div
                                     key={i}
-                                    onClick={() => navigate(link.path)}
+                                    onClick={() => link.action === 'profile' ? setShowProfileModal(true) : navigate(link.path)}
                                     className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-gradient-to-r hover:from-indigo-50/80 hover:to-purple-50/80 cursor-pointer transition-all duration-200 group"
                                 >
                                     <div className="p-2.5 bg-slate-50 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600 rounded-xl transition-colors border border-slate-100 group-hover:border-indigo-200">

@@ -1,6 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { Department, Designation } from '../models/OrganizationConfig';
+import Company from '../models/Company';
+import DocumentTemplate from '../models/DocumentTemplate';
+import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
 
 const router = Router();
@@ -201,6 +204,116 @@ router.delete('/designations/:id', authenticate, requireAdmin, async (req: Reque
         });
 
         res.json({ message: 'Designation deleted' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   GET /api/config/company
+ * @desc    Get company profile/branding details for current employee
+ */
+router.get('/company', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
+        if (!employee || !employee.companyId) {
+            // Return default company config or 404
+            return res.status(200).json({
+                name: 'IT Consulting and Services',
+                branding: { primaryColor: '#4A148C', secondaryColor: '#1A0933' },
+                contact: {
+                    addressLine1: 'Karachi: 6/K Block 2, P.E.C.H.S, Karachi Pakistan | Lahore: Office 32, 1st Floor, IT Tower, Hali Rd, Gulberg III',
+                    phone: '+92 21 111-482-711',
+                    email: 'info@itcs.com.pk'
+                }
+            });
+        }
+
+        const company = await Company.findById(employee.companyId);
+        if (!company) {
+            return res.status(204).json({ message: 'Company settings not found' });
+        }
+        res.json(company);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   PUT /api/config/company
+ * @desc    Update company profile/branding details (Admin only)
+ */
+router.put('/company', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee profile not found' });
+        }
+
+        const { name, logoUrl, branding, contact } = req.body;
+
+        let company;
+        if (employee.companyId) {
+            company = await Company.findByIdAndUpdate(
+                employee.companyId,
+                { name, logoUrl, branding, contact },
+                { new: true, runValidators: true }
+            );
+        } else {
+            // Create a new company config and link to employee
+            company = new Company({ name, logoUrl, branding, contact });
+            await company.save();
+            await Employee.findOneAndUpdate({ userId: authReq.user?.userId }, { companyId: company._id });
+        }
+
+        res.json(company);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   GET /api/config/templates
+ * @desc    List all templates for current company
+ */
+router.get('/templates', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
+        if (!employee || !employee.companyId) {
+            return res.json([]);
+        }
+
+        const templates = await DocumentTemplate.find({ companyId: employee.companyId });
+        res.json(templates);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   POST /api/config/templates
+ * @desc    Create or update a document template (Admin only)
+ */
+router.post('/templates', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
+        if (!employee || !employee.companyId) {
+            return res.status(400).json({ message: 'No associated company found. Set company settings first.' });
+        }
+
+        const { documentType, subject, content, isActive } = req.body;
+
+        const template = await DocumentTemplate.findOneAndUpdate(
+            { companyId: employee.companyId, documentType },
+            { subject, content, isActive },
+            { new: true, upsert: true, runValidators: true }
+        );
+
+        res.json(template);
     } catch (error) {
         next(error);
     }

@@ -2,8 +2,6 @@ import CustomRequestCategory from '../models/CustomRequestCategory';
 
 export const seedRequestCategories = async () => {
     try {
-        console.log('Seeding default request categories...');
-
         const defaultCategories = [
             {
                 title: 'Generate Document',
@@ -61,8 +59,6 @@ export const seedRequestCategories = async () => {
                 { upsert: true, new: true }
             );
         }
-        
-        console.log('Successfully seeded request categories.');
     } catch (error) {
         console.error('Error seeding request categories:', error);
     }
