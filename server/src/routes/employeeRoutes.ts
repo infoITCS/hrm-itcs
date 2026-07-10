@@ -407,7 +407,8 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                     avatar: emp.avatar,
                     type: 'birthday',
                     date: dateStr,
-                    rawDay: emp.dateOfBirth.getDate()
+                    rawDay: emp.dateOfBirth.getDate(),
+                    rawMonth: emp.dateOfBirth.getMonth() + 1
                 });
             }
 
@@ -422,7 +423,8 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                         type: 'anniversary',
                         yearsCompleted,
                         date: dateStr,
-                        rawDay: emp.jobInfo.joiningDate.getDate()
+                        rawDay: emp.jobInfo.joiningDate.getDate(),
+                        rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
                     });
                 }
             }
@@ -437,7 +439,9 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
             avatar: s.avatar,
             type: s.type,
             yearsCompleted: s.yearsCompleted,
-            date: s.date
+            date: s.date,
+            day: s.rawDay,
+            month: s.rawMonth
         })));
     } catch (err: any) {
         res.status(500).json({ message: err.message });

@@ -173,12 +173,17 @@ const Dashboard = () => {
                 });
                 if (highlightsRes2.ok) {
                     const specialData = await highlightsRes2.json();
+                    const today = new Date();
+                    const currentDay = today.getDate();
+                    const currentMonth = today.getMonth() + 1;
+
                     const items2 = specialData.map((s: any) => ({
                         id: s.id,
                         type: s.type,
                         name: s.name,
                         years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
                         date: s.date || 'Today',
+                        isToday: s.day === currentDay && s.month === currentMonth,
                         icon: s.type === 'birthday' ? Cake : Award,
                         color: s.type === 'birthday' ? 'text-rose-500' : 'text-amber-500',
                         bg: s.type === 'birthday' ? 'bg-rose-50' : 'bg-amber-50'
@@ -561,13 +566,15 @@ const Dashboard = () => {
                                 <div className="min-w-0">
                                     <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
                                     <p className="text-xs text-slate-500 font-medium capitalize">
-                                        {item.type === 'anniversary' ? `Work Anniversary • ${item.years}` :
-                                            item.type === 'birthday' ? 'Happy Birthday! 🎂' :
-                                                `${item.role || 'New Joiner'}`}
+                                        {item.type === 'anniversary' ? (
+                                            item.isToday ? `Happy Work Anniversary! 🎉 (${item.years})` : `Work Anniversary • ${item.years}`
+                                        ) : item.type === 'birthday' ? (
+                                            item.isToday ? 'Happy Birthday! 🎂' : 'Birthday'
+                                        ) : `${item.role || 'New Joiner'}`}
                                     </p>
                                 </div>
                                 <div className="ml-auto text-[10px] font-bold text-indigo-650 bg-indigo-50 px-2 py-1 rounded-md uppercase">
-                                    {item.date}
+                                    {item.isToday ? 'Today' : item.date}
                                 </div>
                             </div>
                         ))}
