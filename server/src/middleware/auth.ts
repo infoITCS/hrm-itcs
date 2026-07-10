@@ -59,6 +59,8 @@ export const authenticateFile = (req: Request, res: Response, next: NextFunction
     }
 
     // Fall back to ?token= query parameter (browser <img src="...?token=...">)
+    // ponytail: JWT in URL — visible in server access logs, browser history, and Referer headers.
+    // Upgrade path: signed short-lived one-time tokens (e.g. signed S3-style presigned URLs) if log exposure becomes a concern.
     if (!token && req.query.token) {
         token = req.query.token as string;
     }

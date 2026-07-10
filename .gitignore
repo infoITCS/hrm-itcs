@@ -47,3 +47,6 @@ hrm_final_dump.json
 # Test/Coverage
 coverage/
 clover.xml
+
+# Antigravity/Agent config and skills
+.agents/

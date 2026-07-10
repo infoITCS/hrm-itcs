@@ -126,7 +126,7 @@ router.post('/users', authenticate, requireAdmin, async (req: Request, res: Resp
             details: { email: newUser.email, role: newUser.role }
         });
 
-        res.status(201).json(newUser);
+        res.status(201).json({ ...newUser.toObject(), password: undefined });
     } catch (error) {
         next(error);
     }

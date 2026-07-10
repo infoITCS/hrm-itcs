@@ -7,7 +7,6 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import crypto from "crypto";
 import { sendPasswordResetEmail } from "../utils/email";
 import AuditLog from "../models/AuditLog";
-import { z } from "zod";
 import logger from '../utils/logger';
 
 

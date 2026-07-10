@@ -43,10 +43,9 @@ const UserSchema: Schema = new Schema({
 UserSchema.pre<IUser>('save', async function (next) {
     if (!this.isModified('password') || !this.password) return next();
     try {
-        // Only hash if it's not already a bcrypt hash (bcrypt hashes start with $2a$, $2b$, or $2y$ and are 60 chars long)
-        if (this.password.startsWith('$2') && this.password.length === 60) {
-            return next();
-        }
+        // Use bcrypt.getRounds() to reliably detect already-hashed values.
+        // It throws a non-hash-format error if the string is plaintext — safe to hash then.
+        try { bcrypt.getRounds(this.password); return next(); } catch { /* not a hash — fall through to hash it */ }
         const salt = await bcrypt.genSalt(10);
         this.password = await bcrypt.hash(this.password, salt);
         next();
@@ -54,6 +53,7 @@ UserSchema.pre<IUser>('save', async function (next) {
         next(error as Error);
     }
 });
+
 
 UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
     if (!this.password) return false;

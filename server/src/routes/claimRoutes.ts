@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import ExpenseClaim, { type ExpenseClaimApprovalStage } from '../models/ExpenseClaim';
 import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
+import Counter from '../models/Counter';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendHRNotificationEmail, sendExpenseClaimSubmittedEmail, sendExpenseClaimStatusEmail } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
@@ -64,11 +65,12 @@ function decodeReceipts(receipts?: ReceiptInput[]) {
 
 async function generateClaimNo(): Promise<string> {
     const year = new Date().getFullYear();
-    const prefix = `EC-${year}-`;
-    const last = await ExpenseClaim.findOne({ claimNo: { $regex: `^${prefix}` } }).sort({ createdAt: -1 }).lean() as any;
-    const lastSeq = last?.claimNo?.startsWith(prefix) ? parseInt(last.claimNo.slice(prefix.length), 10) : 0;
-    const next = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
-    return `${prefix}${String(next).padStart(4, '0')}`;
+    const counter = await Counter.findOneAndUpdate(
+        { key: `claimNo_${year}` },
+        { $inc: { seq: 1 } },
+        { upsert: true, new: true }
+    );
+    return `EC-${year}-${String(counter.seq).padStart(4, '0')}`;
 }
 
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {

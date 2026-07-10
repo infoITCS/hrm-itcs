@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import PayrollRun from '../models/PayrollRun';
 import Payslip from '../models/Payslip';
 import Employee from '../models/Employee';
+import Counter from '../models/Counter';
 
 const router = express.Router();
 
@@ -22,19 +23,21 @@ const MONTH_NAMES = [
 
 /** Auto-generate a human-readable payslip number: PS-YYYY-MM-XXXX */
 async function generatePayslipNo(year: number, month: number): Promise<string> {
-    const prefix = `PS-${year}-${String(month).padStart(2, '0')}-`;
-    const last = await Payslip.findOne({ payslipNo: { $regex: `^${prefix}` } })
-        .sort({ createdAt: -1 })
-        .lean() as any;
-    const lastSeq = last?.payslipNo?.startsWith(prefix)
-        ? parseInt(last.payslipNo.slice(prefix.length), 10)
-        : 0;
-    const next = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
-    return `${prefix}${String(next).padStart(4, '0')}`;
+    const key = `payslipNo_${year}_${String(month).padStart(2, '0')}`;
+    const counter = await Counter.findOneAndUpdate(
+        { key },
+        { $inc: { seq: 1 } },
+        { upsert: true, new: true }
+    );
+    return `PS-${year}-${String(month).padStart(2, '0')}-${String(counter.seq).padStart(4, '0')}`;
 }
 
 // Temporary endpoint to clean up orphaned payslips from deleted payroll runs
-router.get('/cleanup-orphans', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/cleanup-orphans', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    if (!isAdmin(authReq.user!.role)) {
+        return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+    }
     try {
         const runs = await PayrollRun.find().select('_id').lean();
         const validRunIds = runs.map((r: any) => r._id);
@@ -316,14 +319,14 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         // Delete any previously generated payslips for this run
         await Payslip.deleteMany({ payrollRunId: runId });
 
+        const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
+        const counter = await Counter.findOneAndUpdate(
+            { key: counterKey },
+            { $inc: { seq: employees.length } },
+            { upsert: true, new: true }
+        );
+        let nextSeq = counter.seq - employees.length + 1;
         const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
-        const last = await Payslip.findOne({ payslipNo: { $regex: `^${prefix}` } })
-            .sort({ createdAt: -1 })
-            .lean() as any;
-        const lastSeq = last?.payslipNo?.startsWith(prefix)
-            ? parseInt(last.payslipNo.slice(prefix.length), 10)
-            : 0;
-        let nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
 
         const payslips = [];
         for (const emp of employees) {

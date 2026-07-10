@@ -119,8 +119,8 @@ router.get('/today', authenticate, async (req: Request, res: Response, next: Nex
         const employees = await mongoose.model('Employee').find({ 
             $or: [
                 { employeeId: { $in: employeeIds } },
-                { _id: { $in: employeeIds.filter((id: string) => id && id.length === 24) } },
-                { userId: { $in: employeeIds.filter((id: string) => id && id.length === 24) } }
+                        { _id: { $in: employeeIds.filter((id: string) => id && mongoose.isValidObjectId(id)) } },
+                { userId: { $in: employeeIds.filter((id: string) => id && mongoose.isValidObjectId(id)) } }
             ]
         }).select('_id employeeId userId firstName lastName avatar').lean();
 
@@ -451,8 +451,8 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
         const employees = await mongoose.model('Employee').find({ 
             $or: [
                 { employeeId: { $in: employeeIds } },
-                { _id: { $in: employeeIds.filter(id => id.length === 24) } },
-                { userId: { $in: employeeIds.filter(id => id.length === 24) } }
+                { _id: { $in: employeeIds.filter(id => mongoose.isValidObjectId(id)) } },
+                { userId: { $in: employeeIds.filter(id => mongoose.isValidObjectId(id)) } }
             ]
         }).select('_id employeeId userId firstName lastName avatar').lean();
 
@@ -713,6 +713,10 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
         if (user.userId === leave.employeeId && user.role !== 'super-admin') {
             return res.status(403).json({ message: 'Cannot approve/reject your own leave' });
         }
+        // Also block if this manager submitted the leave on behalf of the employee
+        if (leave.appliedBy && leave.appliedBy === user.userId && user.role !== 'super-admin') {
+            return res.status(403).json({ message: 'Cannot approve/reject a leave you submitted' });
+        }
         if (leave.status !== 'Pending') {
             return res.status(400).json({ message: 'Leave request is already processed' });
         }
@@ -748,7 +752,8 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                     
                     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                         isSandwiched = true;
-                    } else {
+                    } else if (leaveType?.sandwichRuleEnabled !== false) {
+                        // Only count sandwiched weekends if the leave type has sandwich rule enabled
                         let hasBefore = false;
                         let hasAfter = false;
                         for (let j = 0; j < i; j++) {

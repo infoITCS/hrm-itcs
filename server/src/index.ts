@@ -48,7 +48,6 @@ import employeeRoutes from './routes/employeeRoutes';
 import auditRoutes from './routes/auditRoutes';
 import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
-import aiRoutes from './routes/aiRoutes';
 import orgConfigRoutes from './routes/orgConfigRoutes';
 // NEW: Clean modular attendance routes (v2 — side-by-side testing)
 import attendanceV2Routes from './modules/attendance/attendance.routes';
@@ -364,7 +363,6 @@ prefixes.forEach(p => {
     app.use(`${p}/audit-logs`, auditRoutes);
     app.use(`${p}/admin`, adminRoutes);
     app.use(`${p}/auth`, authLimiter, authRoutes);
-    app.use(`${p}/ai`, aiRoutes);
     app.use(`${p}/config`, orgConfigRoutes);
     app.use(`${p}/v2/attendance`, attendanceV2Routes);
     app.use(`${p}/claims`, claimRoutes);
