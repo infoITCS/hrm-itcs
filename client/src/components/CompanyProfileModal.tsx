@@ -1,5 +1,6 @@
 import { X, Download, FileText } from 'lucide-react';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface CompanyProfileModalProps {
     isOpen: boolean;
@@ -11,7 +12,7 @@ const CompanyProfileModal = ({ isOpen, onClose }: CompanyProfileModalProps) => {
 
     if (!isOpen) return null;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[99999] flex flex-col bg-slate-900 w-screen h-screen overflow-hidden animate-fadeIn">
             {/* Header Toolbar */}
             <div className="bg-slate-950 px-5 py-3 flex items-center justify-between text-white border-b border-slate-800 shrink-0 shadow-md">
@@ -71,7 +72,8 @@ const CompanyProfileModal = ({ isOpen, onClose }: CompanyProfileModalProps) => {
                     onLoad={() => setLoading(false)}
                 />
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
