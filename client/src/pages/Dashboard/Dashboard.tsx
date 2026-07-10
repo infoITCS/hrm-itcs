@@ -607,51 +607,7 @@ const Dashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Right/Side Widget: Today's Leaves */}
-                <div className="lg:col-span-1 flex flex-col gap-6">
-                    <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
-                                <Calendar size={20} />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800">On Leave Today</h3>
-                                <p className="text-xs text-slate-500 font-medium">{todayLeaves.length} {todayLeaves.length === 1 ? 'employee' : 'employees'} out</p>
-                            </div>
-                        </div>
-
-                        {todayLeaves.length > 0 ? (
-                            <div className="space-y-4">
-                                {todayLeaves.map((leave, idx) => (
-                                    <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                                        <Avatar 
-                                            src={getAvatarUrl(leave.avatar)} 
-                                            name={leave.employeeName} 
-                                            size="w-10 h-10"
-                                            initialsClassName="bg-indigo-600 text-xs" 
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                            <p className="font-bold text-sm text-slate-800 truncate">{leave.employeeName}</p>
-                                            <p className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
-                                                {leave.type}{leave.type.toLowerCase().includes('leave') ? '' : ' Leave'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-8">
-                                <div className="w-12 h-12 bg-indigo-100 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <Users size={24} />
-                                </div>
-                                <p className="text-sm font-bold text-slate-600">Everyone's Here!</p>
-                                <p className="text-xs text-slate-400 mt-1">No one is on leave today.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Activity or Manager Widgets */}
+                {/* Main Content Area (Left/Center) */}
                 <div className="lg:col-span-2 flex flex-col gap-6">
                     {role === 'manager' && (
                         <>
@@ -835,8 +791,51 @@ const Dashboard = () => {
                     )}
                 </div>
 
-                {/* Quick Links */}
-                <div>
+                {/* Sidebar Area (Right) */}
+                <div className="lg:col-span-1 flex flex-col gap-6">
+                    {/* Today's Leaves Widget */}
+                    <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
+                                <Calendar size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">On Leave Today</h3>
+                                <p className="text-xs text-slate-500 font-medium">{todayLeaves.length} {todayLeaves.length === 1 ? 'employee' : 'employees'} out</p>
+                            </div>
+                        </div>
+
+                        {todayLeaves.length > 0 ? (
+                            <div className="space-y-4">
+                                {todayLeaves.map((leave, idx) => (
+                                    <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                        <Avatar 
+                                            src={getAvatarUrl(leave.avatar)} 
+                                            name={leave.employeeName} 
+                                            size="w-10 h-10"
+                                            initialsClassName="bg-indigo-600 text-xs" 
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-bold text-sm text-slate-800 truncate">{leave.employeeName}</p>
+                                            <p className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
+                                                {leave.type}{leave.type.toLowerCase().includes('leave') ? '' : ' Leave'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8">
+                                <div className="w-12 h-12 bg-indigo-100 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Users size={24} />
+                                </div>
+                                <p className="text-sm font-bold text-slate-600">Everyone's Here!</p>
+                                <p className="text-xs text-slate-400 mt-1">No one is on leave today.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Quick Links Widget */}
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
                         <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
                             <LayoutDashboard size={20} className="text-indigo-500" />
