@@ -322,6 +322,24 @@ const PayrollRunDetail = () => {
         );
     };
 
+    const handleDeleteRun = async () => {
+        triggerConfirm(
+            'Delete Payroll Run?',
+            `Are you sure you want to delete "${run?.title}"? All associated payslips will be permanently deleted. This action cannot be undone.`,
+            async () => {
+                setActionLoading('delete');
+                try {
+                    await axios.delete(api.payrollRun(id!), authHeader);
+                    navigate('/payroll');
+                } catch (err: any) {
+                    triggerError('Failed to Delete', err.response?.data?.message || 'Failed to delete payroll run.');
+                } finally {
+                    setActionLoading(null);
+                }
+            }
+        );
+    };
+
     const fmt = (val: number, cur = run?.currency || 'PKR') =>
         new Intl.NumberFormat('en-PK', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(val);
 
@@ -401,6 +419,13 @@ const PayrollRunDetail = () => {
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 transition-all disabled:opacity-60">
                             {actionLoading === 'disburse' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                             Mark Disbursed
+                        </button>
+                    )}
+                    {run.status !== 'Disbursed' && (
+                        <button id="btn-delete-run" onClick={handleDeleteRun} disabled={!!actionLoading}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors disabled:opacity-60">
+                            {actionLoading === 'delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                            Delete Run
                         </button>
                     )}
                 </div>

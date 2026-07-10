@@ -376,59 +376,69 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response,
     }
 });
 
-// Get today's birthdays and anniversaries
+// Get today's birthdays and anniversaries (now updated to return all for the current month)
 router.get('/today-specials', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const today = new Date();
         const currentMonth = today.getMonth() + 1; // 1-12
-        const currentDay = today.getDate();
 
-        // MongoDB aggregation to find employees with birthdays or joining today
+        // MongoDB aggregation to find employees with birthdays or joining in this month
         const employees = await Employee.find({
             $or: [
                 {
-                    $expr: {
-                        $and: [
-                            { $eq: [{ $month: "$dateOfBirth" }, currentMonth] },
-                            { $eq: [{ $dayOfMonth: "$dateOfBirth" }, currentDay] }
-                        ]
-                    }
+                    $expr: { $eq: [{ $month: "$dateOfBirth" }, currentMonth] }
                 },
                 {
-                    $expr: {
-                        $and: [
-                            { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] },
-                            { $eq: [{ $dayOfMonth: "$jobInfo.joiningDate" }, currentDay] }
-                        ]
-                    }
+                    $expr: { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] }
                 }
             ]
         }).select('firstName lastName employeeId avatar dateOfBirth jobInfo.joiningDate');
 
-        const specials = employees.map(emp => {
-            const isBirthday = emp.dateOfBirth && 
-                             (emp.dateOfBirth.getMonth() + 1 === currentMonth) && 
-                             (emp.dateOfBirth.getDate() === currentDay);
-            
-            const isAnniversary = emp.jobInfo?.joiningDate && 
-                                (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth) && 
-                                (emp.jobInfo.joiningDate.getDate() === currentDay);
+        const specials: any[] = [];
+        for (const emp of employees) {
+            const isBirthdayInMonth = emp.dateOfBirth && (emp.dateOfBirth.getMonth() + 1 === currentMonth);
+            const isAnniversaryInMonth = emp.jobInfo?.joiningDate && (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth);
 
-            let yearsCompleted = 0;
-            if (isAnniversary && emp.jobInfo?.joiningDate) {
-                yearsCompleted = today.getFullYear() - emp.jobInfo.joiningDate.getFullYear();
+            if (isBirthdayInMonth && emp.dateOfBirth) {
+                const dateStr = emp.dateOfBirth.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                specials.push({
+                    id: `${emp.employeeId}-birthday`,
+                    name: `${emp.firstName} ${emp.lastName}`,
+                    avatar: emp.avatar,
+                    type: 'birthday',
+                    date: dateStr,
+                    rawDay: emp.dateOfBirth.getDate()
+                });
             }
 
-            return {
-                id: emp.employeeId,
-                name: `${emp.firstName} ${emp.lastName}`,
-                avatar: emp.avatar,
-                type: isBirthday ? 'birthday' : 'anniversary',
-                yearsCompleted: isAnniversary ? yearsCompleted : undefined
-            };
-        });
+            if (isAnniversaryInMonth && emp.jobInfo?.joiningDate) {
+                const yearsCompleted = today.getFullYear() - emp.jobInfo.joiningDate.getFullYear();
+                if (yearsCompleted > 0) {
+                    const dateStr = emp.jobInfo.joiningDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                    specials.push({
+                        id: `${emp.employeeId}-anniversary`,
+                        name: `${emp.firstName} ${emp.lastName}`,
+                        avatar: emp.avatar,
+                        type: 'anniversary',
+                        yearsCompleted,
+                        date: dateStr,
+                        rawDay: emp.jobInfo.joiningDate.getDate()
+                    });
+                }
+            }
+        }
 
-        res.json(specials.filter(s => s.type === 'birthday' || (s.type === 'anniversary' && s.yearsCompleted! > 0)));
+        // Sort chronologically by the day of the month
+        specials.sort((a, b) => a.rawDay - b.rawDay);
+
+        res.json(specials.map(s => ({
+            id: s.id,
+            name: s.name,
+            avatar: s.avatar,
+            type: s.type,
+            yearsCompleted: s.yearsCompleted,
+            date: s.date
+        })));
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }

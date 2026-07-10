@@ -33,6 +33,23 @@ async function generatePayslipNo(year: number, month: number): Promise<string> {
     return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
+// Temporary endpoint to clean up orphaned payslips from deleted payroll runs
+router.get('/cleanup-orphans', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const runs = await PayrollRun.find().select('_id').lean();
+        const validRunIds = runs.map((r: any) => r._id);
+        const result = await Payslip.deleteMany({
+            payrollRunId: { $nin: validRunIds }
+        });
+        return res.json({
+            message: `Successfully deleted ${result.deletedCount} orphaned payslips.`,
+            validRunIds
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN: Payroll Run CRUD
 // ─────────────────────────────────────────────────────────────────────────────
@@ -317,6 +334,30 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 type: sc.type || 'fixed',
             }));
 
+            // Check if employee's work anniversary falls in the run period month
+            let hasAnniversaryInMonth = false;
+            let yearsCompleted = 0;
+            if (emp.jobInfo?.joiningDate) {
+                const joiningDate = new Date(emp.jobInfo.joiningDate);
+                const joiningMonth = joiningDate.getMonth() + 1; // 1-12
+                const joiningYear = joiningDate.getFullYear();
+
+                if (joiningMonth === run.periodMonth && joiningYear < run.periodYear) {
+                    hasAnniversaryInMonth = true;
+                    yearsCompleted = run.periodYear - joiningYear;
+                }
+            }
+
+            let notes = '';
+            if (hasAnniversaryInMonth) {
+                earnings.push({
+                    component: 'Anniversary Bonus',
+                    amount: 0, // Placeholder to be filled manually
+                    type: 'fixed'
+                });
+                notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
+            }
+
             const grossPay = earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
             const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
             nextSeq++;
@@ -335,6 +376,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 netPay: grossPay,
                 status: 'Draft',
                 paymentMethod: 'Bank Transfer',
+                notes: notes || undefined,
             });
         }
 
@@ -419,22 +461,22 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
 
 /**
  * @route   DELETE /api/payroll/:runId
- * @desc    Delete a Draft payroll run and all its payslips
- * @access  super-admin only
+ * @desc    Delete a payroll run and all its payslips (if not yet disbursed)
+ * @access  admin, super-admin
  */
 router.delete('/:runId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        if (authReq.user!.role !== 'super-admin') {
-            return res.status(403).json({ message: 'Forbidden. Super Admin access required.' });
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
 
         const run = await PayrollRun.findById(req.params.runId);
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
-        if (run.status !== 'Draft') {
+        if (run.status === 'Disbursed') {
             return res.status(400).json({
-                message: `Only Draft runs can be deleted. Current status: "${run.status}".`,
+                message: `Paid/Disbursed payroll runs cannot be deleted.`,
             });
         }
 

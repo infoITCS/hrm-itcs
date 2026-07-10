@@ -178,15 +178,15 @@ const Dashboard = () => {
                         type: s.type,
                         name: s.name,
                         years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
-                        date: 'Today',
+                        date: s.date || 'Today',
                         icon: s.type === 'birthday' ? Cake : Award,
                         color: s.type === 'birthday' ? 'text-rose-500' : 'text-amber-500',
                         bg: s.type === 'birthday' ? 'bg-rose-50' : 'bg-amber-50'
                     }));
                     if (items2.length === 0) {
-                        items2.push({ id: 'empty', type: 'info', name: 'No special events today', role: 'Quiet day!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                        items2.push({ id: 'empty', type: 'info', name: 'No special events this month', role: 'Quiet month!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
                     }
-                    setHighlights(items2.slice(0, 3));
+                    setHighlights(items2.slice(0, 6));
                 }
 
                 // Fetch Today's Leaves
@@ -529,40 +529,50 @@ const Dashboard = () => {
                             <Sparkles size={20} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-800 tracking-tight">Today's Highlights</h2>
-                            <p className="text-sm text-slate-500 font-medium">Don't forget to celebrate with your team!</p>
+                            <h2 className="text-xl font-bold text-slate-800 tracking-tight">This Month's Highlights</h2>
+                            <p className="text-sm text-slate-500 font-medium">Teammate celebrations for the current month</p>
                         </div>
                     </div>
                     <div className="hidden sm:block">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
-                            {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                            {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                         </span>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
-                    {highlights.map((item) => (
-                        <div
-                            key={item.id}
-                            className="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:border-indigo-100 hover:bg-slate-50/50 transition-all group cursor-pointer"
-                        >
-                            <div className={`p-3 rounded-xl ${item.bg} ${item.color} group-hover:scale-110 transition-transform`}>
-                                <item.icon size={22} />
-                            </div>
-                            <div className="min-w-0">
-                                <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
-                                <p className="text-xs text-slate-500 font-medium capitalize">
-                                    {item.type === 'anniversary' ? `Work Anniversary • ${item.years}` :
-                                        item.type === 'birthday' ? 'Happy Birthday! 🎂' :
-                                            `${item.role} • New Joiner`}
-                                </p>
-                            </div>
-                            <div className="ml-auto text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md uppercase">
-                                {item.date}
-                            </div>
+                {highlights.length === 1 && highlights[0].id === 'empty' ? (
+                    <div className="text-center py-8 border border-dashed border-slate-100 rounded-2xl bg-slate-50/30 relative z-10 select-none">
+                        <div className="w-12 h-12 bg-indigo-50 text-indigo-500 border border-indigo-100/50 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+                            <Sparkles size={24} />
                         </div>
-                    ))}
-                </div>
+                        <p className="text-sm font-bold text-slate-700">Quiet Month!</p>
+                        <p className="text-xs text-slate-400 mt-1">No employee birthdays or work anniversaries this month.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
+                        {highlights.map((item) => (
+                            <div
+                                key={item.id}
+                                className="flex items-center gap-4 p-4 rounded-2xl border border-slate-50 hover:border-indigo-100 hover:bg-slate-50/50 transition-all group cursor-pointer"
+                            >
+                                <div className={`p-3 rounded-xl ${item.bg} ${item.color} group-hover:scale-110 transition-transform`}>
+                                    <item.icon size={22} />
+                                </div>
+                                <div className="min-w-0">
+                                    <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
+                                    <p className="text-xs text-slate-500 font-medium capitalize">
+                                        {item.type === 'anniversary' ? `Work Anniversary • ${item.years}` :
+                                            item.type === 'birthday' ? 'Happy Birthday! 🎂' :
+                                                `${item.role || 'New Joiner'}`}
+                                    </p>
+                                </div>
+                                <div className="ml-auto text-[10px] font-bold text-indigo-650 bg-indigo-50 px-2 py-1 rounded-md uppercase">
+                                    {item.date}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Stats Grid */}
