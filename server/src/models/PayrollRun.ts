@@ -13,6 +13,7 @@ export interface IPayrollRun extends Document {
     approvedBy?: string;     // userId
     approvedAt?: Date;
     disbursedAt?: Date;
+    erpReferenceId?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -34,6 +35,7 @@ const PayrollRunSchema: Schema = new Schema(
         approvedBy: { type: String },                  // userId
         approvedAt: { type: Date },
         disbursedAt: { type: Date },
+        erpReferenceId: { type: String }
     },
     { timestamps: true }
 );

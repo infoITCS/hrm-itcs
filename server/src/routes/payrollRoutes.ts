@@ -420,6 +420,47 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
             { $set: { status: 'Finalized' } }
         );
 
+        // Process Provident Fund contributions for the employees
+        const payslips = await Payslip.find({ payrollRunId: run._id });
+        for (const payslip of payslips) {
+            const employee = await Employee.findOne({ employeeId: payslip.employeeId });
+            if (!employee) continue;
+
+            // Check if payroll contribution already exists for this month/year for this employee
+            const existingPF = employee.providentFundHistory?.some(
+                (pf: any) => pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear
+            );
+
+            if (!existingPF) {
+                // Determine base salary for PF calculation (Basic Salary or grossPay fallback)
+                const basicSalaryComponent = employee.salaryComponents?.find(
+                    (c: any) => c.component === 'Basic Salary' || c.component === 'Basic'
+                );
+                const baseAmount = basicSalaryComponent ? basicSalaryComponent.amount : payslip.grossPay;
+                const pfContribution = Math.round(baseAmount * 0.15);
+
+                if (pfContribution > 0) {
+                    const historyEntry = {
+                        amount: pfContribution,
+                        type: 'credit',
+                        source: 'payroll',
+                        date: new Date(),
+                        description: `Payroll Contribution - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`,
+                        periodMonth: run.periodMonth,
+                        periodYear: run.periodYear,
+                        payrollRunId: run._id.toString()
+                    };
+
+                    if (!employee.providentFundHistory) {
+                        employee.providentFundHistory = [];
+                    }
+                    employee.providentFundHistory.push(historyEntry as any);
+                    employee.providentFundBalance = (employee.providentFundBalance || 0) + pfContribution;
+                    await employee.save();
+                }
+            }
+        }
+
         run.status = 'Approved';
         run.approvedBy = authReq.user!.userId;
         (run as any).approvedAt = new Date();
@@ -452,8 +493,13 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
             });
         }
 
+        const { erpReferenceId } = req.body || {};
+
         run.status = 'Disbursed';
         run.disbursedAt = new Date();
+        if (erpReferenceId !== undefined) {
+            run.erpReferenceId = erpReferenceId;
+        }
         await run.save();
 
         return res.json(run);

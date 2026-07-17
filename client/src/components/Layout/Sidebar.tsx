@@ -12,6 +12,7 @@ import {
     Settings,
     DollarSign,
     Banknote,
+    PiggyBank,
     // Shield,
     X,
     ScanFace,
@@ -49,6 +50,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Payroll', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'manager', 'employee'] },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin'] },
+        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin'] },
     ];
 
     const menuItems = allMenuItems.filter(item => item.roles.includes(role));

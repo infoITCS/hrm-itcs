@@ -100,6 +100,7 @@ const ExpenseClaimSchema = new Schema(
             default: 'Submitted',
             index: true,
         },
+        erpReferenceId: { type: String },
 
         eligibility: {
             eligible: { type: Boolean, default: true },

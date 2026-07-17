@@ -35,6 +35,7 @@ import AdminRequests from './pages/MyRequests/AdminRequests';
 import DocumentVerification from './pages/DocumentVerification/DocumentVerification';
 import PayrollDashboard from './pages/Payroll/PayrollDashboard';
 import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
+import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -126,6 +127,7 @@ function AppRoutes() {
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="zkt-monitor" element={<V2ZktMonitor />} />
           <Route path="payroll/runs/:id" element={<PayrollRunDetail />} />
+          <Route path="provident-fund" element={<ProvidentFundReport />} />
         </Route>
 
         {/* Restricted to Admins & Managers */}

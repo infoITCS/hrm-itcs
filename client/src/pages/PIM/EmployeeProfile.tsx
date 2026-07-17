@@ -709,15 +709,79 @@ const EmployeeProfile = () => {
                         </div>
 
                         {/* Provident Fund Balance */}
-                        <div className="pt-8 border-t border-slate-100">
+                        <div className="pt-8 border-t border-slate-100 animate-fadeIn">
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                                 <Banknote size={16} className="text-emerald-500" /> Provident Fund Details
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
                                 <Field 
                                     label="Current PF Balance" 
                                     value={employee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(employee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0'} 
                                 />
+                            </div>
+
+                            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-sm">
+                                        <thead>
+                                            <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
+                                                <th className="px-6 py-3">Date</th>
+                                                <th className="px-6 py-3">Description</th>
+                                                <th className="px-6 py-3">Source</th>
+                                                <th className="px-6 py-3">Type</th>
+                                                <th className="px-6 py-3 text-right">Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                                            {employee.providentFundHistory?.length > 0 ? (
+                                                [...employee.providentFundHistory]
+                                                    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                    .map((entry: any, index: number) => (
+                                                        <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                                                            <td className="px-6 py-4 text-xs text-slate-400">
+                                                                {new Date(entry.date).toLocaleString()}
+                                                            </td>
+                                                            <td className="px-6 py-4 font-semibold text-slate-800">
+                                                                {entry.description}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                                    entry.source === 'payroll' 
+                                                                        ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                                                                        : 'bg-amber-50 text-amber-600 border-amber-100'
+                                                                }`}>
+                                                                    {entry.source}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                    entry.type === 'credit' 
+                                                                        ? 'bg-emerald-50 text-emerald-600' 
+                                                                        : 'bg-rose-50 text-rose-600'
+                                                                }`}>
+                                                                    {entry.type === 'credit' ? '+ Credit' : '- Debit'}
+                                                                </span>
+                                                            </td>
+                                                            <td className={`px-6 py-4 text-right font-black ${
+                                                                entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
+                                                            }`}>
+                                                                Rs. {entry.amount.toLocaleString()}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                                        No contribution history recorded.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
 

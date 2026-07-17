@@ -661,7 +661,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         const role = authReq.user?.role || 'employee';
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-        const { decision, comments, approvedAmount, authorizationBy } = req.body || {};
+        const { decision, comments, approvedAmount, authorizationBy, erpReferenceId } = req.body || {};
         if (!['Approved', 'Declined'].includes(decision)) return res.status(400).json({ message: 'decision must be Approved or Declined' });
 
         const claim = await ExpenseClaim.findById(req.params.id);
@@ -704,6 +704,10 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         pending.comments = comments;
         pending.decidedAt = new Date();
         pending.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        if (erpReferenceId !== undefined) {
+            claim.erpReferenceId = erpReferenceId;
+        }
 
         // Terminal decision
         if (decision === 'Declined') {

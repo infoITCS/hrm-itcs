@@ -3,7 +3,7 @@ import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
-    ChevronDown, ChevronUp
+    ChevronDown, ChevronUp, AlertTriangle
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
@@ -39,6 +39,7 @@ const MyRequests = () => {
     const [selectedOption, setSelectedOption] = useState('');
     const [quantity, setQuantity] = useState(1);
     const [loanAmount, setLoanAmount] = useState('');
+    const [paybackDuration, setPaybackDuration] = useState('');
     const [monthlyDeduction, setMonthlyDeduction] = useState('');
     const [reason, setReason] = useState('');
     
@@ -71,6 +72,9 @@ const MyRequests = () => {
     // Search and filter state
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    
+    // PF Loan Exceeded confirmation
+    const [showLoanConfirm, setShowLoanConfirm] = useState(false);
 
     useEffect(() => {
         fetchRequests();
@@ -158,7 +162,7 @@ const MyRequests = () => {
                 setUploadedFiles(prev => [...prev, { fileId: data.fileId, fileName: data.fileName }]);
             } else {
                 const err = await res.json().catch(() => ({ message: 'Failed to upload file' }));
-                alert(err.message || 'Failed to upload file');
+                triggerAlert('Upload Error', err.message || 'Failed to upload file.', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -203,17 +207,23 @@ const MyRequests = () => {
         }
     };
 
-    const handleSubmitRequest = async () => {
+    const handleSubmitRequest = async (anyways: boolean | React.MouseEvent = false) => {
         if (!activeCategory) return;
+        
+        const shouldProceedAnyways = anyways === true;
         
         // Loan PF Cap Validation
         if (activeCategory.systemType === 'loan') {
             if (!loanAmount || Number(loanAmount) <= 0) {
-                alert('Please enter a valid loan amount');
+                triggerAlert('Validation Error', 'Please enter a valid loan amount.', 'warning');
                 return;
             }
-            if (pfBalance !== null && Number(loanAmount) > pfBalance) {
-                alert(`Requested loan amount (Rs. ${Number(loanAmount).toLocaleString()}) cannot exceed your Provident Fund balance (Rs. ${pfBalance.toLocaleString()}).`);
+            if (!paybackDuration || Number(paybackDuration) <= 0) {
+                triggerAlert('Validation Error', 'Please enter a valid payback duration in months.', 'warning');
+                return;
+            }
+            if (!shouldProceedAnyways && pfBalance !== null && Number(loanAmount) > pfBalance) {
+                setShowLoanConfirm(true);
                 return;
             }
         }
@@ -230,6 +240,7 @@ const MyRequests = () => {
                 details = { 
                     ...details,
                     requestedAmount: Number(loanAmount), 
+                    paybackDuration: Number(paybackDuration),
                     recommendedMonthlyDeduction: Number(monthlyDeduction) 
                 };
             } else {
@@ -257,7 +268,7 @@ const MyRequests = () => {
                 setShowModal(false);
                 fetchRequests();
             } else {
-                alert('Failed to submit request');
+                triggerAlert('Submission Error', 'Failed to submit request. Please try again.', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -276,7 +287,7 @@ const MyRequests = () => {
             if (res.ok) {
                 fetchRequests();
             } else {
-                alert('Failed to cancel request');
+                triggerAlert('Cancellation Error', 'Failed to cancel request.', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -325,6 +336,7 @@ const MyRequests = () => {
                                 setSelectedOption(visibleOptions[0] || '');
                                 setQuantity(1);
                                 setLoanAmount('');
+                                setPaybackDuration('');
                                 setMonthlyDeduction('');
                                 setReason('');
                                 setUploadedFiles([]);
@@ -428,6 +440,12 @@ const MyRequests = () => {
                                 {(req.category === 'Loan' || req.category === 'Request Loan') && (
                                     <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
                                         <div className="flex justify-between mb-1"><span className="text-gray-500">Amount</span><span className="font-medium">Rs. {req.details?.requestedAmount?.toLocaleString()}</span></div>
+                                        {req.details?.paybackDuration && (
+                                            <div className="flex justify-between mb-1">
+                                                <span className="text-gray-500">Duration</span>
+                                                <span className="font-medium">{req.details.paybackDuration} Months</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between"><span className="text-gray-500">Monthly Deduction</span><span className="font-medium">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}</span></div>
                                     </div>
                                 )}
@@ -498,28 +516,66 @@ const MyRequests = () => {
                                                 Rs. {pfBalance !== null ? pfBalance.toLocaleString() : 'Loading...'}
                                             </strong>
                                         </div>
-                                        <span className="text-[10px] opacity-80">Loan requests cannot exceed this balance limit.</span>
+                                        <span className="text-[10px] opacity-80">Loan requests exceeding this balance will require special approval.</span>
                                     </div>
+                                    {pfBalance !== null && loanAmount && Number(loanAmount) > pfBalance && (
+                                        <div className="bg-rose-50 text-rose-700 text-xs px-3.5 py-2.5 rounded-xl border border-rose-100 font-semibold flex items-center gap-1.5 animate-pulse">
+                                            <AlertTriangle size={14} className="text-rose-500 shrink-0" />
+                                            <span>Warning: Requested amount exceeds your Provident Fund balance.</span>
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Requested Loan Amount (Rs.)</label>
                                         <input 
                                             type="number" 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
                                             value={loanAmount}
-                                            onChange={(e) => setLoanAmount(e.target.value)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setLoanAmount(val);
+                                                if (paybackDuration) {
+                                                    const amt = Number(val);
+                                                    const dur = Number(paybackDuration);
+                                                    if (dur > 0) {
+                                                        setMonthlyDeduction(Math.round(amt / dur).toString());
+                                                    }
+                                                }
+                                            }}
                                             placeholder="e.g. 50000"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Recommended Monthly Deduction (Rs.)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Payback Duration (Months)</label>
                                         <input 
                                             type="number" 
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
-                                            value={monthlyDeduction}
-                                            onChange={(e) => setMonthlyDeduction(e.target.value)}
-                                            placeholder="e.g. 5000"
+                                            value={paybackDuration}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setPaybackDuration(val);
+                                                if (loanAmount) {
+                                                    const amt = Number(loanAmount);
+                                                    const dur = Number(val);
+                                                    if (dur > 0) {
+                                                        setMonthlyDeduction(Math.round(amt / dur).toString());
+                                                    } else {
+                                                        setMonthlyDeduction('');
+                                                    }
+                                                }
+                                            }}
+                                            placeholder="e.g. 12"
+                                            min="1"
                                         />
-                                        <p className="text-xs text-gray-500 mt-1">HR will review this deduction amount against your salary.</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Calculated Monthly Installment (Rs.)</label>
+                                        <input 
+                                            type="text" 
+                                            disabled
+                                            className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg outline-none text-gray-500 font-medium"
+                                            value={monthlyDeduction ? Number(monthlyDeduction).toLocaleString() : '-'}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">This installment will be automatically deducted from your monthly salary.</p>
                                     </div>
                                 </>
                             ) : (
@@ -748,6 +804,12 @@ const MyRequests = () => {
                                         <span className="font-semibold text-gray-900">Rs. {selectedRequest.details.requestedAmount.toLocaleString()}</span>
                                     </div>
                                 )}
+                                {selectedRequest.details?.paybackDuration && (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Payback Duration:</span>
+                                        <span className="font-semibold text-gray-900">{selectedRequest.details.paybackDuration} Months</span>
+                                    </div>
+                                )}
                                 {selectedRequest.details?.recommendedMonthlyDeduction && (
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-500">Monthly Deduction:</span>
@@ -827,6 +889,47 @@ const MyRequests = () => {
                 message={alertConfig.message}
                 type={alertConfig.type}
             />
+
+            {/* Provident Fund Exceeded Confirmation Dialog */}
+            {showLoanConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-rose-100 animate-in fade-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center space-y-4">
+                            <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center mx-auto text-rose-600">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="text-base font-black text-slate-800">PF Balance Exceeded</h3>
+                                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                                    Your requested loan amount (<strong>Rs. {Number(loanAmount).toLocaleString()}</strong>) exceeds your current Provident Fund balance (<strong>Rs. {pfBalance?.toLocaleString()}</strong>).
+                                </p>
+                                <p className="text-[11px] text-rose-500 font-bold bg-rose-50 p-2 rounded-lg mt-2">
+                                    Final approval decision rests with the administrator.
+                                </p>
+                            </div>
+                            <div className="flex gap-2.5 pt-2">
+                                <button
+                                    onClick={() => setShowLoanConfirm(false)}
+                                    className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                                    type="button"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowLoanConfirm(false);
+                                        handleSubmitRequest(true); // Proceed anyways
+                                    }}
+                                    className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm shadow-rose-100"
+                                    type="button"
+                                >
+                                    Apply Anyways
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

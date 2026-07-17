@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, User as UserIcon, Menu, KeyRound, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { ChevronDown, LogOut, User as UserIcon, Menu, KeyRound, AlertCircle, CheckCircle2, X, Bell } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import APIService from '../../services/api';
+import { api } from '../../utils/api';
 import Avatar from '../UI/Avatar';
 
 const Header = ({ title, onMenuClick }: {
@@ -79,6 +80,7 @@ const Header = ({ title, onMenuClick }: {
             {/* Right Side: Icons & Profile */}
             <div className="flex items-center gap-1 sm:gap-2 min-[992px]:gap-4 ml-2 min-[992px]:ml-4 shrink-0">
 
+                {user && <NotificationBell />}
 
                 {/* Vertical Divider */}
                 {user && <div className="h-8 w-px bg-white/20 mx-1"></div>}
@@ -253,5 +255,106 @@ const Header = ({ title, onMenuClick }: {
         </header>
     );
 };
+
+function NotificationBell() {
+    const navigate = useNavigate();
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const fetchNotifications = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/my-requests/notifications`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                setNotifications(await res.json());
+            }
+        } catch (e) {
+            console.error('Failed to fetch notifications', e);
+        }
+    };
+
+    useEffect(() => {
+        fetchNotifications();
+        const interval = setInterval(fetchNotifications, 45000); // refresh every 45s
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowDropdown(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const unreadCount = notifications.filter(n => n.type === 'task').length; // Tasks are pending approvals!
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="p-2 rounded-lg hover:bg-white/10 transition-colors focus:outline-none relative shrink-0 flex items-center justify-center cursor-pointer"
+                aria-label="Notifications"
+            >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 bg-rose-500 text-white font-bold text-[9px] w-4.5 h-4.5 rounded-full border border-indigo-600 flex items-center justify-center animate-pulse">
+                        {unreadCount}
+                    </span>
+                )}
+            </button>
+
+            {showDropdown && (
+                <div className="absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl overflow-hidden z-50 text-gray-800 animate-in fade-in slide-in-from-top-2 border border-slate-100 ring-1 ring-black/5">
+                    <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-100 flex justify-between items-center">
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-500">Notifications & Tasks</span>
+                        {unreadCount > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 rounded-full">
+                                {unreadCount} Pending
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                        {notifications.length === 0 ? (
+                            <div className="p-6 text-center text-slate-400 text-xs italic space-y-1">
+                                <p>No notifications yet.</p>
+                                <p className="text-[10px] text-slate-300 font-normal">Recent requests or task actions will show up here.</p>
+                            </div>
+                        ) : (
+                            notifications.map((notif) => (
+                                <button
+                                    key={notif.id}
+                                    onClick={() => {
+                                        setShowDropdown(false);
+                                        navigate(notif.path);
+                                    }}
+                                    className="w-full px-4 py-3 text-left hover:bg-slate-50/60 transition-colors flex items-start gap-2.5"
+                                >
+                                    <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+                                        notif.type === 'task' ? 'bg-amber-400' :
+                                        notif.type === 'success' ? 'bg-emerald-500' : 'bg-rose-500'
+                                    }`} />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-black text-slate-800">{notif.title}</p>
+                                        <p className="text-[11px] text-slate-500 leading-tight mt-0.5 font-medium">{notif.message}</p>
+                                        <p className="text-[9px] text-slate-400 mt-1 font-medium">
+                                            {new Date(notif.time).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' })} • {new Date(notif.time).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                        </p>
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default Header;

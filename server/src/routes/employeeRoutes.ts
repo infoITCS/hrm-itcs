@@ -7,6 +7,7 @@ const pick = (obj: Record<string, unknown>, keys: string[]): Record<string, unkn
 import fs from 'fs';
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import PDFDocument from 'pdfkit';
 
 import sanitize from 'sanitize-filename';
 import Employee from '../models/Employee';
@@ -449,6 +450,479 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Provident Fund Management
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ponytail: maturity is 36 months from joining date — stored as a constant.
+// To make it org-configurable, move this to OrgConfig and fetch it.
+const PF_MATURITY_MONTHS = 36;
+
+/**
+ * GET /api/employees/pf-report
+ * Returns all employees with their PF balance, history, maturity status, claim status.
+ * Admin/super-admin only.
+ */
+router.get('/pf-report', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    if (role !== 'super-admin' && role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required.' });
+    }
+
+    try {
+        const employees = await Employee.find({ isDeleted: { $ne: true } })
+            .select('employeeId firstName lastName jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
+            .lean();
+
+        const now = new Date();
+        const result = employees.map((emp: any) => {
+            const joiningDate = emp.jobInfo?.joiningDate ? new Date(emp.jobInfo.joiningDate) : null;
+            let monthsOfService = 0;
+            let maturityDate: Date | null = null;
+            if (joiningDate) {
+                const now2 = new Date();
+                monthsOfService =
+                    (now2.getFullYear() - joiningDate.getFullYear()) * 12 +
+                    (now2.getMonth() - joiningDate.getMonth());
+                maturityDate = new Date(joiningDate);
+                maturityDate.setMonth(maturityDate.getMonth() + PF_MATURITY_MONTHS);
+            }
+            const isMatured = maturityDate ? now >= maturityDate : false;
+
+            return {
+                employeeId: emp.employeeId,
+                firstName: emp.firstName,
+                lastName: emp.lastName,
+                designation: emp.jobInfo?.designation,
+                department: emp.jobInfo?.department,
+                joiningDate: emp.jobInfo?.joiningDate,
+                monthsOfService,
+                maturityDate: maturityDate ? maturityDate.toISOString() : null,
+                providentFundBalance: emp.providentFundBalance || 0,
+                providentFundHistory: emp.providentFundHistory || [],
+                pfClaimed: emp.pfClaimed || false,
+                pfClaimedAt: emp.pfClaimedAt || null,
+                isMatured,
+                maturityThresholdMonths: PF_MATURITY_MONTHS
+            };
+        });
+
+        return res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * GET /api/employees/:id/pf-statement-pdf
+ * Generates and downloads a PDF statement of the employee's PF.
+ * Accessed via query token ?token=... for easy browser downloads.
+ */
+router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const employee = await Employee.findOne({ employeeId: req.params.id }).lean() as any;
+        if (!employee) return res.status(404).json({ message: 'Employee not found.' });
+
+        // Check permission: employee can view their own statement, admins can view any
+        const authReq = req as AuthRequest;
+        const role = authReq.user?.role || '';
+        const userId = authReq.user?.userId;
+        const isOwn = employee.userId && employee.userId.toString() === userId;
+        
+        if (!isOwn && role !== 'super-admin' && role !== 'admin') {
+            return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        const now = new Date();
+        const joiningDate = employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+        let monthsOfService = 0;
+        let maturityDate: Date | null = null;
+        if (joiningDate) {
+            monthsOfService =
+                (now.getFullYear() - joiningDate.getFullYear()) * 12 +
+                (now.getMonth() - joiningDate.getMonth());
+            maturityDate = new Date(joiningDate);
+            maturityDate.setMonth(maturityDate.getMonth() + PF_MATURITY_MONTHS);
+        }
+        const isMatured = maturityDate ? now >= maturityDate : false;
+
+        // Calculate credits and debits from history
+        const history = employee.providentFundHistory || [];
+        const totalCredits = history.reduce((sum: number, entry: any) => entry.type === 'credit' ? sum + entry.amount : sum, 0);
+        const totalDebits = history.reduce((sum: number, entry: any) => entry.type === 'debit' ? sum + entry.amount : sum, 0);
+        
+        const fmtPKR_local = (n: number) => `Rs. ${n.toLocaleString('en-PK')}`;
+        const fmtDate_local = (d: Date | string | null | undefined) => {
+            if (!d) return '-';
+            const dateObj = typeof d === 'string' ? new Date(d) : d;
+            return dateObj.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+        const fmtMonths_local = (m: number) => {
+            const yrs = Math.floor(m / 12);
+            const mos = m % 12;
+            const parts = [];
+            if (yrs > 0) parts.push(`${yrs} ${yrs === 1 ? 'year' : 'years'}`);
+            if (mos > 0 || yrs === 0) parts.push(`${mos} ${mos === 1 ? 'month' : 'months'}`);
+            return parts.join(' ');
+        };
+
+        const doc = new PDFDocument({ margin: 50 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="PF_Statement_${employee.employeeId}.pdf"`);
+        doc.pipe(res);
+
+        // --- Document Header ---
+        doc.fontSize(22).font('Helvetica-Bold').fillColor('#4338ca').text('PROVIDENT FUND STATEMENT', { align: 'center' });
+        doc.moveDown(0.2);
+        doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(`Generated on ${new Date().toLocaleDateString('en-PK')}`, { align: 'center' });
+        
+        // Draw divider line
+        doc.moveDown(0.5);
+        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+        doc.moveDown(1);
+
+        // --- Employee Details Section ---
+        const startY = doc.y;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Employee Details');
+        doc.moveDown(0.4);
+        
+        const detailsX1 = 50;
+        const detailsX2 = 300;
+        const currentDetailsY = doc.y;
+        
+        doc.fontSize(10).font('Helvetica');
+        doc.fillColor('#4b5563').text('Name:', detailsX1, currentDetailsY);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(`${employee.firstName} ${employee.lastName || ''}`, detailsX1 + 90, currentDetailsY);
+        
+        doc.font('Helvetica').fillColor('#4b5563').text('Employee ID:', detailsX1, currentDetailsY + 18);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(`#${employee.employeeId}`, detailsX1 + 90, currentDetailsY + 18);
+
+        doc.font('Helvetica').fillColor('#4b5563').text('Designation:', detailsX1, currentDetailsY + 36);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(employee.jobInfo?.designation || 'N/A', detailsX1 + 90, currentDetailsY + 36);
+
+        doc.font('Helvetica').fillColor('#4b5563').text('Department:', detailsX1, currentDetailsY + 54);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(employee.jobInfo?.department || 'N/A', detailsX1 + 90, currentDetailsY + 54);
+
+        // Column 2
+        doc.font('Helvetica').fillColor('#4b5563').text('Joining Date:', detailsX2, currentDetailsY);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(fmtDate_local(employee.jobInfo?.joiningDate), detailsX2 + 90, currentDetailsY);
+
+        doc.font('Helvetica').fillColor('#4b5563').text('Service Period:', detailsX2, currentDetailsY + 18);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(fmtMonths_local(monthsOfService), detailsX2 + 90, currentDetailsY + 18);
+
+        doc.font('Helvetica').fillColor('#4b5563').text('Maturity Date:', detailsX2, currentDetailsY + 36);
+        doc.font('Helvetica-Bold').fillColor('#111827').text(fmtDate_local(maturityDate), detailsX2 + 90, currentDetailsY + 36);
+
+        doc.font('Helvetica').fillColor('#4b5563').text('Maturity Status:', detailsX2, currentDetailsY + 54);
+        const statusText = employee.pfClaimed ? 'Claimed' : isMatured ? 'Matured' : 'Pending';
+        doc.font('Helvetica-Bold').fillColor(employee.pfClaimed ? '#6b7280' : isMatured ? '#059669' : '#d97706').text(statusText, detailsX2 + 90, currentDetailsY + 54);
+
+        doc.y = currentDetailsY + 80;
+        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+        doc.moveDown(1);
+
+        // --- Summary Grid ---
+        const summaryY = doc.y;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Fund Summary', 50, summaryY);
+        doc.moveDown(0.5);
+
+        const cardWidth = 158;
+        const cardHeight = 55;
+        const cardGap = 14;
+        const cardY = doc.y;
+
+        const drawSummaryCard = (title: string, value: string, xPos: number, bgColor: string, txtColor: string) => {
+            // Draw background rectangle
+            doc.fillColor(bgColor).rect(xPos, cardY, cardWidth, cardHeight).fill();
+            // Draw text
+            doc.fillColor('#6b7280').fontSize(8).font('Helvetica-Bold').text(title.toUpperCase(), xPos + 12, cardY + 12);
+            doc.fillColor(txtColor).fontSize(14).font('Helvetica-Bold').text(value, xPos + 12, cardY + 26);
+        };
+
+        drawSummaryCard('Current Balance', fmtPKR_local(employee.providentFundBalance || 0), 50, '#f0fdf4', '#15803d');
+        drawSummaryCard('Total Credits', fmtPKR_local(totalCredits), 50 + cardWidth + cardGap, '#eff6ff', '#1d4ed8');
+        drawSummaryCard('Total Debits', fmtPKR_local(totalDebits), 50 + (cardWidth + cardGap) * 2, '#fef2f2', '#b91c1c');
+
+        doc.y = cardY + cardHeight + 20;
+
+        // --- Statement History Table ---
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Month-wise Contribution History', 50);
+        doc.moveDown(0.5);
+
+        const tableTop = doc.y;
+        const cols = {
+            date: { x: 50, w: 75, align: 'left' },
+            period: { x: 125, w: 70, align: 'left' },
+            desc: { x: 195, w: 180, align: 'left' },
+            source: { x: 375, w: 55, align: 'center' },
+            type: { x: 430, w: 50, align: 'center' },
+            amount: { x: 480, w: 82, align: 'right' }
+        };
+
+        // Draw Table Header
+        doc.fillColor('#f9fafb').rect(50, tableTop, 512, 22).fill();
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
+        
+        doc.text('DATE', cols.date.x + 4, tableTop + 7, { width: cols.date.w });
+        doc.text('PERIOD', cols.period.x, tableTop + 7, { width: cols.period.w });
+        doc.text('DESCRIPTION', cols.desc.x, tableTop + 7, { width: cols.desc.w });
+        doc.text('SOURCE', cols.source.x, tableTop + 7, { width: cols.source.w, align: 'center' });
+        doc.text('TYPE', cols.type.x, tableTop + 7, { width: cols.type.w, align: 'center' });
+        doc.text('AMOUNT', cols.amount.x, tableTop + 7, { width: cols.amount.w - 4, align: 'right' });
+
+        doc.y = tableTop + 22;
+
+        const MONTH_SHORT_local = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        if (history.length === 0) {
+            doc.moveDown(1);
+            doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af').text('No contribution history logged yet.', { align: 'center' });
+        } else {
+            // Sort history descending by date
+            const sortedHistory = [...history].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            
+            let rowY = doc.y;
+            let stripe = false;
+            
+            doc.fontSize(8.5).font('Helvetica');
+            for (const entry of sortedHistory) {
+                // Page break check
+                if (rowY > 700) {
+                    doc.addPage();
+                    rowY = 50; // reset to top margin
+                    
+                    // Redraw Table Header on new page
+                    doc.fillColor('#f9fafb').rect(50, rowY, 512, 22).fill();
+                    doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
+                    doc.text('DATE', cols.date.x + 4, rowY + 7, { width: cols.date.w });
+                    doc.text('PERIOD', cols.period.x, rowY + 7, { width: cols.period.w });
+                    doc.text('DESCRIPTION', cols.desc.x, rowY + 7, { width: cols.desc.w });
+                    doc.text('SOURCE', cols.source.x, rowY + 7, { width: cols.source.w, align: 'center' });
+                    doc.text('TYPE', cols.type.x, rowY + 7, { width: cols.type.w, align: 'center' });
+                    doc.text('AMOUNT', cols.amount.x, rowY + 7, { width: cols.amount.w - 4, align: 'right' });
+                    
+                    rowY += 22;
+                    doc.fontSize(8.5).font('Helvetica');
+                }
+
+                // Draw background row stripe
+                if (stripe) {
+                    doc.fillColor('#f9fafb').rect(50, rowY, 512, 20).fill();
+                }
+                
+                doc.fillColor('#111827');
+                doc.text(fmtDate_local(entry.date), cols.date.x + 4, rowY + 6, { width: cols.date.w });
+                
+                const periodStr = entry.periodMonth && entry.periodYear 
+                    ? `${MONTH_SHORT_local[entry.periodMonth]} ${entry.periodYear}` 
+                    : '-';
+                doc.text(periodStr, cols.period.x, rowY + 6, { width: cols.period.w });
+                doc.text(entry.description || '', cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
+                
+                doc.text(entry.source || '', cols.source.x, rowY + 6, { width: cols.source.w, align: 'center' });
+                
+                // Color code type
+                const isCredit = entry.type === 'credit';
+                doc.fillColor(isCredit ? '#059669' : '#dc2626')
+                   .text(isCredit ? '+ Credit' : '- Debit', cols.type.x, rowY + 6, { width: cols.type.w, align: 'center' });
+                
+                doc.font('Helvetica-Bold').fillColor(isCredit ? '#059669' : '#dc2626')
+                   .text(`${isCredit ? '+' : '-'}${fmtPKR_local(entry.amount)}`, cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
+                
+                doc.font('Helvetica');
+                
+                // Draw bottom border line for row
+                doc.strokeColor('#f3f4f6').lineWidth(0.5).moveTo(50, rowY + 20).lineTo(562, rowY + 20).stroke();
+
+                rowY += 20;
+                stripe = !stripe;
+            }
+            
+            // Draw table total row
+            doc.fillColor('#f9fafb').rect(50, rowY, 512, 22).fill();
+            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, rowY).lineTo(562, rowY).stroke();
+            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, rowY + 22).lineTo(562, rowY + 22).stroke();
+            
+            doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
+            doc.text('TOTAL ACCUMULATED', cols.date.x + 4, rowY + 7, { width: 250 });
+            doc.fontSize(9).font('Helvetica-Bold').fillColor('#111827')
+               .text(fmtPKR_local(employee.providentFundBalance || 0), cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
+        }
+
+        doc.end();
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/employees/:id/pf-adjust
+ * Adds a manual credit or debit adjustment to the employee's PF.
+ * Admin/super-admin only.
+ */
+router.post('/:id/pf-adjust', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    if (role !== 'super-admin' && role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required.' });
+    }
+
+    try {
+        const { amount, type, description, periodMonth, periodYear, erpReferenceId } = req.body;
+        
+        if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+            return res.status(400).json({ message: 'Valid positive amount is required.' });
+        }
+        if (type !== 'credit' && type !== 'debit') {
+            return res.status(400).json({ message: 'Type must be "credit" or "debit".' });
+        }
+        if (!description || description.trim() === '') {
+            return res.status(400).json({ message: 'Description is required.' });
+        }
+
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found.' });
+
+        const adjustAmount = Number(amount);
+
+        if (type === 'debit' && (employee.providentFundBalance || 0) < adjustAmount) {
+            return res.status(400).json({ message: 'Insufficient PF balance for this debit adjustment.' });
+        }
+
+        if (!employee.providentFundHistory) employee.providentFundHistory = [];
+        
+        const historyEntry = {
+            amount: adjustAmount,
+            type,
+            source: 'manual',
+            date: new Date(),
+            description: description.trim(),
+            periodMonth: periodMonth ? Number(periodMonth) : undefined,
+            periodYear: periodYear ? Number(periodYear) : undefined,
+            erpReferenceId: erpReferenceId ? String(erpReferenceId).trim() : undefined
+        };
+
+        employee.providentFundHistory.push(historyEntry as any);
+
+        if (type === 'credit') {
+            employee.providentFundBalance = (employee.providentFundBalance || 0) + adjustAmount;
+        } else {
+            employee.providentFundBalance = (employee.providentFundBalance || 0) - adjustAmount;
+        }
+
+        await employee.save();
+
+        // Map employee to return the updated EmpPFData shape
+        const now = new Date();
+        const joiningDate = employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+        let monthsOfService = 0;
+        let maturityDate: Date | null = null;
+        if (joiningDate) {
+            const now2 = new Date();
+            monthsOfService =
+                (now2.getFullYear() - joiningDate.getFullYear()) * 12 +
+                (now2.getMonth() - joiningDate.getMonth());
+            maturityDate = new Date(joiningDate);
+            maturityDate.setMonth(maturityDate.getMonth() + PF_MATURITY_MONTHS);
+        }
+        const isMatured = maturityDate ? now >= maturityDate : false;
+
+        const updatedEmpData = {
+            employeeId: employee.employeeId,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            designation: employee.jobInfo?.designation,
+            department: employee.jobInfo?.department,
+            joiningDate: employee.jobInfo?.joiningDate,
+            monthsOfService,
+            maturityDate: maturityDate ? maturityDate.toISOString() : null,
+            providentFundBalance: employee.providentFundBalance || 0,
+            providentFundHistory: employee.providentFundHistory || [],
+            pfClaimed: employee.pfClaimed || false,
+            pfClaimedAt: employee.pfClaimedAt || null,
+            isMatured,
+            maturityThresholdMonths: PF_MATURITY_MONTHS
+        };
+
+        return res.json({
+            message: 'PF adjustment applied successfully.',
+            employee: updatedEmpData
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/employees/:id/pf-claim
+ * Marks the employee's PF as claimed (zeroes balance, logs debit, records claim date).
+ * Admin/super-admin only. Blocked if not matured or already claimed.
+ */
+router.post('/:id/pf-claim', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    if (role !== 'super-admin' && role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required.' });
+    }
+
+    try {
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found.' });
+
+        if (employee.pfClaimed) {
+            return res.status(400).json({ message: 'PF has already been claimed for this employee.' });
+        }
+
+        const joiningDate = employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+        const now = new Date();
+        let maturityDate: Date | null = null;
+        if (joiningDate) {
+            maturityDate = new Date(joiningDate);
+            maturityDate.setMonth(maturityDate.getMonth() + PF_MATURITY_MONTHS);
+        }
+
+        if (!maturityDate || now < maturityDate) {
+            const monthsLeft = maturityDate
+                ? Math.max(0, (maturityDate.getFullYear() - now.getFullYear()) * 12 + (maturityDate.getMonth() - now.getMonth()))
+                : PF_MATURITY_MONTHS;
+            return res.status(400).json({
+                message: `PF is not matured yet. Matures on ${maturityDate?.toDateString() || 'N/A'}. ${monthsLeft} month(s) remaining.`
+            });
+        }
+
+        const balance = employee.providentFundBalance || 0;
+        if (balance <= 0) {
+            return res.status(400).json({ message: 'No PF balance to claim.' });
+        }
+
+        // Log the claim debit
+        if (!employee.providentFundHistory) employee.providentFundHistory = [];
+        employee.providentFundHistory.push({
+            amount: balance,
+            type: 'debit',
+            source: 'manual',
+            date: now,
+            description: `PF Claimed by ${authReq.user?.userId || 'admin'}`,
+            erpReferenceId: req.body.erpReferenceId ? String(req.body.erpReferenceId).trim() : undefined
+        } as any);
+
+        employee.providentFundBalance = 0;
+        employee.pfClaimed = true;
+        employee.pfClaimedAt = now;
+
+        await employee.save();
+
+        return res.json({
+            message: 'PF claimed successfully.',
+            claimedAmount: balance,
+            pfClaimedAt: now
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
@@ -771,6 +1245,30 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
+        // Check for manual Provident Fund Balance adjustment
+        if (updates.providentFundBalance !== undefined) {
+            const oldBalance = employee.providentFundBalance || 0;
+            const newBalance = Number(updates.providentFundBalance);
+            if (newBalance !== oldBalance) {
+                const diffAmt = Math.abs(newBalance - oldBalance);
+                const historyEntry = {
+                    amount: diffAmt,
+                    type: newBalance > oldBalance ? 'credit' : 'debit',
+                    source: 'manual',
+                    date: new Date(),
+                    description: 'Manual Adjustment / Starting Balance'
+                };
+                if (!employee.providentFundHistory) {
+                    (employee as any).providentFundHistory = [];
+                }
+                employee.providentFundHistory!.push(historyEntry as any);
+                employee.providentFundBalance = newBalance;
+                await employee.save();
+                // Remove from updates so findOneAndUpdate doesn't overwrite it with BSON values or version issues
+                delete updates.providentFundBalance;
+            }
+        }
+
         // Fields that can only be set once (employees cannot change after initial fill)
         const oneTimeFields = ['cnic', 'dateOfBirth', 'bloodGroup', 'fatherName', 'nationality', 'religion', 'domicile'] as const;
         if (!isAdmin) {
@@ -881,3 +1379,4 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Fu
 });
 
 export default router;
+

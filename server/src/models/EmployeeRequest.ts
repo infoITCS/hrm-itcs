@@ -10,6 +10,7 @@ export interface IEmployeeRequest extends Document {
     requestedAt: Date;
     updatedAt: Date;
     approvedBy?: string;
+    erpReferenceId?: string;
 }
 
 const employeeRequestSchema = new Schema<IEmployeeRequest>({
@@ -21,7 +22,8 @@ const employeeRequestSchema = new Schema<IEmployeeRequest>({
     adminComments: { type: String },
     requestedAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
-    approvedBy: { type: String }
+    approvedBy: { type: String },
+    erpReferenceId: { type: String }
 });
 
 employeeRequestSchema.pre('save', function (next) {

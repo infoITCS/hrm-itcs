@@ -471,3 +471,94 @@ export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dat
         return false;
     }
 };
+
+export const sendEmployeeRequestSubmittedEmail = async (to: string, employeeName: string, category: string, requestType: string, details: any, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const detailRows = [];
+    if (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan') {
+        if (details?.requestedAmount) detailRows.push(`<p style="margin: 5px 0;"><strong>Requested Amount:</strong> Rs. ${details.requestedAmount.toLocaleString()}</p>`);
+        if (details?.paybackDuration) detailRows.push(`<p style="margin: 5px 0;"><strong>Payback Duration:</strong> ${details.paybackDuration} Months</p>`);
+        if (details?.recommendedMonthlyDeduction) detailRows.push(`<p style="margin: 5px 0;"><strong>Monthly Installment:</strong> Rs. ${details.recommendedMonthlyDeduction.toLocaleString()}</p>`);
+    } else if (details?.quantity) {
+        detailRows.push(`<p style="margin: 5px 0;"><strong>Quantity:</strong> ${details.quantity}</p>`);
+    }
+    if (details?.reason) {
+        detailRows.push(`<p style="margin: 10px 0 0 0;"><strong>Reason / Purpose:</strong> <em>"${details.reason}"</em></p>`);
+    }
+
+    const mailOptions = {
+        from: `"ITCS HRM Alerts" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `New Request for Approval: ${employeeName} - ${category}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">New Request Submitted</h2>
+                <p style="color: #4b5563; font-size: 16px;"><strong>${employeeName}</strong> has submitted a new request for <strong>${category}</strong> (${requestType}).</p>
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #f3f4f6; font-size: 14px; color: #4b5563;">
+                    ${detailRows.join('') || '<p>No extra details provided.</p>'}
+                </div>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/my-requests/manage" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Review Request</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= REQUEST SUBMITTED EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Category: ${category}, Type: ${requestType}`);
+        logger.info(`====================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending request submitted email:', error);
+        return false;
+    }
+};
+
+export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: string, category: string, status: string, adminComments?: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const statusColor = status === 'Approved' || status === 'Completed' ? '#10b981' : (status === 'Rejected' ? '#ef4444' : '#6b7280');
+    
+    const mailOptions = {
+        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Request Status Update: ${category} - ${status}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5;">Request Status Update</h2>
+                <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
+                <p style="color: #4b5563; font-size: 16px;">Your request for <strong>${category}</strong> has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
+                ${adminComments ? `
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Remarks:</strong> "${adminComments}"</p>
+                </div>
+                ` : ''}
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${clientUrl}/my-requests" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">View My Requests</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= REQUEST STATUS EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, Comments: ${adminComments}`);
+        logger.info(`==================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending request status email:', error);
+        return false;
+    }
+};

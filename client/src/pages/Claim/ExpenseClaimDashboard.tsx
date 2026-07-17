@@ -503,6 +503,7 @@ const ExpenseClaimDashboard = () => {
     const [decisionComments, setDecisionComments] = useState('');
     const [decisionApprovedAmount, setDecisionApprovedAmount] = useState<number | ''>('');
     const [decisionAuthorizationBy, setDecisionAuthorizationBy] = useState('');
+    const [decisionErpId, setDecisionErpId] = useState('');
     const [deciding, setDeciding] = useState(false);
 
     const decisionClaimRemainingLimit = useMemo(() => {
@@ -546,6 +547,7 @@ const ExpenseClaimDashboard = () => {
         const initial = Math.min(c?.amountRequested || 0, allowed || 0);
         setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
         setDecisionAuthorizationBy('');
+        setDecisionErpId(c?.erpReferenceId || '');
         setReceiptBlobs({});
         setLightboxIndex(null);
         setDecisionOpen(true);
@@ -580,6 +582,7 @@ const ExpenseClaimDashboard = () => {
         setReceiptBlobs({});
         setLightboxIndex(null);
         setDecisionClaim(null);
+        setDecisionErpId('');
     };
 
     const currentRequiresAuthorization = useMemo(() => {
@@ -603,6 +606,7 @@ const ExpenseClaimDashboard = () => {
             };
             if (decision === 'Approved' && decisionApprovedAmount !== '') payload.approvedAmount = Number(decisionApprovedAmount);
             if (decision === 'Approved' && currentRequiresAuthorization) payload.authorizationBy = decisionAuthorizationBy;
+            if (decision === 'Approved' && decisionErpId.trim() !== '') payload.erpReferenceId = decisionErpId.trim();
 
             const r = await fetch(api.claimDecision(decisionClaim._id), { method: 'PATCH', headers, body: JSON.stringify(payload) });
             const d = await r.json();
@@ -610,6 +614,7 @@ const ExpenseClaimDashboard = () => {
 
             setDecisionOpen(false);
             setDecisionClaim(null);
+            setDecisionErpId('');
             await fetchApprovals();
             await fetchMine();
             await fetchHistory();
@@ -1945,6 +1950,17 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                     )}
 
+                                    {/* ERP Reference ID */}
+                                    {decisionClaim.erpReferenceId && (
+                                        <div className="flex items-start gap-2 text-sm bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                            <ShieldCheck size={14} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <span className="text-indigo-700 font-bold text-xs uppercase tracking-wide">ERP ID: </span>
+                                                <span className="font-extrabold text-indigo-950">{decisionClaim.erpReferenceId}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Employee note */}
                                     {decisionClaim.notes && (
                                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -2293,6 +2309,19 @@ const ExpenseClaimDashboard = () => {
                                         className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white resize-none"
                                     />
                                 </div>
+
+                                {decision === 'Approved' && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-600">ERP Transaction Reference ID</label>
+                                        <input
+                                            type="text"
+                                            value={decisionErpId}
+                                            onChange={e => setDecisionErpId(e.target.value)}
+                                            placeholder="e.g. ERP-TXN-654321"
+                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                        />
+                                    </div>
+                                )}
 
                                 <div className="flex items-center justify-end gap-3">
                                     <button

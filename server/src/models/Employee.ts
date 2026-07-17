@@ -65,6 +65,19 @@ export interface IEmployee extends Document {
         swiftCode?: string;
     };
     providentFundBalance?: number;
+    providentFundHistory?: {
+        amount: number;
+        type: 'credit' | 'debit';
+        source: 'manual' | 'payroll';
+        date: Date;
+        description: string;
+        periodMonth?: number;
+        periodYear?: number;
+        payrollRunId?: string;
+        erpReferenceId?: string;
+    }[];
+    pfClaimed?: boolean;
+    pfClaimedAt?: Date;
     socialProfiles?: {
         platform: string;
         link: string;
@@ -208,6 +221,19 @@ const EmployeeSchema: Schema = new Schema({
         swiftCode: { type: String }
     },
     providentFundBalance: { type: Number, default: 0 },
+    providentFundHistory: [{
+        amount: { type: Number, required: true },
+        type: { type: String, enum: ['credit', 'debit'], required: true },
+        source: { type: String, enum: ['manual', 'payroll'], required: true },
+        date: { type: Date, default: Date.now },
+        description: { type: String, required: true },
+        periodMonth: { type: Number },
+        periodYear: { type: Number },
+        payrollRunId: { type: String },
+        erpReferenceId: { type: String }
+    }],
+    pfClaimed: { type: Boolean, default: false },
+    pfClaimedAt: { type: Date },
     socialProfiles: [{
         platform: { type: String },
         link: { type: String }

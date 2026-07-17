@@ -50,6 +50,7 @@ interface PayrollRun {
     approvedBy?: string;
     approvedAt?: string;
     disbursedAt?: string;
+    erpReferenceId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +210,8 @@ const PayrollRunDetail = () => {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [editingPayslip, setEditingPayslip] = useState<Payslip | null>(null);
     const [refreshCounter, setRefreshCounter] = useState(0);
+    const [showDisburseModal, setShowDisburseModal] = useState(false);
+    const [disburseErpId, setDisburseErpId] = useState('');
     const [alertConfig, setAlertConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -304,22 +307,22 @@ const PayrollRunDetail = () => {
         );
     };
 
-    const handleDisburse = async () => {
-        triggerConfirm(
-            'Mark as Disbursed?',
-            `Mark "${run?.title}" as Disbursed? This confirms salaries have been paid.`,
-            async () => {
-                setActionLoading('disburse');
-                try {
-                    await axios.put(api.payrollDisburse(id!), {}, authHeader);
-                    setRefreshCounter(c => c + 1);
-                } catch (err: any) {
-                    triggerError('Failed to Disburse', err.response?.data?.message || 'Failed to disburse.');
-                } finally {
-                    setActionLoading(null);
-                }
-            }
-        );
+    const handleDisburse = () => {
+        setShowDisburseModal(true);
+    };
+
+    const handleDisburseConfirm = async () => {
+        setShowDisburseModal(false);
+        setActionLoading('disburse');
+        try {
+            await axios.put(api.payrollDisburse(id!), { erpReferenceId: disburseErpId.trim() || undefined }, authHeader);
+            setDisburseErpId('');
+            setRefreshCounter(c => c + 1);
+        } catch (err: any) {
+            triggerError('Failed to Disburse', err.response?.data?.message || 'Failed to disburse.');
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     const handleDeleteRun = async () => {
@@ -391,6 +394,11 @@ const PayrollRunDetail = () => {
                                 Disbursed {new Date(run.disbursedAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </span>
                         )}
+                        {run.erpReferenceId && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                ERP ID: {run.erpReferenceId}
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -417,7 +425,7 @@ const PayrollRunDetail = () => {
                     {run.status === 'Approved' && (
                         <button id="btn-disburse-run" onClick={handleDisburse} disabled={!!actionLoading}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 transition-all disabled:opacity-60">
-                            {actionLoading === 'disburse' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            <Send size={14} />
                             Mark Disbursed
                         </button>
                     )}
@@ -540,6 +548,51 @@ const PayrollRunDetail = () => {
                 confirmText={alertConfig.confirmText}
                 showCancel={alertConfig.showCancel}
             />
+
+            {/* Styled ERP disburse modal popup */}
+            {showDisburseModal && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+                        <div className="flex items-center gap-2.5 text-slate-800">
+                            <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                                <Send size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-extrabold text-base text-slate-900">Mark as Disbursed?</h3>
+                                <p className="text-xs text-slate-500">Confirm salaries have been paid for "{run?.title}".</p>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-1.5">
+                            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                                ERP Transaction Reference ID (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. ERP-TXN-998877"
+                                value={disburseErpId}
+                                onChange={e => setDisburseErpId(e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-xs font-semibold"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                onClick={() => { setShowDisburseModal(false); setDisburseErpId(''); }}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-150 text-slate-600 hover:bg-slate-200 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDisburseConfirm}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm flex items-center gap-1.5"
+                            >
+                                <Send size={12} /> Confirm Disbursement
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

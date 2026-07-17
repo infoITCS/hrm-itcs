@@ -15,6 +15,7 @@ const AdminRequests = () => {
     const [loading, setLoading] = useState(true);
     const [actionModal, setActionModal] = useState<any>(null);
     const [adminComments, setAdminComments] = useState('');
+    const [erpReferenceId, setErpReferenceId] = useState('');
 
     // Search and filter state
     const [searchTerm, setSearchTerm] = useState('');
@@ -40,9 +41,13 @@ const AdminRequests = () => {
             setLoading(false);
         }
     };
-
     const handleAction = async (status: 'Pending' | 'Approved' | 'Rejected' | 'Completed') => {
         try {
+            if (status === 'Completed' && (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && !erpReferenceId.trim()) {
+                alert('ERP Transaction Reference ID is required to complete loan requests.');
+                return;
+            }
+
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/my-requests/${actionModal._id}/status`, {
                 method: 'PATCH',
@@ -50,12 +55,13 @@ const AdminRequests = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ status, adminComments })
+                body: JSON.stringify({ status, adminComments, erpReferenceId })
             });
 
             if (res.ok) {
                 setActionModal(null);
                 setAdminComments('');
+                setErpReferenceId('');
                 fetchRequests();
             } else {
                 alert('Failed to update request');
@@ -193,6 +199,9 @@ const AdminRequests = () => {
                                                 {(req.category === 'Loan' || req.category === 'Request Loan') ? (
                                                     <div className="text-xs space-y-1 text-gray-600">
                                                         <p>Amount: <strong className="text-gray-900">Rs. {req.details?.requestedAmount?.toLocaleString()}</strong></p>
+                                                        {req.details?.paybackDuration && (
+                                                            <p>Duration: <strong className="text-gray-900">{req.details.paybackDuration} Months</strong></p>
+                                                        )}
                                                         <p>Deduction: <strong className="text-gray-900">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}/mo</strong></p>
                                                     </div>
                                                 ) : (
@@ -325,17 +334,55 @@ const AdminRequests = () => {
                                     </div>
                                 </div>
                                 
-                                {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && (
-                                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm border-t border-gray-200/60 pt-2">
-                                        <div>
-                                            <p className="text-gray-500 text-xs">Amount</p>
-                                            <p className="font-semibold text-gray-900">Rs. {actionModal.details?.requestedAmount?.toLocaleString()}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-gray-500 text-xs">Deduction/mo</p>
-                                            <p className="font-semibold text-gray-900">Rs. {actionModal.details?.recommendedMonthlyDeduction?.toLocaleString()}</p>
+                                {actionModal.erpReferenceId && (
+                                    <div className="grid grid-cols-2 gap-2 text-sm border-t border-gray-200/60 pt-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100">
+                                        <div className="col-span-2">
+                                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">ERP Transaction ID</p>
+                                            <p className="font-extrabold text-indigo-700 text-xs mt-0.5">{actionModal.erpReferenceId}</p>
                                         </div>
                                     </div>
+                                )}
+                                
+                                {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && (
+                                    <>
+                                        <div className="mt-3 grid grid-cols-3 gap-3 text-sm border-t border-gray-200/60 pt-2">
+                                            <div>
+                                                <p className="text-gray-500 text-xs">Amount</p>
+                                                <p className="font-semibold text-gray-900">Rs. {actionModal.details?.requestedAmount?.toLocaleString()}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-500 text-xs">Duration</p>
+                                                <p className="font-semibold text-gray-900">{actionModal.details?.paybackDuration || '-'} Months</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-500 text-xs">Deduction/mo</p>
+                                                <p className="font-semibold text-gray-900">Rs. {actionModal.details?.recommendedMonthlyDeduction?.toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                        {actionModal.employee && (
+                                            (() => {
+                                                const pfBal = actionModal.employee.providentFundBalance ?? 0;
+                                                const reqAmt = actionModal.details?.requestedAmount ?? 0;
+                                                const isExceeded = reqAmt > pfBal;
+                                                return isExceeded ? (
+                                                    <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs space-y-1">
+                                                        <div className="flex justify-between font-bold text-rose-700">
+                                                            <span>Employee's PF Balance:</span>
+                                                            <span>Rs. {pfBal.toLocaleString()}</span>
+                                                        </div>
+                                                        <p className="text-rose-600 font-medium flex items-center gap-1">
+                                                            <span>⚠️</span> Warning: Requested amount exceeds their Provident Fund balance.
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs flex justify-between font-semibold text-slate-600">
+                                                        <span>Employee's PF Balance:</span>
+                                                        <span className="text-slate-800 font-bold">Rs. {pfBal.toLocaleString()}</span>
+                                                    </div>
+                                                );
+                                            })()
+                                        )}
+                                    </>
                                 )}
 
                                 {(actionModal.category !== 'Loan' && actionModal.category !== 'Request Loan') && actionModal.details?.quantity && (
@@ -389,11 +436,27 @@ const AdminRequests = () => {
                                     onChange={(e) => setAdminComments(e.target.value)}
                                 ></textarea>
                             </div>
+
+                            {/* Render ERP Transaction ID input for completing financial requests */}
+                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved') && (
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase">
+                                        ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
+                                    </label>
+                                    <input 
+                                        type="text"
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-xs font-semibold"
+                                        placeholder="e.g. ERP-TXN-123456"
+                                        value={erpReferenceId}
+                                        onChange={(e) => setErpReferenceId(e.target.value)}
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 flex-wrap">
                             <button 
-                                onClick={() => { setActionModal(null); setAdminComments(''); }}
+                                onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }}
                                 className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium text-sm"
                             >
                                 Close

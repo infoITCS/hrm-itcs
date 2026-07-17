@@ -114,8 +114,7 @@ const CreateRunModal = ({
             });
             onCreated();
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message :
-                (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to create payroll run.';
+            const message = (err as any)?.response?.data?.message || (err instanceof Error ? err.message : 'Failed to create payroll run.');
             setError(message);
         } finally {
             setLoading(false);

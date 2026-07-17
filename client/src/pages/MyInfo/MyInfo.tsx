@@ -401,6 +401,7 @@ const MyInfo = () => {
             iban: '',
             swiftCode: ''
         },
+        providentFundBalance: 0,
         benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[],
         salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[]
     });
@@ -628,7 +629,8 @@ const MyInfo = () => {
                                     autoUpdated: employee.employmentStatus?.autoUpdated || false,
                                     probationEndDate: formatDate(employee.employmentStatus?.probationEndDate)
                                 },
-                            files: []
+                            files: [],
+                            providentFundBalance: employee.providentFundBalance || 0
                         });
 
                         // Track fields that were already filled to lock them for non-admins
@@ -1540,8 +1542,72 @@ const MyInfo = () => {
                             {/* Provident Fund Details */}
                             <div className="pt-8 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Provident Fund Details</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
                                     {renderField('Current PF Balance', rawEmployee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0')}
+                                </div>
+
+                                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-sm">
+                                            <thead>
+                                                <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
+                                                    <th className="px-6 py-3">Date</th>
+                                                    <th className="px-6 py-3">Description</th>
+                                                    <th className="px-6 py-3">Source</th>
+                                                    <th className="px-6 py-3">Type</th>
+                                                    <th className="px-6 py-3 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
+                                                {rawEmployee.providentFundHistory?.length > 0 ? (
+                                                    [...rawEmployee.providentFundHistory]
+                                                        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                        .map((entry: any, index: number) => (
+                                                            <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                                                                <td className="px-6 py-4 text-xs text-slate-400">
+                                                                    {new Date(entry.date).toLocaleString()}
+                                                                </td>
+                                                                <td className="px-6 py-4 font-semibold text-slate-800">
+                                                                    {entry.description}
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                                        entry.source === 'payroll' 
+                                                                            ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                                                                            : 'bg-amber-50 text-amber-600 border-amber-100'
+                                                                    }`}>
+                                                                        {entry.source}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                        entry.type === 'credit' 
+                                                                            ? 'bg-emerald-50 text-emerald-600' 
+                                                                            : 'bg-rose-50 text-rose-600'
+                                                                    }`}>
+                                                                        {entry.type === 'credit' ? '+ Credit' : '- Debit'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={`px-6 py-4 text-right font-black ${
+                                                                    entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
+                                                                }`}>
+                                                                    Rs. {entry.amount.toLocaleString()}
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                                            No contribution history recorded.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
 
@@ -3255,6 +3321,28 @@ const MyInfo = () => {
                                         </div>
                                     </div>
                                 </div>
+                                
+                                {/* Provident Fund Details (Admin Only) */}
+                                {isAdmin && (
+                                    <div className="pt-8 border-t border-slate-100">
+                                        <h3 className="text-lg font-bold text-gray-700 mb-6 flex items-center gap-2">
+                                            <Banknote size={20} className="text-emerald-500" />
+                                            Provident Fund Details
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-medium text-gray-500">Provident Fund Balance (Rs.)</label>
+                                                <input
+                                                    type="number"
+                                                    placeholder="e.g. 150000"
+                                                    value={formData.providentFundBalance || ''}
+                                                    onChange={(e) => setFormData(p => ({ ...p, providentFundBalance: Number(e.target.value) }))}
+                                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {isAdmin && (
                                     <div className="pt-8 border-t border-slate-100">
