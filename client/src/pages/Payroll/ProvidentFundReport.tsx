@@ -381,7 +381,7 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
 
 export default function ProvidentFundReport() {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'admin' || user?.role === 'super-admin';
+    const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
 
     const [data, setData] = useState<EmpPFData[]>([]);
     const [loading, setLoading] = useState(true);

@@ -123,7 +123,7 @@ const AddEmployeeWizard = () => {
     const isEditMode = !!id;
     const { user: authUser, login } = useAuth();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
-    const isAdmin = role === 'super-admin' || role === 'admin' || role === 'manager';
+    const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
     const [step, setStep] = useState(1);
     const [isSameAddress, setIsSameAddress] = useState(false);
     const [loading, setLoading] = useState(false);

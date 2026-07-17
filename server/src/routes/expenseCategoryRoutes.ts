@@ -5,7 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 const router = express.Router();
 
 function isAdminLike(role: string) {
-    return role === 'super-admin' || role === 'admin' || role === 'hr';
+    return ['super-admin', 'admin', 'hr', 'finance'].includes(role);
 }
 
 // GET /api/expense-categories

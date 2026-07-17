@@ -19,7 +19,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
@@ -57,7 +57,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
@@ -92,7 +92,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 

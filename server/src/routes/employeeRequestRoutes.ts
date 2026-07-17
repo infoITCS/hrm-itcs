@@ -8,6 +8,7 @@ import AttachmentFile from '../models/AttachmentFile';
 import User from '../models/User.model';
 import ExpenseClaim from '../models/ExpenseClaim';
 import PayrollRun from '../models/PayrollRun';
+import LeaveRequest from '../models/LeaveRequest';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { sendEmployeeRequestSubmittedEmail, sendEmployeeRequestStatusEmail } from '../utils/email';
@@ -93,25 +94,27 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         const employee = await Employee.findOne({ userId }).select('employeeId');
         const notifications: any[] = [];
 
-        if (role === 'admin' || role === 'super-admin' || role === 'manager') {
-            // Approver Notifications (Pending Tasks)
-            let query: any = { status: 'Pending' };
-            if (role === 'manager' && employee) {
-                const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
-                const reportIds = directReports.map(e => e.employeeId);
-                // Managers do not see loans/request loans
-                query = { employeeId: { $in: reportIds }, status: 'Pending', category: { $nin: ['Loan', 'Request Loan'] } };
-            } else if (role === 'admin' || role === 'super-admin') {
-                // Admins see pending approvals AND approved loan requests that need ERP ID entry to complete
-                query = {
-                    $or: [
-                        { status: 'Pending' },
-                        { status: 'Approved', category: { $in: ['Loan', 'Request Loan'] } }
-                    ]
-                };
-            }
+        const isHrOrAdmin = ['admin', 'super-admin', 'hr'].includes(role);
+        const isFinanceOrAdmin = ['admin', 'super-admin', 'finance'].includes(role);
+        const isManagerOrAdmin = ['admin', 'super-admin', 'manager'].includes(role);
 
-            const pendingRequests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).limit(10).lean();
+        // --- Custom Requests / Loans Approver Notifications ---
+        let reqQuery: any = null;
+        if (role === 'manager' && employee) {
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
+            const reportIds = directReports.map(e => e.employeeId);
+            // Managers do not see loans/request loans
+            reqQuery = { employeeId: { $in: reportIds }, status: 'Pending', category: { $nin: ['Loan', 'Request Loan'] } };
+        } else if (isHrOrAdmin) {
+            // HR and Admins see pending requests (including loans)
+            reqQuery = { status: 'Pending' };
+        } else if (isFinanceOrAdmin) {
+            // Finance only sees loan requests that are approved and need ERP payout entry
+            reqQuery = { status: 'Approved', category: { $in: ['Loan', 'Request Loan'] }, erpReferenceId: { $in: [null, ''] } };
+        }
+
+        if (reqQuery) {
+            const pendingRequests = await EmployeeRequest.find(reqQuery).sort({ requestedAt: -1 }).limit(10).lean();
             const employeeIds = [...new Set(pendingRequests.map(r => r.employeeId))];
             const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName lastName').lean();
             const empMap = employees.reduce((acc: any, emp: any) => {
@@ -143,27 +146,65 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     path: '/my-requests/manage'
                 });
             }
+        }
 
-            // --- Claims Pending Approvals / ERP Tasks ---
-            let claimQuery: any = null;
-            if (role === 'manager' && employee) {
-                claimQuery = {
-                    status: { $in: ['Pending Team Lead', 'Pending Line Manager'] },
-                    'approvals': {
-                        $elemMatch: {
-                            status: 'Pending',
-                            assignedToEmployeeId: employee.employeeId
-                        }
-                    }
-                };
-            } else if (role === 'admin' || role === 'super-admin') {
-                claimQuery = {
-                    $or: [
-                        { status: { $in: ['Pending HR', 'Pending Finance'] } },
-                        { status: 'Approved', erpReferenceId: { $in: [null, ''] } }
-                    ]
-                };
+        // --- Leaves Pending Approvals Notifications ---
+        let leaveQuery: any = null;
+        if (role === 'manager' && employee) {
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
+            const reportIds = directReports.map(e => e.employeeId);
+            leaveQuery = { employeeId: { $in: reportIds }, status: 'Pending' };
+        } else if (isHrOrAdmin) {
+            leaveQuery = { status: 'Pending' };
+        }
+
+        if (leaveQuery) {
+            const pendingLeaves = (await LeaveRequest.find(leaveQuery).sort({ createdAt: -1 }).limit(10).lean()) as any[];
+            const employeeIds = [...new Set(pendingLeaves.map(l => l.employeeId))];
+            const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName lastName').lean();
+            const empMap = employees.reduce((acc: any, emp: any) => {
+                acc[emp.employeeId] = emp;
+                return acc;
+            }, {});
+
+            for (const leave of pendingLeaves) {
+                const emp = empMap[leave.employeeId];
+                const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Employee';
+                notifications.push({
+                    id: leave._id.toString(),
+                    title: `Pending Leave: ${leave.type}`,
+                    message: `${empName} requested ${leave.totalDays} day(s) from ${new Date(leave.startDate).toLocaleDateString()} to ${new Date(leave.endDate).toLocaleDateString()}.`,
+                    time: leave.createdAt,
+                    type: 'task',
+                    path: '/leave'
+                });
             }
+        }
+
+        // --- Claims Pending Approvals / ERP Tasks ---
+        let claimQuery: any = null;
+        if (role === 'manager' && employee) {
+            claimQuery = {
+                status: { $in: ['Pending Team Lead', 'Pending Line Manager'] },
+                'approvals': {
+                    $elemMatch: {
+                        status: 'Pending',
+                        assignedToEmployeeId: employee.employeeId
+                    }
+                }
+            };
+        } else {
+            const statusOrList: any[] = [];
+            if (isHrOrAdmin) statusOrList.push({ status: 'Pending HR' });
+            if (isFinanceOrAdmin) {
+                statusOrList.push({ status: 'Pending Finance' });
+                statusOrList.push({ status: 'Approved', erpReferenceId: { $in: [null, ''] } });
+            }
+
+            if (statusOrList.length > 0) {
+                claimQuery = { $or: statusOrList };
+            }
+        }
 
             if (claimQuery) {
                 const pendingClaims = await ExpenseClaim.find(claimQuery).sort({ updatedAt: -1 }).limit(10).lean();
@@ -200,7 +241,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             }
 
             // --- Payroll Approvals / ERP Tasks ---
-            if (role === 'admin' || role === 'super-admin') {
+            if (role === 'admin' || role === 'super-admin' || role === 'finance') {
                 const pendingPayroll = await PayrollRun.find({
                     $or: [
                         { status: 'Approved' },
@@ -229,7 +270,6 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     });
                 }
             }
-        }
 
         // Employee updates (their own requests updated in last 7 days)
         if (employee) {
@@ -387,7 +427,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
 });
 
 // Get all requests across the company (Admin & Manager)
-router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager']), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || '';
@@ -429,7 +469,7 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager']),
 });
 
 // Approve or Reject a request (Admin & Manager)
-router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'manager']), async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'manager', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const { status, adminComments } = req.body;

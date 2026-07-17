@@ -7,6 +7,7 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import crypto from "crypto";
 import { sendPasswordResetEmail } from "../utils/email";
 import AuditLog from "../models/AuditLog";
+import RolePermission from "../models/RolePermission";
 import logger from '../utils/logger';
 
 
@@ -71,6 +72,8 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
       }
     }
 
+    const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+
     res.json({
       token,
       user: {
@@ -82,6 +85,7 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
         lastName: user.lastName || employee?.lastName,
         avatar: avatarUrl,
         hasProfile: !!employee,
+        permissions: rolePerm?.permissions || {},
       },
     });
   } catch (error) {
@@ -402,12 +406,14 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
       }
     }
 
+    const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
     const userObj = user.toObject();
     res.json({
       ...userObj,
       id: userObj._id,
       hasProfile: !!employee,
-      needsPasswordSetup: user.needsPasswordSetup ?? false
+      needsPasswordSetup: user.needsPasswordSetup ?? false,
+      permissions: rolePerm?.permissions || {}
     });
   } catch (error: any) {
     logger.error("🔥 Error in /auth/me:", error.message);

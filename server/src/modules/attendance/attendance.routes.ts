@@ -13,10 +13,10 @@ import * as ctrl from './attendance.controller';
 
 const router = Router();
 
-const ADMIN_ROLES   = ['super-admin', 'admin'];
-const EDIT_ROLES    = ['super-admin', 'admin', 'manager'];
-const MANAGER_ROLES = ['super-admin', 'admin', 'manager'];
-const ALL_ROLES     = ['super-admin', 'admin', 'manager', 'employee'];
+const ADMIN_ROLES   = ['super-admin', 'admin', 'hr', 'finance'];
+const EDIT_ROLES    = ['super-admin', 'admin', 'manager', 'hr', 'finance'];
+const MANAGER_ROLES = ['super-admin', 'admin', 'manager', 'hr', 'finance'];
+const ALL_ROLES     = ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'];
 
 /**
  * Cast each middleware to RequestHandler to resolve the type conflict between

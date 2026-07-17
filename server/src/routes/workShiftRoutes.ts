@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 const router = Router();
 
 // Get all shifts (Admin/Manager only)
-router.get('/', authenticate, authorize(['admin', 'super-admin', 'manager']), async (req: Request, res: Response) => {
+router.get('/', authenticate, authorize(['admin', 'super-admin', 'manager', 'hr', 'finance']), async (req: Request, res: Response) => {
     try {
         const shifts = await WorkShift.find().sort({ name: 1 });
         res.json(shifts);
@@ -17,7 +17,7 @@ router.get('/', authenticate, authorize(['admin', 'super-admin', 'manager']), as
 });
 
 // Create a new shift (Admin only)
-router.post('/', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response) => {
+router.post('/', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response) => {
     try {
         const { name, startTime, endTime, graceMinutes, halfDayThreshold, isDefault, description, isActive } = req.body;
         if (!name || !startTime || !endTime) {
@@ -47,7 +47,7 @@ router.post('/', authenticate, authorize(['admin', 'super-admin']), async (req: 
 });
 
 // Update a shift
-router.put('/:id', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response) => {
+router.put('/:id', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response) => {
     try {
         const { name, startTime, endTime, graceMinutes, halfDayThreshold, isDefault, description, isActive } = req.body;
         const sanitizedPayload = { name, startTime, endTime, graceMinutes, halfDayThreshold, isDefault, description, isActive };
@@ -89,7 +89,7 @@ router.put('/:id', authenticate, authorize(['admin', 'super-admin']), async (req
 });
 
 // Delete a shift
-router.delete('/:id', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response) => {
+router.delete('/:id', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response) => {
     try {
         const shift = await WorkShift.findById(req.params.id);
         if (!shift) return res.status(404).json({ message: 'Shift not found' });

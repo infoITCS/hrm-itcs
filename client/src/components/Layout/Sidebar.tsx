@@ -30,30 +30,32 @@ interface SidebarProps {
 
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const location = useLocation();
-    const { role } = usePermissions();
+    const { role, hasAccess } = usePermissions();
     const { isImpersonated } = useAuth();
 
     const allMenuItems = [
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'dashboard', end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
-        { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'] },
+        { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
-        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager'] },
-        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin'] },
-        { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee'] },
+        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager', 'hr'], module: 'pim' },
+        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'], module: 'leave' },
+        { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'], module: 'attendance' },
+        { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'] },
+        { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
+        { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'] },
+        { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         // { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
-        { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'Payroll', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'manager', 'employee'] },
-        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee'], end: true },
-        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin'] },
-        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin'] },
+        { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'claim' },
+        { name: 'Payroll', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'payroll' },
+        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'requests', end: true },
+        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
+        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'payroll' },
     ];
 
-    const menuItems = allMenuItems.filter(item => item.roles.includes(role));
+    const menuItems = allMenuItems.filter(item => 
+        item.roles.includes(role) && (!item.module || hasAccess(item.module))
+    );
 
     // Close sidebar when route changes (e.g. after clicking a nav link on mobile)
     useEffect(() => {

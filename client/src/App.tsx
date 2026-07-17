@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import MainLayout from './components/Layout/MainLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleProtectedRoute from './components/RoleProtectedRoute';
+import { usePermissions } from './hooks/usePermissions';
 import PIM from './pages/PIM/PIM';
 import EmployeeList from './pages/PIM/EmployeeList';
 import AddEmployeeWizard from './pages/PIM/AddEmployeeWizard';
@@ -56,6 +57,14 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/dashboard" replace />;
   }
 
+  return <>{children}</>;
+};
+
+const ModuleProtectedRoute = ({ moduleName, children }: { moduleName: string; children: React.ReactNode }) => {
+  const { hasAccess } = usePermissions();
+  if (!hasAccess(moduleName)) {
+    return <Navigate to="/dashboard" replace />;
+  }
   return <>{children}</>;
 };
 
@@ -118,22 +127,22 @@ function AppRoutes() {
         <Route path="my-info" element={<MyInfo />} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
-        <Route path="claim" element={<ExpenseClaimDashboard />} />
-        <Route path="attendance" element={<AttendanceRouter />} />
-        <Route path="leave" element={<LeaveDashboard />} />
-        <Route path="payroll" element={<PayrollDashboard />} />
+        <Route path="claim" element={<ModuleProtectedRoute moduleName="claim"><ExpenseClaimDashboard /></ModuleProtectedRoute>} />
+        <Route path="attendance" element={<ModuleProtectedRoute moduleName="attendance"><AttendanceRouter /></ModuleProtectedRoute>} />
+        <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />
+        <Route path="payroll" element={<ModuleProtectedRoute moduleName="payroll"><PayrollDashboard /></ModuleProtectedRoute>} />
         
         {/* Restricted to Admins only */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
-          <Route path="zkt-monitor" element={<V2ZktMonitor />} />
-          <Route path="payroll/runs/:id" element={<PayrollRunDetail />} />
-          <Route path="provident-fund" element={<ProvidentFundReport />} />
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr', 'finance']} />}>
+          <Route path="zkt-monitor" element={<ModuleProtectedRoute moduleName="attendance"><V2ZktMonitor /></ModuleProtectedRoute>} />
+          <Route path="payroll/runs/:id" element={<ModuleProtectedRoute moduleName="payroll"><PayrollRunDetail /></ModuleProtectedRoute>} />
+          <Route path="provident-fund" element={<ModuleProtectedRoute moduleName="payroll"><ProvidentFundReport /></ModuleProtectedRoute>} />
         </Route>
 
         {/* Restricted to Admins & Managers */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
-          <Route path="pim" element={<PIM />}>
+          <Route path="pim" element={<ModuleProtectedRoute moduleName="pim"><PIM /></ModuleProtectedRoute>}>
             <Route index element={<EmployeeList />} />
             <Route path="add" element={<AddEmployeeWizard />} />
             <Route path="edit/:id" element={<AddEmployeeWizard />} />
@@ -148,14 +157,13 @@ function AppRoutes() {
 
         <Route path="my-requests" element={<MyRequests />} />
         
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager']} />}>
-          <Route path="my-requests/manage" element={<AdminRequests />} />
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
+          <Route path="my-requests/manage" element={<ModuleProtectedRoute moduleName="requests"><AdminRequests /></ModuleProtectedRoute>} />
         </Route>
         
         {/* Restricted to Admins only */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
-          <Route path="admin/settings" element={<AdminSettings />} />
-          {/* <Route path="admin/audit" element={<AuditLogs />} /> */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr', 'finance']} />}>
+          <Route path="admin/settings" element={<ModuleProtectedRoute moduleName="settings"><AdminSettings /></ModuleProtectedRoute>} />
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
           {/* <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} /> */}
         </Route>

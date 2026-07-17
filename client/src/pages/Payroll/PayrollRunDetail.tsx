@@ -201,7 +201,7 @@ const PayrollRunDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { role } = usePermissions();
-    const isAdminRole = role === 'admin' || role === 'super-admin';
+    const isAdminRole = ['admin', 'super-admin', 'finance', 'hr'].includes(role);
 
     const [run, setRun] = useState<PayrollRun | null>(null);
     const [payslips, setPayslips] = useState<Payslip[]>([]);

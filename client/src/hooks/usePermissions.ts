@@ -4,25 +4,27 @@ import { useAuth } from '../contexts/AuthContext';
 export const usePermissions = () => {
     const { user } = useAuth();
 
+    const normalizedRole = useMemo(() => (user?.role || 'employee').toLowerCase().trim(), [user?.role]);
+
     const canCreateUser = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    }, [user]);
+        return ['super-admin', 'admin', 'hr', 'manager'].includes(normalizedRole);
+    }, [user, normalizedRole]);
 
     const canEditSensitiveData = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    }, [user]);
+        return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+    }, [user, normalizedRole]);
 
     const canApproveDocuments = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    }, [user]);
+        return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+    }, [user, normalizedRole]);
 
     const canViewDocuments = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    }, [user]);
+        return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+    }, [user, normalizedRole]);
 
     const canUploadDocuments = useCallback((): boolean => {
         return true; // All roles can upload
@@ -30,18 +32,24 @@ export const usePermissions = () => {
 
     const canViewAllEmployees = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'super-admin' || user.role === 'admin' || user.role === 'manager';
-    }, [user]);
+        return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+    }, [user, normalizedRole]);
 
     const canViewDirectReports = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'manager';
-    }, [user]);
+        return normalizedRole === 'manager';
+    }, [user, normalizedRole]);
 
     const canViewOwnProfile = useCallback((): boolean => {
         if (!user) return false;
-        return user.role === 'employee';
-    }, [user]);
+        return normalizedRole === 'employee';
+    }, [user, normalizedRole]);
+
+    const hasAccess = useCallback((moduleName: string): boolean => {
+        if (!user) return false;
+        if (normalizedRole === 'super-admin') return true;
+        return !!user.permissions?.[moduleName];
+    }, [user, normalizedRole]);
 
     return useMemo(() => ({
         canCreateUser,
@@ -52,7 +60,8 @@ export const usePermissions = () => {
         canViewAllEmployees,
         canViewDirectReports,
         canViewOwnProfile,
-        role: user?.role || 'employee'
+        hasAccess,
+        role: normalizedRole
     }), [
         canCreateUser,
         canEditSensitiveData,
@@ -62,7 +71,8 @@ export const usePermissions = () => {
         canViewAllEmployees,
         canViewDirectReports,
         canViewOwnProfile,
-        user?.role
+        hasAccess,
+        normalizedRole
     ]);
 };
 

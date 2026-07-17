@@ -310,6 +310,8 @@ const UserManagement = () => {
         switch (role) {
             case 'super-admin': return 'bg-purple-100 text-purple-700 border-purple-200';
             case 'admin': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+            case 'hr': return 'bg-pink-100 text-pink-700 border-pink-200';
+            case 'finance': return 'bg-cyan-100 text-cyan-700 border-cyan-200';
             case 'manager': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
             default: return 'bg-slate-100 text-slate-700 border-slate-200';
         }
@@ -380,6 +382,8 @@ const UserManagement = () => {
                             <option value="all">All Roles</option>
                             <option value="super-admin">Super Admin</option>
                             <option value="admin">Admin</option>
+                            <option value="hr">HR</option>
+                            <option value="finance">Finance</option>
                             <option value="manager">Manager</option>
                             <option value="employee">Employee</option>
                         </select>
@@ -460,6 +464,8 @@ const UserManagement = () => {
                                             >
                                                 <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
                                                 <option value="admin">Admin</option>
+                                                <option value="hr">HR</option>
+                                                <option value="finance">Finance</option>
                                                 <option value="manager">Manager</option>
                                                 <option value="employee">Employee</option>
                                             </select>
@@ -590,6 +596,8 @@ const UserManagement = () => {
                                 >
                                     <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
                                     <option value="admin">Admin</option>
+                                    <option value="hr">HR</option>
+                                    <option value="finance">Finance</option>
                                     <option value="manager">Manager</option>
                                     <option value="employee">Employee</option>
                                 </select>

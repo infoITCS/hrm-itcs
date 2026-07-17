@@ -1,12 +1,12 @@
 import Employee from '../models/Employee';
 
 export const canCreateUser = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin' || role === 'manager';
+    return ['super-admin', 'admin', 'hr', 'manager'].includes(role);
 };
 
 /**
  * Check if user can view an employee's personal info.
- * - super-admin, admin: can view all employees.
+ * - super-admin, admin, hr, finance: can view all employees.
  * - manager: can only view own record + direct reports.
  * - employee: can only view own profile.
  */
@@ -16,7 +16,7 @@ export const canViewEmployee = async (
     targetEmployeeId?: string,
     targetEmployee?: any
 ): Promise<boolean> => {
-    if (role === 'super-admin' || role === 'admin') {
+    if (['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
         return true; // Full access
     }
 
@@ -57,15 +57,15 @@ export const canViewEmployee = async (
 };
 
 export const canEditSensitiveData = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin' || role === 'manager';
+    return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role);
 };
 
 export const canApproveDocuments = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin' || role === 'manager';
+    return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role);
 };
 
 export const canViewDocuments = (role: string): boolean => {
-    return role === 'super-admin' || role === 'admin' || role === 'manager';
+    return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role);
 };
 
 export const canUploadDocuments = (_role: string): boolean => {

@@ -181,7 +181,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
@@ -270,7 +270,7 @@ router.get('/types', authenticate, async (req: Request, res: Response, next: Nex
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        const isAdmin = ['super-admin', 'admin'].includes(user?.role || '');
+        const isAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '');
         const query: any = {};
         if (!isAdmin || req.query.activeOnly === 'true') {
             query.isActive = true;
@@ -287,7 +287,7 @@ router.post('/types', authenticate, async (req: Request, res: Response, next: Ne
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
         const { name, defaultDays, isPaid, isActive, sandwichRuleEnabled } = req.body;
@@ -321,7 +321,7 @@ router.put('/types/:id', authenticate, async (req: Request, res: Response, next:
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
         const { name, defaultDays, isPaid, isActive, sandwichRuleEnabled } = req.body;
@@ -359,7 +359,7 @@ router.delete('/types/:id', authenticate, async (req: Request, res: Response, ne
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
         const leaveType = await LeaveType.findById(req.params.id);
@@ -700,7 +700,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user;
-        if (!user || !['super-admin', 'admin', 'manager'].includes(user.role)) {
+        if (!user || !['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(user.role)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
         const { status, adminNote } = req.body;
@@ -860,7 +860,7 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user;
-        if (!user || !['super-admin', 'admin'].includes(user.role)) {
+        if (!user || !['super-admin', 'admin', 'hr', 'finance'].includes(user.role)) {
             return res.status(403).json({ message: 'Only admins can revert leave statuses' });
         }
         
@@ -994,7 +994,7 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
         if (!leave) return res.status(404).json({ message: 'Leave request not found' });
 
         const isOwner = user.userId === leave.employeeId;
-        const isManagerOrAdmin = ['super-admin', 'admin', 'manager'].includes(user.role);
+        const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(user.role);
 
         if (!isOwner && !isManagerOrAdmin) {
             return res.status(403).json({ message: 'Forbidden: Cannot cancel this leave request' });

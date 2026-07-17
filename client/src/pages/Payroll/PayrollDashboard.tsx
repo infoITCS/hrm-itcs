@@ -212,7 +212,7 @@ const CreateRunModal = ({
 const PayrollDashboard = () => {
     const navigate = useNavigate();
     const { role } = usePermissions();
-    const isAdmin = role === 'admin' || role === 'super-admin';
+    const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(role);
 
     const [runs, setRuns] = useState<PayrollRun[]>([]);
     const [loading, setLoading] = useState(true);

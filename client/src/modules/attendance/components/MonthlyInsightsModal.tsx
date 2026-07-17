@@ -52,7 +52,7 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
     onClose 
 }) => {
     const { role } = usePermissions();
-    const canEditAttendance = role === 'super-admin' || role === 'admin' || role === 'manager';
+    const canEditAttendance = ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [previewConfig, setPreviewConfig] = useState<{

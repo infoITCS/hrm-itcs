@@ -47,8 +47,8 @@ export async function scopeToTeam(req: AuthRequest, res: Response, next: NextFun
             ).lean() as any;
             
             req.teamScope = emp ? [emp.employeeId] : [];
-        } else if (req.user.role === 'admin' || req.user.role === 'super-admin') {
-            // admin, super-admin → unrestricted
+        } else if (['admin', 'super-admin', 'hr', 'finance'].includes(req.user.role)) {
+            // admin, super-admin, hr, finance → unrestricted
             req.teamScope = null;
         } else {
             // Fail closed for any other roles

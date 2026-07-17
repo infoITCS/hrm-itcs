@@ -75,9 +75,9 @@ const LeaveDashboard = () => {
     const [statusFilter, setStatusFilter] = useState('All');
     const [refreshCounter, setRefreshCounter] = useState(0);
     const { role } = usePermissions();
-    const isManagement = ['super-admin', 'admin', 'manager'].includes(role);
-    const isAdmin = ['super-admin', 'admin'].includes(role);
-    const isAdminLike = ['super-admin', 'admin', 'hr'].includes(role);
+    const isManagement = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(role);
+    const isAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
+    const isAdminLike = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
 
     const filteredHistory = history.filter(item => 
         statusFilter === 'All' || item.status === statusFilter

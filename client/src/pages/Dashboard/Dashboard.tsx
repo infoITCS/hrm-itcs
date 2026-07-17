@@ -63,7 +63,7 @@ const Dashboard = () => {
     }, [user?.needsPasswordSetup]);
 
     const role: RoleType =
-        user?.role === 'super-admin' || user?.role === 'admin'
+        ['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')
             ? 'admin'
             : user?.role === 'manager'
                 ? 'manager'

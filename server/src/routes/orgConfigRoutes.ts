@@ -5,6 +5,7 @@ import Company from '../models/Company';
 import DocumentTemplate from '../models/DocumentTemplate';
 import Employee from '../models/Employee';
 import AuditLog from '../models/AuditLog';
+import RolePermission from '../models/RolePermission';
 
 const router = Router();
 
@@ -314,6 +315,45 @@ router.post('/templates', authenticate, requireAdmin, async (req: Request, res: 
         );
 
         res.json(template);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   GET /api/config/roles-permissions
+ * @desc    Get permissions configuration for all roles
+ */
+router.get('/roles-permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const permissions = await RolePermission.find().sort({ role: 1 });
+        res.json(permissions);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   PUT /api/config/roles-permissions
+ * @desc    Save matrix permissions updates
+ */
+router.put('/roles-permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { matrix } = req.body;
+        if (!Array.isArray(matrix)) {
+            return res.status(400).json({ message: 'Matrix payload must be an array.' });
+        }
+
+        for (const item of matrix) {
+            if (!item.role || !item.permissions) continue;
+            await RolePermission.findOneAndUpdate(
+                { role: item.role },
+                { permissions: item.permissions },
+                { new: true, upsert: true }
+            );
+        }
+
+        res.json({ success: true, message: 'Permissions updated successfully.' });
     } catch (error) {
         next(error);
     }

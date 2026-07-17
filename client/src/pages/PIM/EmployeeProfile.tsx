@@ -44,7 +44,7 @@ const EmployeeProfile = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
 
-    const isAdmin = role === 'super-admin' || role === 'admin';
+    const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');

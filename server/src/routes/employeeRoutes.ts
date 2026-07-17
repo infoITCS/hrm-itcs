@@ -178,14 +178,14 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
         const baseFilter = { isDeleted: { $ne: true } };
 
         if (queryUserId) {
-            if (queryUserId === userId || role === 'super-admin' || role === 'admin' || role === 'manager') {
+            if (queryUserId === userId || ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role)) {
                 const employee = await Employee.findOne({ userId: queryUserId, ...baseFilter }).select('-attachments.fileData').lean();
                 employees = employee ? [employee] : [];
                 total = employees.length;
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
-        } else if (role === 'super-admin' || role === 'admin') {
+        } else if (['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
             // Admins see all non-deleted employees
             [employees, total] = await Promise.all([
                 Employee.find(baseFilter).select('-attachments.fileData').skip(skip).limit(limit).lean(),
@@ -248,7 +248,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             'workEmail', 'otherEmail', 'employeeId', 'biometricPin'
         ];
 
-        const allowedFields = (role === 'super-admin' || role === 'admin' || role === 'manager')
+        const allowedFields = (['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role))
             ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
             : EMPLOYEE_EDITABLE_FIELDS;
 
@@ -466,7 +466,7 @@ const PF_MATURITY_MONTHS = 36;
 router.get('/pf-report', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     const role = authReq.user?.role || '';
-    if (role !== 'super-admin' && role !== 'admin') {
+    if (!['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
         return res.status(403).json({ message: 'Admin access required.' });
     }
 

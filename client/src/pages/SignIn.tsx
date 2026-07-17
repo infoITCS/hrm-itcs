@@ -66,7 +66,8 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                     : null,
                 firstName: response.data.user.firstName,
                 lastName: response.data.user.lastName,
-                hasProfile: response.data.user.hasProfile
+                hasProfile: response.data.user.hasProfile,
+                permissions: response.data.user.permissions || {}
             };
 
             // Save the token to local storage so page refresh doesn't log the user out

@@ -13,7 +13,7 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────────────────────
 
 function isAdmin(role: string): boolean {
-    return role === 'super-admin' || role === 'admin';
+    return ['super-admin', 'admin', 'finance', 'hr'].includes(role);
 }
 
 const MONTH_NAMES = [

@@ -8,7 +8,7 @@ import GeneratedDocuments from './GeneratedDocuments';
 const AdminRequests = () => {
     const { user } = useAuth();
     const isOnlyManager = user?.role === 'manager';
-    const isAdminOrSuper = user?.role === 'admin' || user?.role === 'super-admin';
+    const isAdminOrSuper = ['admin', 'super-admin', 'hr', 'finance'].includes(user?.role || '');
 
     const [activeTab, setActiveTab] = useState<'Requests' | 'Categories' | 'Documents'>('Requests');
     const [requests, setRequests] = useState<any[]>([]);

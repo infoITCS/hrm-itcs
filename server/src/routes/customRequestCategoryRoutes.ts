@@ -15,7 +15,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
 });
 
 // Create a new category (Admin only)
-router.post('/', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { title, description, icon, options, isActive, hiddenOptions, systemType } = req.body;
         const newCategory = new CustomRequestCategory({ title, description, icon, options, isActive, hiddenOptions, systemType });
@@ -27,7 +27,7 @@ router.post('/', authenticate, authorize(['admin', 'super-admin']), async (req: 
 });
 
 // Update a category (Admin only)
-router.put('/:id', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { title, description, icon, options, isActive, hiddenOptions, systemType } = req.body;
         const category = await CustomRequestCategory.findByIdAndUpdate(
@@ -43,7 +43,7 @@ router.put('/:id', authenticate, authorize(['admin', 'super-admin']), async (req
 });
 
 // Delete a category (Admin only)
-router.delete('/:id', authenticate, authorize(['admin', 'super-admin']), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const category = await CustomRequestCategory.findByIdAndDelete(req.params.id);
         if (!category) return res.status(404).json({ message: 'Category not found' });

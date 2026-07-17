@@ -44,7 +44,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         lastName: userData.lastName,
                         hasProfile: userData.hasProfile,
                         needsPasswordSetup: userData.needsPasswordSetup,
-                        microsoftId: userData.microsoftId
+                        microsoftId: userData.microsoftId,
+                        permissions: userData.permissions || {}
                     };
                     setUser(user);
                     setIsImpersonated(!!localStorage.getItem('original_token'));
@@ -127,7 +128,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             lastName: userData.lastName,
             hasProfile: userData.hasProfile,
             needsPasswordSetup: userData.needsPasswordSetup,
-            microsoftId: userData.microsoftId
+            microsoftId: userData.microsoftId,
+            permissions: userData.permissions
         };
         
         setUser(userObj);
@@ -162,7 +164,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 lastName: userData.lastName,
                 hasProfile: userData.hasProfile,
                 needsPasswordSetup: userData.needsPasswordSetup,
-                microsoftId: userData.microsoftId
+                microsoftId: userData.microsoftId,
+                permissions: userData.permissions || {}
             };
             setUser(userObj);
             sessionStorage.setItem('itcs_user', JSON.stringify(userObj));

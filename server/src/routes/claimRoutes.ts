@@ -76,11 +76,12 @@ async function generateClaimNo(): Promise<string> {
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {
     if (stage === 'teamLead' || stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin';
     if (stage === 'hr') return role === 'admin' || role === 'super-admin' || role === 'hr';
-    return role === 'super-admin' || role === 'admin' || role === 'hr';
+    if (stage === 'finance') return role === 'admin' || role === 'super-admin' || role === 'finance';
+    return false;
 }
 
 function isAdminLike(role: string) {
-    return role === 'super-admin' || role === 'admin' || role === 'hr';
+    return role === 'super-admin' || role === 'admin' || role === 'hr' || role === 'finance';
 }
 
 function isFinalStatus(status?: string) {
@@ -713,7 +714,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         if (decision === 'Declined') {
             claim.status = 'Declined';
             claim.approvedTotal = 0;
-        } else if (isAdminLike(role)) {
+        } else if (['admin', 'super-admin', 'hr', 'finance'].includes(role)) {
             // Admin/HR can finalize directly from any queue.
             claim.approvals.forEach((approval: any, approvalIdx: number) => {
                 if (approvalIdx > idx && approval.status === 'Pending') {

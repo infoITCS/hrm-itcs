@@ -62,6 +62,7 @@ import employeeRequestRoutes from './routes/employeeRequestRoutes';
 import documentRoutes from './routes/documentRoutes';
 import customRequestCategoryRoutes from './routes/customRequestCategoryRoutes';
 import payrollRoutes from './routes/payrollRoutes';
+import { bootstrapPermissions } from './models/RolePermission';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -323,7 +324,10 @@ async function connectDB(): Promise<void> {
 mongoose.set('bufferTimeoutMS', 60000);
 
 // Register connection event listeners for observability
-mongoose.connection.on('connected', () => logger.info('🔗 Mongoose: connected'));
+mongoose.connection.on('connected', () => {
+    logger.info('🔗 Mongoose: connected');
+    bootstrapPermissions();
+});
 mongoose.connection.on('disconnected', () => {
     logger.warn('⚠️ Mongoose: disconnected from Cosmos DB');
     // In serverless the function will simply call connectDB() on the next request.
