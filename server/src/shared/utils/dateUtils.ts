@@ -12,16 +12,7 @@ export function pktHHMMtoUtc(dateStr: string, timeStr: string): Date {
     return d;
 }
 
-/** Returns today's date as YYYY-MM-DD in PKT timezone. */
-export function todayPKT(): string {
-    return new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
-}
-
-/** Returns the current UTC Date. */
-export function nowPKT(): Date {
-    return new Date();
-}
-
+// removed todayPKT and nowPKT wrappers
 export function startOfDay(dateStr: string): Date {
     const [y, m, d] = dateStr.split('-').map(Number);
     const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;

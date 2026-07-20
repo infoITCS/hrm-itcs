@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Shield, Save, RefreshCw, AlertCircle, Check } from 'lucide-react';
+import { Shield, Save, RefreshCw, AlertCircle, Check, RotateCcw } from 'lucide-react';
 import api from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
+import APIService from '../../services/api';
 
 interface RolePermissionData {
     role: string;
@@ -18,6 +20,7 @@ interface RolePermissionData {
 }
 
 const RoleManagement = () => {
+    const { login, user } = useAuth();
     const [matrix, setMatrix] = useState<RolePermissionData[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -86,9 +89,38 @@ const RoleManagement = () => {
             });
 
             if (!res.ok) throw new Error('Failed to save permissions');
-            setMessage({ type: 'success', text: 'Permissions matrix saved successfully! Changes will take effect on next login or refresh.' });
+
+            // Refresh caller's own permissions immediately so sidebar updates without re-login
+            try {
+                const userData = await APIService.getMe();
+                if (user) login({ ...user, permissions: userData.permissions || {} });
+            } catch (_) { /* best-effort */ }
+
+            setMessage({ type: 'success', text: 'Permissions saved! Sidebar updated instantly for your role. Other users will see changes on their next page load.' });
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Error saving configurations.' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleReset = async () => {
+        if (!window.confirm('Reset ALL role permissions to system defaults? This cannot be undone.')) return;
+        setSaving(true);
+        setMessage(null);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.config}/roles-permissions/reset`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) throw new Error('Reset failed');
+            await fetchPermissions(); // reload the table
+            const userData = await APIService.getMe();
+            if (user) login({ ...user, permissions: userData.permissions || {} });
+            setMessage({ type: 'success', text: 'Permissions reset to system defaults. Sidebar updated.' });
+        } catch (err: any) {
+            setMessage({ type: 'error', text: err.message || 'Error resetting permissions.' });
         } finally {
             setSaving(false);
         }
@@ -131,6 +163,15 @@ const RoleManagement = () => {
                         title="Reload"
                     >
                         <RefreshCw size={18} />
+                    </button>
+                    <button
+                        onClick={handleReset}
+                        disabled={saving}
+                        className="flex items-center gap-2 px-4 py-2.5 border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all font-semibold text-sm disabled:opacity-50"
+                        title="Reset all permissions to system defaults"
+                    >
+                        <RotateCcw size={16} />
+                        Reset Defaults
                     </button>
                     <button
                         onClick={handleSave}

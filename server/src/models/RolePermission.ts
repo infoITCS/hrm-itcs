@@ -42,29 +42,32 @@ export async function bootstrapPermissions() {
         },
         {
             role: 'hr',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
         },
         {
             role: 'finance',
-            permissions: { dashboard: true, pim: false, leave: false, attendance: false, claim: true, payroll: true, requests: true, settings: false }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
         },
         {
             role: 'manager',
-            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
         },
         {
             role: 'employee',
-            permissions: { dashboard: true, pim: false, leave: true, attendance: false, claim: true, payroll: false, requests: true, settings: false }
+            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
         }
     ];
 
     try {
         const RolePermission = mongoose.models.RolePermission || mongoose.model('RolePermission');
         for (const d of defaults) {
-            const exist = await RolePermission.findOne({ role: d.role });
-            if (!exist) {
-                await RolePermission.create(d);
-            }
+            // Only set permissions when the document is being INSERTED for the first time.
+            // $setOnInsert is a no-op when the document already exists, preserving admin edits.
+            await RolePermission.findOneAndUpdate(
+                { role: d.role },
+                { $setOnInsert: { permissions: d.permissions } },
+                { upsert: true }
+            );
         }
     } catch (err) {
         console.error('Error bootstrapping default role permissions:', err);

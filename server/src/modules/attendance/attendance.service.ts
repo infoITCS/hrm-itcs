@@ -4,7 +4,7 @@ import logger from '../../utils/logger';
 import { sendAutoCloseAlertEmail } from '../../utils/email';
 import {
     pktHHMMtoUtc, isWeekend, applyLunchDeduction,
-    isValidCheckout, toPKTTimeString, startOfDay, endOfDay, todayPKT, nowPKT
+    isValidCheckout, toPKTTimeString, startOfDay, endOfDay
 } from '../../shared/utils/dateUtils';
 import type {
     ShiftConfig, DashboardSummary, RecordsPage,
@@ -266,7 +266,7 @@ export async function getTodayRoster(
             const rawMins = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / 60000);
             workDurationMinutes = applyLunchDeduction(rawMins);
         } else if (!rec && !checkOutTime) {
-            const now = nowPKT();
+            const now = new Date();
             const rawMins = Math.floor((now.getTime() - checkInTime.getTime()) / 60000);
             workDurationMinutes = Math.max(0, rawMins);
         }
@@ -398,7 +398,7 @@ export async function getWeeklyTrend(endDate: string, location?: string, teamSco
     if (teamScope) activeFilter.employeeId = { $in: teamScope };
 
     const activeCount = await repo.countActiveEmployees(activeFilter);
-    const todayStr = todayPKT();
+    const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
     
     // Calculate start date (6 days ago)
     const end = new Date(endDate + 'T00:00:00.000Z');

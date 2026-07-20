@@ -1,11 +1,11 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth';
-import { nowPKT } from '../../shared/utils/dateUtils';
+
 import * as svc from './attendance.service';
 import * as repo from './attendance.repository';
 import { runZktSync, checkServerStatus, fetchEmployees, fetchTransactions, fetchReport } from '../../services/zktCloudService';
 import { generateCSV } from '../../utils/csv';
-import { todayPKT, pktHHMMtoUtc } from '../../shared/utils/dateUtils';
+import { pktHHMMtoUtc } from '../../shared/utils/dateUtils';
 import logger from '../../utils/logger';
 import type { RecordFilter } from './attendance.types';
 import { AttendanceStatus } from '../../models/AttendanceRecord';
@@ -59,14 +59,14 @@ function buildRecordFilter(req: AuthRequest): RecordFilter {
 export async function getToday(req: AuthRequest, res: Response) {
     try {
         const location = req.query.location as string | undefined;
-        const summary = await svc.getDashboardSummary(todayPKT(), location, req.teamScope);
+        const summary = await svc.getDashboardSummary(new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10), location, req.teamScope);
         res.json({ success: true, data: summary });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
 }
 
 export async function getSummary(req: AuthRequest, res: Response) {
     try {
-        const date = (req.query.date as string) || todayPKT();
+        const date = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const location = req.query.location as string | undefined;
         const summary = await svc.getDashboardSummary(date, location, req.teamScope);
         res.json({ success: true, data: summary });
@@ -75,7 +75,7 @@ export async function getSummary(req: AuthRequest, res: Response) {
 
 export async function getWeekly(req: AuthRequest, res: Response) {
     try {
-        const endDate = (req.query.endDate as string) || todayPKT();
+        const endDate = (req.query.endDate as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const location = req.query.location as string | undefined;
         const data = await svc.getWeeklyTrend(endDate, location, req.teamScope);
         res.json({ success: true, data });
@@ -260,7 +260,7 @@ export async function selfPunch(req: AuthRequest, res: Response) {
         if (!emp) return res.status(404).json({ success: false, message: 'Employee profile not found' });
 
         const now = new Date();
-        const dateStr = todayPKT();
+        const dateStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
 
         await repo.upsertPunch('WEB-PORTAL', emp.employeeId, now, {
             employeeId: emp.employeeId,
@@ -282,7 +282,7 @@ export async function getLiveFeed(req: AuthRequest, res: Response) {
     try {
         const limit = parseInt(req.query.limit as string) || 20;
         const location = req.query.location as string | undefined;
-        const dateStr = (req.query.date as string) || todayPKT();
+        const dateStr = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
 
         const extraFilter: Record<string, any> = {};
         if (location) {
@@ -331,7 +331,7 @@ export async function getLiveFeed(req: AuthRequest, res: Response) {
 
 export async function getTodayRoster(req: AuthRequest, res: Response) {
     try {
-        const dateStr = (req.query.date as string) || todayPKT();
+        const dateStr = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const location = req.query.location as string | undefined;
         const roster = await svc.getTodayRoster(dateStr, location, req.teamScope);
         res.json({ success: true, data: roster });
@@ -441,7 +441,7 @@ export async function zktTriggerSync(_req: AuthRequest, res: Response) {
 
 export async function zktSyncReport(req: AuthRequest, res: Response) {
     try {
-        const date = (req.query.date as string) || todayPKT();
+        const date = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const count = await svc.syncFromMachineReport(date);
         res.json({ success: true, message: `Synced ${count} records for ${date}` });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
@@ -449,7 +449,7 @@ export async function zktSyncReport(req: AuthRequest, res: Response) {
 
 export async function adminAutoClose(req: AuthRequest, res: Response) {
     try {
-        const date = (req.query.date as string) || todayPKT();
+        const date = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const result = await svc.autoCloseIncompleteRecords(date);
         res.json({ success: true, message: `Auto-close complete. Processed: ${result.processed}, Skipped: ${result.skipped}`, data: result });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
@@ -469,7 +469,7 @@ export async function getEmployeeMonthly(req: AuthRequest, res: Response) {
             if (employeeId === 'me') employeeId = emp.employeeId;
         }
 
-        const month = (req.query.month as string) || todayPKT().slice(0, 7);
+        const month = (req.query.month as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10).slice(0, 7);
         const data = await svc.getEmployeeMonthlyAttendance(employeeId, month);
         res.json({ success: true, data });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
@@ -489,7 +489,7 @@ export async function exportMonthly(req: AuthRequest, res: Response) {
             if (employeeId === 'me') employeeId = emp.employeeId;
         }
 
-        const month = (req.query.month as string) || todayPKT().slice(0, 7);
+        const month = (req.query.month as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10).slice(0, 7);
         const csv = await svc.generateMonthlyCSV(month, employeeId);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=attendance_${employeeId}_${month}.csv`);
@@ -499,7 +499,7 @@ export async function exportMonthly(req: AuthRequest, res: Response) {
 
 export async function exportGlobalMonthly(req: AuthRequest, res: Response) {
     try {
-        const month = (req.query.month as string) || todayPKT().slice(0, 7);
+        const month = (req.query.month as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10).slice(0, 7);
         const csv = await svc.generateMonthlyCSV(month);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=attendance_all_${month}.csv`);
@@ -521,7 +521,7 @@ export async function exportDaily(req: AuthRequest, res: Response) {
             if (employeeId === 'me') employeeId = emp.employeeId;
         }
 
-        const date = (req.query.date as string) || todayPKT();
+        const date = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const csv = await svc.generateDailyCSV(date, employeeId);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=attendance_${employeeId}_${date}.csv`);
@@ -531,7 +531,7 @@ export async function exportDaily(req: AuthRequest, res: Response) {
 
 export async function exportGlobalDaily(req: AuthRequest, res: Response) {
     try {
-        const date = (req.query.date as string) || todayPKT();
+        const date = (req.query.date as string) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
         const csv = await svc.generateDailyCSV(date);
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=attendance_all_${date}.csv`);

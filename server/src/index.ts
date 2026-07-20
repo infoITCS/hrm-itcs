@@ -63,6 +63,8 @@ import documentRoutes from './routes/documentRoutes';
 import customRequestCategoryRoutes from './routes/customRequestCategoryRoutes';
 import payrollRoutes from './routes/payrollRoutes';
 import { bootstrapPermissions } from './models/RolePermission';
+import { requireModuleAccess } from './middleware/moduleAccess';
+import { authenticate } from './middleware/auth';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -368,17 +370,19 @@ prefixes.forEach(p => {
     app.use(`${p}/admin`, adminRoutes);
     app.use(`${p}/auth`, authLimiter, authRoutes);
     app.use(`${p}/config`, orgConfigRoutes);
-    app.use(`${p}/v2/attendance`, attendanceV2Routes);
-    app.use(`${p}/claims`, claimRoutes);
+    // Module routes — guarded by DB-driven permissions so toggling the Permissions tab
+    // actually blocks or grants access end-to-end (sidebar + backend).
+    app.use(`${p}/v2/attendance`, authenticate, requireModuleAccess('attendance'), attendanceV2Routes);
+    app.use(`${p}/claims`, authenticate, requireModuleAccess('claim'), claimRoutes);
     app.use(`${p}/expense-categories`, expenseCategoryRoutes);
-    app.use(`${p}/leaves`, leaveRoutes);
+    app.use(`${p}/leaves`, authenticate, requireModuleAccess('leave'), leaveRoutes);
     app.use(`${p}/work-shifts`, workShiftRoutes);
     app.use(`${p}/cron`, cronRoutes);
-    app.use(`${p}/holidays`, holidayRoutes);
-    app.use(`${p}/my-requests`, employeeRequestRoutes);
+    app.use(`${p}/holidays`, authenticate, requireModuleAccess('leave'), holidayRoutes);
+    app.use(`${p}/my-requests`, authenticate, requireModuleAccess('requests'), employeeRequestRoutes);
     app.use(`${p}/documents`, documentRoutes);
     app.use(`${p}/request-categories`, customRequestCategoryRoutes);
-    app.use(`${p}/payroll`, payrollRoutes);
+    app.use(`${p}/payroll`, authenticate, requireModuleAccess('payroll'), payrollRoutes);
 });
 
 app.get('/', (req, res) => {

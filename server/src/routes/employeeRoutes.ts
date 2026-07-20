@@ -18,7 +18,7 @@ import AuditLog from '../models/AuditLog';
 import { authenticate, authorize, AuthRequest, authenticateFile } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
-import { getDiff } from '../utils/diff';
+// removed getDiff import
 import logger from '../utils/logger';
 
 
@@ -1324,7 +1324,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
 
         if (!updatedEmployee) return res.status(404).json({ message: 'Employee not found during update' });
 
-        const diff = getDiff(originalEmployeeObj, updatedEmployee.toObject());
+        const diff = updates;
 
         // Sync names to User model if userId exists
         if (employee.userId && (updates.firstName || updates.lastName)) {

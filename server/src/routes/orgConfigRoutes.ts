@@ -9,10 +9,11 @@ import RolePermission from '../models/RolePermission';
 
 const router = Router();
 
-// Middleware to ensure user is an admin or super-admin
+// Middleware to ensure user is an admin, super-admin, or hr
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
-    if (!['super-admin', 'admin'].includes(authReq.user?.role || '')) {
+    const role = (authReq.user?.role || '').toLowerCase().trim();
+    if (!['super-admin', 'admin', 'hr'].includes(role)) {
         return res.status(403).json({ message: 'Forbidden. Admin access required.' });
     }
     next();
@@ -354,6 +355,33 @@ router.put('/roles-permissions', authenticate, requireAdmin, async (req: Request
         }
 
         res.json({ success: true, message: 'Permissions updated successfully.' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   POST /api/config/roles-permissions/reset
+ * @desc    Reset all role permissions to system defaults (force overwrite)
+ */
+router.post('/roles-permissions/reset', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    const defaults = [
+        { role: 'super-admin', permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },
+        { role: 'admin',       permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },
+        { role: 'hr',          permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },
+        { role: 'finance',     permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },
+        { role: 'manager',     permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false } },
+        { role: 'employee',    permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false } },
+    ];
+    try {
+        for (const d of defaults) {
+            await RolePermission.findOneAndUpdate(
+                { role: d.role },
+                { permissions: d.permissions },
+                { upsert: true, new: true }
+            );
+        }
+        res.json({ success: true, message: 'All role permissions reset to system defaults.' });
     } catch (error) {
         next(error);
     }

@@ -38,24 +38,26 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
-        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'manager', 'hr'], module: 'pim' },
-        { name: 'Leave', icon: Calendar, path: '/leave', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'], module: 'leave' },
-        { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'], module: 'attendance' },
+        { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim' },
+        { name: 'Leave', icon: Calendar, path: '/leave', roles: null, module: 'leave' },
+        { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: null, module: 'attendance' },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'] },
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
-        // { name: 'Maintenance', icon: Settings, path: '/maintenance', roles: ['super-admin', 'admin'] },
-        { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'claim' },
-        { name: 'Payroll', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'payroll' },
-        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'requests', end: true },
+        { name: 'Expense Claim', icon: DollarSign, path: '/claim', roles: null, module: 'claim' },
+        { name: 'Payroll', icon: Banknote, path: '/payroll', roles: null, module: 'payroll' },
+        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
         { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'payroll' },
     ];
 
-    const menuItems = allMenuItems.filter(item => 
-        item.roles.includes(role) && (!item.module || hasAccess(item.module))
-    );
+    const menuItems = allMenuItems.filter(item => {
+        // Items with a module key: trust the DB permissions matrix exclusively.
+        // Items without a module key (no toggle in the UI): use the hardcoded roles array.
+        if (item.module) return hasAccess(item.module);
+        return item.roles ? item.roles.includes(role) : false;
+    });
 
     // Close sidebar when route changes (e.g. after clicking a nav link on mobile)
     useEffect(() => {
