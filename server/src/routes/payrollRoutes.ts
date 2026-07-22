@@ -121,7 +121,15 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
             return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
 
-        const runs = await PayrollRun.find().sort({ createdAt: -1 }).lean();
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 0; // 0 means return all if not specified (backwards compatible)
+
+        let query = PayrollRun.find().sort({ createdAt: -1 });
+        if (limit > 0) {
+            query = query.skip((page - 1) * limit).limit(limit);
+        }
+
+        const runs = await query.lean();
 
         const runIds = runs.map((r: any) => r._id);
         const counts = await Payslip.aggregate([
@@ -323,8 +331,9 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
 
         // ── Meal Allowance: PKR 500 per qualifying attendance day ──────────────
         // Qualifying: status 'Present' or 'Late' within the payroll month.
+        const lastDay     = new Date(run.periodYear, run.periodMonth, 0).getDate();
         const periodStart = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
-        const periodEnd   = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-31`;
+        const periodEnd   = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
         const mealRecords = await AttendanceRecord.find({
             date:   { $gte: periodStart, $lte: periodEnd },
             status: { $in: ['Present', 'Late'] },

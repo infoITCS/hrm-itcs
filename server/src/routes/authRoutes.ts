@@ -8,10 +8,20 @@ import crypto from "crypto";
 import { sendPasswordResetEmail } from "../utils/email";
 import AuditLog from "../models/AuditLog";
 import RolePermission from "../models/RolePermission";
+import rateLimit from "express-rate-limit";
 import logger from '../utils/logger';
 
 
 const router = Router();
+
+// Rate limiter for authentication attempts (max 10 attempts per 15 mins per IP)
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { message: "Too many login attempts from this IP. Please try again after 15 minutes." },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Password strength validator
 const validatePassword = (password: string): string | null => {
@@ -27,7 +37,7 @@ const validatePassword = (password: string): string | null => {
  * @desc    Login with email and password
  * @access  Public
  */
-router.post("/login", async (req: Request, res: Response, next: NextFunction) => {
+router.post("/login", loginLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
 
@@ -154,6 +164,11 @@ router.post("/setup-password", authenticate, async (req: Request, res: Response,
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Security guard: If user already has an established bcrypt password and does not need setup, enforce /change-password
+    if (user.password && user.password.startsWith('$2') && !user.needsPasswordSetup) {
+      return res.status(400).json({ message: "Password is already set. Use the change-password endpoint with your current password." });
+    }
+
     user.password = newPassword;
     user.needsPasswordSetup = false;
     await user.save(); // pre-save hook will hash it
@@ -162,6 +177,20 @@ router.post("/setup-password", authenticate, async (req: Request, res: Response,
   } catch (error) {
     next(error);
   }
+});
+
+/**
+ * @route   GET /api/auth/file-token
+ * @desc    Generate a short-lived (5 min) token for media/file previews
+ * @access  Private
+ */
+router.get("/file-token", authenticate, async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+  const fileToken = AuthUtils.generateFileToken({
+    userId: authReq.user!.userId,
+    role: authReq.user!.role,
+  });
+  res.json({ fileToken });
 });
 
 /**
