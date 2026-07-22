@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Mail, Phone, Building2, User, Grid, List as ListIcon, Filter, X } from 'lucide-react';
+import { Search, Mail, Phone, Building2, User, Grid, List as ListIcon, Filter, X, FileText } from 'lucide-react';
 import api from '../../utils/api';
 import Avatar from '../../components/UI/Avatar';
 import { getAvatarUrl } from '../../utils/avatar';
 import AlertModal from '../../components/UI/AlertModal';
+import CompanyProfileModal from '../../components/CompanyProfileModal';
 
 interface Employee {
     employeeId: string;
@@ -40,6 +41,7 @@ const Directory = () => {
         message: '',
         type: 'info'
     });
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     useEffect(() => {
         const fetchDirectory = async () => {
@@ -109,6 +111,8 @@ const Directory = () => {
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fadeIn space-y-8">
+            <CompanyProfileModal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} />
+            
             {/* Header Section */}
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 sm:gap-6">
                 <div className="space-y-2">
@@ -117,6 +121,22 @@ const Directory = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setShowProfileModal(true)}
+                        className="px-4 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-xl text-sm transition-all shadow-sm border border-indigo-200 flex items-center gap-2"
+                    >
+                        <Building2 size={16} />
+                        <span className="hidden sm:inline">Company Profile</span>
+                    </button>
+                    <button 
+                        onClick={() => window.open('https://itconsultingandservices.sharepoint.com/:w:/s/Docs/IQBbHj4ttmqhSqwx7fsHqj3CAdCFc4H_TJI0-QJk9EnA3uk?e=gJh0AI', '_blank')}
+                        className="px-4 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-xl text-sm transition-all shadow-sm border border-indigo-200 flex items-center gap-2"
+                    >
+                        <FileText size={16} />
+                        <span className="hidden sm:inline">Company Policy</span>
+                    </button>
+                    <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+                    
                     <button 
                         onClick={() => setViewMode('grid')}
                         className={`p-2.5 rounded-xl transition-all ${viewMode === 'grid' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-200'}`}

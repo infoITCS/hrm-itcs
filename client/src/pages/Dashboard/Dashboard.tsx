@@ -3,14 +3,11 @@ import SetPasswordModal from '../../components/SetPasswordModal';
 import {
     Users,
     UserPlus,
-    BookOpen,
     Calendar,
-    Clock,
     ArrowRight,
     User,
     Star,
     Briefcase,
-    LayoutDashboard,
     FileCheck,
     TrendingUp,
     Shield,
@@ -21,15 +18,13 @@ import {
     Rocket,
     Check,
     AlertCircle,
-    X,
-    FileText
+    X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import Avatar from '../../components/UI/Avatar';
 import { getAvatarUrl } from '../../utils/avatar';
-import CompanyProfileModal from '../../components/CompanyProfileModal';
 
 type RoleType = 'admin' | 'manager' | 'employee';
 
@@ -45,7 +40,6 @@ const Dashboard = () => {
     const [todayLeaves, setTodayLeaves] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSetPassword, setShowSetPassword] = useState(false);
-    const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Detect ?setup-password=1 injected by AuthCallback OR check user profile state
     useEffect(() => {
@@ -147,9 +141,10 @@ const Dashboard = () => {
                                         id: doc._id || doc.id,
                                         type: 'document',
                                         title: `Document Approval: ${doc.fileType}`,
-                                        employeeName: `${member.firstName} ${member.lastName}`,
+                                        employeeName: `Requested by ${member.firstName} ${member.lastName}`,
                                         employeeId: member.employeeId,
-                                        date: new Date(doc.uploadDate || Date.now()).toLocaleDateString()
+                                        date: new Date(doc.uploadDate || Date.now()).toLocaleDateString(),
+                                        path: `/pim/view/${member.employeeId}?tab=documents`
                                     });
                                 }
                             });
@@ -205,6 +200,30 @@ const Dashboard = () => {
                     }
                 } catch (e) {
                     console.error('Failed to fetch today leaves', e);
+                }
+
+                // Fetch Pending Tasks from Notifications
+                try {
+                    const notifRes = await fetch(`${api.baseURL}/api/my-requests/notifications`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (notifRes.ok) {
+                        const notifData = await notifRes.json();
+                        const tasksOnly = notifData.filter((n: any) => n.type === 'task');
+                        setPendingTasks(prev => [
+                            ...prev, 
+                            ...tasksOnly.map((t: any) => ({
+                                id: t.id,
+                                type: 'task',
+                                title: t.title,
+                                employeeName: t.message,
+                                date: new Date(t.time).toLocaleDateString(),
+                                path: t.path
+                            }))
+                        ]);
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch notifications for tasks', e);
                 }
             } catch (err) {
                 console.error('Failed to fetch dashboard stats', err);
@@ -365,44 +384,11 @@ const Dashboard = () => {
 
     const welcome = welcomeByRole[role] || welcomeByRole.employee;
 
-    const activityTitleByRole: Record<string, string> = {
-        admin: 'Organizational Activity',
-        manager: 'Team Activity',
-        employee: 'My Recent Activity',
-    };
-
-    const quickLinksByRole: Record<string, any[]> = {
-        admin: [
-            { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
-            { title: 'Recruitment', desc: 'New hires and open positions', icon: UserPlus, path: '/recruitment' },
-            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
-            { title: 'Company Policy', desc: 'Read latest updates and rules', icon: BookOpen, path: '/directory' },
-        ],
-        manager: [
-            { title: 'My Team (PIM)', desc: 'View and manage direct reports', icon: Users, path: '/pim' },
-            { title: 'Leave Management', desc: 'Approve and track team leave', icon: Calendar, path: '/leave' },
-            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
-            { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
-        ],
-        employee: [
-            { title: 'Employee Directory', desc: 'Find and connect with colleagues', icon: BookOpen, path: '/directory' },
-            { title: 'Company Profile', desc: 'View and download ITCS profile', icon: FileText, action: 'profile' },
-            { title: 'Company Policy', desc: 'Read latest updates and rules', icon: BookOpen, path: '/directory' },
-        ],
-    };
-
-    const quickLinks = quickLinksByRole[role] || quickLinksByRole.employee;
     const BadgeIcon = welcome.badgeIcon;
 
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            {/* Company Profile Modal */}
-            <CompanyProfileModal 
-                isOpen={showProfileModal} 
-                onClose={() => setShowProfileModal(false)} 
-            />
-
             {/* Password Setup Modal for first-time Microsoft users */}
             {showSetPassword && (
                 <SetPasswordModal
@@ -608,37 +594,36 @@ const Dashboard = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Main Content Area (Left/Center) */}
-                <div className="lg:col-span-2 flex flex-col gap-6">
-                    {role === 'manager' && (
-                        <>
-                            {/* Pending Approvals Widget */}
-                            <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
-                                    <FileCheck size={100} className="text-rose-500 -rotate-12" />
-                                </div>
-                                <div className="flex items-center justify-between mb-5 relative z-10">
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                        <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
-                                            <FileCheck size={18} />
-                                        </div>
-                                        Pending Approvals
-                                        {pendingTasks.length > 0 && (
-                                            <span className="bg-rose-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold inline-flex items-center justify-center min-w-[24px] h-[24px] ml-1 shadow-sm">{pendingTasks.length}</span>
-                                        )}
-                                    </h3>
-                                </div>
-                                {pendingTasks.length > 0 ? (
-                                    <div className="space-y-3 relative z-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {pendingTasks.map((task, idx) => (
-                                            <div key={idx} onClick={() => navigate(`/pim/view/${task.employeeId}?tab=documents`)} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-white hover:border-rose-200 hover:shadow-md hover:shadow-rose-100/50 transition-all cursor-pointer group">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-100 group-hover:bg-rose-50 group-hover:border-rose-100 transition-colors">
-                                                        <FileCheck size={20} className="text-rose-500 group-hover:scale-110 transition-transform" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-sm text-slate-800 group-hover:text-rose-700 transition-colors">{task.title}</p>
-                                                        <p className="text-xs text-slate-500 font-medium mt-0.5">Requested by <span className="text-slate-700 font-bold">{task.employeeName}</span> • {task.date}</p>
-                                                    </div>
+                {(role === 'manager' || role === 'admin' || pendingTasks.length > 0) && (
+                    <div className="lg:col-span-2 flex flex-col gap-6">
+                    {(role === 'manager' || role === 'admin') && (
+                        <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                                <FileCheck size={100} className="text-rose-500 -rotate-12" />
+                            </div>
+                            <div className="flex items-center justify-between mb-5 relative z-10">
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
+                                        <FileCheck size={18} />
+                                    </div>
+                                    My Pending Tasks
+                                    {pendingTasks.length > 0 && (
+                                        <span className="bg-rose-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold inline-flex items-center justify-center min-w-[24px] h-[24px] ml-1 shadow-sm">{pendingTasks.length}</span>
+                                    )}
+                                </h3>
+                            </div>
+                            {pendingTasks.length > 0 ? (
+                                <div className="space-y-3 relative z-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {pendingTasks.map((task, idx) => (
+                                        <div key={idx} onClick={() => navigate(task.path || '/dashboard')} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-white hover:border-rose-200 hover:shadow-md hover:shadow-rose-100/50 transition-all cursor-pointer group">
+                                            <div className="flex items-center gap-4">
+                                                <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-100 group-hover:bg-rose-50 group-hover:border-rose-100 transition-colors">
+                                                    <FileCheck size={20} className="text-rose-500 group-hover:scale-110 transition-transform" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm text-slate-800 group-hover:text-rose-700 transition-colors">{task.title}</p>
+                                                    <p className="text-xs text-slate-500 font-medium mt-0.5">{task.employeeName} • {task.date}</p>
+                                                </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-[10px] font-bold uppercase tracking-widest text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100/50">Pending</span>
@@ -653,11 +638,14 @@ const Dashboard = () => {
                                             <Check size={28} className="text-emerald-500" />
                                         </div>
                                         <p className="font-bold text-slate-700">All caught up!</p>
-                                        <p className="text-sm text-slate-500 mt-1">You have no pending approvals for your team at this time.</p>
+                                        <p className="text-sm text-slate-500 mt-1">You have no pending tasks or approvals at this time.</p>
                                     </div>
                                 )}
-                            </div>
+                        </div>
+                    )}
 
+                    {role === 'manager' && (
+                        <>
                             {/* Probation Alerts Widget */}
                             {teamMembers.some((m) => {
                                 if (m.employmentStatus?.status === 'Probation' && m.employmentStatus?.probationEndDate) {
@@ -765,36 +753,13 @@ const Dashboard = () => {
                             </div>
                         </>
                     )}
-
-                    {role !== 'manager' && (
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 h-full flex flex-col">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                    <Sparkles size={20} className="text-indigo-500" />
-                                    {activityTitleByRole[role] || 'Recent Activity'}
-                                </h3>
-                                <button
-                                    onClick={() => (role === 'admin' ? navigate('/pim') : navigate('/my-info'))}
-                                    className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                                >
-                                    View All
-                                </button>
-                            </div>
-                            <div className="flex-1 flex flex-col items-center justify-center py-12 text-slate-400 min-h-[300px]">
-                                <div className="p-4 rounded-2xl bg-slate-50 mb-4 shadow-inner">
-                                    <Clock size={48} className="text-slate-300" />
-                                </div>
-                                <p className="font-medium text-slate-500">Activity feed will appear here</p>
-                                <span className="text-xs mt-2 text-slate-400">New feature coming soon</span>
-                            </div>
-                        </div>
-                    )}
                 </div>
+                )}
 
                 {/* Sidebar Area (Right) */}
-                <div className="lg:col-span-1 flex flex-col gap-6">
+                <div className={`flex flex-col gap-6 ${(role === 'manager' || role === 'admin' || pendingTasks.length > 0) ? 'lg:col-span-1' : 'lg:col-span-3 lg:flex-row'}`}>
                     {/* Today's Leaves Widget */}
-                    <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
+                    <div className={`bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6 ${(role === 'manager' || role === 'admin' || pendingTasks.length > 0) ? '' : 'flex-1'}`}>
                         <div className="flex items-center gap-3 mb-6">
                             <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
                                 <Calendar size={20} />
@@ -833,32 +798,6 @@ const Dashboard = () => {
                                 <p className="text-xs text-slate-400 mt-1">No one is on leave today.</p>
                             </div>
                         )}
-                    </div>
-
-                    {/* Quick Links Widget */}
-                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-                        <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
-                            <LayoutDashboard size={20} className="text-indigo-500" />
-                            Quick Links
-                        </h3>
-                        <div className="space-y-3">
-                            {quickLinks.map((link, i) => (
-                                <div
-                                    key={i}
-                                    onClick={() => link.action === 'profile' ? setShowProfileModal(true) : navigate(link.path)}
-                                    className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-gradient-to-r hover:from-indigo-50/80 hover:to-purple-50/80 cursor-pointer transition-all duration-200 group"
-                                >
-                                    <div className="p-2.5 bg-slate-50 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600 rounded-xl transition-colors border border-slate-100 group-hover:border-indigo-200">
-                                        <link.icon size={22} />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <h4 className="font-semibold text-slate-800 group-hover:text-indigo-900">{link.title}</h4>
-                                        <p className="text-xs text-slate-500 mt-0.5">{link.desc}</p>
-                                    </div>
-                                    <ArrowRight size={16} className="text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all shrink-0" />
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </div>

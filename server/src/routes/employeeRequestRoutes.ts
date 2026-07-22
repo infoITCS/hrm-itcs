@@ -345,6 +345,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             details
         });
 
+        if (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan') {
+            if (details && details.paybackDuration && Number(details.paybackDuration) > 12) {
+                return res.status(400).json({ message: 'Loan payback duration cannot exceed 1 year (12 months).' });
+            }
+        }
+
         await newRequest.save();
 
         // Asynchronously notify manager and admins via email

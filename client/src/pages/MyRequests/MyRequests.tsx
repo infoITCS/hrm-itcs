@@ -218,8 +218,12 @@ const MyRequests = () => {
                 triggerAlert('Validation Error', 'Please enter a valid loan amount.', 'warning');
                 return;
             }
-            if (!paybackDuration || Number(paybackDuration) <= 0) {
-                triggerAlert('Validation Error', 'Please enter a valid payback duration in months.', 'warning');
+            if (!monthlyDeduction || Number(monthlyDeduction) <= 0) {
+                triggerAlert('Validation Error', 'Please enter a valid monthly deduction amount.', 'warning');
+                return;
+            }
+            if (!paybackDuration || Number(paybackDuration) > 12) {
+                triggerAlert('Validation Error', 'Loan duration cannot exceed 12 months. Please increase your monthly deduction.', 'warning');
                 return;
             }
             if (!shouldProceedAnyways && pfBalance !== null && Number(loanAmount) > pfBalance) {
@@ -533,11 +537,11 @@ const MyRequests = () => {
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setLoanAmount(val);
-                                                if (paybackDuration) {
+                                                if (monthlyDeduction) {
                                                     const amt = Number(val);
-                                                    const dur = Number(paybackDuration);
-                                                    if (dur > 0) {
-                                                        setMonthlyDeduction(Math.round(amt / dur).toString());
+                                                    const ded = Number(monthlyDeduction);
+                                                    if (ded > 0) {
+                                                        setPaybackDuration(Math.ceil(amt / ded).toString());
                                                     }
                                                 }
                                             }}
@@ -545,37 +549,34 @@ const MyRequests = () => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Payback Duration (Months)</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Deduction (Rs.)</label>
                                         <input 
                                             type="number" 
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
-                                            value={paybackDuration}
+                                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow ${
+                                                paybackDuration && Number(paybackDuration) > 12 ? 'border-rose-300 bg-rose-50' : 'border-gray-300'
+                                            }`}
+                                            value={monthlyDeduction}
                                             onChange={(e) => {
                                                 const val = e.target.value;
-                                                setPaybackDuration(val);
+                                                setMonthlyDeduction(val);
                                                 if (loanAmount) {
                                                     const amt = Number(loanAmount);
-                                                    const dur = Number(val);
-                                                    if (dur > 0) {
-                                                        setMonthlyDeduction(Math.round(amt / dur).toString());
+                                                    const ded = Number(val);
+                                                    if (ded > 0) {
+                                                        setPaybackDuration(Math.ceil(amt / ded).toString());
                                                     } else {
-                                                        setMonthlyDeduction('');
+                                                        setPaybackDuration('');
                                                     }
                                                 }
                                             }}
-                                            placeholder="e.g. 12"
+                                            placeholder="e.g. 5000"
                                             min="1"
                                         />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Calculated Monthly Installment (Rs.)</label>
-                                        <input 
-                                            type="text" 
-                                            disabled
-                                            className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg outline-none text-gray-500 font-medium"
-                                            value={monthlyDeduction ? Number(monthlyDeduction).toLocaleString() : '-'}
-                                        />
-                                        <p className="text-xs text-gray-500 mt-1">This installment will be automatically deducted from your monthly salary.</p>
+                                        {paybackDuration && Number(paybackDuration) > 12 ? (
+                                            <p className="text-xs text-rose-500 mt-1 font-medium">Loans must be returned within 1 year (12 months maximum). Please increase your monthly deduction.</p>
+                                        ) : (
+                                            <p className="text-xs text-gray-500 mt-1">This installment will be automatically deducted from your monthly salary.</p>
+                                        )}
                                     </div>
                                 </>
                             ) : (

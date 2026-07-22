@@ -5,6 +5,8 @@ import PayrollRun from '../models/PayrollRun';
 import Payslip from '../models/Payslip';
 import Employee from '../models/Employee';
 import Counter from '../models/Counter';
+import EmployeeRequest from '../models/EmployeeRequest';
+import AttendanceRecord from '../models/AttendanceRecord';
 
 const router = express.Router();
 
@@ -319,6 +321,49 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         // Delete any previously generated payslips for this run
         await Payslip.deleteMany({ payrollRunId: runId });
 
+        // ── Meal Allowance: PKR 500 per qualifying attendance day ──────────────
+        // Qualifying: status 'Present' or 'Late' within the payroll month.
+        const periodStart = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
+        const periodEnd   = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-31`;
+        const mealRecords = await AttendanceRecord.find({
+            date:   { $gte: periodStart, $lte: periodEnd },
+            status: { $in: ['Present', 'Late'] },
+        }).select('employeeId').lean() as any[];
+        const mealDaysMap: Record<string, number> = {};
+        for (const r of mealRecords) {
+            mealDaysMap[r.employeeId] = (mealDaysMap[r.employeeId] ?? 0) + 1;
+        }
+        const MEAL_RATE = 500; // PKR per qualifying day — ponytail: hardcoded global rate; upgrade path: move to OrganizationConfig if per-org rate needed
+        // ─────────────────────────────────────────────────────────────────────
+
+        // Calculate current loan balances for all employees
+        const allCompletedLoans = await EmployeeRequest.find({
+            status: 'Completed',
+            category: { $in: ['Loan', 'Request Loan'] }
+        }).lean();
+
+        const allFinalizedPayslips = await Payslip.find({ status: 'Finalized' }).lean();
+
+        const loanBalanceMap: Record<string, { balance: number, monthlyDeduction: number }> = {};
+        for (const loan of allCompletedLoans) {
+            const empId = loan.employeeId;
+            if (!loanBalanceMap[empId]) {
+                loanBalanceMap[empId] = { balance: 0, monthlyDeduction: 0 };
+            }
+            loanBalanceMap[empId].balance += Number((loan as any).details?.requestedAmount || 0);
+            loanBalanceMap[empId].monthlyDeduction += Number((loan as any).details?.recommendedMonthlyDeduction || 0);
+        }
+
+        for (const slip of allFinalizedPayslips) {
+            const empId = slip.employeeId;
+            if (loanBalanceMap[empId]) {
+                const loanDeds = (slip.deductions || []).filter((d: any) => d.component === 'Loan Deduction');
+                for (const d of loanDeds) {
+                    loanBalanceMap[empId].balance -= (d.amount || 0);
+                }
+            }
+        }
+
         const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
         const counter = await Counter.findOneAndUpdate(
             { key: counterKey },
@@ -361,7 +406,34 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
             }
 
+            // Meal Allowance — always present in payslip; 0 if no qualifying days
+            const mealDays = mealDaysMap[emp.employeeId] ?? 0;
+            earnings.push({
+                component: 'Meal Allowance',
+                amount: mealDays * MEAL_RATE,
+                type: 'variable',
+            });
+
             const grossPay = earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
+            
+            const deductions = [];
+            let totalDeductions = 0;
+            
+            const loanInfo = loanBalanceMap[emp.employeeId];
+            if (loanInfo && loanInfo.balance > 0) {
+                // If they still owe money, calculate deduction
+                const amountToDeduct = Math.min(loanInfo.balance, loanInfo.monthlyDeduction);
+                if (amountToDeduct > 0) {
+                    deductions.push({
+                        component: 'Loan Deduction',
+                        amount: amountToDeduct
+                    });
+                    totalDeductions += amountToDeduct;
+                }
+            }
+            
+            const netPay = grossPay - totalDeductions;
+            
             const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
             nextSeq++;
 
@@ -373,10 +445,10 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 periodYear: run.periodYear,
                 currency: run.currency,
                 earnings,
-                deductions: [],
+                deductions,
                 grossPay,
-                totalDeductions: 0,
-                netPay: grossPay,
+                totalDeductions,
+                netPay,
                 status: 'Draft',
                 paymentMethod: 'Bank Transfer',
                 notes: notes || undefined,
