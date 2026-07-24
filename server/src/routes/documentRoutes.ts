@@ -10,6 +10,8 @@ import Employee from '../models/Employee';
 import Payslip from '../models/Payslip';
 import Company from '../models/Company';
 import DocumentTemplate from '../models/DocumentTemplate';
+import LeaveType from '../models/LeaveType';
+import LeaveBalance from '../models/LeaveBalance';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = express.Router();
@@ -217,14 +219,23 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         const lastWorkingDayStr = employee.employmentStatus?.offboardingDate ? new Date(employee.employmentStatus.offboardingDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
         
         const basicSalaryObj = employee.salaryComponents?.find((c: any) => c.component === 'Basic Salary');
-        const basicSalaryAmount = basicSalaryObj ? basicSalaryObj.amount : 50000;
-        const totalGrossSalary = employee.salaryComponents?.reduce((sum: number, c: any) => sum + (c.amount || 0), 0) || 75000;
+        const basicSalaryAmount = basicSalaryObj ? basicSalaryObj.amount : undefined;
+        const totalGrossSalary = employee.salaryComponents?.length 
+            ? employee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0) 
+            : undefined;
+
+        const probSal = employee.financeInfo?.probationSalary 
+            ? String(employee.financeInfo.probationSalary) 
+            : (req.body.customVars?.probationSalary || (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : ''));
+
+        const confSal = employee.financeInfo?.confirmedSalary 
+            ? String(employee.financeInfo.confirmedSalary) 
+            : (req.body.customVars?.confirmedSalary || (totalGrossSalary !== undefined ? String(totalGrossSalary) : ''));
+
+        const isHrOrAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(authReq.user?.role || '');
 
         const pr = getPronouns(employee.gender);
-
         const purposeText = reason || 'employment verification purposes';
-
-        doc.y = 120; // Start printing content below the header divider
 
         const addressObj = employee.address || {};
         const addressStr = [
@@ -233,38 +244,198 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             addressObj.state,
             addressObj.zipCode,
             addressObj.country
-        ].filter(Boolean).join(', ') || 'N/A';
+        ].filter(Boolean).join(', ') || '';
 
-        const vars = {
+        // Resolve Reporting Manager full name
+        let reportingManagerName = employee.jobInfo?.reportingManager || '';
+        if (reportingManagerName) {
+            const mgr = await Employee.findOne({
+                $or: [
+                    { employeeId: reportingManagerName },
+                    { userId: reportingManagerName },
+                    ...(mongoose.Types.ObjectId.isValid(reportingManagerName) ? [{ _id: reportingManagerName }] : [])
+                ]
+            }).lean() as any;
+
+            if (mgr) {
+                reportingManagerName = `${mgr.firstName} ${mgr.lastName}`;
+            }
+        }
+
+        // Resolve Leave Entitlements dynamically from Database
+        const leaveBalanceDoc = await LeaveBalance.findOne({
+            employeeId: employee.employeeId,
+            year: new Date().getFullYear()
+        }).lean() as any;
+
+        const activeLeaveTypes = await LeaveType.find({ isActive: true }).lean() as any[];
+
+        let earnedLeaveDaysVal = '20';
+        let sickLeaveDaysVal = '10';
+        let casualLeaveDaysVal = '10';
+        let casualSickLeaveDaysVal = '10';
+
+        const annualType = activeLeaveTypes.find((t: any) => t.code === 'annual' || t.name?.toLowerCase().includes('annual') || t.name?.toLowerCase().includes('earned'));
+        const sickType = activeLeaveTypes.find((t: any) => t.code === 'sick' || t.name?.toLowerCase().includes('sick'));
+        const casualType = activeLeaveTypes.find((t: any) => t.code === 'casual' || t.name?.toLowerCase().includes('casual'));
+
+        if (annualType) {
+            const bal = leaveBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === annualType.code);
+            earnedLeaveDaysVal = String(bal?.total ?? annualType.defaultDays ?? 20);
+        }
+
+        if (sickType) {
+            const sickBal = leaveBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === sickType.code);
+            sickLeaveDaysVal = String(sickBal?.total ?? sickType.defaultDays ?? 10);
+        }
+
+        if (casualType) {
+            const casualBal = leaveBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === casualType.code);
+            casualLeaveDaysVal = String(casualBal?.total ?? casualType.defaultDays ?? 10);
+        }
+
+        casualSickLeaveDaysVal = sickLeaveDaysVal || casualLeaveDaysVal || '10';
+
+        const vars: Record<string, string> = {
             employeeId: employee.employeeId || '',
             employeeName,
-            firstName: employee.firstName,
-            lastName: employee.lastName,
+            firstName: employee.firstName || '',
+            lastName: employee.lastName || '',
             designation: employee.jobInfo?.designation || '',
             department: employee.jobInfo?.department || '',
-            reportingManager: employee.jobInfo?.reportingManager || 'N/A',
-            joiningDate: joiningDateStr,
-            basicSalary: String(basicSalaryAmount),
-            grossSalary: String(totalGrossSalary),
+            reportingManager: reportingManagerName,
+            joiningDate: joiningDateStr !== 'N/A' ? joiningDateStr : '',
+            basicSalary: basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '',
+            grossSalary: totalGrossSalary !== undefined ? String(totalGrossSalary) : '',
             purpose: purposeText,
             date: issueDate.toLocaleDateString(),
             pronounSubject: pr.subject,
             pronounObject: pr.object,
             pronounPossessive: pr.possessive,
             lastWorkingDay: lastWorkingDayStr,
-            cnic: employee.cnic || 'N/A',
-            fatherName: employee.fatherName || 'N/A',
-            gender: employee.gender || 'N/A',
-            maritalStatus: employee.maritalStatus || 'N/A',
-            nationality: employee.nationality || 'N/A',
-            personalEmail: employee.email || 'N/A',
-            workEmail: employee.workEmail || 'N/A',
-            phone: employee.phone || 'N/A',
+            cnic: employee.cnic || '',
+            fatherName: employee.fatherName || '',
+            gender: employee.gender || '',
+            maritalStatus: employee.maritalStatus || '',
+            nationality: employee.nationality || '',
+            personalEmail: employee.email || '',
+            workEmail: employee.workEmail || '',
+            phone: employee.phone || '',
             address: addressStr,
-            bankName: employee.bankDetails?.bankName || 'N/A',
-            bankAccountNumber: employee.bankDetails?.accountNumber || 'N/A',
-            bankIban: employee.bankDetails?.iban || 'N/A'
+            bankName: employee.bankDetails?.bankName || '',
+            bankAccountNumber: employee.bankDetails?.accountNumber || '',
+            salutation: (employee.gender || '').toLowerCase() === 'female' ? 'Ms.' : 'Mr.',
+            workLocation: employee.jobInfo?.workLocation || '',
+            officeLocation: employee.jobInfo?.workLocation || '',
+            city: employee.address?.city || employee.jobInfo?.workLocation || '',
+            personalCity: employee.address?.city || '',
+            internshipDuration: '3 Months',
+            duration: '3 Months',
+            employmentType: 'Internship',
+            workingDays: 'Monday to Friday',
+            workingHours: '09:00 AM - 06:00 PM',
+            probationDays: employee.financeInfo?.probationDays ? String(employee.financeInfo.probationDays) : '90',
+            probationMonths: employee.financeInfo?.probationMonths ? String(employee.financeInfo.probationMonths) : '3',
+            probationSalary: probSal,
+            companyResources: 'Official Laptop, Email Account, and ID Card',
+            confirmedSalary: confSal,
+            commissionStructure: 'Performance-based quarterly bonuses as per company policy',
+            benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
+            taxCondition: 'Subject to applicable income tax laws and company policy',
+            noticePeriod: '30 Days',
+            probationNoticePeriod: '15 Days',
+            confirmedNoticePeriod: '30 Days',
+            earnedLeaveDays: req.body.customVars?.earnedLeaveDays || earnedLeaveDaysVal,
+            casualSickLeaveDays: req.body.customVars?.casualSickLeaveDays || casualSickLeaveDaysVal,
+            sickLeaveDays: req.body.customVars?.sickLeaveDays || sickLeaveDaysVal,
+            casualLeaveDays: req.body.customVars?.casualLeaveDays || casualLeaveDaysVal,
+            acceptanceValidityDays: '7',
+            probationDaysWords: 'Ninety',
+            signatoryName: 'Authorized Signatory',
+            signatoryDesignation: 'Manager Human Resources',
+            hrEmail: company?.contact?.email || 'info@itcs.com.pk',
+            hrPhone: company?.contact?.phone || '+92 21 111-482-711',
+            ...(req.body.customVars || {}),
+            ...(req.body.variables || {})
         };
+
+        // Scan template.content to find ALL tags used in this template
+        const templateContent = template.content || '';
+        const tagMatches = templateContent.matchAll(/{{\s*([a-zA-Z0-9_]+)\s*}}/g);
+        const usedTags = Array.from(new Set(Array.from(tagMatches).map((m: any) => m[1])));
+
+        // Filter out any tag used in template that is missing or empty in vars
+        const missingTags = usedTags.filter(tag => {
+            const val = vars[tag];
+            return val === undefined || val === null || val === '';
+        });
+
+        if (missingTags.length > 0) {
+            const TAG_LABELS: Record<string, string> = {
+                employeeId: 'Employee ID',
+                employeeName: 'Employee Name',
+                firstName: 'First Name',
+                lastName: 'Last Name',
+                designation: 'Designation / Job Title',
+                department: 'Department',
+                reportingManager: 'Reporting Manager',
+                joiningDate: 'Date of Joining',
+                basicSalary: 'Basic Salary',
+                grossSalary: 'Gross Salary',
+                probationSalary: 'Probation Salary',
+                confirmedSalary: 'Confirmed Salary (Post-Probation)',
+                probationDays: 'Probation Days',
+                probationMonths: 'Probation Months',
+                cnic: 'CNIC / National ID',
+                fatherName: "Father's Name",
+                gender: 'Gender',
+                maritalStatus: 'Marital Status',
+                nationality: 'Nationality',
+                personalEmail: 'Personal Email',
+                workEmail: 'Work Email',
+                phone: 'Phone Number',
+                address: 'Physical Address',
+                bankName: 'Bank Name',
+                bankAccountNumber: 'Bank Account Number',
+                bankIban: 'Bank IBAN',
+                salutation: 'Salutation (Mr./Ms.)',
+                workLocation: 'Appointed Work / Office Location',
+                officeLocation: 'Appointed Work / Office Location',
+                city: 'City (Personal / Residence)',
+                personalCity: 'City (Personal / Residence)',
+                internshipDuration: 'Internship Duration',
+                duration: 'Duration',
+                noticePeriod: 'Notice Period',
+                probationNoticePeriod: 'Probation Notice Period',
+                confirmedNoticePeriod: 'Confirmed Notice Period',
+                earnedLeaveDays: 'Earned Leave Days',
+                casualSickLeaveDays: 'Casual/Sick Leave Days',
+                acceptanceValidityDays: 'Acceptance Validity Days',
+                probationDaysWords: 'Probation Days in Words'
+            };
+
+            const missingLabels = missingTags.map(t => TAG_LABELS[t] || t);
+
+            if (isHrOrAdmin) {
+                return res.status(400).json({
+                    code: 'MISSING_TEMPLATE_DETAILS',
+                    userRole: 'admin',
+                    message: `The following required employee details are missing to generate '${template.subject || documentType}': ${missingLabels.join(', ')}. Please update the employee profile to proceed.`,
+                    missingFields: missingTags,
+                    missingLabels
+                });
+            } else {
+                return res.status(400).json({
+                    code: 'MISSING_TEMPLATE_DETAILS',
+                    userRole: 'employee',
+                    message: `Your profile is missing details required for this document (${missingLabels.join(', ')}). Please contact HR to update your profile before generating this document.`,
+                    missingFields: missingTags,
+                    missingLabels
+                });
+            }
+        }
+
+        doc.y = 120; // Start printing content below the header divider
 
         // Draw custom template title
         doc.fontSize(16).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(template.subject || documentType, { align: 'center' });
@@ -276,14 +447,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         // Write to PDF using PDFKit
         doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(parsedBody, {
             align: 'justify',
-            lineGap: 4
+            lineGap: 2.5
         });
-        
-        // Draw signature dynamically
-        doc.moveDown(2);
-        doc.fontSize(10).font('Helvetica-Bold').text('Authorized Signature,');
-        doc.moveDown(1);
-        doc.text(company?.name || 'Authorized Signatory');
 
         doc.end();
 
@@ -386,7 +551,22 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             address: '123 Main Street, Clifton, Karachi, Pakistan',
             bankName: 'Habib Bank Limited (HBL)',
             bankAccountNumber: '12345678901234',
-            bankIban: 'PK21HABB0012345678901234'
+            bankIban: 'PK21HABB0012345678901234',
+            employmentType: 'Full-Time',
+            workingDays: 'Monday to Friday',
+            workingHours: '09:00 AM - 06:00 PM',
+            probationDays: '90',
+            probationMonths: '3',
+            probationSalary: '150,000',
+            companyResources: 'Official Laptop, Email Account, and ID Card',
+            confirmedSalary: '200,050',
+            commissionStructure: 'Performance-based quarterly bonuses as per company policy',
+            benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
+            taxCondition: 'Subject to applicable income tax laws and company policy',
+            signatoryName: 'Authorized Signatory',
+            signatoryDesignation: 'Manager Human Resources',
+            hrEmail: companyData?.contact?.email || 'info@itcs.com.pk',
+            hrPhone: companyData?.contact?.phone || '+92 21 111-482-711'
         };
 
         const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -426,13 +606,8 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
 
         doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(parsedBody, {
             align: 'justify',
-            lineGap: 4
+            lineGap: 2.5
         });
-
-        doc.moveDown(2);
-        doc.fontSize(10).font('Helvetica-Bold').text('Authorized Signature,');
-        doc.moveDown(1);
-        doc.text(companyData?.name || 'Authorized Signatory');
 
         doc.end();
 

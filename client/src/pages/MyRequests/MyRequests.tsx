@@ -199,7 +199,15 @@ const MyRequests = () => {
             } else {
                 const data = await res.json().catch(() => ({}));
                 const errMsg = data.message || `Failed to generate '${selectedOption}' document template.`;
-                triggerAlert('Configuration Required', errMsg, 'warning');
+                if (data.code === 'MISSING_FINANCE_DETAILS' || data.code === 'MISSING_TEMPLATE_DETAILS') {
+                    if (data.userRole === 'admin') {
+                        triggerAlert('HR Action Required', errMsg, 'warning');
+                    } else {
+                        triggerAlert('HR Configuration Required', errMsg, 'info');
+                    }
+                } else {
+                    triggerAlert('Configuration Required', errMsg, 'warning');
+                }
             }
         } catch (err) {
             console.error(err);

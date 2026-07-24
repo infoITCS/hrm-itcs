@@ -262,7 +262,7 @@ export async function getTodayRoster(
 
         // Compute work duration
         let workDurationMinutes = rec?.workDurationMinutes ?? 0;
-        if (!rec && checkOutTime) {
+        if (checkOutTime && (!rec || rec.workDurationMinutes === 0)) {
             const rawMins = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / 60000);
             workDurationMinutes = applyLunchDeduction(rawMins);
         } else if (!rec && !checkOutTime) {
@@ -273,7 +273,7 @@ export async function getTodayRoster(
 
         // Determine status
         let status = rec?.status || 'Incomplete';
-        if (!rec) {
+        if (!rec || status === 'Incomplete') {
             if (checkOutTime) {
                 const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOutTime.getTime()) / 60000);
                 const isEarlyLeave = earlyDiff > 10;

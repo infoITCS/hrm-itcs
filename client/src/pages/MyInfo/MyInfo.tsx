@@ -401,6 +401,12 @@ const MyInfo = () => {
             iban: '',
             swiftCode: ''
         },
+        financeInfo: {
+            probationSalary: 0,
+            confirmedSalary: 0,
+            probationMonths: 3,
+            probationDays: 90
+        },
         providentFundBalance: 0,
         benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[],
         salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[]
@@ -602,6 +608,12 @@ const MyInfo = () => {
                                 accountNumber: '',
                                 iban: '',
                                 swiftCode: ''
+                            },
+                            financeInfo: {
+                                probationSalary: employee.financeInfo?.probationSalary || 0,
+                                confirmedSalary: employee.financeInfo?.confirmedSalary || 0,
+                                probationMonths: employee.financeInfo?.probationMonths || 3,
+                                probationDays: employee.financeInfo?.probationDays || 90
                             },
                             benefits: employee.benefits?.length ? employee.benefits.map((b: any) => ({
                                 name: b.name || '',
@@ -1242,11 +1254,32 @@ const MyInfo = () => {
                                 {getInitials()}
                             </div>
                         )}
-                        <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px]">
-                            <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform pointer-events-none" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider pointer-events-none">Change</span>
-                            <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
-                        </label>
+                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-2 backdrop-blur-[2px] text-white">
+                            {avatarUrl && !avatarImgError && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setLightboxFile({
+                                            url: avatarUrl!,
+                                            fileName: `${rawEmployee.firstName} ${rawEmployee.lastName || ''} Profile Picture`,
+                                            fileType: 'png'
+                                        });
+                                    }}
+                                    className="p-2 bg-white/20 hover:bg-white/35 rounded-xl transition-all flex flex-col items-center justify-center gap-0.5 hover:scale-105"
+                                    title="View Profile Picture"
+                                >
+                                    <Eye size={18} />
+                                    <span className="text-[9px] font-extrabold uppercase tracking-wider">View</span>
+                                </button>
+                            )}
+                            <label className="p-2 bg-white/20 hover:bg-white/35 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 hover:scale-105" title="Change Profile Picture">
+                                <Camera size={18} />
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider">Change</span>
+                                <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+                            </label>
+                        </div>
                         {uploadingAvatar && (
                             <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
                                 <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
@@ -1501,8 +1534,29 @@ const MyInfo = () => {
                     {/* Finance Tab */}
                     {activeTab === 'finance' && (
                         <div className="space-y-8 animate-fadeIn">
+                            {/* Probation & Post-Probation Terms */}
                             <div>
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Structure</h3>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Probation & Confirmation Terms</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="p-5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl text-white shadow-md">
+                                        <span className="text-xs font-black uppercase tracking-wider text-amber-100 block mb-1">Probation Base Salary</span>
+                                        <p className="text-2xl font-black">
+                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.probationSalary || 0).replace('PKR', 'Rs.')}
+                                        </p>
+                                        <p className="text-xs text-amber-100 mt-2 font-medium">Duration: {rawEmployee.financeInfo?.probationMonths || 3} Months ({rawEmployee.financeInfo?.probationDays || 90} Days)</p>
+                                    </div>
+                                    <div className="p-5 bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl text-white shadow-md">
+                                        <span className="text-xs font-black uppercase tracking-wider text-emerald-100 block mb-1">Confirmed Base Salary</span>
+                                        <p className="text-2xl font-black">
+                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.confirmedSalary || 0).replace('PKR', 'Rs.')}
+                                        </p>
+                                        <p className="text-xs text-emerald-100 mt-2 font-medium">Applies after successful probation completion</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Breakdown Components</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {rawEmployee.salaryComponents?.length > 0 ? (
                                         rawEmployee.salaryComponents.map((comp: any, i: number) => (
@@ -2666,12 +2720,14 @@ const MyInfo = () => {
                                     )}
                                 </div>
                                 <div className="space-y-2">
-                                    <CustomSelect
-                                        label="Work Location"
+                                    <label className="block text-sm font-medium text-gray-600">Work / Office Location</label>
+                                    <input
+                                        type="text"
                                         value={formData.jobInfo.workLocation}
-                                        onChange={(val) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, workLocation: val } }))}
-                                        options={['On-site', 'Remote', 'Hybrid']}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, workLocation: e.target.value } }))}
                                         disabled={!canEditJob}
+                                        placeholder="e.g. Karachi, Lahore Office, Islamabad Branch"
+                                        className={`w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition-all ${disabledJobClass}`}
                                     />
                                     {!canEditJob && (
                                         <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
@@ -3148,6 +3204,77 @@ const MyInfo = () => {
                                 {/* Salary Structure */}
                                 {isAdmin && (
                                     <div>
+                                        {/* Probation & Confirmed Salary Inputs */}
+                                        <div className="mb-8 p-6 bg-slate-50 rounded-2xl border border-slate-200">
+                                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Probation & Confirmed Salary Terms</h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation Salary (PKR)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.financeInfo?.probationSalary || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            financeInfo: {
+                                                                ...prev.financeInfo,
+                                                                probationSalary: Number(e.target.value)
+                                                            }
+                                                        }))}
+                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                        placeholder="e.g. 150000"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Confirmed Salary (PKR)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.financeInfo?.confirmedSalary || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            financeInfo: {
+                                                                ...prev.financeInfo,
+                                                                confirmedSalary: Number(e.target.value)
+                                                            }
+                                                        }))}
+                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                        placeholder="e.g. 200000"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Months)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.financeInfo?.probationMonths || 3}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            financeInfo: {
+                                                                ...prev.financeInfo,
+                                                                probationMonths: Number(e.target.value)
+                                                            }
+                                                        }))}
+                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                        placeholder="3"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Days)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.financeInfo?.probationDays || 90}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            financeInfo: {
+                                                                ...prev.financeInfo,
+                                                                probationDays: Number(e.target.value)
+                                                            }
+                                                        }))}
+                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                        placeholder="90"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <div className="flex justify-between items-end mb-6">
                                             <div>
                                                 <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>

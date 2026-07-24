@@ -244,7 +244,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             'fatherName', 'bloodGroup', 'religion', 'domicile'
         ];
         const ADMIN_EXTRA_FIELDS = [
-            'jobInfo', 'employmentStatus', 'salaryComponents', 'benefits', 
+            'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
             'workEmail', 'otherEmail', 'employeeId', 'biometricPin'
         ];
 
@@ -1232,7 +1232,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         const ADMIN_EXTRA_FIELDS = [
             'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
             'maritalStatus', 'nationality', 'domicile', 'cnic', 'jobInfo', 'employmentStatus',
-            'salaryComponents', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin',
+            'salaryComponents', 'financeInfo', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin',
             'providentFundBalance'
         ];
 

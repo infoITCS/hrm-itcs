@@ -6,6 +6,7 @@ import Holiday from '../models/Holiday';
 import Employee from '../models/Employee';
 import WorkShift from '../models/WorkShift';
 import { fetchReport } from './zktCloudService';
+import { isValidCheckout } from '../shared/utils/dateUtils';
 import logger from '../utils/logger';
 
 
@@ -145,15 +146,9 @@ export async function processEmployeePunches(
         const checkIn = allPunchTimes[0];
         let checkOut: Date | undefined = undefined;
 
-        // Logic: Check Out must be after 1:00 PM AND at least 60 minutes after Check In
         if (allPunchTimes.length > 1) {
             const lastPunch = allPunchTimes[allPunchTimes.length - 1];
-            
-            // 1:00 PM PKT = 08:00 UTC (PKT is UTC+5)
-            const hourPKT = (lastPunch.getUTCHours() + 5) % 24;
-            const minutesSinceIn = Math.floor((lastPunch.getTime() - checkIn.getTime()) / 60000);
-
-            if (hourPKT >= 13 && minutesSinceIn >= 60) {
+            if (isValidCheckout(checkIn, lastPunch)) {
                 checkOut = lastPunch;
             }
         }
@@ -347,9 +342,7 @@ export async function getDashboardSummary(dateStr: string, location?: string, ma
             let hasCheckOut = Boolean(record?.checkOut);
             if (!hasCheckOut && live && live.count > 1) {
                 const lastPunch = new Date(live.lastPunch);
-                const hourPKT = (lastPunch.getUTCHours() + 5) % 24;
-                const minutesSinceIn = Math.floor((lastPunch.getTime() - new Date(checkIn).getTime()) / 60000);
-                if (hourPKT >= 13 && minutesSinceIn >= 60) {
+                if (isValidCheckout(new Date(checkIn), lastPunch)) {
                     hasCheckOut = true;
                 }
             }

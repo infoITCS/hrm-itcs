@@ -57,6 +57,12 @@ export interface IEmployee extends Document {
         amount: number;
         type: 'fixed' | 'variable';
     }[];
+    financeInfo?: {
+        probationSalary?: number;
+        confirmedSalary?: number;
+        probationMonths?: number;
+        probationDays?: number;
+    };
     bankDetails?: {
         bankName?: string;
         accountName?: string;
@@ -213,6 +219,12 @@ const EmployeeSchema: Schema = new Schema({
         amount: { type: Number },
         type: { type: String, enum: ['fixed', 'variable'], default: 'fixed' }
     }],
+    financeInfo: {
+        probationSalary: { type: Number },
+        confirmedSalary: { type: Number },
+        probationMonths: { type: Number, default: 3 },
+        probationDays: { type: Number, default: 90 }
+    },
     bankDetails: {
         bankName: { type: String },
         accountName: { type: String },

@@ -101,6 +101,7 @@ const EmployeeProfile = () => {
     }, [id, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
 
     const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
+    const [viewingAvatarUrl, setViewingAvatarUrl] = useState<string | null>(null);
 
     if (loading) return <div className="p-8 text-center">Loading Profile...</div>;
     if (!employee) return <div className="p-8 text-center">Employee Not Found</div>;
@@ -286,13 +287,32 @@ const EmployeeProfile = () => {
                             initialsClassName="bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 text-2xl font-bold"
                         />
 
-                        {canEditSensitiveData() && (
-                            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-1 backdrop-blur-[2px] text-white">
-                                <Camera size={20} className="transform translate-y-2 group-hover:translate-y-0 transition-transform pointer-events-none" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider pointer-events-none">Change</span>
-                                <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
-                            </label>
-                        )}
+                        <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-1.5 backdrop-blur-[2px] text-white">
+                            {(localAvatarPreview || getAvatarUrl(employee)) && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const url = localAvatarPreview || getAvatarUrl(employee);
+                                        if (url) setViewingAvatarUrl(url);
+                                    }}
+                                    className="p-1.5 bg-white/20 hover:bg-white/35 rounded-lg transition-all flex flex-col items-center justify-center hover:scale-105"
+                                    title="View Profile Picture"
+                                >
+                                    <Eye size={16} />
+                                    <span className="text-[8px] font-extrabold uppercase tracking-wider">View</span>
+                                </button>
+                            )}
+
+                            {canEditSensitiveData() && (
+                                <label className="p-1.5 bg-white/20 hover:bg-white/35 rounded-lg transition-all cursor-pointer flex flex-col items-center justify-center hover:scale-105" title="Change Profile Picture">
+                                    <Camera size={16} />
+                                    <span className="text-[8px] font-extrabold uppercase tracking-wider">Change</span>
+                                    <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />
+                                </label>
+                            )}
+                        </div>
 
                         {uploadingAvatar && (
                             <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
@@ -1126,6 +1146,58 @@ const EmployeeProfile = () => {
                     </div>
                 </div>
             , document.body)}
+
+            {/* View Avatar Lightbox */}
+            {viewingAvatarUrl && createPortal(
+                <div 
+                    className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-fadeIn"
+                    onClick={() => setViewingAvatarUrl(null)}
+                >
+                    <div 
+                        className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl flex flex-col animate-slide-up"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800">
+                                    {employee.firstName} {employee.lastName || ''}
+                                </h3>
+                                <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
+                                    Profile Picture
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={viewingAvatarUrl}
+                                    download={`${employee.firstName}_${employee.lastName || 'Profile'}_Avatar.png`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-2 hover:bg-slate-200/60 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                                    title="Download Image"
+                                >
+                                    <Download size={16} /> Download
+                                </a>
+                                <button
+                                    onClick={() => setViewingAvatarUrl(null)}
+                                    className="p-2 hover:bg-slate-200/60 rounded-xl text-slate-400 hover:text-slate-700 transition-colors"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-auto flex items-center justify-center bg-slate-900/95 max-h-[80vh]">
+                            <img 
+                                src={viewingAvatarUrl} 
+                                alt={`${employee.firstName} ${employee.lastName || ''} Profile Picture`} 
+                                className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl" 
+                            />
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
             {/* Delete Confirmation Modal */}
             <DeleteModal
                 isOpen={showDeleteModal}

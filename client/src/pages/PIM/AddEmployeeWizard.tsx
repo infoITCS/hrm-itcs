@@ -423,6 +423,12 @@ const AddEmployeeWizard = () => {
             iban: '',
             swiftCode: ''
         },
+        financeInfo: {
+            probationSalary: 0,
+            confirmedSalary: 0,
+            probationMonths: 3,
+            probationDays: 90
+        },
         benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
         salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[],
         providentFundBalance: 0
@@ -591,6 +597,12 @@ const AddEmployeeWizard = () => {
                                 accountNumber: '',
                                 iban: '',
                                 swiftCode: ''
+                            },
+                            financeInfo: {
+                                probationSalary: found.financeInfo?.probationSalary || 0,
+                                confirmedSalary: found.financeInfo?.confirmedSalary || 0,
+                                probationMonths: found.financeInfo?.probationMonths || 3,
+                                probationDays: found.financeInfo?.probationDays || 90
                             },
                             benefits: found.benefits?.length
                                 ? found.benefits.map((b: any) => ({
@@ -2232,6 +2244,77 @@ const AddEmployeeWizard = () => {
                 {/* Step 7: Finance — admin only (#9) */}
                 {step === 7 && isAdmin && (
                     <div className="space-y-8 animate-slide-up pb-20">
+                        {/* Probation & Confirmed Salary Inputs */}
+                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200">
+                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Probation & Confirmed Salary Terms</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation Salary (PKR)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.financeInfo?.probationSalary || ''}
+                                        onChange={(e) => setFormData(prev => ({
+                                            ...prev,
+                                            financeInfo: {
+                                                ...prev.financeInfo,
+                                                probationSalary: Number(e.target.value)
+                                            }
+                                        }))}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                        placeholder="e.g. 150000"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Confirmed Salary (PKR)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.financeInfo?.confirmedSalary || ''}
+                                        onChange={(e) => setFormData(prev => ({
+                                            ...prev,
+                                            financeInfo: {
+                                                ...prev.financeInfo,
+                                                confirmedSalary: Number(e.target.value)
+                                            }
+                                        }))}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                        placeholder="e.g. 200000"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Months)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.financeInfo?.probationMonths || 3}
+                                        onChange={(e) => setFormData(prev => ({
+                                            ...prev,
+                                            financeInfo: {
+                                                ...prev.financeInfo,
+                                                probationMonths: Number(e.target.value)
+                                            }
+                                        }))}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                        placeholder="3"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Days)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.financeInfo?.probationDays || 90}
+                                        onChange={(e) => setFormData(prev => ({
+                                            ...prev,
+                                            financeInfo: {
+                                                ...prev.financeInfo,
+                                                probationDays: Number(e.target.value)
+                                            }
+                                        }))}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                        placeholder="90"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Salary Structure */}
                         <div>
                             <div className="flex justify-between items-end mb-6">
