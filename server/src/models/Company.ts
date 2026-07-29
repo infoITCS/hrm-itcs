@@ -22,8 +22,8 @@ const CompanySchema: Schema = new Schema({
     subdomain: { type: String, unique: true, sparse: true },
     logoUrl: { type: String },
     branding: {
-        primaryColor: { type: String, default: '#4A148C' },
-        secondaryColor: { type: String, default: '#1A0933' }
+        primaryColor: { type: String, default: '#4A1248' },
+        secondaryColor: { type: String, default: '#731868' }
     },
     contact: {
         addressLine1: { type: String, required: true },

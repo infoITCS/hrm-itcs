@@ -4,6 +4,7 @@ import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare } 
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { api } from '../../utils/api';
+import AlertModal from '../../components/UI/AlertModal';
 
 const STATUS_COLORS: any = {
     Pending: 'bg-amber-50 text-amber-600 border-amber-100',
@@ -35,6 +36,20 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
     const { user } = useAuth();
     const { role } = usePermissions();
     const [isActionLoading, setIsActionLoading] = useState(false);
+    const [alertModal, setAlertModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error' | 'confirm';
+        onConfirm?: () => void;
+        confirmText?: string;
+        showCancel?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
 
     // Close on Escape key
     useEffect(() => {
@@ -54,8 +69,19 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
     const showDeleteButton = isManagerOrAdmin;
     const cancelBtnText = leave.status === 'Approved' ? 'Cancel Leave' : 'Cancel Request';
 
-    const handleCancel = async () => {
-        if (!window.confirm('Are you sure you want to cancel this leave request?')) return;
+    const handleCancelPrompt = () => {
+        setAlertModal({
+            isOpen: true,
+            title: 'Cancel Leave Request',
+            message: 'Are you sure you want to cancel this leave request?',
+            type: 'confirm',
+            confirmText: 'Yes, Cancel',
+            showCancel: true,
+            onConfirm: performCancel
+        });
+    };
+
+    const performCancel = async () => {
         setIsActionLoading(true);
         try {
             const token = localStorage.getItem('token');
@@ -68,21 +94,49 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                alert('Leave request cancelled successfully');
-                onSuccess?.();
-                onClose();
+                setAlertModal({
+                    isOpen: true,
+                    title: 'Success',
+                    message: 'Leave request cancelled successfully',
+                    type: 'success',
+                    onConfirm: () => {
+                        onSuccess?.();
+                        onClose();
+                    }
+                });
             } else {
-                alert(data.message || 'Failed to cancel leave request');
+                setAlertModal({
+                    isOpen: true,
+                    title: 'Error',
+                    message: data.message || 'Failed to cancel leave request',
+                    type: 'error'
+                });
             }
         } catch (error: any) {
-            alert(error.message || 'An error occurred');
+            setAlertModal({
+                isOpen: true,
+                title: 'Error',
+                message: error.message || 'An error occurred',
+                type: 'error'
+            });
         } finally {
             setIsActionLoading(false);
         }
     };
 
-    const handleDelete = async () => {
-        if (!window.confirm('Are you sure you want to permanently delete this leave request? This action cannot be undone.')) return;
+    const handleDeletePrompt = () => {
+        setAlertModal({
+            isOpen: true,
+            title: 'Delete Leave Request',
+            message: 'Are you sure you want to permanently delete this leave request? This action cannot be undone.',
+            type: 'confirm',
+            confirmText: 'Delete Request',
+            showCancel: true,
+            onConfirm: performDelete
+        });
+    };
+
+    const performDelete = async () => {
         setIsActionLoading(true);
         try {
             const token = localStorage.getItem('token');
@@ -95,14 +149,31 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                alert('Leave request deleted successfully');
-                onSuccess?.();
-                onClose();
+                setAlertModal({
+                    isOpen: true,
+                    title: 'Success',
+                    message: 'Leave request deleted successfully',
+                    type: 'success',
+                    onConfirm: () => {
+                        onSuccess?.();
+                        onClose();
+                    }
+                });
             } else {
-                alert(data.message || 'Failed to delete leave request');
+                setAlertModal({
+                    isOpen: true,
+                    title: 'Error',
+                    message: data.message || 'Failed to delete leave request',
+                    type: 'error'
+                });
             }
         } catch (error: any) {
-            alert(error.message || 'An error occurred');
+            setAlertModal({
+                isOpen: true,
+                title: 'Error',
+                message: error.message || 'An error occurred',
+                type: 'error'
+            });
         } finally {
             setIsActionLoading(false);
         }
@@ -223,7 +294,7 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
                     <div className="flex items-center gap-2">
                         {showDeleteButton && (
                             <button
-                                onClick={handleDelete}
+                                onClick={handleDeletePrompt}
                                 disabled={isActionLoading}
                                 className="px-4 py-2 bg-rose-600 text-white rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold hover:bg-rose-700 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
                             >
@@ -233,7 +304,7 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
                         )}
                         {showCancelButton && (
                             <button
-                                onClick={handleCancel}
+                                onClick={handleCancelPrompt}
                                 disabled={isActionLoading}
                                 className="px-4 py-2 border border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-100/50 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center"
                             >
@@ -251,6 +322,16 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
                     </button>
                 </div>
             </div>
+            <AlertModal
+                isOpen={alertModal.isOpen}
+                onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                title={alertModal.title}
+                message={alertModal.message}
+                type={alertModal.type}
+                onConfirm={alertModal.onConfirm}
+                confirmText={alertModal.confirmText}
+                showCancel={alertModal.showCancel}
+            />
         </div>
     );
 

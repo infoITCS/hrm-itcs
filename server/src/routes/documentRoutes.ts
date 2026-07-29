@@ -49,13 +49,14 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
 }
 
 // Helper to draw letterhead (branded design)
+// Helper to draw letterhead (branded design matching ITCS official template)
 const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, company?: any) => {
     const savedY = doc.y;
     const oldBottomMargin = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
-    const primaryColor = company?.branding?.primaryColor || '#4A148C';
-    const secondaryColor = company?.branding?.secondaryColor || '#1A0933';
+    const primaryColor = company?.branding?.primaryColor || '#4A1248';
+    const secondaryColor = company?.branding?.secondaryColor || '#731868';
 
     // 1. Logo (Top-Left)
     let logoPath = path.join(__dirname, '../../uploads/logo.png');
@@ -63,72 +64,102 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
         logoPath = path.join(__dirname, '../../', company.logoUrl);
     }
     if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 50, 35, { width: 90 });
+        doc.image(logoPath, 50, 35, { width: 95 });
     } else {
         const companyName = company?.name || 'itcs';
         doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text(companyName.toLowerCase(), 50, 45);
         if (!company) {
-            doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('IT CONSULTING AND SERVICES', 50, 70);
+            doc.fontSize(8).font('Helvetica').fillColor('#555555').text('IT CONSULTING AND SERVICES', 50, 70);
         }
     }
 
-    // 2. Top-Right Geometric Purple Decoration
+    // 2. Top-Right Geometric Purple Decoration (ITCS Ribbon)
+    // Dark Purple base triangle
     doc.save()
-       .moveTo(doc.page.width - 150, 0)
-       .lineTo(doc.page.width, 150)
+       .moveTo(doc.page.width - 140, 0)
+       .lineTo(doc.page.width, 140)
        .lineTo(doc.page.width, 0)
        .closePath()
        .fill(primaryColor);
 
+    // Violet accent strip along the outer diagonal edge
     doc.save()
-       .moveTo(doc.page.width - 70, 0)
-       .lineTo(doc.page.width, 70)
-       .lineTo(doc.page.width, 0)
+       .moveTo(doc.page.width - 140, 0)
+       .lineTo(doc.page.width - 120, 0)
+       .lineTo(doc.page.width, 120)
+       .lineTo(doc.page.width, 140)
        .closePath()
        .fill(secondaryColor);
 
-    // 3. Header Divider Line
-    doc.moveTo(50, 100)
-       .lineTo(doc.page.width - 50, 100)
-       .strokeColor('#CBD5E1')
-       .lineWidth(1.5)
+    // 3. Header Divider Line (Stops cleanly before the corner ribbon)
+    doc.moveTo(50, 95)
+       .lineTo(doc.page.width - 140, 95)
+       .strokeColor('#CCCCCC')
+       .lineWidth(1)
        .stroke();
 
     // 4. Footer Dashed Line
     doc.moveTo(50, doc.page.height - 110)
        .lineTo(doc.page.width - 50, doc.page.height - 110)
-       .dash(4, { space: 3 })
-       .strokeColor('#94A3B8')
+       .dash(3, { space: 3 })
+       .strokeColor('#333333')
        .stroke();
 
     // 5. QR Code centered above footer banner
     const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    doc.image(imageBuffer, (doc.page.width / 2) - 25, doc.page.height - 100, { width: 50 });
-    
-    doc.fillColor('#64748B')
+    doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
+
+    // Text above banner
+    doc.fillColor('#555555')
        .fontSize(7)
-       .font('Helvetica')
-       .text('Scan to verify authenticity', 50, doc.page.height - 45, { align: 'center', width: doc.page.width - 100 });
+       .font('Helvetica-Bold')
+       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 50, doc.page.height - 52, { align: 'center', width: doc.page.width - 100 });
 
     // 6. Bottom Purple Banner
-    doc.rect(0, doc.page.height - 35, doc.page.width, 35).fill(secondaryColor);
-    
-    // Banner white text
+    const bannerHeight = 38;
+    const bannerY = doc.page.height - bannerHeight;
+
+    // Outer Purple Banner
+    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(primaryColor);
+
+    // Left and Right Accent Polygons inside banner
+    doc.save()
+       .moveTo(0, bannerY)
+       .lineTo(80, bannerY)
+       .lineTo(110, doc.page.height)
+       .lineTo(0, doc.page.height)
+       .closePath()
+       .fill(secondaryColor);
+
+    doc.save()
+       .moveTo(doc.page.width - 80, bannerY)
+       .lineTo(doc.page.width, bannerY)
+       .lineTo(doc.page.width, doc.page.height)
+       .lineTo(doc.page.width - 110, doc.page.height)
+       .closePath()
+       .fill(secondaryColor);
+
+    // Banner White Text (Addresses & Info)
     doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
     if (company?.contact) {
         const line1 = company.contact.addressLine1 || '';
         const line2 = company.contact.addressLine2 ? ` | ${company.contact.addressLine2}` : '';
         const line3 = `Info: ${company.contact.email} | Call: ${company.contact.phone}` + (company.contact.website ? ` | Web: ${company.contact.website}` : '');
-        doc.text(`${line1}${line2}`, 10, doc.page.height - 25, { align: 'center', width: doc.page.width - 20 });
-        doc.text(line3, 10, doc.page.height - 15, { align: 'center', width: doc.page.width - 20 });
+        doc.text(`${line1}${line2}`, 10, bannerY + 8, { align: 'center', width: doc.page.width - 20 });
+        doc.text(line3, 10, bannerY + 20, { align: 'center', width: doc.page.width - 20 });
     } else {
-        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Karachi Pakistan | Lahore: Office 32, 1st Floor, I.T Tower, Hali Rd, Gulberg III', 10, doc.page.height - 25, { align: 'center', width: doc.page.width - 20 });
-        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz | Info: info@itcs.com.pk | Call: +92 21 111-482-711', 10, doc.page.height - 15, { align: 'center', width: doc.page.width - 20 });
+        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 5, { align: 'center', width: doc.page.width - 20 });
+        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 15, { align: 'center', width: doc.page.width - 20 });
+        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 25, { align: 'center', width: doc.page.width - 20 });
+        
+        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 15, { width: 100, align: 'left' });
+        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 15, { width: 100, align: 'right' });
     }
 
     // Restore text defaults and saved layout position
     doc.page.margins.bottom = oldBottomMargin;
+    doc.undash();
     doc.y = savedY;
     doc.fillColor('#1E293B').font('Helvetica').fontSize(10);
 };

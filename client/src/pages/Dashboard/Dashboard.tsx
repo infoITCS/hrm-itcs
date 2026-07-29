@@ -210,17 +210,22 @@ const Dashboard = () => {
                     if (notifRes.ok) {
                         const notifData = await notifRes.json();
                         const tasksOnly = notifData.filter((n: any) => n.type === 'task');
-                        setPendingTasks(prev => [
-                            ...prev, 
-                            ...tasksOnly.map((t: any) => ({
-                                id: t.id,
-                                type: 'task',
-                                title: t.title,
-                                employeeName: t.message,
-                                date: new Date(t.time).toLocaleDateString(),
-                                path: t.path
-                            }))
-                        ]);
+                        setPendingTasks(prev => {
+                            const combined = [...prev];
+                            tasksOnly.forEach((t: any) => {
+                                if (!combined.some(existing => existing.id === t.id)) {
+                                    combined.push({
+                                        id: t.id,
+                                        type: 'task',
+                                        title: t.title,
+                                        employeeName: t.message,
+                                        date: new Date(t.time).toLocaleDateString(),
+                                        path: t.path
+                                    });
+                                }
+                            });
+                            return combined;
+                        });
                     }
                 } catch (e) {
                     console.error('Failed to fetch notifications for tasks', e);
@@ -596,7 +601,7 @@ const Dashboard = () => {
                 {/* Main Content Area (Left/Center) */}
                 {(role === 'manager' || role === 'admin' || pendingTasks.length > 0) && (
                     <div className="lg:col-span-2 flex flex-col gap-6">
-                    {(role === 'manager' || role === 'admin') && (
+                    {(role === 'manager' || role === 'admin' || pendingTasks.length > 0) && (
                         <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
                             <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
                                 <FileCheck size={100} className="text-rose-500 -rotate-12" />

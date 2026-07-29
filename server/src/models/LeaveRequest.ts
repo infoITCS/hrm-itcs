@@ -4,6 +4,7 @@ export enum LeaveStatus {
     PENDING = 'Pending',
     APPROVED = 'Approved',
     REJECTED = 'Rejected',
+    CANCELLED = 'Cancelled',
 }
 
 export interface ILeaveRequest extends Document {

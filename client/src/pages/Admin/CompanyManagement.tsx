@@ -17,8 +17,8 @@ const CompanyManagement = () => {
         name: '',
         logoUrl: '',
         branding: {
-            primaryColor: '#4A148C',
-            secondaryColor: '#1A0933',
+            primaryColor: '#4A1248',
+            secondaryColor: '#731868',
         },
         contact: {
             addressLine1: '',
@@ -43,8 +43,8 @@ const CompanyManagement = () => {
                         name: data.name || '',
                         logoUrl: data.logoUrl || '',
                         branding: {
-                            primaryColor: data.branding?.primaryColor || '#4A148C',
-                            secondaryColor: data.branding?.secondaryColor || '#1A0933',
+                            primaryColor: data.branding?.primaryColor || '#4A1248',
+                            secondaryColor: data.branding?.secondaryColor || '#731868',
                         },
                         contact: {
                             addressLine1: data.contact?.addressLine1 || '',

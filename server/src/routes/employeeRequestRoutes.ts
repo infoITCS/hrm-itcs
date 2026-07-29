@@ -271,12 +271,63 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 }
             }
 
-        // Employee updates (their own requests updated in last 7 days)
+        // Employee updates and own pending requests (for employee's own notifications/tasks)
         if (employee) {
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-            // Request updates
+            // Employee's own pending requests awaiting review
+            const pendingEmpRequests = await EmployeeRequest.find({
+                employeeId: employee.employeeId,
+                status: 'Pending'
+            }).sort({ requestedAt: -1 }).limit(5).lean();
+
+            for (const reqObj of pendingEmpRequests) {
+                notifications.push({
+                    id: reqObj._id.toString(),
+                    title: `Pending Request: ${reqObj.category}`,
+                    message: `Your ${reqObj.category} request (${reqObj.requestType}) is awaiting review.`,
+                    time: reqObj.updatedAt || reqObj.requestedAt,
+                    type: 'task',
+                    path: '/my-requests'
+                });
+            }
+
+            // Employee's own pending leave requests awaiting approval
+            const pendingLeaves = (await LeaveRequest.find({
+                employeeId: employee.employeeId,
+                status: 'Pending'
+            }).sort({ createdAt: -1 }).limit(5).lean()) as any[];
+
+            for (const leave of pendingLeaves) {
+                notifications.push({
+                    id: leave._id.toString(),
+                    title: `Pending Leave: ${leave.type}`,
+                    message: `Your ${leave.totalDays} day(s) ${leave.type} leave request is awaiting approval.`,
+                    time: leave.createdAt,
+                    type: 'task',
+                    path: '/leave'
+                });
+            }
+
+            // Employee's own pending expense claims
+            const pendingClaims = await ExpenseClaim.find({
+                employeeId: employee.employeeId,
+                status: { $in: ['Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance'] }
+            }).sort({ createdAt: -1 }).limit(5).lean();
+
+            for (const claim of pendingClaims) {
+                notifications.push({
+                    id: claim._id.toString(),
+                    title: `Pending Claim: ${claim.category}`,
+                    message: `Your ${claim.category} claim of Rs. ${claim.amountRequested.toLocaleString()} is currently ${claim.status.toLowerCase()}.`,
+                    time: claim.updatedAt || claim.createdAt,
+                    type: 'task',
+                    path: '/claim'
+                });
+            }
+
+            // Request status updates (Approved/Rejected/Completed in last 7 days)
             const recentUpdates = await EmployeeRequest.find({
                 employeeId: employee.employeeId,
                 status: { $in: ['Approved', 'Rejected', 'Completed'] },
@@ -296,7 +347,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 });
             }
 
-            // Claim updates
+            // Claim status updates (Approved/Declined in last 7 days)
             const recentClaimUpdates = await ExpenseClaim.find({
                 employeeId: employee.employeeId,
                 status: { $in: ['Approved', 'Declined'] },
