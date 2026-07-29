@@ -37,6 +37,7 @@ import DocumentVerification from './pages/DocumentVerification/DocumentVerificat
 import PayrollDashboard from './pages/Payroll/PayrollDashboard';
 import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
 import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
+import MyPayslips from './pages/Payroll/MyPayslips';
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -130,6 +131,7 @@ function AppRoutes() {
         <Route path="claim" element={<ModuleProtectedRoute moduleName="claim"><ExpenseClaimDashboard /></ModuleProtectedRoute>} />
         <Route path="attendance" element={<ModuleProtectedRoute moduleName="attendance"><AttendanceRouter /></ModuleProtectedRoute>} />
         <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />
+        <Route path="my-payslips" element={<MyPayslips />} />
         <Route path="payroll" element={<ModuleProtectedRoute moduleName="payroll"><PayrollDashboard /></ModuleProtectedRoute>} />
         
         {/* Restricted to Admins only */}

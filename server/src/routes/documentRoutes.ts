@@ -235,7 +235,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         const isHrOrAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(authReq.user?.role || '');
 
         const pr = getPronouns(employee.gender);
-        const purposeText = reason || 'employment verification purposes';
+        const purposeText = reason || req.body.customVars?.purpose || '';
 
         const addressObj = employee.address || {};
         const addressStr = [
@@ -296,22 +296,119 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
 
         casualSickLeaveDaysVal = sickLeaveDaysVal || casualLeaveDaysVal || '10';
 
+        // -------------------------------------------------------------
+        // DYNAMIC PAYROLL FETCHING FOR PAY SLIP & CONSOLIDATED PAY SLIPS
+        // -------------------------------------------------------------
+        const defaultGrossNum = totalGrossSalary || 0;
+        const defaultBasicNum = basicSalaryAmount || 0;
+        const defaultAllowancesNum = Math.max(0, defaultGrossNum - defaultBasicNum);
+
+        // 1. Fetch latest payslip for single Pay Slip
+        const latestPayslip = await Payslip.findOne({
+            employeeId: employee.employeeId
+        }).sort({ periodYear: -1, periodMonth: -1 }).lean() as any;
+
+        let singlePayPeriod = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+        let singleBasicSal = defaultBasicNum ? String(defaultBasicNum) : '';
+        let singleAllowances = defaultAllowancesNum ? String(defaultAllowancesNum) : '0';
+        let singleGrossSal = defaultGrossNum ? String(defaultGrossNum) : '';
+        let singleTaxAmt = '0';
+        let singleOtherDed = '0';
+        let singleTotalDed = '0';
+        let singleNetPay = defaultGrossNum ? String(defaultGrossNum) : '';
+
+        if (latestPayslip) {
+            const mName = new Date(latestPayslip.periodYear, latestPayslip.periodMonth - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+            singlePayPeriod = `${mName} ${latestPayslip.periodYear}`;
+
+            const basicEarning = latestPayslip.earnings?.find((e: any) => e.component === 'Basic Salary');
+            const basicAmt = basicEarning ? basicEarning.amount : defaultBasicNum;
+            const allowancesAmt = Math.max(0, latestPayslip.grossPay - basicAmt);
+
+            const taxDeduction = latestPayslip.deductions?.find((d: any) => d.component?.toLowerCase().includes('tax'));
+            const taxAmt = taxDeduction ? taxDeduction.amount : 0;
+            const otherDedAmt = Math.max(0, latestPayslip.totalDeductions - taxAmt);
+
+            singleBasicSal = String(basicAmt);
+            singleAllowances = String(allowancesAmt);
+            singleGrossSal = String(latestPayslip.grossPay);
+            singleTaxAmt = String(taxAmt);
+            singleOtherDed = String(otherDedAmt);
+            singleTotalDed = String(latestPayslip.totalDeductions);
+            singleNetPay = String(latestPayslip.netPay);
+        }
+
+        // 2. Fetch last 3 months payslips for Consolidated Pay Slip (3 Months)
+        const currentDate = new Date();
+        const targetMonths3: { month: number; year: number; name: string }[] = [];
+        for (let i = 2; i >= 0; i--) {
+            const d = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+            targetMonths3.push({
+                month: d.getMonth() + 1,
+                year: d.getFullYear(),
+                name: d.toLocaleDateString('en-US', { month: 'long' })
+            });
+        }
+
+        const consolidated3Data = [];
+        let totalNetPay3Num = 0;
+
+        for (const tm of targetMonths3) {
+            const payslipDoc = await Payslip.findOne({
+                employeeId: employee.employeeId,
+                periodMonth: tm.month,
+                periodYear: tm.year
+            }).lean() as any;
+
+            if (payslipDoc) {
+                consolidated3Data.push({
+                    name: tm.name,
+                    gross: String(payslipDoc.grossPay),
+                    deductions: String(payslipDoc.totalDeductions),
+                    netPay: String(payslipDoc.netPay),
+                    netPayNum: payslipDoc.netPay
+                });
+                totalNetPay3Num += payslipDoc.netPay;
+            } else {
+                // If not distributed in payroll, use default base salary without cuttings
+                consolidated3Data.push({
+                    name: tm.name,
+                    gross: defaultGrossNum ? String(defaultGrossNum) : '0',
+                    deductions: '0',
+                    netPay: defaultGrossNum ? String(defaultGrossNum) : '0',
+                    netPayNum: defaultGrossNum
+                });
+                totalNetPay3Num += defaultGrossNum;
+            }
+        }
+
+        const internshipStart = req.body.customVars?.internshipStartDate || req.body.customVars?.startDate || (employee.employmentStatus?.status === 'Internship' && employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
+        const internshipEnd = req.body.customVars?.internshipEndDate || req.body.customVars?.endDate || (employee.employmentStatus?.status === 'Internship' && employee.employmentStatus?.offboardingDate ? new Date(employee.employmentStatus.offboardingDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
+
         const vars: Record<string, string> = {
             employeeId: employee.employeeId || '',
             employeeName,
+            internName: employeeName,
             firstName: employee.firstName || '',
             lastName: employee.lastName || '',
             designation: employee.jobInfo?.designation || '',
             department: employee.jobInfo?.department || '',
             reportingManager: reportingManagerName,
             joiningDate: joiningDateStr !== 'N/A' ? joiningDateStr : '',
-            basicSalary: basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '',
-            grossSalary: totalGrossSalary !== undefined ? String(totalGrossSalary) : '',
-            purpose: purposeText,
+            startDate: internshipStart,
+            endDate: internshipEnd,
+            internshipStartDate: internshipStart,
+            internshipEndDate: internshipEnd,
+            basicSalary: req.body.customVars?.basicSalary || singleBasicSal || (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : ''),
+            grossSalary: req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : ''),
+            purpose: req.body.customVars?.purpose || purposeText,
+            purposeDetail: req.body.customVars?.purposeDetail || req.body.purposeDetail || '',
             date: issueDate.toLocaleDateString(),
             pronounSubject: pr.subject,
             pronounObject: pr.object,
             pronounPossessive: pr.possessive,
+            pronounCapitalizedSubject: pr.capitalizedSubject,
+            pronounCapitalizedPossessive: pr.capitalizedPossessive,
             lastWorkingDay: lastWorkingDayStr,
             cnic: employee.cnic || '',
             fatherName: employee.fatherName || '',
@@ -324,6 +421,15 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             address: addressStr,
             bankName: employee.bankDetails?.bankName || '',
             bankAccountNumber: employee.bankDetails?.accountNumber || '',
+            bankIban: employee.bankDetails?.iban || '',
+            paymentMethod: employee.bankDetails?.accountNumber 
+                ? `bank transfer to ${employee.bankDetails.bankName ? employee.bankDetails.bankName + ' ' : ''}Account No. ${employee.bankDetails.accountNumber}`
+                : 'bank transfer',
+            skills: (employee.skills && employee.skills.length > 0) ? employee.skills.join(', ') : 'exceptional technical and operational skills',
+            functionalArea: employee.jobInfo?.department || 'core business',
+            jobResponsibilities: employee.jobInfo?.designation ? `${employee.jobInfo.designation} duties and departmental operations` : 'key departmental operations',
+            generalJobDescription: employee.jobInfo?.designation ? `${employee.jobInfo.designation} tasks and project delivery` : 'key projects and organizational goals',
+            jobDescription: employee.jobInfo?.designation ? `${employee.jobInfo.designation} tasks and project delivery` : 'key projects and organizational goals',
             salutation: (employee.gender || '').toLowerCase() === 'female' ? 'Ms.' : 'Mr.',
             workLocation: employee.jobInfo?.workLocation || '',
             officeLocation: employee.jobInfo?.workLocation || '',
@@ -337,6 +443,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             probationDays: employee.financeInfo?.probationDays ? String(employee.financeInfo.probationDays) : '90',
             probationMonths: employee.financeInfo?.probationMonths ? String(employee.financeInfo.probationMonths) : '3',
             probationSalary: probSal,
+            resignationDate: req.body.customVars?.resignationDate || lastWorkingDayStr,
+            settlementDays: req.body.customVars?.settlementDays || '30',
             companyResources: 'Official Laptop, Email Account, and ID Card',
             confirmedSalary: confSal,
             commissionStructure: 'Performance-based quarterly bonuses as per company policy',
@@ -351,6 +459,29 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             casualLeaveDays: req.body.customVars?.casualLeaveDays || casualLeaveDaysVal,
             acceptanceValidityDays: '7',
             probationDaysWords: 'Ninety',
+            payPeriod: req.body.customVars?.payPeriod || singlePayPeriod,
+            allowances: req.body.customVars?.allowances || singleAllowances,
+            taxAmount: req.body.customVars?.taxAmount || singleTaxAmt,
+            otherDeductions: req.body.customVars?.otherDeductions || singleOtherDed,
+            totalDeductions: req.body.customVars?.totalDeductions || singleTotalDed,
+            netPay: req.body.customVars?.netPay || singleNetPay,
+            startMonth: req.body.customVars?.startMonth || consolidated3Data[0].name,
+            endMonth: req.body.customVars?.endMonth || consolidated3Data[2].name,
+            year: req.body.customVars?.year || String(targetMonths3[2].year),
+            month1Name: req.body.customVars?.month1Name || consolidated3Data[0].name,
+            month1Gross: req.body.customVars?.month1Gross || consolidated3Data[0].gross,
+            month1Deductions: req.body.customVars?.month1Deductions || consolidated3Data[0].deductions,
+            month1NetPay: req.body.customVars?.month1NetPay || consolidated3Data[0].netPay,
+            month2Name: req.body.customVars?.month2Name || consolidated3Data[1].name,
+            month2Gross: req.body.customVars?.month2Gross || consolidated3Data[1].gross,
+            month2Deductions: req.body.customVars?.month2Deductions || consolidated3Data[1].deductions,
+            month2NetPay: req.body.customVars?.month2NetPay || consolidated3Data[1].netPay,
+            month3Name: req.body.customVars?.month3Name || consolidated3Data[2].name,
+            month3Gross: req.body.customVars?.month3Gross || consolidated3Data[2].gross,
+            month3Deductions: req.body.customVars?.month3Deductions || consolidated3Data[2].deductions,
+            month3NetPay: req.body.customVars?.month3NetPay || consolidated3Data[2].netPay,
+            totalNetPay3Months: req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
+            totalNetPay: req.body.customVars?.totalNetPay || req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
             signatoryName: 'Authorized Signatory',
             signatoryDesignation: 'Manager Human Resources',
             hrEmail: company?.contact?.email || 'info@itcs.com.pk',
@@ -373,6 +504,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         if (missingTags.length > 0) {
             const TAG_LABELS: Record<string, string> = {
                 employeeId: 'Employee ID',
+                purpose: 'Purpose / Reason',
+                purposeDetail: 'Purpose Detail',
                 employeeName: 'Employee Name',
                 firstName: 'First Name',
                 lastName: 'Last Name',
@@ -405,13 +538,40 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 personalCity: 'City (Personal / Residence)',
                 internshipDuration: 'Internship Duration',
                 duration: 'Duration',
+                startDate: 'Internship Start Date',
+                endDate: 'Internship End Date',
+                internshipStartDate: 'Internship Start Date',
+                internshipEndDate: 'Internship End Date',
                 noticePeriod: 'Notice Period',
                 probationNoticePeriod: 'Probation Notice Period',
                 confirmedNoticePeriod: 'Confirmed Notice Period',
                 earnedLeaveDays: 'Earned Leave Days',
                 casualSickLeaveDays: 'Casual/Sick Leave Days',
                 acceptanceValidityDays: 'Acceptance Validity Days',
-                probationDaysWords: 'Probation Days in Words'
+                probationDaysWords: 'Probation Days in Words',
+                payPeriod: 'Pay Period / Month Year',
+                allowances: 'Allowances',
+                taxAmount: 'Tax Amount',
+                otherDeductions: 'Other Deductions',
+                totalDeductions: 'Total Deductions',
+                netPay: 'Net Pay',
+                startMonth: 'Start Month',
+                endMonth: 'End Month',
+                year: 'Year',
+                month1Name: 'Month 1 Name',
+                month1Gross: 'Month 1 Gross Amount',
+                month1Deductions: 'Month 1 Deductions Amount',
+                month1NetPay: 'Month 1 Net Pay Amount',
+                month2Name: 'Month 2 Name',
+                month2Gross: 'Month 2 Gross Amount',
+                month2Deductions: 'Month 2 Deductions Amount',
+                month2NetPay: 'Month 2 Net Pay Amount',
+                month3Name: 'Month 3 Name',
+                month3Gross: 'Month 3 Gross Amount',
+                month3Deductions: 'Month 3 Deductions Amount',
+                month3NetPay: 'Month 3 Net Pay Amount',
+                totalNetPay3Months: 'Total Net Pay (3 Months)',
+                totalNetPay: 'Total Net Pay (3 Months)'
             };
 
             const missingLabels = missingTags.map(t => TAG_LABELS[t] || t);
@@ -437,18 +597,54 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
 
         doc.y = 120; // Start printing content below the header divider
 
-        // Draw custom template title
-        doc.fontSize(16).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(template.subject || documentType, { align: 'center' });
-        doc.moveDown(1.5);
-        
         // Format body content
         const parsedBody = parseTemplate(template.content, vars);
-        
-        // Write to PDF using PDFKit
-        doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(parsedBody, {
-            align: 'justify',
-            lineGap: 2.5
-        });
+        const lines = parsedBody.split('\n');
+
+        // Draw document subject / title centered at top
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(template.subject || documentType, { align: 'center' });
+        doc.moveDown(1.2);
+
+        const docTitleUpper = (template.subject || documentType).toUpperCase();
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            if (!trimmed) {
+                doc.moveDown(0.3);
+                continue;
+            }
+
+            const trimmedUpper = trimmed.toUpperCase();
+            // Skip line if it duplicates the document main title
+            if (trimmedUpper === docTitleUpper || trimmedUpper.replace(/\s+/g, '') === docTitleUpper.replace(/\s+/g, '')) {
+                continue;
+            }
+
+            // Check if line is a standalone uppercase section title
+            const isHeading = trimmedUpper === trimmed && trimmed.length >= 4 && !trimmed.startsWith('DATE:') && !trimmed.startsWith('TO WHOM') && !trimmed.startsWith('DEAR') && !trimmed.startsWith('SINCERELY');
+
+            if (isHeading) {
+                doc.fontSize(14).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(trimmed, { align: 'center' });
+                doc.moveDown(0.6);
+            } else if (trimmed.toLowerCase().startsWith('date:')) {
+                doc.fontSize(10).font('Helvetica').fillColor('#475569').text(trimmed, { align: 'left' });
+                doc.moveDown(0.4);
+            } else if (trimmed.toLowerCase().startsWith('to whom it may concern') || trimmed.toLowerCase().startsWith('dear ')) {
+                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(trimmed, { align: 'left' });
+                doc.moveDown(0.4);
+            } else if (trimmed.toLowerCase().startsWith('sincerely,')) {
+                doc.moveDown(0.6);
+                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(trimmed, { align: 'left' });
+                doc.moveDown(0.3);
+            } else {
+                doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(trimmed, {
+                    align: 'justify',
+                    lineGap: 2.5
+                });
+            }
+        }
 
         doc.end();
 
@@ -563,6 +759,29 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             commissionStructure: 'Performance-based quarterly bonuses as per company policy',
             benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
             taxCondition: 'Subject to applicable income tax laws and company policy',
+            payPeriod: 'July 2026',
+            allowances: '50,050',
+            taxAmount: '10,000',
+            otherDeductions: '2,000',
+            totalDeductions: '12,000',
+            netPay: '188,050',
+            startMonth: 'May',
+            endMonth: 'July',
+            year: '2026',
+            month1Name: 'May',
+            month1Gross: '200,050',
+            month1Deductions: '12,000',
+            month1NetPay: '188,050',
+            month2Name: 'June',
+            month2Gross: '200,050',
+            month2Deductions: '12,000',
+            month2NetPay: '188,050',
+            month3Name: 'July',
+            month3Gross: '200,050',
+            month3Deductions: '12,000',
+            month3NetPay: '188,050',
+            totalNetPay3Months: '564,150',
+            totalNetPay: '564,150',
             signatoryName: 'Authorized Signatory',
             signatoryDesignation: 'Manager Human Resources',
             hrEmail: companyData?.contact?.email || 'info@itcs.com.pk',

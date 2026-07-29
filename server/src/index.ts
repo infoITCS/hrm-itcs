@@ -382,7 +382,7 @@ prefixes.forEach(p => {
     app.use(`${p}/my-requests`, authenticate, requireModuleAccess('requests'), employeeRequestRoutes);
     app.use(`${p}/documents`, documentRoutes);
     app.use(`${p}/request-categories`, customRequestCategoryRoutes);
-    app.use(`${p}/payroll`, authenticate, requireModuleAccess('payroll'), payrollRoutes);
+    app.use(`${p}/payroll`, authenticate, payrollRoutes);
 });
 
 app.get('/', (req, res) => {

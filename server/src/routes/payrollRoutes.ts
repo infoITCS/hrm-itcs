@@ -1,5 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import path from 'path';
+import fs from 'fs';
+import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import PayrollRun from '../models/PayrollRun';
 import Payslip from '../models/Payslip';
@@ -7,6 +11,7 @@ import Employee from '../models/Employee';
 import Counter from '../models/Counter';
 import EmployeeRequest from '../models/EmployeeRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
+import Company from '../models/Company';
 
 const router = express.Router();
 
@@ -153,6 +158,50 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     }
 });
 
+// Helper to compute or retrieve attendance summary for a payslip
+async function getOrComputeAttendanceSummary(employeeId: string, year: number, month: number, storedSummary?: any) {
+    if (storedSummary && storedSummary.workingDays > 0) {
+        return storedSummary;
+    }
+    const lastDay = new Date(year, month, 0).getDate();
+    const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
+    const periodEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    let workingDays = 0;
+    for (let d = 1; d <= lastDay; d++) {
+        const dayOfWeek = new Date(year, month - 1, d).getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) workingDays++;
+    }
+
+    const records = await AttendanceRecord.find({
+        employeeId,
+        date: { $gte: periodStart, $lte: periodEnd }
+    }).select('status note').lean() as any[];
+
+    let presentDays = 0;
+    let lateDays = 0;
+    let halfDays = 0;
+    let absentDays = 0;
+    let leaveDays = 0;
+
+    for (const r of records) {
+        if (r.status === 'Present') presentDays++;
+        else if (r.status === 'Late') lateDays++;
+        else if (r.status === 'Half-Day') halfDays++;
+        else if (r.status === 'Absent') absentDays++;
+        else if (r.status === 'On Leave') leaveDays++;
+    }
+
+    return {
+        workingDays,
+        presentDays,
+        lateDays,
+        halfDays,
+        absentDays,
+        leaveDays
+    };
+}
+
 /**
  * @route   GET /api/payroll/my-payslips
  * @desc    Get the authenticated employee's own payslip history (Finalized only)
@@ -177,9 +226,194 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
         })
             .populate('payrollRunId', 'title periodMonth periodYear status disbursedAt currency')
             .sort({ periodYear: -1, periodMonth: -1 })
-            .lean();
+            .lean() as any[];
 
-        return res.json(payslips);
+        const enrichedPayslips = await Promise.all(payslips.map(async (p: any) => {
+            const attSummary = await getOrComputeAttendanceSummary(p.employeeId, p.periodYear, p.periodMonth, p.attendanceSummary);
+            return {
+                ...p,
+                attendanceSummary: attSummary
+            };
+        }));
+
+        return res.json(enrichedPayslips);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   GET /api/payroll/payslips/:payslipId/pdf
+ * @desc    Generate and download PDF for a specific payslip
+ * @access  admin, super-admin, or payslip owner
+ */
+router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const payslip = await Payslip.findById(req.params.payslipId)
+            .populate('payrollRunId')
+            .lean() as any;
+
+        if (!payslip) return res.status(404).json({ message: 'Payslip not found.' });
+
+        const emp = await Employee.findOne({ employeeId: payslip.employeeId }).lean() as any;
+
+        if (!isAdmin(authReq.user!.role)) {
+            const userEmp = await Employee.findOne({ userId: authReq.user!.userId }).select('employeeId').lean() as any;
+            if (!userEmp || userEmp.employeeId !== payslip.employeeId) {
+                return res.status(403).json({ message: 'Forbidden.' });
+            }
+        }
+
+        const company = emp?.companyId ? await Company.findById(emp.companyId).lean() as any : null;
+        const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
+
+        const primaryColor = company?.branding?.primaryColor || '#4A148C';
+        const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
+        const verifyUrl = `${clientHost}/verify/${payslip._id}`;
+        const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
+
+        const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Payslip_${payslip.payslipNo}_${payslip.periodMonth}_${payslip.periodYear}.pdf"`);
+        doc.pipe(res);
+
+        // Header & Logo
+        doc.save()
+           .moveTo(210, 0)
+           .lineTo(doc.page.width, 0)
+           .lineTo(doc.page.width, 85)
+           .lineTo(240, 85)
+           .closePath()
+           .fill(primaryColor);
+
+        let logoPath = path.join(__dirname, '../../uploads/logo.png');
+        if (company?.logoUrl) {
+            logoPath = path.join(__dirname, '../../', company.logoUrl);
+        }
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 40, 25, { width: 90 });
+        } else {
+            doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'itcs').toLowerCase(), 40, 30);
+        }
+
+        doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF').text('PAYSLIP / SALARY STATEMENT', 230, 26, { align: 'right', width: doc.page.width - 270 });
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#E9D5FF').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 230, 50, { align: 'right', width: doc.page.width - 270 });
+
+        doc.moveTo(40, 95).lineTo(doc.page.width - 40, 95).strokeColor('#E2E8F0').lineWidth(1).stroke();
+
+        // Employee & Payment Details Table
+        let y = 110;
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('EMPLOYEE DETAILS', 40, y);
+        doc.text('PAYMENT DETAILS', 320, y);
+        y += 15;
+
+        doc.fontSize(9).font('Helvetica').fillColor('#1E293B');
+        const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'N/A';
+
+        doc.text(`Employee Name: ${empName}`, 40, y);
+        doc.text(`Payslip No: ${payslip.payslipNo}`, 320, y);
+        y += 14;
+
+        doc.text(`Employee ID: ${payslip.employeeId}`, 40, y);
+        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 320, y);
+        y += 14;
+
+        doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 40, y);
+        doc.text(`Payment Method: ${payslip.paymentMethod || 'Bank Transfer'}`, 320, y);
+        y += 14;
+
+        doc.text(`Department: ${emp?.jobInfo?.department || 'N/A'}`, 40, y);
+        doc.text(`Bank Name: ${emp?.bankDetails?.bankName || 'N/A'}`, 320, y);
+        y += 14;
+
+        doc.text(`CNIC: ${emp?.cnic || 'N/A'}`, 40, y);
+        doc.text(`Account No: ${emp?.bankDetails?.accountNumber || 'N/A'}`, 320, y);
+        y += 20;
+
+        // Attendance Summary Grid
+        doc.rect(40, y, doc.page.width - 80, 45).fillAndStroke('#F8FAFC', '#E2E8F0');
+        const boxY = y + 10;
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#475569');
+
+        doc.text('WORKING DAYS', 55, boxY, { width: 75, align: 'center' });
+        doc.text('PRESENT', 135, boxY, { width: 65, align: 'center' });
+        doc.text('LATES', 205, boxY, { width: 65, align: 'center' });
+        doc.text('HALF-DAYS', 275, boxY, { width: 65, align: 'center' });
+        doc.text('ABSENTS', 345, boxY, { width: 65, align: 'center' });
+        doc.text('LEAVES', 415, boxY, { width: 65, align: 'center' });
+
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#0F172A');
+        doc.text(String(attSummary.workingDays), 55, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.presentDays), 135, boxY + 14, { width: 65, align: 'center' });
+        doc.text(String(attSummary.lateDays), 205, boxY + 14, { width: 65, align: 'center' });
+        doc.text(String(attSummary.halfDays), 275, boxY + 14, { width: 65, align: 'center' });
+        doc.text(String(attSummary.absentDays), 345, boxY + 14, { width: 65, align: 'center' });
+        doc.text(String(attSummary.leaveDays), 415, boxY + 14, { width: 65, align: 'center' });
+
+        y += 60;
+
+        // Earnings & Deductions Tables
+        const tableMargin = 40;
+        const colGap = 20;
+        const colWidth = (doc.page.width - (tableMargin * 2) - colGap) / 2;
+        const earnLeft = tableMargin;
+        const dedLeft = tableMargin + colWidth + colGap;
+
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B');
+        doc.text('EARNINGS', earnLeft, y);
+        doc.text('DEDUCTIONS', dedLeft, y);
+        y += 18;
+
+        let earnY = y;
+        doc.fontSize(9).font('Helvetica').fillColor('#334155');
+        for (const e of payslip.earnings || []) {
+            doc.text(e.component, earnLeft, earnY, { width: colWidth - 90 });
+            doc.text(`PKR ${e.amount.toLocaleString()}`, earnLeft, earnY, { align: 'right', width: colWidth });
+            earnY += 16;
+        }
+
+        let dedY = y;
+        for (const d of payslip.deductions || []) {
+            doc.text(d.component, dedLeft, dedY, { width: colWidth - 90 });
+            doc.text(`PKR ${d.amount.toLocaleString()}`, dedLeft, dedY, { align: 'right', width: colWidth });
+            dedY += 16;
+        }
+
+        y = Math.max(earnY, dedY) + 15;
+
+        // Subtotals
+        doc.rect(tableMargin, y, doc.page.width - (tableMargin * 2), 25).fill('#F1F5F9');
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#0F172A');
+
+        doc.text('Gross Earnings:', earnLeft + 10, y + 7, { width: 110 });
+        doc.text(`PKR ${payslip.grossPay.toLocaleString()}`, earnLeft, y + 7, { align: 'right', width: colWidth - 10 });
+
+        doc.text('Total Deductions:', dedLeft + 10, y + 7, { width: 110 });
+        doc.text(`PKR ${payslip.totalDeductions.toLocaleString()}`, dedLeft, y + 7, { align: 'right', width: colWidth - 10 });
+
+        y += 35;
+
+        // Net Pay Banner
+        doc.rect(tableMargin, y, doc.page.width - (tableMargin * 2), 40).fill(primaryColor);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#FFFFFF');
+        doc.text('NET TAKE-HOME SALARY:', tableMargin + 15, y + 14);
+        doc.fontSize(14).font('Helvetica-Bold').text(`PKR ${payslip.netPay.toLocaleString()}`, tableMargin, y + 13, { align: 'right', width: doc.page.width - (tableMargin * 2) - 15 });
+
+        y += 55;
+
+        // QR Code & Signatures
+        if (qrCodeDataUri) {
+            doc.image(qrCodeDataUri, 40, y, { width: 65 });
+            doc.fontSize(7).font('Helvetica').fillColor('#64748B').text('Scan to verify payslip authenticity', 40, y + 70);
+        }
+
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B').text('Authorized Signatory', doc.page.width - 200, y + 45, { align: 'center', width: 160 });
+        doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('IT Consulting and Services (ITCS)', doc.page.width - 200, y + 58, { align: 'center', width: 160 });
+        doc.moveTo(doc.page.width - 200, y + 40).lineTo(doc.page.width - 40, y + 40).strokeColor('#CBD5E1').lineWidth(1).stroke();
+
+        doc.end();
     } catch (err) {
         next(err);
     }
@@ -329,20 +563,53 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         // Delete any previously generated payslips for this run
         await Payslip.deleteMany({ payrollRunId: runId });
 
-        // ── Meal Allowance: PKR 500 per qualifying attendance day ──────────────
-        // Qualifying: status 'Present' or 'Late' within the payroll month.
+        // ── Meal Allowance: PKR 500 per FULL working day ('Present' only, no WFH/Late/Half-Day) ──
         const lastDay     = new Date(run.periodYear, run.periodMonth, 0).getDate();
         const periodStart = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
         const periodEnd   = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        // Calculate actual working days (Monday - Friday) in the payroll month
+        let workingDaysCount = 0;
+        for (let d = 1; d <= lastDay; d++) {
+            const dayOfWeek = new Date(run.periodYear, run.periodMonth - 1, d).getDay();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Sunday, 6 = Saturday
+                workingDaysCount++;
+            }
+        }
+        const monthlyWorkingDays = workingDaysCount > 0 ? workingDaysCount : 22;
+        
+        // HR Policy: Meal Allowance only on full working days ('Present'), not on Lates, Half-Days, or WFH
         const mealRecords = await AttendanceRecord.find({
             date:   { $gte: periodStart, $lte: periodEnd },
-            status: { $in: ['Present', 'Late'] },
+            status: 'Present',
+            note:   { $not: /wfh|work from home/i }
         }).select('employeeId').lean() as any[];
+
         const mealDaysMap: Record<string, number> = {};
         for (const r of mealRecords) {
             mealDaysMap[r.employeeId] = (mealDaysMap[r.employeeId] ?? 0) + 1;
         }
-        const MEAL_RATE = 500; // PKR per qualifying day — ponytail: hardcoded global rate; upgrade path: move to OrganizationConfig if per-org rate needed
+        const MEAL_RATE = 500; // PKR per full working day
+
+        // ── Attendance Penalty Deductions: Late 9:30-10:00 (0.5 day cut), Half-Day >10:00 & Absent (1.0 day cut) ──
+        const periodRecords = await AttendanceRecord.find({
+            date:   { $gte: periodStart, $lte: periodEnd },
+            status: { $in: ['Late', 'Half-Day', 'Absent'] }
+        }).select('employeeId status').lean() as any[];
+
+        const attendanceDeductionsMap: Record<string, { halfDays: number; absents: number }> = {};
+        for (const r of periodRecords) {
+            if (!attendanceDeductionsMap[r.employeeId]) {
+                attendanceDeductionsMap[r.employeeId] = { halfDays: 0, absents: 0 };
+            }
+            if (r.status === 'Late') {
+                // Check-in 9:30 AM - 10:00 AM -> 0.5 day cut
+                attendanceDeductionsMap[r.employeeId].halfDays += 1;
+            } else if (r.status === 'Half-Day' || r.status === 'Absent') {
+                // Check-in after 10:00 AM or No punch -> 1.0 day cut
+                attendanceDeductionsMap[r.employeeId].absents += 1;
+            }
+        }
         // ─────────────────────────────────────────────────────────────────────
 
         // Calculate current loan balances for all employees
@@ -427,6 +694,38 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             
             const deductions = [];
             let totalDeductions = 0;
+
+            // Attendance Penalty: 0.5 day cut for Half-Day, 1.0 day cut for Unpaid Absent
+            const attInfo = attendanceDeductionsMap[emp.employeeId];
+            if (attInfo) {
+                const basicComp = (emp.salaryComponents || []).find((c: any) => (c.component || '').toLowerCase().includes('basic'));
+                const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
+                const dailyRate = basicSal / monthlyWorkingDays;
+
+                if (attInfo.halfDays > 0) {
+                    const halfDayAmount = Math.round(attInfo.halfDays * 0.5 * dailyRate);
+                    if (halfDayAmount > 0) {
+                        const unitStr = attInfo.halfDays === 1 ? 'half-day' : 'half-days';
+                        deductions.push({
+                            component: `Half-Day Penalty (${attInfo.halfDays} ${unitStr})`,
+                            amount: halfDayAmount
+                        });
+                        totalDeductions += halfDayAmount;
+                    }
+                }
+
+                if (attInfo.absents > 0) {
+                    const absentAmount = Math.round(attInfo.absents * 1.0 * dailyRate);
+                    if (absentAmount > 0) {
+                        const unitStr = attInfo.absents === 1 ? 'day' : 'days';
+                        deductions.push({
+                            component: `Absence Penalty (${attInfo.absents} ${unitStr})`,
+                            amount: absentAmount
+                        });
+                        totalDeductions += absentAmount;
+                    }
+                }
+            }
             
             const loanInfo = loanBalanceMap[emp.employeeId];
             if (loanInfo && loanInfo.balance > 0) {

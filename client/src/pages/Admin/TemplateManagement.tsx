@@ -75,7 +75,29 @@ const PLACEHOLDERS = [
     { tag: '{{earnedLeaveDays}}', desc: "Earned leave entitlement in days" },
     { tag: '{{casualSickLeaveDays}}', desc: "Casual / Sick leave entitlement in days" },
     { tag: '{{acceptanceValidityDays}}', desc: "Letter acceptance validity in days" },
-    { tag: '{{probationDaysWords}}', desc: "Probation days in words (e.g. Ninety)" }
+    { tag: '{{probationDaysWords}}', desc: "Probation days in words (e.g. Ninety)" },
+    { tag: '{{payPeriod}}', desc: "Pay slip period / Month, Year (e.g. July 2026)" },
+    { tag: '{{allowances}}', desc: "Total Allowances amount (Rs.)" },
+    { tag: '{{taxAmount}}', desc: "Tax deduction amount (Rs.)" },
+    { tag: '{{otherDeductions}}', desc: "Other deductions amount (Rs.)" },
+    { tag: '{{totalDeductions}}', desc: "Total deductions amount (Rs.)" },
+    { tag: '{{netPay}}', desc: "Net take home salary / Net Pay (Rs.)" },
+    { tag: '{{startMonth}}', desc: "Start Month (e.g. May)" },
+    { tag: '{{endMonth}}', desc: "End Month (e.g. July)" },
+    { tag: '{{year}}', desc: "Year (e.g. 2026)" },
+    { tag: '{{month1Name}}', desc: "Month 1 Name (e.g. May)" },
+    { tag: '{{month1Gross}}', desc: "Month 1 Gross Amount (Rs.)" },
+    { tag: '{{month1Deductions}}', desc: "Month 1 Deductions Amount (Rs.)" },
+    { tag: '{{month1NetPay}}', desc: "Month 1 Net Pay Amount (Rs.)" },
+    { tag: '{{month2Name}}', desc: "Month 2 Name (e.g. June)" },
+    { tag: '{{month2Gross}}', desc: "Month 2 Gross Amount (Rs.)" },
+    { tag: '{{month2Deductions}}', desc: "Month 2 Deductions Amount (Rs.)" },
+    { tag: '{{month2NetPay}}', desc: "Month 2 Net Pay Amount (Rs.)" },
+    { tag: '{{month3Name}}', desc: "Month 3 Name (e.g. July)" },
+    { tag: '{{month3Gross}}', desc: "Month 3 Gross Amount (Rs.)" },
+    { tag: '{{month3Deductions}}', desc: "Month 3 Deductions Amount (Rs.)" },
+    { tag: '{{month3NetPay}}', desc: "Month 3 Net Pay Amount (Rs.)" },
+    { tag: '{{totalNetPay3Months}}', desc: "Total Net Pay for 3 Months (Rs.)" }
 ];
 
 const TemplateManagement = () => {

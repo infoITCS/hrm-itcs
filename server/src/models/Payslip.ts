@@ -96,6 +96,14 @@ const PayslipSchema: Schema = new Schema(
         },
         paidAt: { type: Date },
         notes: { type: String },
+        attendanceSummary: {
+            workingDays: { type: Number, default: 0 },
+            presentDays: { type: Number, default: 0 },
+            lateDays: { type: Number, default: 0 },
+            halfDays: { type: Number, default: 0 },
+            absentDays: { type: Number, default: 0 },
+            leaveDays: { type: Number, default: 0 },
+        },
     },
     { timestamps: true }
 );

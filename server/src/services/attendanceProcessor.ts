@@ -179,7 +179,7 @@ export async function processEmployeePunches(
         const shiftStartTime = buildShiftTime(dateStr, shiftStart);
         let lateMinutes = 0;
         const diffMins = Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000);
-        if (diffMins > graceMins) lateMinutes = diffMins - graceMins;
+        if (diffMins > 0) lateMinutes = diffMins;
 
         let overtimeMinutes = 0;
         if (checkOut) {
@@ -189,17 +189,28 @@ export async function processEmployeePunches(
 
         const leaveType = await checkLeave(resolvedEmployeeId, dateStr);
 
-        // Suggestion 1: Early Leave Status
         let status: AttendanceStatus;
-        if (!checkOut) {
+        let note: string | undefined = undefined;
+
+        if (leaveType) {
+            status = 'On Leave';
+            note = leaveType;
+        } else if (!checkOut) {
             status = 'Incomplete';
-        } else if (workDurationMinutes < halfDayHrs * 60) {
-            status = leaveType ? 'On Leave' : 'Half-Day';
+        } else if (diffMins > 60) {
+            // Check-in past 10:00 AM = Half-Day status (Whole day salary cut & meal cut per HR Policy)
+            status = 'Half-Day';
+            note = 'Arrived after 10:00 AM (Whole day salary cut per HR Policy)';
+        } else if (diffMins > 30) {
+            // Check-in between 9:30 AM and 10:00 AM = Late status (0.5 day salary cut & meal cut per HR Policy)
+            status = 'Late';
+            note = 'Arrived past 9:30 AM (Half day salary cut per HR Policy)';
+        } else if (workDurationMinutes < halfDayHrs * 60 && checkOut) {
+            status = 'Half-Day';
         } else if (isEarlyLeave) {
             status = 'Early Leave';
-        } else if (lateMinutes > 0) {
-            status = 'Late';
         } else {
+            // Check-in up to 9:30 AM = Grace time (Present, no penalty, full meal allowance)
             status = 'Present';
         }
 
@@ -220,6 +231,7 @@ export async function processEmployeePunches(
                     overtimeMinutes,
                     leaveType: leaveType || undefined,
                     isHalfDay: status === 'Half-Day' || (workDurationMinutes > 0 && workDurationMinutes < (halfDayHrs * 60)),
+                    note,
                     allPunches: allPunchTimes,
                 }
             },
@@ -576,9 +588,10 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
         const isEarlyLeave = earlyDiff > 10;
 
         let status: AttendanceStatus;
-        if (workDurationMinutes < halfDayHrs * 60) status = 'Half-Day';
+        if (diffMins > 60) status = 'Half-Day';
+        else if (diffMins > 30) status = 'Late';
+        else if (workDurationMinutes < halfDayHrs * 60) status = 'Half-Day';
         else if (isEarlyLeave) status = 'Early Leave';
-        else if (lateMinutes > 0) status = 'Late';
         else status = 'Present';
 
         const pkHours = (effectiveCheckOut.getUTCHours() + 5) % 24;

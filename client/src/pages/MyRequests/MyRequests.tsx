@@ -42,6 +42,9 @@ const MyRequests = () => {
     const [paybackDuration, setPaybackDuration] = useState('');
     const [monthlyDeduction, setMonthlyDeduction] = useState('');
     const [reason, setReason] = useState('');
+    const [purposeDetail, setPurposeDetail] = useState('');
+    const [internshipStartDate, setInternshipStartDate] = useState('');
+    const [internshipEndDate, setInternshipEndDate] = useState('');
     
     // Custom dropdown open state
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -173,6 +176,24 @@ const MyRequests = () => {
     };
 
     const handleGenerateDocument = async () => {
+        if (!reason || !reason.trim()) {
+            triggerAlert('Validation Error', 'Please enter the Purpose / Reason before generating the document.', 'warning');
+            return;
+        }
+        const isNocDoc = selectedOption.toLowerCase().includes('noc') || selectedOption.toLowerCase().includes('no objection');
+        if (isNocDoc && (!purposeDetail || !purposeDetail.trim())) {
+            triggerAlert('Validation Error', 'Please enter the Purpose Detail before generating the NOC document.', 'warning');
+            return;
+        }
+
+        const isInternshipDoc = selectedOption.toLowerCase().includes('internship');
+        if (isInternshipDoc) {
+            if (!internshipStartDate || !internshipEndDate) {
+                triggerAlert('Validation Error', 'Internship start date and end date are required. Please fill in the internship dates.', 'warning');
+                return;
+            }
+        }
+
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/documents/generate`, {
@@ -181,7 +202,18 @@ const MyRequests = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ documentType: selectedOption, reason })
+                body: JSON.stringify({ 
+                    documentType: selectedOption, 
+                    reason,
+                    customVars: {
+                        purpose: reason,
+                        purposeDetail: purposeDetail,
+                        startDate: internshipStartDate,
+                        endDate: internshipEndDate,
+                        internshipStartDate: internshipStartDate,
+                        internshipEndDate: internshipEndDate
+                    }
+                })
             });
 
             if (res.ok) {
@@ -656,18 +688,79 @@ const MyRequests = () => {
                                 </>
                             )}
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {activeCategory.systemType === 'document' ? 'Purpose / Detail (Optional)' : 'Reason / Purpose'}
-                                </label>
-                                <textarea
-                                    rows={3}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
-                                    value={reason}
-                                    onChange={(e) => setReason(e.target.value)}
-                                    placeholder={activeCategory.systemType === 'document' ? 'e.g. applying for a visa / opening a bank account' : 'Explain why you are making this request...'}
-                                />
-                            </div>
+                            {activeCategory.systemType === 'document' ? (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Purpose / Reason <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
+                                            value={reason}
+                                            onChange={(e) => setReason(e.target.value)}
+                                            placeholder="e.g. applying for a visa / opening a bank account / traveling abroad"
+                                            required
+                                        />
+                                    </div>
+                                    {(selectedOption.toLowerCase().includes('noc') || selectedOption.toLowerCase().includes('no objection')) && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Purpose Detail (Title / Subject) <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
+                                                value={purposeDetail}
+                                                onChange={(e) => setPurposeDetail(e.target.value)}
+                                                placeholder="e.g. Tourist Visa to Germany / HBL Bank Account Opening"
+                                                required
+                                            />
+                                        </div>
+                                    )}
+                                    {selectedOption.toLowerCase().includes('internship') && (
+                                        <div className="grid grid-cols-2 gap-3 pt-1">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Internship Start Date <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                                    value={internshipStartDate}
+                                                    onChange={(e) => setInternshipStartDate(e.target.value)}
+                                                    required
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Internship End Date <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                                    value={internshipEndDate}
+                                                    onChange={(e) => setInternshipEndDate(e.target.value)}
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Reason / Purpose
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow text-sm"
+                                        value={reason}
+                                        onChange={(e) => setReason(e.target.value)}
+                                        placeholder="Explain why you are making this request..."
+                                    />
+                                </div>
+                            )}
 
                             {activeCategory.systemType !== 'document' && (
                                 <>

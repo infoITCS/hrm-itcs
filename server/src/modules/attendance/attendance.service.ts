@@ -17,11 +17,15 @@ import { AttendanceStatus } from '../../models/AttendanceRecord';
 function computeStatus(
     lateMinutes: number,
     isEarlyLeave: boolean,
-    hasCheckout: boolean
+    hasCheckout: boolean,
+    diffMins?: number
 ): AttendanceStatus {
     if (!hasCheckout) return 'Incomplete';
+    if (diffMins !== undefined) {
+        if (diffMins > 60) return 'Half-Day';
+        if (diffMins > 30) return 'Late';
+    }
     if (isEarlyLeave) return 'Early Leave';
-    if (lateMinutes > 0) return 'Late';
     return 'Present';
 }
 
@@ -114,7 +118,8 @@ export async function processEmployeePunches(
         const status = computeStatus(
             lateMinutes,
             isEarlyLeave,
-            !!checkOut
+            !!checkOut,
+            diffMins
         );
 
         await repo.upsertRecord(resolvedEmployeeId, dateStr, {
