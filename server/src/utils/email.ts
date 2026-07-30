@@ -562,3 +562,53 @@ export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: s
         return false;
     }
 };
+
+export const sendPendingErpTasksReminderEmail = async (to: string, pendingCount: number, taskItems: Array<{ type: string; description: string; ageHours: number }>, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const itemsHtml = taskItems.map(item => `
+        <li style="margin-bottom: 10px; color: #374151;">
+            <strong>${item.type}:</strong> ${item.description} <span style="color: #ef4444; font-weight: bold;">(Pending ${item.ageHours} hrs)</span>
+        </li>
+    `).join('');
+
+    const mailOptions = {
+        from: `"ITCS HRM Automated Alert" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `[Action Required] ${pendingCount} Pending ERP Task(s) Requiring Reference ID`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5; margin-top: 0;">Pending ERP Tasks Reminder</h2>
+                <p style="color: #4b5563; font-size: 15px;">Hello Finance Team,</p>
+                <p style="color: #4b5563; font-size: 15px;">You have <strong>${pendingCount}</strong> approved item(s) pending for over 48 hours without an ERP Reference ID:</p>
+                
+                <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e5e7eb;">
+                    <ul style="padding-left: 20px; margin: 0;">
+                        ${itemsHtml}
+                    </ul>
+                </div>
+
+                <p style="color: #6b7280; font-size: 14px;">Please log into the HRM system to post the transaction reference IDs to clear these pending tasks.</p>
+                
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="${clientUrl}/my-requests/manage" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">Open Finance Dashboard</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= PENDING ERP TASKS EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Pending Tasks (${pendingCount}): ${JSON.stringify(taskItems)}`);
+        logger.info(`====================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending pending ERP tasks email:', error);
+        return false;
+    }
+};

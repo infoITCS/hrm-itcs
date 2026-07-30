@@ -803,6 +803,7 @@ const ExpenseClaimDashboard = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
+
                         <button
                             onClick={() => { fetchMine(); fetchApprovals(); fetchProgress(); fetchHistory(); }}
                             className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all"

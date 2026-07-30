@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback, type ElementType, type ReactElement } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
     CheckCircle2, Clock, Send, Loader2, X,
     TrendingUp, Users, DollarSign, Calendar,
-    FileText,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
-import MyPayslips from './MyPayslips';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -214,13 +212,14 @@ const PayrollDashboard = () => {
     const { role } = usePermissions();
     const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(role);
 
+    if (!isAdmin) {
+        return <Navigate to="/my-payslips" replace />;
+    }
+
     const [runs, setRuns] = useState<PayrollRun[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [activeTab, setActiveTab] = useState<'runs' | 'my-payslips'>(
-        isAdmin ? 'runs' : 'my-payslips'
-    );
     const [refreshCounter, setRefreshCounter] = useState(0);
 
     const fetchRuns = useCallback(async () => {
@@ -241,9 +240,8 @@ const PayrollDashboard = () => {
     }, [isAdmin]);
 
     useEffect(() => {
-        if (activeTab === 'runs') fetchRuns();
-        else setLoading(false);
-    }, [activeTab, refreshCounter, fetchRuns]);
+        fetchRuns();
+    }, [refreshCounter, fetchRuns]);
 
     const handleCreated = () => {
         setShowCreateModal(false);
@@ -265,14 +263,14 @@ const PayrollDashboard = () => {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Banknote size={26} className="text-indigo-600" />
-                        Payroll
+                        Payroll Management
                     </h1>
                     <p className="text-sm text-slate-500 mt-0.5">
-                        {isAdmin ? 'Manage payroll runs and employee payslips' : 'View your payslip history'}
+                        Manage company payroll runs and employee disbursements
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    {isAdmin && activeTab === 'runs' && (
+                    {isAdmin && (
                         <>
                             <button
                                 onClick={() => setRefreshCounter(c => c + 1)}
@@ -304,34 +302,7 @@ const PayrollDashboard = () => {
                 </div>
             )}
 
-            {/* Tabs */}
-            {isAdmin && (
-                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-                    {(['runs', 'my-payslips'] as const).map(tab => (
-                        <button
-                            key={tab}
-                            id={`tab-payroll-${tab}`}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                activeTab === tab
-                                    ? 'bg-white text-indigo-700 shadow-sm font-semibold'
-                                    : 'text-slate-600 hover:text-slate-800'
-                            }`}
-                        >
-                            {tab === 'runs' ? (
-                                <span className="flex items-center gap-1.5"><Calendar size={14} /> Payroll Runs</span>
-                            ) : (
-                                <span className="flex items-center gap-1.5"><FileText size={14} /> My Payslips</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            )}
-
             {/* Content */}
-            {activeTab === 'my-payslips' ? (
-                <MyPayslips embedded />
-            ) : (
                 <>
                     {loading ? (
                         <div className="flex items-center justify-center py-20">
@@ -404,7 +375,6 @@ const PayrollDashboard = () => {
                         </div>
                     )}
                 </>
-            )}
 
             {/* Create Run Modal */}
             {showCreateModal && (

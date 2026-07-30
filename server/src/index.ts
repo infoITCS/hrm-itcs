@@ -65,6 +65,7 @@ import payrollRoutes from './routes/payrollRoutes';
 import { bootstrapPermissions } from './models/RolePermission';
 import { requireModuleAccess } from './middleware/moduleAccess';
 import { authenticate } from './middleware/auth';
+import { initCronService } from './services/cronService';
 import { initScheduler } from './services/scheduler';
 import mongoSanitize from 'express-mongo-sanitize';
 
@@ -329,6 +330,8 @@ mongoose.set('bufferTimeoutMS', 60000);
 mongoose.connection.on('connected', () => {
     logger.info('🔗 Mongoose: connected');
     bootstrapPermissions();
+    initScheduler();
+    initCronService();
 });
 mongoose.connection.on('disconnected', () => {
     logger.warn('⚠️ Mongoose: disconnected from Cosmos DB');

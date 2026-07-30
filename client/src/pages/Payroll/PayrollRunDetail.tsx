@@ -404,6 +404,7 @@ const PayrollRunDetail = () => {
 
                 {/* Action buttons */}
                 <div className="flex items-center gap-2 shrink-0">
+
                     <button onClick={() => setRefreshCounter(c => c + 1)}
                         className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 border border-slate-200" title="Refresh">
                         <RefreshCw size={15} />

@@ -911,5 +911,6 @@ router.get('/:id/receipts/:receiptId', authenticate, async (req: Request, res: R
     }
 });
 
+
 export default router;
 
