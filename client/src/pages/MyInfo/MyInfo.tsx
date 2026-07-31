@@ -1239,8 +1239,8 @@ const MyInfo = () => {
         return (
             <div className="space-y-6 animate-fadeIn pb-10">
                 {/* Header / Banner */}
-                <div className="flex flex-col md:flex-row md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200/50 shadow-sm animate-slide-up">
-                    <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200/50 relative group overflow-hidden">
+                <div className="flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-4 sm:gap-6 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/50 shadow-sm animate-slide-up">
+                    <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200/50 relative group overflow-hidden shrink-0">
                         {avatarUrl && !avatarImgError ? (
                             <img
                                 key={avatarUrl}
@@ -1286,33 +1286,33 @@ const MyInfo = () => {
                             </div>
                         )}
                     </div>
-                    <div className="flex-1">
-                        <h1 className="text-2xl font-bold text-gray-800">
+                    <div className="flex-1 min-w-0 flex flex-col items-center sm:items-start text-center sm:text-left">
+                        <h1 className="text-xl sm:text-2xl font-bold text-gray-800 break-words">
                             {rawEmployee.firstName} {rawEmployee.middleName ? `${rawEmployee.middleName} ` : ''}{rawEmployee.lastName}
                         </h1>
-                        <p className="text-gray-500 font-medium">{rawEmployee.jobInfo?.designation || 'Employee'} • {rawEmployee.jobInfo?.department || 'Member'}</p>
-                        <div className="flex flex-wrap gap-4 mt-2">
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+                        <p className="text-xs sm:text-sm text-gray-500 font-medium mt-0.5">{rawEmployee.jobInfo?.designation || 'Employee'} • {rawEmployee.jobInfo?.department || 'Member'}</p>
+                        <div className="flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-4 mt-2">
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 whitespace-nowrap">
                                 <Check size={12} /> Active
                             </span>
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100 whitespace-nowrap">
                                 <Shield size={12} /> {rawEmployee.employeeId}
                             </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
                         <button
                             onClick={handleSyncMicrosoftPhoto}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-600 text-white rounded-xl hover:from-blue-700 hover:to-sky-700 transition-all font-semibold shadow-md shadow-blue-100 hover:shadow-lg hover:scale-[1.02] active:scale-95"
+                            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 bg-gradient-to-r from-blue-600 to-sky-600 text-white rounded-xl hover:from-blue-700 hover:to-sky-700 transition-all font-semibold text-xs sm:text-sm shadow-md shadow-blue-100 hover:shadow-lg hover:scale-[1.02] active:scale-95 whitespace-nowrap"
                             title="Sync profile picture from Microsoft 365"
                         >
-                            <Cloud size={18} /> Sync MS Photo
+                            <Cloud size={18} className="shrink-0" /> Sync MS Photo
                         </button>
                         <button
                             onClick={() => { setIsEditing(true); setStep(1); }}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all font-semibold shadow-md shadow-indigo-100 hover:shadow-lg hover:scale-[1.02] active:scale-95"
+                            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all font-semibold text-xs sm:text-sm shadow-md shadow-indigo-100 hover:shadow-lg hover:scale-[1.02] active:scale-95 whitespace-nowrap"
                         >
-                            <Edit2 size={18} /> Edit Profile
+                            <Edit2 size={18} className="shrink-0" /> Edit Profile
                         </button>
                     </div>
                 </div>

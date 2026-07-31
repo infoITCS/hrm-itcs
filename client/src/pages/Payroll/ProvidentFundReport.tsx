@@ -572,7 +572,7 @@ export default function ProvidentFundReport() {
 
                                 {/* Summary row */}
                                 <div
-                                    className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
+                                    className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 sm:px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
                                     onClick={() => setExpanded(p => ({ ...p, [emp.employeeId]: !p[emp.employeeId] }))}
                                 >
                                     <span className="text-slate-400 shrink-0">
@@ -584,39 +584,39 @@ export default function ProvidentFundReport() {
                                             {emp.firstName} {emp.lastName}
                                             <span className="ml-2 text-xs font-medium text-slate-400">#{emp.employeeId}</span>
                                         </p>
-                                        <p className="text-xs text-slate-500">{emp.designation} • {emp.department}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.designation} • {emp.department}</p>
                                     </div>
 
                                     {/* Maturity date */}
                                     <div className="text-center hidden md:block min-w-[120px]">
-                                        <p className="text-xs text-slate-400 font-medium">Maturity Date</p>
-                                        <p className="font-bold text-slate-700 text-xs">{fmtDate(emp.maturityDate)}</p>
+                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Maturity Date</p>
+                                        <p className="font-bold text-slate-700 text-xs whitespace-nowrap">{fmtDate(emp.maturityDate)}</p>
                                     </div>
 
                                     {/* Service */}
                                     <div className="text-center hidden sm:block min-w-[130px]">
-                                        <p className="text-xs text-slate-400 font-medium">Service</p>
-                                        <p className="font-bold text-slate-700">{fmtMonths(emp.monthsOfService)}</p>
+                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Service</p>
+                                        <p className="font-bold text-slate-700 whitespace-nowrap">{fmtMonths(emp.monthsOfService)}</p>
                                     </div>
 
                                     {/* Balance */}
                                     <div className="text-center hidden sm:block min-w-[120px]">
-                                        <p className="text-xs text-slate-400 font-medium">PF Balance</p>
-                                        <p className="font-black text-emerald-600">{fmtPKR(emp.providentFundBalance)}</p>
+                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">PF Balance</p>
+                                        <p className="font-black text-emerald-600 whitespace-nowrap">{fmtPKR(emp.providentFundBalance)}</p>
                                     </div>
 
                                     {/* Status badge */}
                                     <div className="shrink-0">
                                         {emp.pfClaimed ? (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
                                                 <CheckCircle2 size={12} /> Claimed
                                             </span>
                                         ) : emp.isMatured ? (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 whitespace-nowrap">
                                                 <BadgeCheck size={12} /> Matured
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap">
                                                 <Clock size={12} /> {fmtMonths(monthsLeft)} left
                                             </span>
                                         )}

@@ -422,12 +422,12 @@ const MyRequests = () => {
                         className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                 </div>
-                <div className="flex gap-2 w-full sm:w-auto">
+                <div className="flex gap-2 w-full sm:w-auto overflow-x-auto scrollbar-none pb-1">
                     {['All', 'Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
                         <button
                             key={status}
                             onClick={() => setStatusFilter(status)}
-                            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all whitespace-nowrap shrink-0 ${
                                 statusFilter === status
                                 ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
                                 : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -446,7 +446,7 @@ const MyRequests = () => {
             {loading ? (
                 <div className="text-center py-10">Loading...</div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {filteredRequests.map(req => (
                         <div 
                             key={req._id} 
@@ -482,15 +482,21 @@ const MyRequests = () => {
                                 </div>
                                 
                                 {(req.category === 'Loan' || req.category === 'Request Loan') && (
-                                    <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
-                                        <div className="flex justify-between mb-1"><span className="text-gray-500">Amount</span><span className="font-medium">Rs. {req.details?.requestedAmount?.toLocaleString()}</span></div>
+                                    <div className="mt-4 p-3 bg-gray-50 rounded-lg text-xs sm:text-sm">
+                                        <div className="flex justify-between items-center gap-2 mb-1">
+                                            <span className="text-gray-500 shrink-0">Amount</span>
+                                            <span className="font-semibold text-gray-800 text-right whitespace-nowrap">Rs. {req.details?.requestedAmount?.toLocaleString()}</span>
+                                        </div>
                                         {req.details?.paybackDuration && (
-                                            <div className="flex justify-between mb-1">
-                                                <span className="text-gray-500">Duration</span>
-                                                <span className="font-medium">{req.details.paybackDuration} Months</span>
+                                            <div className="flex justify-between items-center gap-2 mb-1">
+                                                <span className="text-gray-500 shrink-0">Duration</span>
+                                                <span className="font-semibold text-gray-800 text-right whitespace-nowrap">{req.details.paybackDuration} Months</span>
                                             </div>
                                         )}
-                                        <div className="flex justify-between"><span className="text-gray-500">Monthly Deduction</span><span className="font-medium">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}</span></div>
+                                        <div className="flex justify-between items-center gap-2">
+                                            <span className="text-gray-500 shrink-0">Monthly Deduction</span>
+                                            <span className="font-semibold text-gray-800 text-right whitespace-nowrap">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}</span>
+                                        </div>
                                     </div>
                                 )}
 

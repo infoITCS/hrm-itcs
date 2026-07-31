@@ -167,7 +167,7 @@ const EmployeeList = () => {
     return (
         <div className="space-y-8 animate-fadeIn pb-12 bg-slate-50/30 min-h-screen">
             {/* 1. Analytics Header */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 min-[1200px]:grid-cols-4 gap-3 sm:gap-6">
                 {stats.map((stat, i) => {
                     const colorMap: Record<string, any> = {
                         indigo: {
@@ -202,17 +202,17 @@ const EmployeeList = () => {
                     const styles = colorMap[stat.color] || colorMap.indigo;
 
                     return (
-                        <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all group overflow-hidden relative">
+                        <div key={i} className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all group overflow-hidden relative">
                             <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 ${styles.glow} rounded-full blur-2xl group-hover:scale-150 transition-transform duration-500`} />
-                            <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-xl ${styles.bg} ${styles.text} ${styles.hoverBg} group-hover:text-white transition-all`}>
-                                    <stat.icon size={24} />
+                            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                                <div className={`p-3 rounded-xl ${styles.bg} ${styles.text} ${styles.hoverBg} group-hover:text-white transition-all shrink-0`}>
+                                    <stat.icon size={22} />
                                 </div>
-                                <div>
-                                    <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-                                    <div className="flex items-baseline gap-2">
-                                        <h4 className="text-2xl font-bold text-slate-800">{stat.value}</h4>
-                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${styles.badge} px-1.5 py-0.5 rounded`}>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs sm:text-sm font-medium text-slate-500 truncate">{stat.label}</p>
+                                    <div className="flex items-center justify-between gap-2 mt-1 min-w-0">
+                                        <h4 className="text-xl sm:text-2xl font-bold text-slate-800 shrink-0">{stat.value}</h4>
+                                        <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-wider ${styles.badge} px-2 py-0.5 rounded-md whitespace-nowrap shrink-0`}>
                                             {stat.trend}
                                         </span>
                                     </div>

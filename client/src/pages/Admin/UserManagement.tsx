@@ -341,7 +341,7 @@ const UserManagement = () => {
                 
                 <button 
                     onClick={() => setShowInviteModal(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95 shrink-0 self-start md:self-auto"
                 >
                     <Plus size={18} /> Add New User
                 </button>
@@ -367,15 +367,9 @@ const UserManagement = () => {
                         />
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <span className="text-sm font-bold text-slate-500 uppercase tracking-widest hidden sm:block w-full text-right sm:w-auto">Filter by Role:</span>
+                        <span className="text-sm font-bold text-slate-500 uppercase tracking-widest hidden sm:block whitespace-nowrap">Filter by Role:</span>
                         <select 
-                            className={`bg-white border border-slate-200 rounded-xl pl-3 pr-6 py-2 text-sm font-medium text-slate-700 outline-none w-full focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer ${
-                                filterRole === 'super-admin' ? 'sm:w-[122px]' :
-                                filterRole === 'employee' ? 'sm:w-[104px]' :
-                                filterRole === 'manager' ? 'sm:w-[96px]' :
-                                filterRole === 'admin' ? 'sm:w-[86px]' :
-                                'sm:w-[96px]'
-                            }`}
+                            className="bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm font-medium text-slate-700 outline-none w-full sm:w-auto focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
                             value={filterRole}
                             onChange={(e) => setFilterRole(e.target.value)}
                         >

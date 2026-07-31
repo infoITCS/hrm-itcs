@@ -49,6 +49,7 @@
 @layer base {
   html {
     overflow-x: hidden;
+    max-width: 100vw;
   }
   body {
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e0e7ff 100%);
@@ -56,7 +57,19 @@
     color: #1e293b;
     font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     overflow-x: hidden;
+    max-width: 100vw;
     min-width: 0;
+  }
+
+  /* Prevent long text strings (emails, URLs, IDs, amounts) from overflowing containers */
+  p, h1, h2, h3, h4, h5, h6, span, label, td, th {
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  pre, code {
+    white-space: pre-wrap;
+    word-break: break-all;
   }
   
   * {

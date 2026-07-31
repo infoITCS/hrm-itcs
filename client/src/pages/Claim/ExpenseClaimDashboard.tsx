@@ -1316,14 +1316,14 @@ const ExpenseClaimDashboard = () => {
                             )}
                         </div>
 
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="text-xs text-rose-600 font-semibold">
                                 {submitDisabledReason ? submitDisabledReason : ''}
                             </div>
                             <button
                                 onClick={handleSubmit}
                                 disabled={!!submitDisabledReason || submitting}
-                                className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors"
+                                className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shrink-0 self-start sm:self-auto"
                             >
                                 {submitting ? 'Scanning receipts & submitting…' : 'Submit Claim'}
                             </button>

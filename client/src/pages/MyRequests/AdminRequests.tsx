@@ -138,12 +138,12 @@ const AdminRequests = () => {
                             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                     </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="flex gap-2 w-full sm:w-auto overflow-x-auto scrollbar-none pb-1">
                         {['All', 'Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
                             <button
                                 key={status}
                                 onClick={() => setStatusFilter(status)}
-                                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all whitespace-nowrap shrink-0 ${
                                     statusFilter === status
                                     ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
                                     : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'

@@ -107,34 +107,37 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
     return (
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
             {/* Header / Summary row */}
-            <button
+            <div
                 id={`payslip-toggle-${payslip._id}`}
                 onClick={() => setExpanded(e => !e)}
-                className="w-full flex items-center justify-between p-5 text-left bg-gradient-to-r from-white via-slate-50/40 to-indigo-50/20 hover:bg-slate-50 transition-colors"
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setExpanded(prev => !prev); } }}
+                role="button"
+                tabIndex={0}
+                className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 text-left bg-gradient-to-r from-white via-slate-50/40 to-indigo-50/20 hover:bg-slate-50 transition-colors gap-3 cursor-pointer"
             >
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/20 text-white shrink-0">
-                        <FileText size={22} />
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/20 text-white shrink-0">
+                        <FileText size={20} />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-slate-800 text-base">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-bold text-slate-800 text-sm sm:text-base whitespace-nowrap">
                                 {MONTH_NAMES[payslip.periodMonth]} {payslip.periodYear}
                             </h3>
-                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wide bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono whitespace-nowrap">
                                 {payslip.payslipNo}
                             </span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-                            <Calendar size={12} className="text-slate-400" /> Issued: {payslip.paidAt ? new Date(payslip.paidAt).toLocaleDateString() : 'Finalized'}
+                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 whitespace-nowrap">
+                            <Calendar size={12} className="text-slate-400 shrink-0" /> Issued: {payslip.paidAt ? new Date(payslip.paidAt).toLocaleDateString() : 'Finalized'}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 sm:gap-6">
-                    <div className="text-right">
-                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Net Take-Home</p>
-                        <p className="text-lg font-black text-indigo-700">{fmt(payslip.netPay)}</p>
+                <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-6 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                    <div className="text-left sm:text-right">
+                        <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider whitespace-nowrap">Net Take-Home</p>
+                        <p className="text-base sm:text-lg font-black text-indigo-700">{fmt(payslip.netPay)}</p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -162,7 +165,7 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
                         </div>
                     </div>
                 </div>
-            </button>
+            </div>
 
             {/* Expanded details */}
             {expanded && (
@@ -400,24 +403,22 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                                 </p>
                             </div>
 
-                            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-md shrink-0">
-                                <div>
-                                    <p className="text-[11px] font-semibold text-indigo-200 uppercase tracking-wider">Latest Net Salary</p>
-                                    <p className="text-xl font-black text-white mt-0.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-md shrink-0 w-full md:w-auto">
+                                <div className="p-1 sm:p-0">
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Latest Net Salary</p>
+                                    <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">
                                         {hideSalary ? '••••••••' : (latestNetPay > 0 ? `PKR ${latestNetPay.toLocaleString()}` : 'N/A')}
                                     </p>
                                 </div>
-                                <div className="h-8 w-px bg-white/20" />
-                                <div>
-                                    <p className="text-[11px] font-semibold text-indigo-200 uppercase tracking-wider">Total Earned</p>
-                                    <p className="text-xl font-black text-white mt-0.5">
+                                <div className="p-1 sm:p-0 border-t sm:border-t-0 sm:border-l border-white/20 sm:pl-4">
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Total Earned</p>
+                                    <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">
                                         {hideSalary ? '••••••••' : (ytdTotal > 0 ? `PKR ${ytdTotal.toLocaleString()}` : 'N/A')}
                                     </p>
                                 </div>
-                                <div className="h-8 w-px bg-white/20" />
-                                <div>
-                                    <p className="text-[11px] font-semibold text-indigo-200 uppercase tracking-wider">Total Payslips</p>
-                                    <p className="text-xl font-black text-white mt-0.5">{payslips.length}</p>
+                                <div className="p-1 sm:p-0 border-t sm:border-t-0 sm:border-l border-white/20 sm:pl-4">
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Total Payslips</p>
+                                    <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">{payslips.length}</p>
                                 </div>
                             </div>
                         </div>

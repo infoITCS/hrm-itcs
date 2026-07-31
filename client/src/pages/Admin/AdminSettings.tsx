@@ -184,7 +184,7 @@ const AdminSettings = () => {
                 {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && activeTab !== 'permissions' && (
                     <button 
                         onClick={() => handleOpenModal()}
-                        className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
+                        className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 shrink-0"
                     >
                         <Plus size={20} />
                         Add New {activeTab === 'departments' ? 'Department' : 'Designation'}

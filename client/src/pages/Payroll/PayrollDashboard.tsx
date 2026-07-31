@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
     CheckCircle2, Clock, Send, Loader2, X,
-    TrendingUp, Users, DollarSign, Calendar,
+    TrendingUp, Users, DollarSign,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -294,7 +294,7 @@ const PayrollDashboard = () => {
 
             {/* Stats — admin only */}
             {isAdmin && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 min-[1200px]:grid-cols-4 gap-3">
                     <StatCard icon={TrendingUp} label="Total Runs" value={runs.length} color="indigo" />
                     <StatCard icon={Clock} label="Draft" value={drafts} color="amber" />
                     <StatCard icon={CheckCircle2} label="Approved" value={approved} color="violet" />

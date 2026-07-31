@@ -471,7 +471,10 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
     }
 
     try {
-        const employees = await Employee.find({ isDeleted: { $ne: true } })
+        const employees = await Employee.find({
+            isDeleted: { $ne: true },
+            'employmentStatus.status': { $nin: ['Terminated', 'Resigned', 'Offboarded'] }
+        })
             .select('employeeId firstName lastName jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
             .lean();
 
