@@ -269,7 +269,8 @@ const Dashboard = () => {
 
                 // Fetch Leave Requests count (for admin/manager)
                 try {
-                    const allLeavesRes = await fetch(`${api.baseURL}/api/leaves`, {
+                    const endpoint = (role === 'admin' || role === 'manager') ? `${api.baseURL}/api/leaves/all` : `${api.baseURL}/api/leaves/mine`;
+                    const allLeavesRes = await fetch(endpoint, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
                     if (allLeavesRes.ok) {
