@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import MyProvidentFund from './MyProvidentFund';
 import {
     Banknote, Search, ChevronDown, ChevronRight, CheckCircle2,
     Clock, XCircle, ShieldAlert, TrendingUp, Users, BadgeCheck,
-    AlertTriangle, FileText, X, CalendarDays
+    AlertTriangle, FileText, X, CalendarDays, User, Building2
 } from 'lucide-react';
 
 interface PFEntry {
@@ -383,6 +384,7 @@ export default function ProvidentFundReport() {
     const { user } = useAuth();
     const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
 
+    const [activeTab, setActiveTab] = useState<'my-pf' | 'company-pf'>('my-pf');
     const [data, setData] = useState<EmpPFData[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -400,6 +402,7 @@ export default function ProvidentFundReport() {
     };
 
     const load = useCallback(async () => {
+        if (!isAdmin) return;
         setLoading(true);
         try {
             const token = localStorage.getItem('token');
@@ -410,7 +413,7 @@ export default function ProvidentFundReport() {
         } catch { /* silent */ } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isAdmin]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -458,16 +461,42 @@ export default function ProvidentFundReport() {
     const claimedCount = data.filter(e => e.pfClaimed).length;
 
     if (!isAdmin) {
-        return (
-            <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] gap-4">
-                <ShieldAlert size={48} className="text-rose-400" />
-                <p className="text-lg font-bold text-slate-600">Admin Access Required</p>
-            </div>
-        );
+        return <MyProvidentFund />;
     }
 
     return (
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 pb-20">
+
+            {/* Role Tab Switcher for Admin/HR/Finance */}
+            <div className="flex items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl w-fit border border-slate-200 shadow-inner mb-2">
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('my-pf')}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                        activeTab === 'my-pf'
+                            ? 'bg-white text-indigo-700 shadow-md'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                    }`}
+                >
+                    <User size={16} /> My PF Statement
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('company-pf')}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                        activeTab === 'company-pf'
+                            ? 'bg-white text-indigo-700 shadow-md'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                    }`}
+                >
+                    <Building2 size={16} /> Company PF Management
+                </button>
+            </div>
+
+            {activeTab === 'my-pf' ? (
+                <MyProvidentFund />
+            ) : (
+                <>
 
             {/* Statement Modal */}
             {statement && (
@@ -760,6 +789,8 @@ export default function ProvidentFundReport() {
                         );
                     })}
                 </div>
+            )}
+            </>
             )}
         </div>
     );

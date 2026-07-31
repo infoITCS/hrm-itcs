@@ -51,14 +51,15 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: null, module: 'payroll' },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
-        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'payroll' },
+        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
     ];
 
     const menuItems = allMenuItems.filter(item => {
-        // Items with a module key: trust the DB permissions matrix exclusively.
-        // Items without a module key (no toggle in the UI): use the hardcoded roles array.
-        if (item.module) return hasAccess(item.module);
-        return item.roles ? item.roles.includes(role) : false;
+        // If roles array is explicitly defined, user's role MUST be included
+        if (item.roles && !item.roles.includes(role)) return false;
+        // If module key is defined, user MUST have DB access to that module
+        if (item.module && !hasAccess(item.module)) return false;
+        return true;
     });
 
     // Close sidebar when route changes (e.g. after clicking a nav link on mobile)

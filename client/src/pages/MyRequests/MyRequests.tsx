@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
@@ -12,6 +13,7 @@ const ICON_MAP: Record<string, any> = {
 };
 
 const MyRequests = () => {
+    const location = useLocation();
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -83,7 +85,10 @@ const MyRequests = () => {
         fetchRequests();
         fetchCustomCategories();
         fetchPfBalance();
-    }, []);
+        if (location.state?.openNew) {
+            setShowModal(true);
+        }
+    }, [location.state]);
 
     const fetchPfBalance = async () => {
         try {

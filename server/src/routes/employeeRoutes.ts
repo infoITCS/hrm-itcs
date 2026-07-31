@@ -518,6 +518,65 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
 });
 
 /**
+ * GET /api/employees/my-pf
+ * Returns the currently authenticated employee's personal PF details (balance, statement, maturity).
+ */
+router.get('/my-pf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
+            .lean() as any;
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee profile not found for current user.' });
+        }
+
+        const now = new Date();
+        const joiningDate = employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+        let monthsOfService = 0;
+        let maturityDate: Date | null = null;
+
+        if (joiningDate) {
+            monthsOfService =
+                (now.getFullYear() - joiningDate.getFullYear()) * 12 +
+                (now.getMonth() - joiningDate.getMonth());
+            maturityDate = new Date(joiningDate);
+            maturityDate.setMonth(maturityDate.getMonth() + PF_MATURITY_MONTHS);
+        }
+        const isMatured = maturityDate ? now >= maturityDate : false;
+
+        const result = {
+            employeeId: employee.employeeId,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            avatar: employee.avatar,
+            designation: employee.jobInfo?.designation,
+            department: employee.jobInfo?.department,
+            joiningDate: employee.jobInfo?.joiningDate,
+            monthsOfService,
+            maturityDate: maturityDate ? maturityDate.toISOString() : null,
+            providentFundBalance: employee.providentFundBalance || 0,
+            providentFundHistory: employee.providentFundHistory || [],
+            pfClaimed: employee.pfClaimed || false,
+            pfClaimedAt: employee.pfClaimedAt || null,
+            isMatured,
+            maturityThresholdMonths: PF_MATURITY_MONTHS
+        };
+
+        return res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * GET /api/employees/:id/pf-statement-pdf
  * Generates and downloads a PDF statement of the employee's PF.
  * Accessed via query token ?token=... for easy browser downloads.

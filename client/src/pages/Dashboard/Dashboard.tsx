@@ -40,6 +40,10 @@ const Dashboard = () => {
     const [todayLeaves, setTodayLeaves] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSetPassword, setShowSetPassword] = useState(false);
+    const [leavesAvailable, setLeavesAvailable] = useState<string>('—');
+    const [myClaimsCount, setMyClaimsCount] = useState<string>('—');
+    const [leaveRequestsCount, setLeaveRequestsCount] = useState<string>('—');
+    const [pendingApprovalsCount, setPendingApprovalsCount] = useState<string>('—');
 
     // Detect ?setup-password=1 injected by AuthCallback OR check user profile state
     useEffect(() => {
@@ -230,6 +234,67 @@ const Dashboard = () => {
                 } catch (e) {
                     console.error('Failed to fetch notifications for tasks', e);
                 }
+
+                // Fetch Personal Leave Balance
+                try {
+                    const balRes = await fetch(`${api.baseURL}/api/leaves/balance`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (balRes.ok) {
+                        const balJson = await balRes.json();
+                        const balances = balJson.data?.balances || [];
+                        const totalAvail = balances.reduce((sum: number, b: any) => {
+                            const avail = Math.max(0, (b.total || 0) - (b.used || 0) - (b.pending || 0));
+                            return sum + avail;
+                        }, 0);
+                        setLeavesAvailable(`${totalAvail} Days`);
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch leave balance', e);
+                }
+
+                // Fetch Personal Claims
+                try {
+                    const claimsRes = await fetch(api.claimMine, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (claimsRes.ok) {
+                        const claimsJson = await claimsRes.json();
+                        const claims = claimsJson.data || [];
+                        setMyClaimsCount(claims.length > 0 ? `${claims.length} Claim${claims.length > 1 ? 's' : ''}` : '0 Claims');
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch my claims', e);
+                }
+
+                // Fetch Leave Requests count (for admin/manager)
+                try {
+                    const allLeavesRes = await fetch(`${api.baseURL}/api/leaves`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (allLeavesRes.ok) {
+                        const allLeavesJson = await allLeavesRes.json();
+                        const leavesList = allLeavesJson.data || [];
+                        const pendingLeaves = leavesList.filter((l: any) => l.status === 'Pending');
+                        setLeaveRequestsCount(pendingLeaves.length > 0 ? `${pendingLeaves.length} Pending` : '0 Pending');
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch leave requests count', e);
+                }
+
+                // Fetch Pending Approvals count (for admin/manager)
+                try {
+                    const pendingClaimsRes = await fetch(api.claimPendingApprovals, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (pendingClaimsRes.ok) {
+                        const pendingClaimsJson = await pendingClaimsRes.json();
+                        const pendingList = pendingClaimsJson.data || [];
+                        setPendingApprovalsCount(pendingList.length > 0 ? `${pendingList.length} Pending` : '0 Pending');
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch pending approvals count', e);
+                }
             } catch (err) {
                 console.error('Failed to fetch dashboard stats', err);
             } finally {
@@ -262,7 +327,7 @@ const Dashboard = () => {
         },
         {
             title: 'Leave Requests',
-            value: '—',
+            value: loading ? '...' : leaveRequestsCount,
             icon: Calendar,
             color: 'text-amber-600',
             bg: 'bg-amber-50',
@@ -271,7 +336,7 @@ const Dashboard = () => {
         },
         {
             title: 'Pending Reviews',
-            value: '—',
+            value: loading ? '...' : pendingApprovalsCount,
             icon: FileCheck,
             color: 'text-rose-600',
             bg: 'bg-rose-50',
@@ -293,7 +358,7 @@ const Dashboard = () => {
         },
         {
             title: 'Leave Requests',
-            value: '—',
+            value: loading ? '...' : leaveRequestsCount,
             icon: Calendar,
             color: 'text-emerald-600',
             bg: 'bg-emerald-50',
@@ -302,7 +367,7 @@ const Dashboard = () => {
         },
         {
             title: 'Pending Approvals',
-            value: '—',
+            value: loading ? '...' : pendingApprovalsCount,
             icon: FileCheck,
             color: 'text-amber-600',
             bg: 'bg-amber-50',
@@ -333,7 +398,7 @@ const Dashboard = () => {
         },
         {
             title: 'Leaves Available',
-            value: '—',
+            value: loading ? '...' : leavesAvailable,
             icon: Calendar,
             color: 'text-emerald-600',
             bg: 'bg-emerald-50',
@@ -351,7 +416,7 @@ const Dashboard = () => {
         },
         {
             title: 'My Claims',
-            value: '—',
+            value: loading ? '...' : myClaimsCount,
             icon: Briefcase,
             color: 'text-rose-600',
             bg: 'bg-rose-50',

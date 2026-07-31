@@ -133,12 +133,12 @@ function AppRoutes() {
         <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />
         <Route path="my-payslips" element={<MyPayslips />} />
         <Route path="payroll" element={<ModuleProtectedRoute moduleName="payroll"><PayrollDashboard /></ModuleProtectedRoute>} />
+        <Route path="provident-fund" element={<ProvidentFundReport />} />
         
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr', 'finance']} />}>
           <Route path="zkt-monitor" element={<ModuleProtectedRoute moduleName="attendance"><V2ZktMonitor /></ModuleProtectedRoute>} />
           <Route path="payroll/runs/:id" element={<ModuleProtectedRoute moduleName="payroll"><PayrollRunDetail /></ModuleProtectedRoute>} />
-          <Route path="provident-fund" element={<ModuleProtectedRoute moduleName="payroll"><ProvidentFundReport /></ModuleProtectedRoute>} />
         </Route>
 
         {/* Restricted to Admins & Managers */}
