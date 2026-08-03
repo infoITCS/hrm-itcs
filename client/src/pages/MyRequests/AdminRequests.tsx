@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
 
 const AdminRequests = () => {
     const { user } = useAuth();
+    const { showToast } = useToast();
     const isOnlyManager = user?.role === 'manager';
     const isAdminOrSuper = ['admin', 'super-admin', 'hr', 'finance'].includes(user?.role || '');
 
@@ -44,7 +46,7 @@ const AdminRequests = () => {
     const handleAction = async (status: 'Pending' | 'Approved' | 'Rejected' | 'Completed') => {
         try {
             if (status === 'Completed' && (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && !erpReferenceId.trim()) {
-                alert('ERP Transaction Reference ID is required to complete loan requests.');
+                showToast('ERP Transaction Reference ID is required to complete loan requests.', 'warning');
                 return;
             }
 
@@ -63,8 +65,9 @@ const AdminRequests = () => {
                 setAdminComments('');
                 setErpReferenceId('');
                 fetchRequests();
+                showToast(`Request updated to ${status}`, 'success');
             } else {
-                alert('Failed to update request');
+                showToast('Failed to update request', 'error');
             }
         } catch (err) {
             console.error(err);

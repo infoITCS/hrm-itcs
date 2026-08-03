@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
+import { useToast } from '../../contexts/ToastContext';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -63,6 +64,7 @@ const MONTH_NAMES = [
 const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSalary?: boolean }) => {
     const [expanded, setExpanded] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const { showToast } = useToast();
 
     const run = payslip.payrollRunId;
     const currency = run?.currency || payslip.currency || 'PKR';
@@ -98,7 +100,7 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
             link.click();
             link.remove();
         } catch (err) {
-            alert('Failed to download PDF. Please try again.');
+            showToast('Failed to download PDF. Please try again.', 'error');
         } finally {
             setDownloading(false);
         }

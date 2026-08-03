@@ -181,11 +181,12 @@ const Dashboard = () => {
                         type: s.type,
                         name: s.name,
                         years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
+                        role: s.designation,
                         date: s.date || 'Today',
                         isToday: s.day === currentDay && s.month === currentMonth,
-                        icon: s.type === 'birthday' ? Cake : Award,
-                        color: s.type === 'birthday' ? 'text-rose-500' : 'text-amber-500',
-                        bg: s.type === 'birthday' ? 'bg-rose-50' : 'bg-amber-50'
+                        icon: s.type === 'birthday' ? Cake : s.type === 'anniversary' ? Award : s.type === 'holiday' ? PartyPopper : UserPlus,
+                        color: s.type === 'birthday' ? 'text-rose-500' : s.type === 'anniversary' ? 'text-amber-500' : s.type === 'holiday' ? 'text-emerald-500' : 'text-indigo-500',
+                        bg: s.type === 'birthday' ? 'bg-rose-50' : s.type === 'anniversary' ? 'bg-amber-50' : s.type === 'holiday' ? 'bg-emerald-50' : 'bg-indigo-50'
                     }));
                     if (items2.length === 0) {
                         items2.push({ id: 'empty', type: 'info', name: 'No special events this month', role: 'Quiet month!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
@@ -608,7 +609,7 @@ const Dashboard = () => {
                             <Sparkles size={24} />
                         </div>
                         <p className="text-sm font-bold text-slate-700">Quiet Month!</p>
-                        <p className="text-xs text-slate-400 mt-1">No employee birthdays or work anniversaries this month.</p>
+                        <p className="text-xs text-slate-400 mt-1">No birthdays, anniversaries, new joiners, or public holidays this month.</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
@@ -627,7 +628,11 @@ const Dashboard = () => {
                                             item.isToday ? `Happy Work Anniversary! 🎉 (${item.years})` : `Work Anniversary • ${item.years}`
                                         ) : item.type === 'birthday' ? (
                                             item.isToday ? 'Happy Birthday! 🎂' : 'Birthday'
-                                        ) : `${item.role || 'New Joiner'}`}
+                                        ) : item.type === 'holiday' ? (
+                                            `Public Holiday • ${item.role || 'All Offices'}`
+                                        ) : item.type === 'new_joiner' ? (
+                                            `New Joiner 🎉 • ${item.role || 'Team Member'}`
+                                        ) : `${item.role || 'Highlight'}`}
                                     </p>
                                 </div>
                                 <div className="ml-auto text-[10px] font-bold text-indigo-650 bg-indigo-50 px-2 py-1 rounded-md uppercase">

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
+import { useToast } from '../../contexts/ToastContext';
 import { Plus, Edit2, Trash2, XCircle, Package, Monitor, Briefcase, FileText, Wrench, Settings, Eye, EyeOff } from 'lucide-react';
 
 const ICON_OPTIONS = [
@@ -12,6 +13,7 @@ const ICON_OPTIONS = [
 ];
 
 const CategoryConfig = () => {
+    const { showToast, showAlert } = useToast();
     const [categories, setCategories] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -99,28 +101,35 @@ const CategoryConfig = () => {
             if (res.ok) {
                 setShowModal(false);
                 fetchCategories();
+                showToast('Category saved successfully', 'success');
             } else {
-                alert('Failed to save category');
+                showToast('Failed to save category', 'error');
             }
         } catch (err) {
             console.error(err);
+            showToast('Failed to save category', 'error');
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this category?')) return;
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${api.baseURL}/api/request-categories/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                fetchCategories();
+        showAlert('Delete Category', 'Are you sure you want to delete this category?', 'confirm', async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${api.baseURL}/api/request-categories/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    fetchCategories();
+                    showToast('Category deleted', 'success');
+                } else {
+                    showToast('Failed to delete category', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to delete category', 'error');
             }
-        } catch (err) {
-            console.error(err);
-        }
+        });
     };
 
     const handleToggleCategoryActive = async (cat: any) => {

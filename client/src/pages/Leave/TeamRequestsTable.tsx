@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Check, X, Eye, MessageSquare, Search, Edit3 } from 'lucide-react';
 import { api } from '../../utils/api';
+import { useToast } from '../../contexts/ToastContext';
 import LeaveDetailsModal from './LeaveDetailsModal';
 import Avatar from '../../components/UI/Avatar';
 import { usePermissions } from '../../hooks/usePermissions';
 
 const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) => {
+    const { showToast } = useToast();
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [processingId, setProcessingId] = useState<string | null>(null);
@@ -116,10 +118,11 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                 await fetchAllRequests();
                 setShowEditModal(false);
                 setEditTargetId(null);
+                showToast('Leave status updated', 'success');
                 if (onStatusChange) onStatusChange();
             } else {
                 const err = await r.json().catch(() => ({}));
-                alert(err.message || 'Failed to revert status');
+                showToast(err.message || 'Failed to revert status', 'error');
             }
         } catch (e) {
             console.error('Error reverting status:', e);

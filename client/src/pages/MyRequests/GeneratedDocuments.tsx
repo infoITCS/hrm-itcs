@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
+import { useToast } from '../../contexts/ToastContext';
 import { FileText, CheckCircle, XCircle } from 'lucide-react';
 
 const GeneratedDocuments = () => {
+    const { showToast } = useToast();
     const [documents, setDocuments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionModal, setActionModal] = useState<any>(null);
@@ -42,12 +44,13 @@ const GeneratedDocuments = () => {
             if (res.ok) {
                 setActionModal(null);
                 fetchDocuments();
+                showToast('Document revoked successfully', 'success');
             } else {
-                alert('Failed to revoke document');
+                showToast('Failed to revoke document', 'error');
             }
         } catch (err) {
             console.error(err);
-            alert('An error occurred while revoking the document');
+            showToast('An error occurred while revoking the document', 'error');
         }
     };
 

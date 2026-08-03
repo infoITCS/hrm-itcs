@@ -11,6 +11,9 @@ interface WorkShift {
     endTime: string;
     graceMinutes: number;
     halfDayThreshold: number;
+    enableLunchDeduction?: boolean;
+    lunchDeductionMinutes?: number;
+    lunchThresholdHours?: number;
     isDefault: boolean;
     isActive: boolean;
     description?: string;
@@ -31,6 +34,9 @@ const ShiftManagement = () => {
         endTime: '18:00',
         graceMinutes: 30,
         halfDayThreshold: 4,
+        enableLunchDeduction: true,
+        lunchDeductionMinutes: 60,
+        lunchThresholdHours: 5,
         isDefault: false,
         isActive: true,
         description: ''
@@ -81,6 +87,9 @@ const ShiftManagement = () => {
                 endTime: shift.endTime,
                 graceMinutes: shift.graceMinutes,
                 halfDayThreshold: shift.halfDayThreshold,
+                enableLunchDeduction: shift.enableLunchDeduction ?? true,
+                lunchDeductionMinutes: shift.lunchDeductionMinutes ?? 60,
+                lunchThresholdHours: shift.lunchThresholdHours ?? 5,
                 isDefault: shift.isDefault,
                 isActive: shift.isActive,
                 description: shift.description || ''
@@ -94,6 +103,9 @@ const ShiftManagement = () => {
                 endTime: '18:00',
                 graceMinutes: 30,
                 halfDayThreshold: 4,
+                enableLunchDeduction: true,
+                lunchDeductionMinutes: 60,
+                lunchThresholdHours: 5,
                 isDefault: false,
                 isActive: true,
                 description: ''
@@ -206,6 +218,7 @@ const ShiftManagement = () => {
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Shift Name</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Timings</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Grace Period</th>
+                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Lunch Deduction</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Status</th>
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Actions</th>
                             </tr>
@@ -214,7 +227,7 @@ const ShiftManagement = () => {
                             {loading ? (
                                 Array(3).fill(0).map((_, i) => (
                                     <tr key={i} className="animate-pulse">
-                                        <td colSpan={5} className="px-6 py-8"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
+                                        <td colSpan={6} className="px-6 py-8"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
                                     </tr>
                                 ))
                             ) : shifts.length > 0 ? (
@@ -244,6 +257,17 @@ const ShiftManagement = () => {
                                                 {shift.graceMinutes} mins
                                             </span>
                                         </td>
+                                        <td className="px-6 py-4">
+                                            {shift.enableLunchDeduction !== false ? (
+                                                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                                    -{shift.lunchDeductionMinutes ?? 60}m ({shift.lunchThresholdHours ?? 5}h+)
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">
+                                                    Disabled
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${shift.isActive ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
                                                 {shift.isActive ? 'Active' : 'Inactive'}
@@ -271,7 +295,7 @@ const ShiftManagement = () => {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                                         <div className="flex flex-col items-center gap-3">
                                             <div className="p-4 bg-slate-50 rounded-full">
                                                 <Clock size={32} className="text-slate-300" />
@@ -292,7 +316,7 @@ const ShiftManagement = () => {
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[calc(100vh-6rem)] sm:max-h-[calc(100vh-8rem)]">
                         <div className="p-6 border-b border-slate-100 bg-slate-50 relative shrink-0">
                             <h3 className="text-xl font-bold text-slate-800">{isEditing ? 'Edit Work Shift' : 'Create New Work Shift'}</h3>
-                            <p className="text-sm text-slate-500 mt-1">Define the timing parameters for this work schedule.</p>
+                            <p className="text-sm text-slate-500 mt-1">Define timing and deduction parameters for this work schedule.</p>
                             <button 
                                 onClick={() => setShowModal(false)}
                                 className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-full transition-all"
@@ -360,6 +384,53 @@ const ShiftManagement = () => {
                                         value={formData.halfDayThreshold}
                                         onChange={e => setFormData({...formData, halfDayThreshold: parseFloat(e.target.value) || 0})}
                                     />
+                                </div>
+
+                                {/* Configurable Auto Lunch Deduction Settings */}
+                                <div className="md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <span className="text-xs font-bold text-slate-800 block">Auto Lunch Deduction</span>
+                                            <span className="text-[11px] text-slate-500">Automatically deduct break time from work duration when threshold is met</span>
+                                        </div>
+                                        <input 
+                                            type="checkbox" 
+                                            id="enableLunchDeduction"
+                                            className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                            checked={formData.enableLunchDeduction}
+                                            onChange={e => setFormData({...formData, enableLunchDeduction: e.target.checked})}
+                                        />
+                                    </div>
+
+                                    {formData.enableLunchDeduction && (
+                                        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/60">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Deduction (Mins)</label>
+                                                <input 
+                                                    type="number" 
+                                                    required
+                                                    min="0"
+                                                    max="180"
+                                                    className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all font-semibold"
+                                                    value={formData.lunchDeductionMinutes}
+                                                    onChange={e => setFormData({...formData, lunchDeductionMinutes: parseInt(e.target.value) || 0})}
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Trigger Threshold (Hrs)</label>
+                                                <input 
+                                                    type="number" 
+                                                    required
+                                                    min="1"
+                                                    max="12"
+                                                    step="0.5"
+                                                    className="w-full border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none transition-all font-semibold"
+                                                    value={formData.lunchThresholdHours}
+                                                    onChange={e => setFormData({...formData, lunchThresholdHours: parseFloat(e.target.value) || 0})}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="md:col-span-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-start gap-3">

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useToast } from '../../../contexts/ToastContext';
 import { attendanceApi } from '../api/attendanceApi';
 import SheetPreviewModal from '../components/SheetPreviewModal';
 import type { EmployeeMonthlyDetail } from '../types';
@@ -52,6 +53,7 @@ function StatCard({ title, value, icon: Icon, colorClass }: { title: string; val
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeeDashboard() {
     const { user } = useAuth();
+    const { showToast } = useToast();
     
     // Default to current local month YYYY-MM
     const [month, setMonth] = useState(() => getLocalYearMonth(new Date()));
@@ -102,10 +104,11 @@ export default function EmployeeDashboard() {
         setPunching(true);
         try {
             await attendanceApi.selfPunch();
+            showToast('Punch recorded successfully', 'success');
             await loadData();
         } catch (err: any) {
             console.error('Punch failed:', err);
-            alert(err.message || 'Failed to record punch');
+            showToast(err.message || 'Failed to record punch', 'error');
         } finally {
             setPunching(false);
         }

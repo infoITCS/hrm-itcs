@@ -8,6 +8,9 @@ export interface ShiftConfig {
     graceMinutes: number;
     halfDayThresholdHours: number;
     locationName: string;
+    enableLunchDeduction?: boolean;
+    lunchDeductionMinutes?: number;
+    lunchThresholdHours?: number;
 }
 
 export interface DashboardSummary {

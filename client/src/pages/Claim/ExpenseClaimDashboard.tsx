@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import {
     FileText,
@@ -74,6 +75,7 @@ function readFileAsBase64(file: File) {
 
 const ExpenseClaimDashboard = () => {
     const { user } = useAuth();
+    const { showToast } = useToast();
     const { role } = usePermissions();
 
     const token = localStorage.getItem('token');
@@ -471,8 +473,9 @@ const ExpenseClaimDashboard = () => {
             await fetchMine();
             await fetchApprovals();
             setTab('mine');
+            showToast('Claim submitted successfully', 'success');
         } catch (e: any) {
-            alert(e?.message || 'Failed to submit claim');
+            showToast(e?.message || 'Failed to submit claim', 'error');
         } finally {
             setSubmitting(false);
         }
@@ -492,7 +495,7 @@ const ExpenseClaimDashboard = () => {
             a.remove();
             window.URL.revokeObjectURL(url);
         } catch (e: any) {
-            alert(e?.message || 'Failed to download receipt');
+            showToast(e?.message || 'Failed to download receipt', 'error');
         }
     };
 
@@ -594,7 +597,7 @@ const ExpenseClaimDashboard = () => {
     const submitDecision = async () => {
         if (!decisionClaim?._id) return;
         if (decision === 'Approved' && currentRequiresAuthorization && !decisionAuthorizationBy) {
-            alert('Authorization is required for this out-of-policy claim (e.g. HR / Senior Management).');
+            showToast('Authorization is required for this out-of-policy claim (e.g. HR / Senior Management).', 'warning');
             return;
         }
 
@@ -615,11 +618,12 @@ const ExpenseClaimDashboard = () => {
             setDecisionOpen(false);
             setDecisionClaim(null);
             setDecisionErpId('');
+            showToast(`Claim decision submitted (${decision})`, 'success');
             await fetchApprovals();
             await fetchMine();
             await fetchHistory();
         } catch (e: any) {
-            alert(e?.message || 'Failed to submit decision');
+            showToast(e?.message || 'Failed to submit decision', 'error');
         } finally {
             setDeciding(false);
         }
@@ -638,7 +642,9 @@ const ExpenseClaimDashboard = () => {
             const d = await r.json();
             if (!r.ok) throw new Error(d?.message || 'Failed to process bulk decision');
             if (d.failedCount > 0) {
-                alert(`Processed ${d.processedCount} claims, but ${d.failedCount} claims failed or were skipped (e.g., out-of-policy claims require individual handling).`);
+                showToast(`Processed ${d.processedCount} claims, but ${d.failedCount} claims failed or were skipped.`, 'warning');
+            } else {
+                showToast(`Successfully processed ${d.processedCount} claims`, 'success');
             }
             setBulkDecisionOpen(false);
             setSelectedClaimIds([]);
@@ -647,14 +653,14 @@ const ExpenseClaimDashboard = () => {
             await fetchMine();
             await fetchHistory();
         } catch (e: any) {
-            alert(e?.message || 'Failed to process bulk decision');
+            showToast(e?.message || 'Failed to process bulk decision', 'error');
         } finally {
             setBulkSubmitting(false);
         }
     };
 
     const handleSaveCategory = async () => {
-        if (!catFormName) return alert('Name is required');
+        if (!catFormName) return showToast('Name is required', 'warning');
         setCatSubmitting(true);
         try {
             const payload = {
@@ -676,9 +682,10 @@ const ExpenseClaimDashboard = () => {
             if (!r.ok) throw new Error(d?.message || 'Failed to save category');
             
             setCategoryModalOpen(false);
+            showToast('Expense category saved', 'success');
             await fetchCategories();
         } catch (e: any) {
-            alert(e?.message || 'Failed to save category');
+            showToast(e?.message || 'Failed to save category', 'error');
         } finally {
             setCatSubmitting(false);
         }
@@ -765,11 +772,12 @@ const ExpenseClaimDashboard = () => {
             if (!r.ok) throw new Error(d?.message || 'Failed to update claim');
             setCorrectOpen(false);
             setCorrectClaim(null);
+            showToast('Claim updated successfully', 'success');
             await fetchMine();
             await fetchApprovals();
             await fetchHistory();
         } catch (e: any) {
-            alert(e?.message || 'Failed to update claim');
+            showToast(e?.message || 'Failed to update claim', 'error');
         } finally {
             setCorrecting(false);
         }

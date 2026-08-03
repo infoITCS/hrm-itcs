@@ -103,7 +103,7 @@ export async function processEmployeePunches(
 
         if (checkOut) {
             const rawMins = Math.floor((checkOut.getTime() - checkIn.getTime()) / 60000);
-            workDurationMinutes = applyLunchDeduction(rawMins);
+            workDurationMinutes = applyLunchDeduction(rawMins, cfg);
 
             const otDiff = Math.floor((checkOut.getTime() - shiftEndTime.getTime()) / 60000);
             if (otDiff > 0) overtimeMinutes = otDiff;
@@ -269,7 +269,7 @@ export async function getTodayRoster(
         let workDurationMinutes = rec?.workDurationMinutes ?? 0;
         if (checkOutTime && (!rec || rec.workDurationMinutes === 0)) {
             const rawMins = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / 60000);
-            workDurationMinutes = applyLunchDeduction(rawMins);
+            workDurationMinutes = applyLunchDeduction(rawMins, cfg);
         } else if (!rec && !checkOutTime) {
             const now = new Date();
             const rawMins = Math.floor((now.getTime() - checkInTime.getTime()) / 60000);
@@ -531,7 +531,7 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
             : new Date(checkInTime.getTime() + 30 * 60000);
 
         const rawMins = Math.floor((effectiveCheckOut.getTime() - checkInTime.getTime()) / 60000);
-        const workDurationMinutes = applyLunchDeduction(rawMins);
+        const workDurationMinutes = applyLunchDeduction(rawMins, cfg);
 
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
         const shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);

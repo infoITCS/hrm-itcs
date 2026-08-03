@@ -327,6 +327,9 @@ export function resolveShiftConfig(employee: any, deviceConfig: any): ShiftConfi
         graceMinutes: shift?.graceMinutes ?? deviceConfig?.graceMinutes ?? 30,
         halfDayThresholdHours: shift?.halfDayThreshold ?? deviceConfig?.halfDayThresholdHours ?? 4,
         locationName: deviceConfig?.locationName ?? 'ISB-Office',
+        enableLunchDeduction: shift?.enableLunchDeduction ?? true,
+        lunchDeductionMinutes: shift?.lunchDeductionMinutes ?? 60,
+        lunchThresholdHours: shift?.lunchThresholdHours ?? 5,
     };
 }
 

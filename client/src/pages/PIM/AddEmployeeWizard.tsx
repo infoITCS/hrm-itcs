@@ -9,6 +9,7 @@ import DeleteModal from '../../components/UI/DeleteModal';
 import countriesData from '../../data/countries.json';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
 
@@ -122,6 +123,7 @@ const AddEmployeeWizard = () => {
     const { id } = useParams();
     const isEditMode = !!id;
     const { user: authUser, login } = useAuth();
+    const { showToast } = useToast();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
     const [step, setStep] = useState(1);
@@ -2108,10 +2110,10 @@ const AddEmployeeWizard = () => {
                                                             
                                                             // Strict context validation
                                                             if (platform === 'linkedin' && !val.includes('linkedin.com')) {
-                                                                alert('Please provide a valid LinkedIn link or username.');
+                                                                showToast('Please provide a valid LinkedIn link or username.', 'error');
                                                                 val = '';
                                                             } else if (platform === 'github' && !val.includes('github.com')) {
-                                                                alert('Please provide a valid GitHub link or username.');
+                                                                showToast('Please provide a valid GitHub link or username.', 'error');
                                                                 val = '';
                                                             }
                                                             

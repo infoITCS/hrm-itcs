@@ -8,6 +8,7 @@ import RelationSelect from '../../components/UI/RelationSelect';
 import countriesData from '../../data/countries.json';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import type { User as UserType } from '../../types';
@@ -120,6 +121,7 @@ const DocumentPreview = ({
 const MyInfo = () => {
     const navigate = useNavigate();
     const { user, login } = useAuth();
+    const { showToast } = useToast();
     const { canEditSensitiveData } = usePermissions();
     const [loading, setLoading] = useState(true);
     const [avatarCache, setAvatarCache] = useState<string>('');
@@ -3076,10 +3078,10 @@ const MyInfo = () => {
                                                             
                                                             // Strict context validation
                                                             if (platform === 'linkedin' && !val.includes('linkedin.com')) {
-                                                                alert('Please provide a valid LinkedIn link or username.');
+                                                                showToast('Please provide a valid LinkedIn link or username.', 'error');
                                                                 val = '';
                                                             } else if (platform === 'github' && !val.includes('github.com')) {
-                                                                alert('Please provide a valid GitHub link or username.');
+                                                                showToast('Please provide a valid GitHub link or username.', 'error');
                                                                 val = '';
                                                             }
                                                             

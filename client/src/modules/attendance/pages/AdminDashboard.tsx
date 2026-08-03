@@ -20,6 +20,7 @@ import {
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
 import { useRoster } from '../hooks/useRoster';
 import { attendanceApi } from '../api/attendanceApi';
+import { useToast } from '../../../contexts/ToastContext';
 import type { TodayRosterEntry, StatusFilter } from '../types';
 import MonthlyInsightsModal from '../components/MonthlyInsightsModal';
 import EditAttendanceModal from '../components/EditAttendanceModal';
@@ -217,6 +218,7 @@ function ZktStatusBadge() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
     const [date, setDate] = useState(todayStr());
     const [location, setLocation] = useState<string | undefined>(undefined);
@@ -493,9 +495,10 @@ export default function AdminDashboard() {
                         refresh();
                         refreshRoster();
                         setIsAutoCloseModalOpen(false);
+                        showToast('Records auto-closed successfully', 'success');
                     } catch (err: any) {
                         console.error('[Admin] Auto-close failed:', err);
-                        alert(`Failed to auto-close records: ${err.message || 'Unknown error'}`);
+                        showToast(`Failed to auto-close records: ${err.message || 'Unknown error'}`, 'error');
                     }
                 }}
             />

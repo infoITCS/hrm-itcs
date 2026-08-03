@@ -11,6 +11,7 @@ import PDFDocument from 'pdfkit';
 
 import sanitize from 'sanitize-filename';
 import Employee from '../models/Employee';
+import Holiday from '../models/Holiday';
 import User from '../models/User.model';
 import AttachmentFile from '../models/AttachmentFile';
 import Counter from '../models/Counter';
@@ -378,13 +379,14 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response,
     }
 });
 
-// Get today's birthdays and anniversaries (now updated to return all for the current month)
+// Get today's birthdays, anniversaries, new joiners, and public holidays for current month
 router.get('/today-specials', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const today = new Date();
         const currentMonth = today.getMonth() + 1; // 1-12
+        const currentYear = today.getFullYear();
 
-        // MongoDB aggregation to find employees with birthdays or joining in this month
+        // Find employees with birthdays or joining in this month
         const employees = await Employee.find({
             $or: [
                 {
@@ -394,7 +396,7 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                     $expr: { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] }
                 }
             ]
-        }).select('firstName lastName employeeId avatar dateOfBirth jobInfo.joiningDate');
+        }).select('firstName lastName employeeId avatar dateOfBirth jobInfo.joiningDate jobInfo.designation jobInfo.jobTitle');
 
         const specials: any[] = [];
         for (const emp of employees) {
@@ -415,9 +417,9 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
             }
 
             if (isAnniversaryInMonth && emp.jobInfo?.joiningDate) {
-                const yearsCompleted = today.getFullYear() - emp.jobInfo.joiningDate.getFullYear();
+                const yearsCompleted = currentYear - emp.jobInfo.joiningDate.getFullYear();
+                const dateStr = emp.jobInfo.joiningDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
                 if (yearsCompleted > 0) {
-                    const dateStr = emp.jobInfo.joiningDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
                     specials.push({
                         id: `${emp.employeeId}-anniversary`,
                         name: `${emp.firstName} ${emp.lastName}`,
@@ -428,8 +430,42 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                         rawDay: emp.jobInfo.joiningDate.getDate(),
                         rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
                     });
+                } else {
+                    specials.push({
+                        id: `${emp.employeeId}-newjoiner`,
+                        name: `${emp.firstName} ${emp.lastName}`,
+                        avatar: emp.avatar,
+                        type: 'new_joiner',
+                        designation: emp.jobInfo?.designation || emp.jobInfo?.jobTitle || 'New Joiner',
+                        date: dateStr,
+                        rawDay: emp.jobInfo.joiningDate.getDate(),
+                        rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
+                    });
                 }
             }
+        }
+
+        // Fetch Holidays occurring in current month
+        const monthStr = String(currentMonth).padStart(2, '0');
+        const yearMonthPrefix = `${currentYear}-${monthStr}`;
+
+        const holidays = await Holiday.find({
+            startDate: { $regex: `^${yearMonthPrefix}` }
+        }).select('name startDate endDate location');
+
+        for (const h of holidays) {
+            const start = new Date(h.startDate);
+            const day = start.getDate();
+            const dateStr = start.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+            specials.push({
+                id: `holiday-${h._id}`,
+                name: h.name,
+                type: 'holiday',
+                date: dateStr,
+                designation: h.location || 'All Offices',
+                rawDay: day,
+                rawMonth: currentMonth
+            });
         }
 
         // Sort chronologically by the day of the month
@@ -441,6 +477,7 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
             avatar: s.avatar,
             type: s.type,
             yearsCompleted: s.yearsCompleted,
+            designation: s.designation,
             date: s.date,
             day: s.rawDay,
             month: s.rawMonth

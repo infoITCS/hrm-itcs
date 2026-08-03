@@ -43,9 +43,21 @@ export function isValidCheckout(checkIn: Date, lastPunch: Date, minMinutes = 60)
     return minutesSinceCheckIn >= minMinutes;
 }
 
-/** If worked more than 5 hours, deduct 60 mins for lunch. */
-export function applyLunchDeduction(rawMinutes: number): number {
-    return rawMinutes > 5 * 60 ? rawMinutes - 60 : rawMinutes;
+/** Applies configurable lunch deduction based on shift settings. */
+export function applyLunchDeduction(
+    rawMinutes: number,
+    config?: { enableLunchDeduction?: boolean; lunchDeductionMinutes?: number; lunchThresholdHours?: number }
+): number {
+    const enabled = config?.enableLunchDeduction ?? true;
+    if (!enabled) return rawMinutes;
+
+    const mins = config?.lunchDeductionMinutes ?? 60;
+    const thresholdMins = (config?.lunchThresholdHours ?? 5) * 60;
+
+    if (rawMinutes > thresholdMins) {
+        return Math.max(0, rawMinutes - mins);
+    }
+    return rawMinutes;
 }
 
 /** Format a Date to PKT "HH:MM" string for display/notes. */

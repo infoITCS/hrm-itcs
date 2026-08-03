@@ -6,7 +6,7 @@ import Holiday from '../models/Holiday';
 import Employee from '../models/Employee';
 import WorkShift from '../models/WorkShift';
 import { fetchReport } from './zktCloudService';
-import { isValidCheckout } from '../shared/utils/dateUtils';
+import { isValidCheckout, applyLunchDeduction } from '../shared/utils/dateUtils';
 import logger from '../utils/logger';
 
 
@@ -164,16 +164,14 @@ export async function processEmployeePunches(
             }
         }
 
-        // Suggestion 2: Auto Lunch Deduction (60 mins if worked > 5 hours)
         let workDurationMinutes = 0;
         if (checkOut) {
             let rawMins = Math.floor((checkOut.getTime() - checkIn.getTime()) / 60000);
-            // If they spent more than 5 hours in the office, assume 1 hour was for lunch
-            if (rawMins > 5 * 60) {
-                workDurationMinutes = rawMins - 60;
-            } else {
-                workDurationMinutes = rawMins;
-            }
+            workDurationMinutes = applyLunchDeduction(rawMins, {
+                enableLunchDeduction: empShift?.enableLunchDeduction ?? true,
+                lunchDeductionMinutes: empShift?.lunchDeductionMinutes ?? 60,
+                lunchThresholdHours: empShift?.lunchThresholdHours ?? 5,
+            });
         }
 
         const shiftStartTime = buildShiftTime(dateStr, shiftStart);
@@ -577,7 +575,11 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
 
         let rawMins = Math.floor((effectiveCheckOut.getTime() - checkInTime.getTime()) / 60000);
         // Apply lunch deduction
-        const workDurationMinutes = rawMins > 5 * 60 ? (rawMins - 60) : rawMins;
+        const workDurationMinutes = applyLunchDeduction(rawMins, {
+            enableLunchDeduction: empShift?.enableLunchDeduction ?? true,
+            lunchDeductionMinutes: empShift?.lunchDeductionMinutes ?? 60,
+            lunchThresholdHours: empShift?.lunchThresholdHours ?? 5,
+        });
 
         const shiftStartTime = buildShiftTime(dateStr, shiftStart);
         const shiftEndTime = buildShiftTime(dateStr, shiftEnd);

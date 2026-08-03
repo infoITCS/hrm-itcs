@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
@@ -20,6 +21,7 @@ const EmployeeProfile = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { user, login } = useAuth();
+    const { showToast } = useToast();
     const { canEditSensitiveData, canApproveDocuments, role } = usePermissions();
 
     // Read the query parameter 'tab' from URL
@@ -158,7 +160,7 @@ const EmployeeProfile = () => {
             await fetchEmployee();
         } catch (err: any) {
             console.error('Error uploading avatar:', err);
-            alert('Failed to upload profile picture.');
+            showToast('Failed to upload profile picture.', 'error');
             setLocalAvatarPreview(null);
         } finally {
             setUploadingAvatar(false);
@@ -191,7 +193,7 @@ const EmployeeProfile = () => {
                 setShowOffboardModal(false);
             } else {
                 const err = await response.json();
-                alert(err.message || 'Failed to update status');
+                showToast(err.message || 'Failed to update status', 'error');
             }
         } catch (err) {
             console.error('Error offboarding employee:', err);
