@@ -498,6 +498,138 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
  * @desc    Get a single payroll run + all its payslips (with employee details)
  * @access  admin, super-admin
  */
+/**
+ * @route   GET /api/payroll/:runId/bank-advice-pdf
+ * @desc    Generate Bank Advice / Salary Transfer PDF Report for Meezan Bank / Records
+ * @access  admin, super-admin, finance, hr
+ */
+router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const { runId } = req.params;
+        if (!mongoose.isValidObjectId(runId)) {
+            return res.status(400).json({ message: 'Invalid run ID.' });
+        }
+
+        const run = await PayrollRun.findById(runId).lean() as any;
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        const payslips = await Payslip.find({ payrollRunId: runId })
+            .populate('employeeDetails', 'firstName lastName employeeId bankDetails jobInfo')
+            .lean() as any[];
+
+        if (!payslips.length) {
+            return res.status(400).json({ message: 'No payslips found for this payroll run.' });
+        }
+
+        const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
+
+        const safeTitle = (run.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Bank_Advice_${safeTitle}.pdf"`);
+        doc.pipe(res);
+
+        const primaryColor = '#1E1B4B';
+        const headerBg = '#4F46E5';
+
+        // Document Header Title Block
+        doc.rect(36, 36, doc.page.width - 72, 54).fill('#F8FAFC').stroke('#CBD5E1');
+        doc.fontSize(14).font('Helvetica-Bold').fillColor(primaryColor)
+           .text('IT CONSULTING AND SERVICES (PVT) LTD - ITCS', 48, 46);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#4338CA')
+           .text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 48, 65);
+
+        // Summary Info Box (Right side of header)
+        const totalNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
+        doc.fontSize(9).font('Helvetica').fillColor('#64748B')
+           .text(`Payroll Period: ${run.title}`, doc.page.width - 320, 46, { align: 'right', width: 270 });
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#059669')
+           .text(`Total Salary Net Payable: PKR ${totalNet.toLocaleString()}`, doc.page.width - 370, 62, { align: 'right', width: 320 });
+
+        let y = 102;
+
+        // Table Header
+        const drawTableHeader = (startY: number) => {
+            doc.rect(36, startY, doc.page.width - 72, 22).fill(headerBg);
+            doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF');
+            
+            doc.text('Sr #', 45, startY + 6, { width: 30 });
+            doc.text('Emp ID', 80, startY + 6, { width: 65 });
+            doc.text('Employee Name', 150, startY + 6, { width: 160 });
+            doc.text('Bank Name', 315, startY + 6, { width: 135 });
+            doc.text('Account Title / Number / IBAN', 455, startY + 6, { width: 200 });
+            doc.text('Net Pay (PKR)', 660, startY + 6, { width: 120, align: 'right' });
+        };
+
+        drawTableHeader(y);
+        y += 22;
+
+        payslips.forEach((p: any, idx: number) => {
+            if (y > doc.page.height - 75) {
+                doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
+                y = 36;
+                drawTableHeader(y);
+                y += 22;
+            }
+
+            const bg = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            doc.rect(36, y, doc.page.width - 72, 20).fill(bg).stroke('#E2E8F0');
+
+            const empName = p.employeeDetails 
+                ? `${p.employeeDetails.firstName || ''} ${p.employeeDetails.lastName || ''}`.trim()
+                : 'Employee';
+            const bankName = p.employeeDetails?.bankDetails?.bankName || 'Meezan Bank';
+            const acctNo = p.employeeDetails?.bankDetails?.accountNumber || 'Pending Account Info';
+
+            doc.fontSize(8).font('Helvetica').fillColor('#334155');
+            doc.text(`${idx + 1}`, 45, y + 5, { width: 30 });
+            doc.text(`${p.employeeId || '—'}`, 80, y + 5, { width: 65 });
+            doc.text(empName, 150, y + 5, { width: 160, ellipsis: true });
+            doc.text(bankName, 315, y + 5, { width: 135, ellipsis: true });
+            doc.text(acctNo, 455, y + 5, { width: 200, ellipsis: true });
+            
+            doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A');
+            doc.text(`PKR ${(p.netPay || 0).toLocaleString()}`, 660, y + 5, { width: 120, align: 'right' });
+
+            y += 20;
+        });
+
+        // Total Summary Footer Row
+        if (y > doc.page.height - 90) {
+            doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
+            y = 36;
+        }
+
+        doc.rect(36, y, doc.page.width - 72, 26).fill('#E2E8F0').stroke('#CBD5E1');
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#0F172A');
+        doc.text(`GRAND TOTAL (${payslips.length} Employees):`, 45, y + 8, { width: 400 });
+        doc.fontSize(10.5).font('Helvetica-Bold').fillColor('#059669');
+        doc.text(`PKR ${totalNet.toLocaleString()}`, 650, y + 7, { width: 130, align: 'right' });
+
+        y += 45;
+
+        // Signature Lines
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#334155');
+        
+        doc.text('Prepared By (HR / Finance)', 50, y);
+        doc.moveTo(50, y - 4).lineTo(220, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+
+        doc.text('Verified By (Head of Finance)', 300, y);
+        doc.moveTo(300, y - 4).lineTo(470, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+
+        doc.text('Authorized Signatory (Meezan Bank Transfer)', 570, y);
+        doc.moveTo(570, y - 4).lineTo(770, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+
+        doc.end();
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.get('/:runId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;

@@ -42,6 +42,7 @@ export const api = {
     payrollGenerate: (id: string) => `${API_BASE_URL}/api/payroll/${id}/generate`,
     payrollApprove: (id: string) => `${API_BASE_URL}/api/payroll/${id}/approve`,
     payrollDisburse: (id: string) => `${API_BASE_URL}/api/payroll/${id}/disburse`,
+    payrollBankAdvicePdf: (id: string) => `${API_BASE_URL}/api/payroll/${id}/bank-advice-pdf`,
     payrollMyPayslips: `${API_BASE_URL}/api/payroll/my-payslips`,
     payslip: (id: string) => `${API_BASE_URL}/api/payroll/payslips/${id}`,
 

@@ -4,7 +4,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2, Send,
     PencilLine, Save, X, Plus, Trash2, Users,
     DollarSign, TrendingDown, CreditCard, RefreshCw,
-    AlertTriangle,
+    AlertTriangle, Download, FileText,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -325,6 +325,29 @@ const PayrollRunDetail = () => {
         }
     };
 
+    const handleDownloadBankAdvice = async () => {
+        setActionLoading('bank-advice');
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(api.payrollBankAdvicePdf(id!), {
+                headers: { Authorization: `Bearer ${token}` },
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const link = document.createElement('a');
+            link.href = url;
+            const filename = `Meezan_Bank_Salary_Advice_${(run?.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf`;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (err: any) {
+            triggerError('Download Failed', err.response?.data?.message || 'Failed to download bank advice PDF report.');
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     const handleDeleteRun = async () => {
         triggerConfirm(
             'Delete Payroll Run?',
@@ -409,6 +432,21 @@ const PayrollRunDetail = () => {
                         className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 border border-slate-200" title="Refresh">
                         <RefreshCw size={15} />
                     </button>
+
+                    {/* Download Meezan Bank Transfer Advice PDF */}
+                    {payslips.length > 0 && (
+                        <button 
+                            id="btn-bank-advice-pdf"
+                            onClick={handleDownloadBankAdvice} 
+                            disabled={!!actionLoading}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors disabled:opacity-60 shadow-sm"
+                            title="Download Meezan Bank / Corporate Salary Transfer Advice PDF"
+                        >
+                            {actionLoading === 'bank-advice' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                            Bank Advice PDF
+                        </button>
+                    )}
+
                     {run.status === 'Draft' && (
                         <>
                             <button id="btn-generate-payslips" onClick={handleGenerate} disabled={!!actionLoading}
