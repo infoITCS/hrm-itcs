@@ -4,7 +4,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2, Send,
     PencilLine, Save, X, Plus, Trash2, Users,
     DollarSign, TrendingDown, CreditCard, RefreshCw,
-    AlertTriangle, Download, FileText,
+    AlertTriangle, Download,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
