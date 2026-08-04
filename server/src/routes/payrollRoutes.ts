@@ -533,47 +533,64 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         res.setHeader('Content-Disposition', `attachment; filename="Bank_Advice_${safeTitle}.pdf"`);
         doc.pipe(res);
 
-        const primaryColor = '#1E1B4B';
-        const headerBg = '#4F46E5';
+        const primaryColor = '#4A148C';
+        const headerBg = '#4A148C';
 
-        // Document Header Title Block
-        doc.rect(36, 36, doc.page.width - 72, 54).fill('#F8FAFC').stroke('#CBD5E1');
-        doc.fontSize(14).font('Helvetica-Bold').fillColor(primaryColor)
-           .text('IT CONSULTING AND SERVICES (PVT) LTD - ITCS', 48, 46);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#4338CA')
-           .text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 48, 65);
+        // Top Accent Graphic Ribbon
+        doc.save()
+           .moveTo(350, 0)
+           .lineTo(doc.page.width, 0)
+           .lineTo(doc.page.width, 70)
+           .lineTo(390, 70)
+           .closePath()
+           .fill(primaryColor);
 
-        // Summary Info Box (Right side of header)
+        // Company Logo
+        let logoPath = path.join(__dirname, '../../uploads/logo.png');
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 40, 20, { width: 90 });
+        } else {
+            doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text('itcs', 40, 25);
+        }
+
+        // Company & Document Title Header Block
+        doc.fontSize(14).font('Helvetica-Bold').fillColor('#1E293B')
+           .text('IT CONSULTING AND SERVICES (PVT) LTD', 150, 24);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#6B21A8')
+           .text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 150, 44);
+
         const totalNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
-        doc.fontSize(9).font('Helvetica').fillColor('#64748B')
-           .text(`Payroll Period: ${run.title}`, doc.page.width - 320, 46, { align: 'right', width: 270 });
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#059669')
-           .text(`Total Salary Net Payable: PKR ${totalNet.toLocaleString()}`, doc.page.width - 370, 62, { align: 'right', width: 320 });
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF')
+           .text(`Period: ${run.title}`, doc.page.width - 270, 20, { align: 'right', width: 230 });
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#FDE047')
+           .text(`Total Net: PKR ${totalNet.toLocaleString()}`, doc.page.width - 270, 40, { align: 'right', width: 230 });
 
-        let y = 102;
+        doc.moveTo(40, 78).lineTo(doc.page.width - 40, 78).strokeColor('#CBD5E1').lineWidth(1).stroke();
+
+        let y = 92;
 
         // Table Header
         const drawTableHeader = (startY: number) => {
-            doc.rect(36, startY, doc.page.width - 72, 22).fill(headerBg);
+            doc.rect(36, startY, doc.page.width - 72, 24).fill(headerBg);
             doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF');
             
-            doc.text('Sr #', 45, startY + 6, { width: 30 });
-            doc.text('Emp ID', 80, startY + 6, { width: 65 });
-            doc.text('Employee Name', 150, startY + 6, { width: 160 });
-            doc.text('Bank Name', 315, startY + 6, { width: 135 });
-            doc.text('Account Title / Number / IBAN', 455, startY + 6, { width: 200 });
-            doc.text('Net Pay (PKR)', 660, startY + 6, { width: 120, align: 'right' });
+            doc.text('Sr #', 45, startY + 7, { width: 30 });
+            doc.text('Emp ID', 80, startY + 7, { width: 65 });
+            doc.text('Employee Name', 150, startY + 7, { width: 160 });
+            doc.text('Bank Name', 315, startY + 7, { width: 135 });
+            doc.text('Account Title / Number / IBAN', 455, startY + 7, { width: 200 });
+            doc.text('Net Pay (PKR)', 660, startY + 7, { width: 120, align: 'right' });
         };
 
         drawTableHeader(y);
-        y += 22;
+        y += 24;
 
         payslips.forEach((p: any, idx: number) => {
             if (y > doc.page.height - 75) {
                 doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
                 y = 36;
                 drawTableHeader(y);
-                y += 22;
+                y += 24;
             }
 
             const bg = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
@@ -599,30 +616,36 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         });
 
         // Total Summary Footer Row
-        if (y > doc.page.height - 90) {
+        if (y > doc.page.height - 110) {
             doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
             y = 36;
         }
 
-        doc.rect(36, y, doc.page.width - 72, 26).fill('#E2E8F0').stroke('#CBD5E1');
+        doc.rect(36, y, doc.page.width - 72, 26).fill('#F1F5F9').stroke('#CBD5E1');
         doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#0F172A');
         doc.text(`GRAND TOTAL (${payslips.length} Employees):`, 45, y + 8, { width: 400 });
         doc.fontSize(10.5).font('Helvetica-Bold').fillColor('#059669');
         doc.text(`PKR ${totalNet.toLocaleString()}`, 650, y + 7, { width: 130, align: 'right' });
 
-        y += 45;
+        // Extra spacing before signatures for stamps & physical sign
+        y += 75;
 
-        // Signature Lines
+        if (y > doc.page.height - 60) {
+            doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
+            y = 80;
+        }
+
+        // Signature Lines Block
         doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#334155');
         
-        doc.text('Prepared By (HR / Finance)', 50, y);
-        doc.moveTo(50, y - 4).lineTo(220, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.moveTo(50, y).lineTo(220, y).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.text('Prepared By (HR / Finance)', 50, y + 6);
 
-        doc.text('Verified By (Head of Finance)', 300, y);
-        doc.moveTo(300, y - 4).lineTo(470, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.moveTo(300, y).lineTo(470, y).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.text('Verified By (Head of Finance)', 300, y + 6);
 
-        doc.text('Authorized Signatory (Meezan Bank Transfer)', 570, y);
-        doc.moveTo(570, y - 4).lineTo(770, y - 4).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.moveTo(570, y).lineTo(770, y).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.text('Authorized Signatory (Meezan Bank Transfer)', 570, y + 6);
 
         doc.end();
     } catch (err) {

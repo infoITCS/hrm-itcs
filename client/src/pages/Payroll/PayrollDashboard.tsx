@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
     CheckCircle2, Clock, Send, Loader2, X,
-    TrendingUp, Users, DollarSign,
+    TrendingUp, Users, DollarSign, Download,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -364,10 +364,38 @@ const PayrollDashboard = () => {
                                                         ? new Date(run.disbursedAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
                                                         : '—'}
                                                 </td>
-                                                <td className="px-5 py-4 text-right">
-                                                    <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-500 transition-colors ml-auto" />
-                                                </td>
-                                            </tr>
+                                                 <td className="px-5 py-4 text-right">
+                                                     <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                                         <button
+                                                             onClick={async () => {
+                                                                 try {
+                                                                     const token = localStorage.getItem('token');
+                                                                     const res = await axios.get(api.payrollBankAdvicePdf(run._id), {
+                                                                         headers: { Authorization: `Bearer ${token}` },
+                                                                         responseType: 'blob'
+                                                                     });
+                                                                     const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                                                                     const link = document.createElement('a');
+                                                                     link.href = url;
+                                                                     const filename = `Meezan_Bank_Salary_Advice_${(run.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_')}.pdf`;
+                                                                     link.setAttribute('download', filename);
+                                                                     document.body.appendChild(link);
+                                                                     link.click();
+                                                                     link.remove();
+                                                                 } catch (err: any) {
+                                                                     alert(err.response?.data?.message || 'Failed to download bank advice PDF.');
+                                                                 }
+                                                             }}
+                                                             className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 transition-colors flex items-center gap-1 shrink-0"
+                                                             title="Download Meezan Bank / Corporate Salary Transfer Advice PDF"
+                                                         >
+                                                             <Download size={13} />
+                                                             Bank PDF
+                                                         </button>
+                                                         <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
+                                                     </div>
+                                                 </td>
+                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
