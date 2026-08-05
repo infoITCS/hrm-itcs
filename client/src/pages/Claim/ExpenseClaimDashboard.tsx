@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -77,12 +78,26 @@ const ExpenseClaimDashboard = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
     const { role } = usePermissions();
+    const [searchParams] = useSearchParams();
 
     const token = localStorage.getItem('token');
     const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
 
     type Tab = 'submit' | 'mine' | 'approvals' | 'history' | 'settings';
-    const [tab, setTab] = useState<Tab>('submit');
+    const [tab, setTab] = useState<Tab>(() => {
+        const initialTab = searchParams.get('tab');
+        if (initialTab && ['submit', 'mine', 'approvals', 'history', 'settings'].includes(initialTab)) {
+            return initialTab as Tab;
+        }
+        return 'submit';
+    });
+
+    useEffect(() => {
+        const urlTab = searchParams.get('tab');
+        if (urlTab && ['submit', 'mine', 'approvals', 'history', 'settings'].includes(urlTab)) {
+            setTab(urlTab as Tab);
+        }
+    }, [searchParams]);
 
     const [employee, setEmployee] = useState<any>(null);
     const [dependents, setDependents] = useState<any[]>([]);

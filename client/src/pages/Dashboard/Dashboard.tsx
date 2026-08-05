@@ -109,111 +109,124 @@ const Dashboard = () => {
 
         const fetchStats = async () => {
             try {
-                // Fetch current user's employee record for onboarding check
-                const empRes = await fetch(`${api.employees}?userId=${user.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (empRes.ok) {
-                    const empData = await empRes.json();
-                    // Handle paginated { employees } or plain array, then get first match
-                    const empList = Array.isArray(empData) ? empData : (empData.employees || []);
-                    const emp = empList[0] || null;
-                    if (emp) setOnboardingData(emp);
+                const headers = { Authorization: `Bearer ${token}` };
+                const leavesEndpoint = (role === 'admin' || role === 'manager') 
+                    ? `${api.baseURL}/api/leaves/all` 
+                    : `${api.baseURL}/api/leaves/mine`;
+
+                const [
+                    empUserRes,
+                    allEmpsRes,
+                    specialsRes,
+                    todayLeavesRes,
+                    notifRes,
+                    leaveBalRes,
+                    myClaimsRes,
+                    allLeavesRes,
+                    pendingClaimsRes
+                ] = await Promise.allSettled([
+                    fetch(`${api.employees}?userId=${user.id}`, { headers }),
+                    fetch(api.employees, { headers }),
+                    fetch(api.todaySpecials, { headers }),
+                    fetch(`${api.baseURL}/api/leaves/today`, { headers }),
+                    fetch(`${api.baseURL}/api/my-requests/notifications`, { headers }),
+                    fetch(`${api.baseURL}/api/leaves/balance`, { headers }),
+                    fetch(api.claimMine, { headers }),
+                    fetch(leavesEndpoint, { headers }),
+                    fetch(api.claimPendingApprovals, { headers })
+                ]);
+
+                // 1. Process Current User Employee Record
+                if (empUserRes.status === 'fulfilled' && empUserRes.value.ok) {
+                    const empData = await empUserRes.value.json().catch(() => null);
+                    if (empData) {
+                        const empList = Array.isArray(empData) ? empData : (empData.employees || []);
+                        const emp = empList[0] || null;
+                        if (emp) setOnboardingData(emp);
+                    }
                 }
 
-                const res = await fetch(api.employees, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    // Handle paginated response { employees, total } or plain array
-                    const empList: any[] = Array.isArray(data) ? data : (data.employees || []);
+                // 2. Process All Employees Record
+                if (allEmpsRes.status === 'fulfilled' && allEmpsRes.value.ok) {
+                    const data = await allEmpsRes.value.json().catch(() => null);
+                    if (data) {
+                        const empList: any[] = Array.isArray(data) ? data : (data.employees || []);
 
-                    if (role === 'admin') {
-                        setEmployeeCount(data.total ?? empList.length);
-                    } else if (role === 'manager') {
-                        const managerEmp = empList.find((e: any) => e.userId === user.id);
-                        const myTeam = managerEmp ? empList.filter((e: any) => e.jobInfo?.reportingManager === managerEmp.employeeId) : [];
-                        setTeamCount(myTeam.filter((e: any) => e.userId !== user.id).length);
-                        setTeamMembers(myTeam);
+                        if (role === 'admin') {
+                            setEmployeeCount(data.total ?? empList.length);
+                        } else if (role === 'manager') {
+                            const managerEmp = empList.find((e: any) => e.userId === user.id);
+                            const myTeam = managerEmp ? empList.filter((e: any) => e.jobInfo?.reportingManager === managerEmp.employeeId) : [];
+                            setTeamCount(myTeam.filter((e: any) => e.userId !== user.id).length);
+                            setTeamMembers(myTeam);
 
-                        const pendingDocs: any[] = [];
-                        myTeam.forEach((member: any) => {
-                            member.attachments?.forEach((doc: any) => {
-                                if (doc.status === 'Pending' || doc.status === 'PENDING') {
-                                    pendingDocs.push({
-                                        id: doc._id || doc.id,
-                                        type: 'document',
-                                        title: `Document Approval: ${doc.fileType}`,
-                                        employeeName: `Requested by ${member.firstName} ${member.lastName}`,
-                                        employeeId: member.employeeId,
-                                        date: new Date(doc.uploadDate || Date.now()).toLocaleDateString(),
-                                        path: `/pim/view/${member.employeeId}?tab=documents`
-                                    });
-                                }
+                            const pendingDocs: any[] = [];
+                            myTeam.forEach((member: any) => {
+                                member.attachments?.forEach((doc: any) => {
+                                    if (doc.status === 'Pending' || doc.status === 'PENDING') {
+                                        pendingDocs.push({
+                                            id: doc._id || doc.id,
+                                            type: 'document',
+                                            title: `Document Approval: ${doc.fileType}`,
+                                            employeeName: `Requested by ${member.firstName} ${member.lastName}`,
+                                            employeeId: member.employeeId,
+                                            date: new Date(doc.uploadDate || Date.now()).toLocaleDateString(),
+                                            path: `/pim/view/${member.employeeId}?tab=documents`
+                                        });
+                                    }
+                                });
                             });
-                        });
-                        setPendingTasks(pendingDocs);
+                            setPendingTasks(pendingDocs);
+                        }
+
+                        // Calculate New Hires count (Last 30 days)
+                        const thirtyDaysAgo = new Date();
+                        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                        const newHires = empList.filter(e => {
+                            if (!e.jobInfo?.joiningDate) return false;
+                            return new Date(e.jobInfo.joiningDate) > thirtyDaysAgo;
+                        }).length;
+                        setNewHiresCount(newHires);
                     }
-
-                    // Calculate New Hires count (Last 30 days)
-                    const thirtyDaysAgo = new Date();
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                    const newHires = empList.filter(e => {
-                        if (!e.jobInfo?.joiningDate) return false;
-                        return new Date(e.jobInfo.joiningDate) > thirtyDaysAgo;
-                    }).length;
-                    setNewHiresCount(newHires);
-                } // end if (res.ok)
-
-                // Fetch Organizational Highlights (Birthdays, Anniversaries)
-                const highlightsRes2 = await fetch(api.todaySpecials, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (highlightsRes2.ok) {
-                    const specialData = await highlightsRes2.json();
-                    const today = new Date();
-                    const currentDay = today.getDate();
-                    const currentMonth = today.getMonth() + 1;
-
-                    const items2 = specialData.map((s: any) => ({
-                        id: s.id,
-                        type: s.type,
-                        name: s.name,
-                        years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
-                        role: s.designation,
-                        date: s.date || 'Today',
-                        isToday: s.day === currentDay && s.month === currentMonth,
-                        icon: s.type === 'birthday' ? Cake : s.type === 'anniversary' ? Award : s.type === 'holiday' ? PartyPopper : UserPlus,
-                        color: s.type === 'birthday' ? 'text-rose-500' : s.type === 'anniversary' ? 'text-amber-500' : s.type === 'holiday' ? 'text-emerald-500' : 'text-indigo-500',
-                        bg: s.type === 'birthday' ? 'bg-rose-50' : s.type === 'anniversary' ? 'bg-amber-50' : s.type === 'holiday' ? 'bg-emerald-50' : 'bg-indigo-50'
-                    }));
-                    if (items2.length === 0) {
-                        items2.push({ id: 'empty', type: 'info', name: 'No special events this month', role: 'Quiet month!', date: '-', icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
-                    }
-                    setHighlights(items2.slice(0, 6));
                 }
 
-                // Fetch Today's Leaves
-                try {
-                    const leavesRes = await fetch(`${api.baseURL}/api/leaves/today`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (leavesRes.ok) {
-                        const leavesData = await leavesRes.json();
-                        setTodayLeaves(leavesData.data || []);
+                // 3. Process Organizational Highlights (Birthdays, Anniversaries)
+                if (specialsRes.status === 'fulfilled' && specialsRes.value.ok) {
+                    const specialData = await specialsRes.value.json().catch(() => []);
+                    if (Array.isArray(specialData)) {
+                        const today = new Date();
+                        const currentDay = today.getDate();
+                        const currentMonth = today.getMonth() + 1;
+
+                        const items2 = specialData.map((s: any) => ({
+                            id: s.id,
+                            type: s.type,
+                            name: s.name,
+                            years: s.yearsCompleted ? `${s.yearsCompleted} Year${s.yearsCompleted > 1 ? 's' : ''}` : undefined,
+                            role: s.designation,
+                            date: s.date || 'Today',
+                            isToday: s.day === currentDay && s.month === currentMonth,
+                            icon: s.type === 'birthday' ? Cake : s.type === 'anniversary' ? Award : s.type === 'holiday' ? PartyPopper : UserPlus,
+                            color: s.type === 'birthday' ? 'text-rose-500' : s.type === 'anniversary' ? 'text-amber-500' : s.type === 'holiday' ? 'text-emerald-500' : 'text-indigo-500',
+                            bg: s.type === 'birthday' ? 'bg-rose-50' : s.type === 'anniversary' ? 'bg-amber-50' : s.type === 'holiday' ? 'bg-emerald-50' : 'bg-indigo-50'
+                        }));
+                        if (items2.length === 0) {
+                            items2.push({ id: 'empty', type: 'info', name: 'No special events this month', years: undefined, role: 'Quiet month!', date: '-', isToday: false, icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                        }
+                        setHighlights(items2.slice(0, 6));
                     }
-                } catch (e) {
-                    console.error('Failed to fetch today leaves', e);
                 }
 
-                // Fetch Pending Tasks from Notifications
-                try {
-                    const notifRes = await fetch(`${api.baseURL}/api/my-requests/notifications`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (notifRes.ok) {
-                        const notifData = await notifRes.json();
+                // 4. Process Today's Leaves
+                if (todayLeavesRes.status === 'fulfilled' && todayLeavesRes.value.ok) {
+                    const leavesData = await todayLeavesRes.value.json().catch(() => ({}));
+                    setTodayLeaves(leavesData.data || []);
+                }
+
+                // 5. Process Notifications Tasks
+                if (notifRes.status === 'fulfilled' && notifRes.value.ok) {
+                    const notifData = await notifRes.value.json().catch(() => []);
+                    if (Array.isArray(notifData)) {
                         const tasksOnly = notifData.filter((n: any) => n.type === 'task');
                         setPendingTasks(prev => {
                             const combined = [...prev];
@@ -232,70 +245,39 @@ const Dashboard = () => {
                             return combined;
                         });
                     }
-                } catch (e) {
-                    console.error('Failed to fetch notifications for tasks', e);
                 }
 
-                // Fetch Personal Leave Balance
-                try {
-                    const balRes = await fetch(`${api.baseURL}/api/leaves/balance`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (balRes.ok) {
-                        const balJson = await balRes.json();
-                        const balances = balJson.data?.balances || [];
-                        const totalAvail = balances.reduce((sum: number, b: any) => {
-                            const avail = Math.max(0, (b.total || 0) - (b.used || 0) - (b.pending || 0));
-                            return sum + avail;
-                        }, 0);
-                        setLeavesAvailable(`${totalAvail} Days`);
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch leave balance', e);
+                // 6. Process Personal Leave Balance
+                if (leaveBalRes.status === 'fulfilled' && leaveBalRes.value.ok) {
+                    const balJson = await leaveBalRes.value.json().catch(() => ({}));
+                    const balances = balJson.data?.balances || [];
+                    const totalAvail = balances.reduce((sum: number, b: any) => {
+                        const avail = Math.max(0, (b.total || 0) - (b.used || 0) - (b.pending || 0));
+                        return sum + avail;
+                    }, 0);
+                    setLeavesAvailable(`${totalAvail} Days`);
                 }
 
-                // Fetch Personal Claims
-                try {
-                    const claimsRes = await fetch(api.claimMine, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (claimsRes.ok) {
-                        const claimsJson = await claimsRes.json();
-                        const claims = claimsJson.data || [];
-                        setMyClaimsCount(claims.length > 0 ? `${claims.length} Claim${claims.length > 1 ? 's' : ''}` : '0 Claims');
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch my claims', e);
+                // 7. Process Personal Claims Count
+                if (myClaimsRes.status === 'fulfilled' && myClaimsRes.value.ok) {
+                    const claimsJson = await myClaimsRes.value.json().catch(() => ({}));
+                    const claims = claimsJson.data || [];
+                    setMyClaimsCount(claims.length > 0 ? `${claims.length} Claim${claims.length > 1 ? 's' : ''}` : '0 Claims');
                 }
 
-                // Fetch Leave Requests count (for admin/manager)
-                try {
-                    const endpoint = (role === 'admin' || role === 'manager') ? `${api.baseURL}/api/leaves/all` : `${api.baseURL}/api/leaves/mine`;
-                    const allLeavesRes = await fetch(endpoint, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (allLeavesRes.ok) {
-                        const allLeavesJson = await allLeavesRes.json();
-                        const leavesList = allLeavesJson.data || [];
-                        const pendingLeaves = leavesList.filter((l: any) => l.status === 'Pending');
-                        setLeaveRequestsCount(pendingLeaves.length > 0 ? `${pendingLeaves.length} Pending` : '0 Pending');
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch leave requests count', e);
+                // 8. Process Leave Requests Count
+                if (allLeavesRes.status === 'fulfilled' && allLeavesRes.value.ok) {
+                    const allLeavesJson = await allLeavesRes.value.json().catch(() => ({}));
+                    const leavesList = allLeavesJson.data || [];
+                    const pendingLeaves = leavesList.filter((l: any) => l.status === 'Pending');
+                    setLeaveRequestsCount(pendingLeaves.length > 0 ? `${pendingLeaves.length} Pending` : '0 Pending');
                 }
 
-                // Fetch Pending Approvals count (for admin/manager)
-                try {
-                    const pendingClaimsRes = await fetch(api.claimPendingApprovals, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    if (pendingClaimsRes.ok) {
-                        const pendingClaimsJson = await pendingClaimsRes.json();
-                        const pendingList = pendingClaimsJson.data || [];
-                        setPendingApprovalsCount(pendingList.length > 0 ? `${pendingList.length} Pending` : '0 Pending');
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch pending approvals count', e);
+                // 9. Process Pending Approvals Count
+                if (pendingClaimsRes.status === 'fulfilled' && pendingClaimsRes.value.ok) {
+                    const pendingClaimsJson = await pendingClaimsRes.value.json().catch(() => ({}));
+                    const pendingList = pendingClaimsJson.data || [];
+                    setPendingApprovalsCount(pendingList.length > 0 ? `${pendingList.length} Pending` : '0 Pending');
                 }
             } catch (err) {
                 console.error('Failed to fetch dashboard stats', err);

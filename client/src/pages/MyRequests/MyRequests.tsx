@@ -235,15 +235,12 @@ const MyRequests = () => {
                 setShowModal(false);
             } else {
                 const data = await res.json().catch(() => ({}));
-                const errMsg = data.message || `Failed to generate '${selectedOption}' document template.`;
-                if (data.code === 'MISSING_FINANCE_DETAILS' || data.code === 'MISSING_TEMPLATE_DETAILS') {
-                    if (data.userRole === 'admin') {
-                        triggerAlert('HR Action Required', errMsg, 'warning');
-                    } else {
-                        triggerAlert('HR Configuration Required', errMsg, 'info');
-                    }
+                const errMsg = data.message || `Failed to generate '${selectedOption}' document.`;
+                const isHrAdmin = ['admin', 'super-admin', 'hr'].includes(data.userRole);
+                if (isHrAdmin) {
+                    triggerAlert('HR Configuration Required', errMsg, 'warning');
                 } else {
-                    triggerAlert('Configuration Required', errMsg, 'warning');
+                    triggerAlert('Template Not Available', errMsg, 'info');
                 }
             }
         } catch (err) {

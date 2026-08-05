@@ -180,18 +180,36 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             return res.status(404).json({ message: 'Employee profile not found' });
         }
 
-        // Fetch Company configs
-        const company = employee.companyId ? await Company.findById(employee.companyId).lean() as any : null;
+        // Fetch Company configs with fallback
+        const company = employee.companyId 
+            ? await Company.findById(employee.companyId).lean() as any 
+            : await Company.findOne().lean() as any;
 
-        // Query DocumentTemplate before starting PDF generation
-        const template = (employee.companyId ? await DocumentTemplate.findOne({
-            companyId: employee.companyId,
-            documentType,
-            isActive: true
-        }).lean() : null) as any;
+        const targetCompanyId = employee.companyId || company?._id;
+
+        // Query DocumentTemplate with flexible matching and fallback
+        let template = null;
+        if (targetCompanyId) {
+            template = await DocumentTemplate.findOne({
+                companyId: targetCompanyId,
+                documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
+                isActive: true
+            }).lean() as any;
+        }
 
         if (!template) {
-            return res.status(404).json({ message: `Document template for '${documentType}' is not configured for your company. Please configure it in Admin Settings first.` });
+            template = await DocumentTemplate.findOne({
+                documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
+                isActive: true
+            }).lean() as any;
+        }
+
+        if (!template) {
+            const isAdmin = ['admin', 'super-admin', 'hr'].includes(authReq.user?.role || '');
+            const message = isAdmin
+                ? `Document template for '${documentType}' is not configured yet. Please configure it in Admin Settings under Document Templates.`
+                : `Document template for '${documentType}' has not been configured by HR yet. Please contact your HR administrator to enable this document template.`;
+            return res.status(404).json({ message, code: 'MISSING_TEMPLATE_DETAILS', userRole: authReq.user?.role });
         }
 
         // Generate unique Document ID
@@ -213,7 +231,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 department: employee.jobInfo?.department,
                 joiningDate: employee.jobInfo?.joiningDate
             },
-            companyId: employee.companyId
+            companyId: targetCompanyId
         });
         await newDoc.save();
 
@@ -717,25 +735,54 @@ router.patch('/:documentId/revoke', authenticate, async (req: Request, res: Resp
     }
 });
 
-// Public Endpoint to verify a document
+// Public Endpoint to verify a document or payslip
 router.get('/public/verify/:documentId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { documentId } = req.params;
-        const doc = await OfficialDocument.findOne({ documentId }).lean();
+        const isValidObjId = mongoose.Types.ObjectId.isValid(documentId);
+
+        let doc = await OfficialDocument.findOne({ 
+            $or: [
+                { documentId },
+                ...(isValidObjId ? [{ _id: documentId }] : [])
+            ]
+        }).lean();
         
-        if (!doc) {
-            return res.status(404).json({ message: 'Document not found or invalid' });
+        if (doc) {
+            return res.json({
+                isValid: doc.status === 'Valid',
+                documentType: doc.documentType,
+                issueDate: doc.issueDate,
+                employeeName: `${doc.details?.firstName || ''} ${doc.details?.lastName || ''}`.trim(),
+                designation: doc.details?.designation || 'Employee',
+                department: doc.details?.department || 'Staff',
+                status: doc.status
+            });
         }
 
-        res.json({
-            isValid: doc.status === 'Valid',
-            documentType: doc.documentType,
-            issueDate: doc.issueDate,
-            employeeName: `${doc.details.firstName} ${doc.details.lastName}`,
-            designation: doc.details.designation,
-            department: doc.details.department,
-            status: doc.status
-        });
+        // Search in Payslips if not found in OfficialDocument
+        const payslip = await Payslip.findOne({
+            $or: [
+                { payslipNo: documentId },
+                ...(isValidObjId ? [{ _id: documentId }] : [])
+            ]
+        }).lean() as any;
+
+        if (payslip) {
+            const emp = await Employee.findOne({ employeeId: payslip.employeeId }).select('firstName lastName jobInfo').lean() as any;
+            const isRevokedOrCancelled = payslip.status === 'Revoked' || payslip.status === 'Cancelled' || payslip.status === 'Draft';
+            return res.json({
+                isValid: !isRevokedOrCancelled,
+                documentType: `Salary Payslip (${payslip.periodMonth} ${payslip.periodYear})`,
+                issueDate: payslip.generatedAt || payslip.createdAt,
+                employeeName: emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : payslip.employeeId,
+                designation: emp?.jobInfo?.designation || 'Employee',
+                department: emp?.jobInfo?.department || 'Staff',
+                status: payslip.status || 'Valid'
+            });
+        }
+
+        res.status(404).json({ message: 'Document or payslip not found or invalid' });
     } catch (err: any) {
         next(err);
     }

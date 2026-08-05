@@ -30,7 +30,7 @@ export interface IPayslip extends Document {
     totalDeductions: number;  // sum of deductions[].amount
     netPay: number;           // grossPay - totalDeductions
 
-    status: 'Draft' | 'Finalized';
+    status: 'Draft' | 'Finalized' | 'Revoked' | 'Cancelled';
     paymentMethod: 'Bank Transfer' | 'Cash' | 'Cheque';
     paidAt?: Date;
     notes?: string;
@@ -85,7 +85,7 @@ const PayslipSchema: Schema = new Schema(
 
         status: {
             type: String,
-            enum: ['Draft', 'Finalized'],
+            enum: ['Draft', 'Finalized', 'Revoked', 'Cancelled'],
             default: 'Draft',
             index: true,
         },

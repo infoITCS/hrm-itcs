@@ -125,8 +125,9 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             for (const reqObj of pendingRequests) {
                 const emp = empMap[reqObj.employeeId];
                 const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Employee';
-                let msg = `Awaiting review for ${reqObj.category}.`;
-                let title = `Pending: ${reqObj.category}`;
+                const itemLabel = reqObj.requestType || reqObj.category;
+                let msg = `Awaiting review for ${itemLabel}.`;
+                let title = `Pending: ${itemLabel}`;
 
                 if (reqObj.status === 'Approved' && (reqObj.category === 'Loan' || reqObj.category === 'Request Loan')) {
                     title = `ERP Entry Required: ${reqObj.category}`;
@@ -134,7 +135,8 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 } else if (reqObj.details?.requestedAmount) {
                     msg = `${empName} requested a loan of Rs. ${reqObj.details.requestedAmount.toLocaleString()}.`;
                 } else {
-                    msg = `${empName} requested ${reqObj.category} (${reqObj.requestType}).`;
+                    const qtyStr = reqObj.details?.quantity ? ` (Qty: ${reqObj.details.quantity})` : '';
+                    msg = `${empName} requested ${itemLabel}${qtyStr}.`;
                 }
 
                 notifications.push({
@@ -235,7 +237,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                         message: msg,
                         time: claim.updatedAt || claim.createdAt,
                         type: 'task',
-                        path: '/claim'
+                        path: '/claim?tab=approvals'
                     });
                 }
             }
@@ -273,8 +275,8 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
 
         // Employee updates and own pending requests (for employee's own notifications/tasks)
         if (employee) {
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            const twentyFourHoursAgo = new Date();
+            twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
 
             // Employee's own pending requests awaiting review
             const pendingEmpRequests = await EmployeeRequest.find({
@@ -283,10 +285,11 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             }).sort({ requestedAt: -1 }).limit(5).lean();
 
             for (const reqObj of pendingEmpRequests) {
+                const itemLabel = reqObj.requestType || reqObj.category;
                 notifications.push({
                     id: reqObj._id.toString(),
-                    title: `Pending Request: ${reqObj.category}`,
-                    message: `Your ${reqObj.category} request (${reqObj.requestType}) is awaiting review.`,
+                    title: `Pending Request: ${itemLabel}`,
+                    message: `Your request for "${itemLabel}" is awaiting review.`,
                     time: reqObj.updatedAt || reqObj.requestedAt,
                     type: 'task',
                     path: '/my-requests'
@@ -323,36 +326,57 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     message: `Your ${claim.category} claim of Rs. ${claim.amountRequested.toLocaleString()} is currently ${claim.status.toLowerCase()}.`,
                     time: claim.updatedAt || claim.createdAt,
                     type: 'task',
-                    path: '/claim'
+                    path: '/claim?tab=mine'
                 });
             }
 
-            // Request status updates (Approved/Rejected/Completed in last 7 days)
+            // Request status updates (Approved/Rejected/Completed in last 24 hours)
             const recentUpdates = await EmployeeRequest.find({
                 employeeId: employee.employeeId,
                 status: { $in: ['Approved', 'Rejected', 'Completed'] },
-                updatedAt: { $gte: sevenDaysAgo }
-            }).sort({ updatedAt: -1 }).limit(10).lean();
+                updatedAt: { $gte: twentyFourHoursAgo }
+            }).sort({ updatedAt: -1 }).limit(5).lean();
 
             for (const reqObj of recentUpdates) {
+                const itemLabel = reqObj.requestType || reqObj.category;
+                const commentStr = reqObj.adminComments ? ` (Comments: "${reqObj.adminComments}")` : '';
+
                 notifications.push({
                     id: reqObj._id.toString(),
-                    title: `${reqObj.category} Request ${reqObj.status}`,
-                    message: reqObj.adminComments 
-                        ? `Comments: "${reqObj.adminComments}"`
-                        : `Your request has been marked as ${reqObj.status.toLowerCase()}.`,
+                    title: `${itemLabel} Request ${reqObj.status}`,
+                    message: `Your request for "${itemLabel}" has been marked as ${reqObj.status.toLowerCase()}.${commentStr}`,
                     time: reqObj.updatedAt,
                     type: reqObj.status === 'Approved' || reqObj.status === 'Completed' ? 'success' : 'alert',
                     path: '/my-requests'
                 });
             }
 
-            // Claim status updates (Approved/Declined in last 7 days)
+            // Leave status updates (Approved/Rejected in last 24 hours)
+            const recentLeaveUpdates = (await LeaveRequest.find({
+                employeeId: employee.employeeId,
+                status: { $in: ['Approved', 'Rejected'] },
+                updatedAt: { $gte: twentyFourHoursAgo }
+            }).sort({ updatedAt: -1 }).limit(5).lean()) as any[];
+
+            for (const leave of recentLeaveUpdates) {
+                notifications.push({
+                    id: leave._id.toString(),
+                    title: `${leave.type} Leave ${leave.status}`,
+                    message: leave.adminNote
+                        ? `Note: "${leave.adminNote}"`
+                        : `Your ${leave.type} leave request has been ${leave.status.toLowerCase()}.`,
+                    time: leave.updatedAt || leave.createdAt,
+                    type: leave.status === 'Approved' ? 'success' : 'alert',
+                    path: '/leave'
+                });
+            }
+
+            // Claim status updates (Approved/Declined in last 24 hours)
             const recentClaimUpdates = await ExpenseClaim.find({
                 employeeId: employee.employeeId,
                 status: { $in: ['Approved', 'Declined'] },
-                updatedAt: { $gte: sevenDaysAgo }
-            }).sort({ updatedAt: -1 }).limit(10).lean();
+                updatedAt: { $gte: twentyFourHoursAgo }
+            }).sort({ updatedAt: -1 }).limit(5).lean();
 
             for (const claim of recentClaimUpdates) {
                 notifications.push({
@@ -363,7 +387,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                         : `Your claim of Rs. ${claim.amountRequested.toLocaleString()} has been declined.`,
                     time: claim.updatedAt,
                     type: claim.status === 'Approved' ? 'success' : 'alert',
-                    path: '/claim'
+                    path: '/claim?tab=mine'
                 });
             }
         }
