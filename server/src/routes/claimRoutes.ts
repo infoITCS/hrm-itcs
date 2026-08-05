@@ -27,11 +27,7 @@ function sanitizeClaimForJson(doc: any) {
 }
 
 function buildWorkflow(category: string): ExpenseClaimApprovalStage[] {
-    if (category === 'Medical') return ['hr', 'finance'];
-    if (category === 'Training & Certification') return ['teamLead', 'hr', 'finance'];
-    if (category === 'Travel') return ['lineManager', 'hr', 'finance'];
-    if (category === 'Sales/Customer Gifts') return ['lineManager', 'hr', 'finance'];
-    return ['lineManager', 'hr', 'finance'];
+    return ['hr', 'finance'];
 }
 
 function stageToStatus(stage: ExpenseClaimApprovalStage): string {
@@ -337,7 +333,19 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
 
         const workflow = buildWorkflow(category);
-        const reportingManagerId = employee?.jobInfo?.reportingManager ? String(employee.jobInfo.reportingManager) : '';
+        let reportingManagerId = employee?.jobInfo?.reportingManager ? String(employee.jobInfo.reportingManager) : '';
+        if (reportingManagerId) {
+            const mgrDoc = await Employee.findOne({
+                $or: [
+                    { employeeId: reportingManagerId },
+                    { _id: mongoose.isValidObjectId(reportingManagerId) ? reportingManagerId : undefined },
+                    { userId: reportingManagerId }
+                ]
+            }).select('employeeId').lean() as any;
+            if (mgrDoc?.employeeId) {
+                reportingManagerId = mgrDoc.employeeId;
+            }
+        }
         const approvals = workflow.map(stage => ({
             stage,
             status: 'Pending',
@@ -396,7 +404,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             (async () => {
                 try {
                     if (reportingManagerId) {
-                        const manager = await Employee.findOne({ employeeId: reportingManagerId });
+                        const manager = await Employee.findOne({
+                            $or: [
+                                { employeeId: reportingManagerId },
+                                { _id: mongoose.isValidObjectId(reportingManagerId) ? reportingManagerId : undefined },
+                                { userId: reportingManagerId }
+                            ]
+                        });
                         const managerEmail = manager?.workEmail || manager?.email;
                         if (managerEmail) {
                             await sendExpenseClaimSubmittedEmail(
@@ -446,39 +460,14 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
     try {
         const userId = authReq.user?.userId;
         const role = authReq.user?.role || 'employee';
-        if (!role || role === 'employee') return res.json({ success: true, data: [] });
+        if (!role || role === 'employee' || role === 'manager') return res.json({ success: true, data: [] });
 
-        let claims: any[] = [];
-
-        if (role === 'manager') {
-            // Restrict to claims assigned to THIS manager via PIM reportingManager hierarchy
-            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
-            const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
-            if (!managerEmployeeId) return res.json({ success: true, data: [] });
-
-            claims = await ExpenseClaim.find({
-                approvals: {
-                    $elemMatch: {
-                        status: 'Pending',
-                        stage: { $in: ['teamLead', 'lineManager'] },
-                        assignedToEmployeeId: managerEmployeeId,
-                    }
-                }
-            })
-                .select('-receipts.fileData')
-                .sort({ createdAt: -1 })
-                .populate('employeeDetails', 'firstName lastName employeeId')
-                .lean();
-        } else {
-            claims = await ExpenseClaim.find({
-                status: { $nin: ['Draft', 'Approved', 'Declined'] },
-            })
-                .select('-receipts.fileData')
-                .sort({ createdAt: -1 })
-                .populate('employeeDetails', 'firstName lastName employeeId')
-                .lean();
-        }
-
+        let claims = await ExpenseClaim.find({
+            status: { $nin: ['Draft', 'Approved', 'Declined'] },
+        })
+            .select('-receipts.fileData')
+            .sort({ createdAt: -1 })
+            .populate('employeeDetails', 'firstName lastName employeeId')
         res.json({ success: true, data: claims });
     } catch (err) {
         next(err);
@@ -545,7 +534,23 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) {
                     const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
                     const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
-                    if (!managerEmployeeId || String(pending.assignedToEmployeeId || '') !== managerEmployeeId) {
+                    const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
+                    const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
+
+                    const isAssigned = managerIdentifiers.includes(String(pending.assignedToEmployeeId || ''));
+                    let isDirectReport = false;
+                    if (!isAssigned) {
+                        const claimSubmitter = await Employee.findOne({
+                            $or: [
+                                { employeeId: claim.employeeId },
+                                { userId: claim.employeeUserId }
+                            ]
+                        }).select('jobInfo.reportingManager').lean() as any;
+                        if (claimSubmitter?.jobInfo?.reportingManager && managerIdentifiers.includes(String(claimSubmitter.jobInfo.reportingManager))) {
+                            isDirectReport = true;
+                        }
+                    }
+                    if (!isAssigned && !isDirectReport) {
                         failedIds.push(claimId);
                         continue;
                     }
@@ -681,7 +686,23 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) {
             const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
             const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
-            if (!managerEmployeeId || String(pending.assignedToEmployeeId || '') !== managerEmployeeId) {
+            const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
+            const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
+
+            const isAssigned = managerIdentifiers.includes(String(pending.assignedToEmployeeId || ''));
+            let isDirectReport = false;
+            if (!isAssigned) {
+                const claimSubmitter = await Employee.findOne({
+                    $or: [
+                        { employeeId: claim.employeeId },
+                        { userId: claim.employeeUserId }
+                    ]
+                }).select('jobInfo.reportingManager').lean() as any;
+                if (claimSubmitter?.jobInfo?.reportingManager && managerIdentifiers.includes(String(claimSubmitter.jobInfo.reportingManager))) {
+                    isDirectReport = true;
+                }
+            }
+            if (!isAssigned && !isDirectReport) {
                 return res.status(403).json({ message: 'This claim is not assigned to you' });
             }
         }
