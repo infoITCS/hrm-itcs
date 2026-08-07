@@ -198,7 +198,7 @@ const ExpenseClaimDashboard = () => {
     const [catFormSubCats, setCatFormSubCats] = useState('');
     const [catSubmitting, setCatSubmitting] = useState(false);
 
-    const isApprover = role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr';
+    const isApprover = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
     const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
 
     const remainingMedicalLimit = useMemo(() => {

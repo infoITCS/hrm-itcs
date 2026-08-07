@@ -316,7 +316,7 @@ const Dashboard = () => {
             color: 'text-amber-600',
             bg: 'bg-amber-50',
             border: 'border-amber-100',
-            link: '/leave',
+            link: '/leave?tab=team-requests',
         },
         {
             title: 'Pending Reviews',
@@ -347,7 +347,7 @@ const Dashboard = () => {
             color: 'text-emerald-600',
             bg: 'bg-emerald-50',
             border: 'border-emerald-100',
-            link: '/leave',
+            link: '/leave?tab=team-requests',
         },
         {
             title: 'Pending Approvals',
@@ -356,7 +356,7 @@ const Dashboard = () => {
             color: 'text-amber-600',
             bg: 'bg-amber-50',
             border: 'border-amber-100',
-            link: '/leave',
+            link: '/leave?tab=team-requests',
         },
         {
             title: 'Team Performance',

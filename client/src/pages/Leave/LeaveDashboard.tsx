@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
     Calendar, Plus, ChevronRight, Filter, FileText, Clock,
     Plane, Heart
@@ -71,7 +72,16 @@ const LeaveDashboard = () => {
     const [showApplyModal, setShowApplyModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings'>('my-leaves');
+    const [searchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings'>(() => {
+        const tabParam = searchParams.get('tab');
+        if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
+            return 'team-requests';
+        }
+        if (tabParam === 'settings') return 'settings';
+        if (tabParam === 'holiday-settings') return 'holiday-settings';
+        return 'my-leaves';
+    });
     const [statusFilter, setStatusFilter] = useState('All');
     const [refreshCounter, setRefreshCounter] = useState(0);
     const { role } = usePermissions();
@@ -141,6 +151,19 @@ const LeaveDashboard = () => {
         };
         fetchEmployees();
     }, [isAdminLike]);
+
+    useEffect(() => {
+        const tabParam = searchParams.get('tab');
+        if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
+            if (isManagement) setActiveTab('team-requests');
+        } else if (tabParam === 'settings') {
+            if (isAdmin) setActiveTab('settings');
+        } else if (tabParam === 'holiday-settings') {
+            if (isAdmin) setActiveTab('holiday-settings');
+        } else if (tabParam === 'my-leaves') {
+            setActiveTab('my-leaves');
+        }
+    }, [searchParams, isManagement, isAdmin]);
 
     useEffect(() => {
         if (!isManagement && activeTab === 'team-requests') {

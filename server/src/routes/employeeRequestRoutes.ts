@@ -178,7 +178,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     message: `${empName} requested ${leave.totalDays} day(s) from ${new Date(leave.startDate).toLocaleDateString()} to ${new Date(leave.endDate).toLocaleDateString()}.`,
                     time: leave.createdAt,
                     type: 'task',
-                    path: '/leave'
+                    path: '/leave?tab=team-requests'
                 });
             }
         }
