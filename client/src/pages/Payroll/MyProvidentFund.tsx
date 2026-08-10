@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import {
-    PiggyBank, Search, Download, CalendarDays,
+    PiggyBank, Search, Download,
     BadgeCheck, Clock, CheckCircle2, FileText,
     ArrowUpRight, ArrowDownLeft, Wallet, AlertCircle
 } from 'lucide-react';
@@ -126,8 +126,12 @@ export default function MyProvidentFund() {
     }
 
     const history = data.providentFundHistory || [];
-    const totalCredits = history.reduce((sum, e) => e.type === 'credit' ? sum + e.amount : sum, 0);
+    const manualCredits = history.reduce((sum, e) => e.type === 'credit' && e.source === 'manual' ? sum + e.amount : sum, 0);
+    const payrollCredits = history.reduce((sum, e) => e.type === 'credit' && e.source === 'payroll' ? sum + e.amount : sum, 0);
     const totalDebits = history.reduce((sum, e) => e.type === 'debit' ? sum + e.amount : sum, 0);
+    const historyNet = (manualCredits + payrollCredits) - totalDebits;
+    const untrackedOpening = Math.max(0, (data.providentFundBalance || 0) - historyNet);
+    const previousBalance = manualCredits + untrackedOpening;
 
     const monthsLeft = data.maturityDate
         ? Math.max(0, (new Date(data.maturityDate).getFullYear() - new Date().getFullYear()) * 12
@@ -230,7 +234,7 @@ export default function MyProvidentFund() {
             {/* 4 Summary Cards Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 
-                {/* Card 1: Total Balance */}
+                {/* Card 1: Current Balance */}
                 <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Current PF Balance</span>
@@ -244,21 +248,35 @@ export default function MyProvidentFund() {
                     </div>
                 </div>
 
-                {/* Card 2: Total Contributions */}
+                {/* Card 2: Previous PF Balance */}
                 <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Contributions</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Previous PF Balance</span>
+                        <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                            <Wallet size={18} />
+                        </div>
+                    </div>
+                    <div className="mt-3">
+                        <div className="text-2xl font-black text-amber-700">{fmtPKR(previousBalance)}</div>
+                        <p className="text-[11px] text-slate-500 mt-1 font-medium">Opening balance</p>
+                    </div>
+                </div>
+
+                {/* Card 3: Payroll Contributions */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payroll Contributions</span>
                         <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
                             <ArrowUpRight size={18} />
                         </div>
                     </div>
                     <div className="mt-3">
-                        <div className="text-2xl font-black text-emerald-600">{fmtPKR(totalCredits)}</div>
-                        <p className="text-[11px] text-slate-500 mt-1 font-medium">{history.filter(h => h.type === 'credit').length} credit transactions</p>
+                        <div className="text-2xl font-black text-emerald-600">{fmtPKR(payrollCredits)}</div>
+                        <p className="text-[11px] text-slate-500 mt-1 font-medium">{history.filter(h => h.source === 'payroll' && h.type === 'credit').length} credit transactions</p>
                     </div>
                 </div>
 
-                {/* Card 3: Total Deductions/Debits */}
+                {/* Card 4: Total Withdrawals */}
                 <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Withdrawals</span>
@@ -269,20 +287,6 @@ export default function MyProvidentFund() {
                     <div className="mt-3">
                         <div className="text-2xl font-black text-rose-600">{fmtPKR(totalDebits)}</div>
                         <p className="text-[11px] text-slate-500 mt-1 font-medium">{history.filter(h => h.type === 'debit').length} debit transactions</p>
-                    </div>
-                </div>
-
-                {/* Card 4: Service Duration */}
-                <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Service Tenure</span>
-                        <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                            <CalendarDays size={18} />
-                        </div>
-                    </div>
-                    <div className="mt-3">
-                        <div className="text-2xl font-black text-slate-900">{fmtMonths(data.monthsOfService)}</div>
-                        <p className="text-[11px] text-slate-500 mt-1 font-medium">Joined {fmtDate(data.joiningDate)}</p>
                     </div>
                 </div>
             </div>

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Banknote, Loader2, CheckCircle2, Send,
     PencilLine, Save, X, Plus, Trash2, Users,
-    DollarSign, TrendingDown, CreditCard, RefreshCw,
+    TrendingDown, CreditCard, RefreshCw,
     AlertTriangle, Download,
 } from 'lucide-react';
 import axios from 'axios';
@@ -494,7 +494,7 @@ const PayrollRunDetail = () => {
                         <p className="text-2xl font-bold text-slate-800">{payslips.length}</p>
                     </div>
                     <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-                        <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><DollarSign size={12} /> Gross Pay</p>
+                        <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><Banknote size={12} /> Gross Pay</p>
                         <p className="text-xl font-bold text-emerald-600">{fmt(totalGross)}</p>
                     </div>
                     <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">

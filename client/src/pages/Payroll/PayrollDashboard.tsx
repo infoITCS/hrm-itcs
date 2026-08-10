@@ -3,7 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
     CheckCircle2, Clock, Send, Loader2, X,
-    TrendingUp, Users, DollarSign, Download,
+    TrendingUp, Users, Download,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -298,7 +298,7 @@ const PayrollDashboard = () => {
                     <StatCard icon={TrendingUp} label="Total Runs" value={runs.length} color="indigo" />
                     <StatCard icon={Clock} label="Draft" value={drafts} color="amber" />
                     <StatCard icon={CheckCircle2} label="Approved" value={approved} color="violet" />
-                    <StatCard icon={DollarSign} label="Total Disbursed" value={formatCurrency(totalDisbursed)} color="emerald" />
+                    <StatCard icon={Banknote} label="Total Disbursed" value={formatCurrency(totalDisbursed)} color="emerald" />
                 </div>
             )}
 

@@ -428,23 +428,25 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
         await newRequest.save();
 
-        // Asynchronously notify manager and admins via email
+        // Asynchronously notify manager, HR, and admins via email based on request category
         (async () => {
             try {
                 let managerEmail: string | undefined;
-                if (employee.jobInfo?.reportingManager) {
+                if ((category === 'Asset' || category === 'Document' || category === 'HR Document') && employee.jobInfo?.reportingManager) {
                     const manager = await Employee.findOne({ employeeId: employee.jobInfo.reportingManager }).select('workEmail');
                     if (manager?.workEmail) {
                         managerEmail = manager.workEmail;
                     }
                 }
 
-                const admins = await User.find({ role: { $in: ['admin', 'super-admin'] } }).select('email');
-                const adminEmails = admins.map(a => a.email).filter(Boolean);
+                // HR, Admin, Super-Admin receive (Finance excluded)
+                const hrAdmins = await User.find({ role: { $in: ['admin', 'super-admin', 'hr'] } }).select('email');
+                const adminEmails = hrAdmins.map(a => a.email).filter(Boolean);
 
                 const recipients = [];
                 if (managerEmail) recipients.push(managerEmail);
                 recipients.push(...adminEmails);
+                recipients.push(process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk');
 
                 const toList = [...new Set(recipients)].join(', ');
                 if (toList) {
@@ -615,12 +617,12 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
 
         await request.save();
 
-        // Asynchronously notify employee via email
+        // Asynchronously notify employee via official work email strictly
         (async () => {
             try {
                 const employee = await Employee.findOne({ employeeId: request.employeeId }).select('workEmail firstName lastName');
                 if (employee?.workEmail) {
-                    const empName = `${employee.firstName} ${employee.lastName || ''}`.trim();
+                    const empName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee';
                     await sendEmployeeRequestStatusEmail(employee.workEmail, empName, request.category, status, adminComments);
                 }
             } catch (err: any) {

@@ -612,3 +612,30 @@ export const sendPendingErpTasksReminderEmail = async (to: string, pendingCount:
         return false;
     }
 };
+
+export const sendTestEmail = async (to: string) => {
+    const mailOptions = {
+        from: `"ITCS HRM Test" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: 'ITCS HRM - Email System Test',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #f9fafb;">
+                <h2 style="color: #4f46e5; text-align: center;">Email Delivery Test Successful! 🎉</h2>
+                <p style="color: #4b5563; font-size: 16px;">Hello,</p>
+                <p style="color: #4b5563; font-size: 16px;">If you received this message, your ITCS HRM email server configuration (SMTP) is functioning correctly and delivering emails!</p>
+                <div style="background-color: #e0e7ff; padding: 12px; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #3730a3;">
+                    <strong>Sender Account:</strong> ${process.env.SMTP_USER || 'Not set'}<br/>
+                    <strong>SMTP Host:</strong> ${process.env.SMTP_HOST || 'smtp.office365.com'}:${process.env.SMTP_PORT || '587'}
+                </div>
+            </div>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return { success: true, message: `Test email sent successfully to ${to}` };
+    } catch (error: any) {
+        logger.error('Error sending test email:', error);
+        return { success: false, error: error.message || String(error) };
+    }
+};

@@ -655,7 +655,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
             res.status(201).json({ success: true, message: 'Leave requested successfully', data: createdLeave });
 
-            // Trigger manager notification email asynchronously
+            // Trigger manager & HR notification email asynchronously
             (async () => {
                 try {
                     const emp = await Employee.findOne({
@@ -665,23 +665,29 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                             { _id: employeeId.length === 24 ? employeeId : new mongoose.Types.ObjectId() }
                         ]
                     });
+                    const employeeName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : 'Employee';
+                    const hrEmail = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
+
+                    let managerEmail: string | undefined = undefined;
                     if (emp && emp.jobInfo?.reportingManager) {
                         const manager = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager });
-                        const managerEmail = manager?.workEmail || manager?.email;
-                        if (managerEmail) {
-                            await sendLeaveSubmittedEmail(
-                                managerEmail,
-                                `${emp.firstName} ${emp.lastName}`,
-                                leaveType.name,
-                                new Date(startDate).toLocaleDateString(),
-                                new Date(endDate).toLocaleDateString(),
-                                totalDeducted,
-                                req.headers.origin as string
-                            );
-                        }
+                        managerEmail = manager?.workEmail || manager?.email;
+                    }
+
+                    const recipients = Array.from(new Set([hrEmail, managerEmail].filter(Boolean) as string[]));
+                    for (const to of recipients) {
+                        await sendLeaveSubmittedEmail(
+                            to,
+                            employeeName,
+                            leaveType.name,
+                            new Date(startDate).toLocaleDateString(),
+                            new Date(endDate).toLocaleDateString(),
+                            totalDeducted,
+                            req.headers.origin as string
+                        );
                     }
                 } catch (emailErr) {
-                    console.error('[Leave Email] Failed to send submission email to manager:', emailErr);
+                    console.error('[Leave Email] Failed to send submission email:', emailErr);
                 }
             })();
         } catch (error: any) {

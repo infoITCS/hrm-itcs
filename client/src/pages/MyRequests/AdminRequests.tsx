@@ -9,7 +9,7 @@ import GeneratedDocuments from './GeneratedDocuments';
 const AdminRequests = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
-    const isOnlyManager = user?.role === 'manager';
+    const canManageCategoriesAndDocs = ['admin', 'super-admin', 'hr'].includes(user?.role || '');
     const isAdminOrSuper = ['admin', 'super-admin', 'hr', 'finance'].includes(user?.role || '');
 
     const [activeTab, setActiveTab] = useState<'Requests' | 'Categories' | 'Documents'>('Requests');
@@ -93,8 +93,8 @@ const AdminRequests = () => {
                 </div>
             </div>
 
-            {/* Navigation Tabs (Only visible for admin/super-admin) */}
-            {!isOnlyManager && (
+            {/* Navigation Tabs (Only visible for admin/super-admin/hr) */}
+            {canManageCategoriesAndDocs && (
                 <div className="flex border-b border-gray-200 mb-6">
                     <button
                         onClick={() => setActiveTab('Requests')}
@@ -123,9 +123,9 @@ const AdminRequests = () => {
                 </div>
             )}
 
-            {activeTab === 'Categories' && !isOnlyManager ? (
+            {activeTab === 'Categories' && canManageCategoriesAndDocs ? (
                 <CategoryConfig />
-            ) : activeTab === 'Documents' && !isOnlyManager ? (
+            ) : activeTab === 'Documents' && canManageCategoriesAndDocs ? (
                 <GeneratedDocuments />
             ) : (
                 <>

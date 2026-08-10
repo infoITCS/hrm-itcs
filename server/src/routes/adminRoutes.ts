@@ -6,7 +6,7 @@ import AuditLog from '../models/AuditLog';
 import { AuthRequest } from '../middleware/auth';
 import { AuthUtils } from '../middleware/auth.utils';
 import crypto from 'crypto';
-import { sendWelcomeEmail } from '../utils/email';
+import { sendWelcomeEmail, sendTestEmail } from '../utils/email';
 
 const router = Router();
 
@@ -424,11 +424,32 @@ router.post('/users/:id/impersonate', authenticate, requireAdmin, async (req: Re
                 firstName: targetUser.firstName || employee?.firstName,
                 lastName: targetUser.lastName || employee?.lastName,
                 avatar: avatarUrl,
-                hasProfile: !!employee,
+                hasProfile: !!employee
             }
         });
     } catch (error) {
         next(error);
+    }
+});
+/**
+ * POST /api/admin/test-email
+ * Sends a test email to verify SMTP configuration.
+ */
+router.post('/test-email', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { to } = req.body;
+        const targetEmail = to || process.env.HR_EMAIL || process.env.SMTP_USER;
+        if (!targetEmail) {
+            return res.status(400).json({ message: 'Recipient email address is required.' });
+        }
+        const result = await sendTestEmail(targetEmail);
+        if (result.success) {
+            return res.json({ message: result.message });
+        } else {
+            return res.status(500).json({ message: 'SMTP Test Failed', error: result.error });
+        }
+    } catch (err) {
+        next(err);
     }
 });
 

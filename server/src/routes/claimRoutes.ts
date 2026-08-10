@@ -4,6 +4,7 @@ import ExpenseClaim, { type ExpenseClaimApprovalStage } from '../models/ExpenseC
 import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
 import Counter from '../models/Counter';
+import { User } from '../models/User.model';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendHRNotificationEmail, sendExpenseClaimSubmittedEmail, sendExpenseClaimStatusEmail } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
@@ -15,8 +16,21 @@ type ReceiptInput = { fileName: string; contentType?: string; base64: string };
 const MAX_RECEIPTS = 5;
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5MB each
 
-const HR_EMAILS = (process.env.EXPENSE_HR_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
-const FINANCE_EMAILS = (process.env.EXPENSE_FINANCE_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
+const getHrEmails = async (): Promise<string[]> => {
+    const envList = (process.env.EXPENSE_HR_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
+    const dbUsers = await User.find({ role: { $in: ['super-admin', 'admin', 'hr'] } }).select('email').lean();
+    const dbEmails = dbUsers.map((u: any) => u.email).filter(Boolean);
+    const fallback = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
+    return Array.from(new Set([...envList, ...dbEmails, fallback]));
+};
+
+const getFinanceEmails = async (): Promise<string[]> => {
+    const envList = (process.env.EXPENSE_FINANCE_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
+    const dbUsers = await User.find({ role: { $in: ['super-admin', 'admin', 'finance'] } }).select('email').lean();
+    const dbEmails = dbUsers.map((u: any) => u.email).filter(Boolean);
+    const fallback = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
+    return Array.from(new Set([...envList, ...dbEmails, fallback]));
+};
 
 function sanitizeClaimForJson(doc: any) {
     const obj = doc?.toObject ? (doc.toObject() as any) : (doc as any);
@@ -61,12 +75,21 @@ function decodeReceipts(receipts?: ReceiptInput[]) {
 
 async function generateClaimNo(): Promise<string> {
     const year = new Date().getFullYear();
-    const counter = await Counter.findOneAndUpdate(
+    const counter: any = await Counter.findOneAndUpdate(
         { key: `claimNo_${year}` },
         { $inc: { seq: 1 } },
         { upsert: true, new: true }
     );
-    return `EC-${year}-${String(counter.seq).padStart(4, '0')}`;
+    let seq = counter?.seq || 1;
+    let claimNo = `EC-${year}-${String(seq).padStart(4, '0')}`;
+
+    while (await ExpenseClaim.exists({ claimNo })) {
+        seq++;
+        claimNo = `EC-${year}-${String(seq).padStart(4, '0')}`;
+    }
+
+    await Counter.updateOne({ key: `claimNo_${year}` }, { $set: { seq } });
+    return claimNo;
 }
 
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {
@@ -388,18 +411,21 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
         // Notifications (best-effort)
         const employeeName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.employeeId;
-        const actionDesc = `submitted expense claim ${doc.claimNo} (${doc.category})`;
-        const notify = async (emails: string[]) => {
+        const notifyClaim = async (emails: string[]) => {
             for (const to of emails) {
                 try {
-                    await sendHRNotificationEmail(to, employeeName, actionDesc);
+                    await sendExpenseClaimSubmittedEmail(to, employeeName, category, amountRequested);
                 } catch (e) {
                     // ignore
                 }
             }
         };
-        if (doc.status === 'Pending HR') void notify(HR_EMAILS);
-        if (doc.status === 'Pending Finance') void notify(FINANCE_EMAILS);
+        (async () => {
+            const hrEmails = await getHrEmails();
+            const financeEmails = await getFinanceEmails();
+            if (doc.status === 'Pending HR') void notifyClaim(hrEmails);
+            if (doc.status === 'Pending Finance') void notifyClaim(financeEmails);
+        })();
         if (doc.status === 'Pending Team Lead' || doc.status === 'Pending Line Manager') {
             (async () => {
                 try {
@@ -637,15 +663,17 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                     }
                 })();
 
-                if (claim.status === 'Pending HR' && HR_EMAILS.length) {
+                const hrEmailsList = await getHrEmails();
+                const financeEmailsList = await getFinanceEmails();
+                if (claim.status === 'Pending HR' && hrEmailsList.length) {
                     const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
                     const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
-                    for (const to of HR_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
+                    for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
                 }
-                if (claim.status === 'Pending Finance' && FINANCE_EMAILS.length) {
+                if (claim.status === 'Pending Finance' && financeEmailsList.length) {
                     const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
                     const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
-                    for (const to of FINANCE_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
+                    for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
                 }
 
                 processedIds.push(claimId);
@@ -799,15 +827,17 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         })();
 
         // Notify HR/Finance when entering their queues
-        if (claim.status === 'Pending HR' && HR_EMAILS.length) {
+        const hrEmailsList = await getHrEmails();
+        const financeEmailsList = await getFinanceEmails();
+        if (claim.status === 'Pending HR' && hrEmailsList.length) {
             const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
             const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
-            for (const to of HR_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
+            for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
         }
-        if (claim.status === 'Pending Finance' && FINANCE_EMAILS.length) {
+        if (claim.status === 'Pending Finance' && financeEmailsList.length) {
             const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
             const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
-            for (const to of FINANCE_EMAILS) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
+            for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
         }
 
         await claim.populate('employeeDetails', 'firstName lastName employeeId');

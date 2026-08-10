@@ -646,10 +646,16 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
         }
         const isMatured = maturityDate ? now >= maturityDate : false;
 
-        // Calculate credits and debits from history
+        // Calculate breakdown: Manual vs Payroll
         const history = employee.providentFundHistory || [];
-        const totalCredits = history.reduce((sum: number, entry: any) => entry.type === 'credit' ? sum + entry.amount : sum, 0);
+        const manualCredits = history.reduce((sum: number, entry: any) => (entry.type === 'credit' && entry.source === 'manual') ? sum + entry.amount : sum, 0);
+        const payrollCredits = history.reduce((sum: number, entry: any) => (entry.type === 'credit' && entry.source === 'payroll') ? sum + entry.amount : sum, 0);
         const totalDebits = history.reduce((sum: number, entry: any) => entry.type === 'debit' ? sum + entry.amount : sum, 0);
+        
+        const historyNet = (manualCredits + payrollCredits) - totalDebits;
+        const currentBalance = employee.providentFundBalance || 0;
+        const untrackedOpening = Math.max(0, currentBalance - historyNet);
+        const totalOpeningBalance = manualCredits + untrackedOpening;
         
         const fmtPKR_local = (n: number) => `Rs. ${n.toLocaleString('en-PK')}`;
         const fmtDate_local = (d: Date | string | null | undefined) => {
@@ -682,7 +688,6 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
         doc.moveDown(1);
 
         // --- Employee Details Section ---
-        const startY = doc.y;
         doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Employee Details');
         doc.moveDown(0.4);
         
@@ -717,37 +722,35 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
         const statusText = employee.pfClaimed ? 'Claimed' : isMatured ? 'Matured' : 'Pending';
         doc.font('Helvetica-Bold').fillColor(employee.pfClaimed ? '#6b7280' : isMatured ? '#059669' : '#d97706').text(statusText, detailsX2 + 90, currentDetailsY + 54);
 
-        doc.y = currentDetailsY + 80;
+        doc.y = currentDetailsY + 76;
         doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, doc.y).lineTo(562, doc.y).stroke();
-        doc.moveDown(1);
+        doc.moveDown(0.8);
 
-        // --- Summary Grid ---
+        // --- Fund Summary Grid (2x2 layout) ---
         const summaryY = doc.y;
         doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Fund Summary', 50, summaryY);
-        doc.moveDown(0.5);
+        
+        const cardWidth = 248;
+        const cardHeight = 44;
+        const cardY1 = summaryY + 18;
+        const cardY2 = summaryY + 68;
 
-        const cardWidth = 158;
-        const cardHeight = 55;
-        const cardGap = 14;
-        const cardY = doc.y;
-
-        const drawSummaryCard = (title: string, value: string, xPos: number, bgColor: string, txtColor: string) => {
-            // Draw background rectangle
-            doc.fillColor(bgColor).rect(xPos, cardY, cardWidth, cardHeight).fill();
-            // Draw text
-            doc.fillColor('#6b7280').fontSize(8).font('Helvetica-Bold').text(title.toUpperCase(), xPos + 12, cardY + 12);
-            doc.fillColor(txtColor).fontSize(14).font('Helvetica-Bold').text(value, xPos + 12, cardY + 26);
+        const drawCard = (title: string, value: string, xPos: number, yPos: number, bgColor: string, txtColor: string) => {
+            doc.fillColor(bgColor).rect(xPos, yPos, cardWidth, cardHeight).fill();
+            doc.fillColor('#6b7280').fontSize(8).font('Helvetica-Bold').text(title.toUpperCase(), xPos + 10, yPos + 8);
+            doc.fillColor(txtColor).fontSize(13).font('Helvetica-Bold').text(value, xPos + 10, yPos + 22);
         };
 
-        drawSummaryCard('Current Balance', fmtPKR_local(employee.providentFundBalance || 0), 50, '#f0fdf4', '#15803d');
-        drawSummaryCard('Total Credits', fmtPKR_local(totalCredits), 50 + cardWidth + cardGap, '#eff6ff', '#1d4ed8');
-        drawSummaryCard('Total Debits', fmtPKR_local(totalDebits), 50 + (cardWidth + cardGap) * 2, '#fef2f2', '#b91c1c');
+        drawCard('Previous PF Balance', fmtPKR_local(totalOpeningBalance), 50, cardY1, '#fefce8', '#a16207');
+        drawCard('Payroll Contributions', fmtPKR_local(payrollCredits), 314, cardY1, '#eff6ff', '#1d4ed8');
+        drawCard('Total Debits / Claims', fmtPKR_local(totalDebits), 50, cardY2, '#fef2f2', '#b91c1c');
+        drawCard('Current Total PF Balance', fmtPKR_local(currentBalance), 314, cardY2, '#f0fdf4', '#15803d');
 
-        doc.y = cardY + cardHeight + 20;
+        doc.y = cardY2 + cardHeight + 16;
 
         // --- Statement History Table ---
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Month-wise Contribution History', 50);
-        doc.moveDown(0.5);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Contribution & Adjustment History', 50);
+        doc.moveDown(0.4);
 
         const tableTop = doc.y;
         const cols = {
@@ -774,12 +777,24 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
 
         const MONTH_SHORT_local = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-        if (history.length === 0) {
+        // Build list of history entries including synthetic untracked initial balance if any
+        const fullHistory = [...history];
+        if (untrackedOpening > 0) {
+            fullHistory.push({
+                amount: untrackedOpening,
+                type: 'credit',
+                source: 'manual',
+                date: employee.createdAt || employee.jobInfo?.joiningDate || new Date(),
+                description: 'Previous PF Balance'
+            });
+        }
+
+        if (fullHistory.length === 0) {
             doc.moveDown(1);
             doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af').text('No contribution history logged yet.', { align: 'center' });
         } else {
             // Sort history descending by date
-            const sortedHistory = [...history].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const sortedHistory = [...fullHistory].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
             
             let rowY = doc.y;
             let stripe = false;
@@ -817,9 +832,11 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
                     ? `${MONTH_SHORT_local[entry.periodMonth]} ${entry.periodYear}` 
                     : '-';
                 doc.text(periodStr, cols.period.x, rowY + 6, { width: cols.period.w });
-                doc.text(entry.description || '', cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
+                doc.text(entry.description || (entry.source === 'manual' ? 'Previous PF Balance' : 'PF Contribution'), cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
                 
-                doc.text(entry.source || '', cols.source.x, rowY + 6, { width: cols.source.w, align: 'center' });
+                const srcLabel = entry.source === 'manual' ? 'manual' : 'payroll';
+                doc.fillColor(entry.source === 'manual' ? '#92400e' : '#1e40af')
+                   .text(srcLabel, cols.source.x, rowY + 6, { width: cols.source.w, align: 'center' });
                 
                 // Color code type
                 const isCredit = entry.type === 'credit';
@@ -844,9 +861,9 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
             doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, rowY + 22).lineTo(562, rowY + 22).stroke();
             
             doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
-            doc.text('TOTAL ACCUMULATED', cols.date.x + 4, rowY + 7, { width: 250 });
-            doc.fontSize(9).font('Helvetica-Bold').fillColor('#111827')
-               .text(fmtPKR_local(employee.providentFundBalance || 0), cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
+            doc.text('TOTAL ACCUMULATED PF BALANCE', cols.date.x + 4, rowY + 7, { width: 250 });
+            doc.fontSize(9).font('Helvetica-Bold').fillColor('#15803d')
+               .text(fmtPKR_local(currentBalance), cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
         }
 
         doc.end();

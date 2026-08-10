@@ -78,9 +78,16 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
     const [submitting, setSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 
-    const months = groupByMonth(emp.providentFundHistory);
-    const totalCredits = months.reduce((s, m) => s + m.credits, 0);
-    const totalDebits = months.reduce((s, m) => s + m.debits, 0);
+    const history = emp.providentFundHistory || [];
+    const months = groupByMonth(history);
+    const manualCredits = history.reduce((s, e) => e.type === 'credit' && e.source === 'manual' ? s + e.amount : s, 0);
+    const payrollCredits = history.reduce((s, e) => e.type === 'credit' && e.source === 'payroll' ? s + e.amount : s, 0);
+    const totalDebits = history.reduce((s, e) => e.type === 'debit' ? s + e.amount : s, 0);
+    const historyNet = (manualCredits + payrollCredits) - totalDebits;
+    const untrackedOpening = Math.max(0, (emp.providentFundBalance || 0) - historyNet);
+    const totalOpeningBalance = manualCredits + untrackedOpening;
+    const totalCredits = totalOpeningBalance + payrollCredits;
+
     const monthsLeft = emp.maturityDate
         ? Math.max(0, (new Date(emp.maturityDate).getFullYear() - new Date().getFullYear()) * 12
             + (new Date(emp.maturityDate).getMonth() - new Date().getMonth()))
@@ -182,10 +189,11 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
                 </div>
 
                 {/* Employee info strip */}
-                <div className="flex flex-wrap gap-6 px-7 py-4 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600">
+                <div className="flex flex-wrap gap-5 px-7 py-4 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600">
                     <span>Joined: <strong className="text-slate-800">{fmtDate(emp.joiningDate)}</strong></span>
                     <span>Service: <strong className="text-slate-800">{fmtMonths(emp.monthsOfService)}</strong></span>
-                    <span>Total Credits: <strong className="text-emerald-600">{fmtPKR(totalCredits)}</strong></span>
+                    <span>Previous PF Balance: <strong className="text-amber-700">{fmtPKR(totalOpeningBalance)}</strong></span>
+                    <span>Payroll Contributions: <strong className="text-blue-600">{fmtPKR(payrollCredits)}</strong></span>
                     <span>Total Debits: <strong className="text-rose-500">{fmtPKR(totalDebits)}</strong></span>
                     {emp.pfClaimed && <span>Claimed on: <strong className="text-slate-800">{fmtDate(emp.pfClaimedAt)}</strong></span>}
                 </div>

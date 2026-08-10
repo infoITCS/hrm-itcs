@@ -379,12 +379,12 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
             {!embedded && (
                 <>
                     {/* Header Banner */}
-                    <div className="relative rounded-3xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 sm:p-8 shadow-xl shadow-indigo-900/10 overflow-hidden">
-                        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative rounded-3xl bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white p-6 sm:p-8 shadow-xl shadow-purple-600/10 overflow-hidden">
+                        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
                         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-indigo-200 text-xs font-semibold backdrop-blur-md">
+                                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-white/90 text-xs font-semibold backdrop-blur-md">
                                         <Sparkles size={13} /> Official Salary Records
                                     </div>
                                     <button
@@ -393,33 +393,33 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-sm active:scale-95 cursor-pointer"
                                         title={hideSalary ? "Click to show salary figures" : "Click to hide salary figures"}
                                     >
-                                        {hideSalary ? <EyeOff size={13} className="text-indigo-200" /> : <Eye size={13} className="text-indigo-200" />}
+                                        {hideSalary ? <EyeOff size={13} className="text-white/90" /> : <Eye size={13} className="text-white/90" />}
                                         <span>{hideSalary ? 'Show Salary' : 'Hide Salary'}</span>
                                     </button>
                                 </div>
                                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                                     My Payslips & Earnings
                                 </h1>
-                                <p className="text-indigo-200 text-sm mt-1 max-w-xl">
+                                <p className="text-white/80 text-sm mt-1 max-w-xl">
                                     View monthly salary statements, attendance deductions, meal allowances, and download official PDF slips.
                                 </p>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/10 p-4 rounded-2xl border border-white/10 backdrop-blur-md shrink-0 w-full md:w-auto">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/10 p-4 rounded-2xl border border-white/15 backdrop-blur-md shrink-0 w-full md:w-auto">
                                 <div className="p-1 sm:p-0">
-                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Latest Net Salary</p>
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-white/80 uppercase tracking-wider whitespace-nowrap">Latest Net Salary</p>
                                     <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">
                                         {hideSalary ? '••••••••' : (latestNetPay > 0 ? `PKR ${latestNetPay.toLocaleString()}` : 'N/A')}
                                     </p>
                                 </div>
                                 <div className="p-1 sm:p-0 border-t sm:border-t-0 sm:border-l border-white/20 sm:pl-4">
-                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Total Earned</p>
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-white/80 uppercase tracking-wider whitespace-nowrap">Total Earned</p>
                                     <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">
                                         {hideSalary ? '••••••••' : (ytdTotal > 0 ? `PKR ${ytdTotal.toLocaleString()}` : 'N/A')}
                                     </p>
                                 </div>
                                 <div className="p-1 sm:p-0 border-t sm:border-t-0 sm:border-l border-white/20 sm:pl-4">
-                                    <p className="text-[10px] sm:text-[11px] font-semibold text-indigo-200 uppercase tracking-wider whitespace-nowrap">Total Payslips</p>
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-white/80 uppercase tracking-wider whitespace-nowrap">Total Payslips</p>
                                     <p className="text-lg sm:text-xl font-black text-white mt-0.5 whitespace-nowrap">{payslips.length}</p>
                                 </div>
                             </div>
