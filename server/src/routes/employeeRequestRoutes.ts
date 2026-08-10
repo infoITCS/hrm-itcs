@@ -528,6 +528,14 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
             const reportIds = directReports.map(e => e.employeeId);
             // Managers do not see Loan requests
             query = { employeeId: { $in: reportIds }, category: { $nin: ['Loan', 'Request Loan'] } };
+        } else if (role === 'finance') {
+            // Finance role ONLY sees Loan or Finance related requests
+            query = {
+                $or: [
+                    { category: { $regex: /loan|finance|pf|provident|salary|advance/i } },
+                    { requestType: { $regex: /loan|finance|pf|provident|salary|advance/i } }
+                ]
+            };
         }
 
         const requests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).lean();

@@ -12,15 +12,20 @@ const MainLayout = () => {
     const openSidebar = useCallback(() => setSidebarOpen(true), []);
 
     let title = 'Dashboard';
-    if (location.pathname.includes('pim')) title = 'PIM';
-    else if (location.pathname.includes('admin')) title = 'Admin';
+    if (location.pathname.includes('attendance')) title = 'Attendance Dashboard';
+    else if (location.pathname.includes('pim')) title = 'PIM';
+    else if (location.pathname.includes('admin/settings')) title = 'Admin Settings';
+    else if (location.pathname.includes('admin')) title = 'Users & Roles';
     else if (location.pathname.includes('leave')) title = 'Leave';
     else if (location.pathname.includes('recruitment')) title = 'Recruitment';
     else if (location.pathname.includes('my-info')) title = 'My Info';
     else if (location.pathname.includes('performance')) title = 'Performance';
     else if (location.pathname.includes('directory')) title = 'Directory';
-    else if (location.pathname.includes('maintenance')) title = 'Maintenance';
     else if (location.pathname.includes('claim')) title = 'Expense Claim';
+    else if (location.pathname.includes('my-payslips')) title = 'My Payslips';
+    else if (location.pathname.includes('payroll')) title = 'Payroll Management';
+    else if (location.pathname.includes('my-requests')) title = 'Requests';
+    else if (location.pathname.includes('provident-fund')) title = 'Provident Fund';
 
     return (
         <div className="flex flex-col min-h-screen">

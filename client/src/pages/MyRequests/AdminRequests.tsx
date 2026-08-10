@@ -74,7 +74,17 @@ const AdminRequests = () => {
         }
     };
 
+    const isFinanceRole = (user?.role || '').toLowerCase().trim() === 'finance';
+
     const filteredRequests = requests.filter(req => {
+        if (isFinanceRole) {
+            const cat = (req.category || '').toLowerCase();
+            const reqType = (req.requestType || '').toLowerCase();
+            const isFinanceRelated = cat.includes('loan') || cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
+                                     reqType.includes('loan') || reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
+            if (!isFinanceRelated) return false;
+        }
+
         const employeeName = `${req.employee?.firstName || ''} ${req.employee?.lastName || ''}`.toLowerCase();
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               req.category.toLowerCase().includes(searchTerm.toLowerCase()) ||

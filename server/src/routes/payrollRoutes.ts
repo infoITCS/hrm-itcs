@@ -273,7 +273,7 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
         const verifyUrl = `${clientHost}/verify/${payslip._id}`;
         const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
-        const doc = new PDFDocument({ margin: 40, size: 'A4' });
+        const doc = new PDFDocument({ margin: 36, size: 'A4' });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="Payslip_${payslip.payslipNo}_${payslip.periodMonth}_${payslip.periodYear}.pdf"`);
@@ -281,108 +281,109 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
 
         // Header & Logo
         doc.save()
-           .moveTo(210, 0)
+           .moveTo(200, 0)
            .lineTo(doc.page.width, 0)
            .lineTo(doc.page.width, 85)
-           .lineTo(240, 85)
+           .lineTo(230, 85)
            .closePath()
            .fill(primaryColor);
 
         let logoDrawn = false;
-        if (company?.logoUrl) {
+        if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
             try {
-                if (company.logoUrl.startsWith('data:image/')) {
-                    const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
-                    const buffer = Buffer.from(base64Data, 'base64');
-                    doc.image(buffer, 40, 20, { width: 110, height: 45, fit: [110, 45] });
-                    logoDrawn = true;
-                } else if (fs.existsSync(company.logoUrl)) {
-                    doc.image(company.logoUrl, 40, 20, { width: 110, height: 45, fit: [110, 45] });
-                    logoDrawn = true;
-                } else {
-                    const relPath = path.join(__dirname, '../../', company.logoUrl);
-                    if (fs.existsSync(relPath)) {
-                        doc.image(relPath, 40, 20, { width: 110, height: 45, fit: [110, 45] });
+                const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                doc.image(buffer, 36, 20, { width: 115, height: 48, fit: [115, 48] });
+                logoDrawn = true;
+            } catch (err) {
+                console.error('Error rendering base64 company logo in payslip:', err);
+            }
+        }
+
+        if (!logoDrawn) {
+            const candidatePaths = [
+                company?.logoUrl ? path.join(__dirname, '../../', company.logoUrl) : null,
+                company?.logoUrl ? company.logoUrl : null,
+                path.join(__dirname, '../../../client/src/assets/logo.png'),
+                path.join(__dirname, '../../uploads/logo.png'),
+                path.join(__dirname, '../../../client/public/logo.png')
+            ].filter(Boolean) as string[];
+
+            for (const p of candidatePaths) {
+                if (fs.existsSync(p)) {
+                    try {
+                        doc.image(p, 36, 20, { width: 115, height: 48, fit: [115, 48] });
                         logoDrawn = true;
+                        break;
+                    } catch (err) {
+                        console.error('Error drawing payslip logo from path:', p, err);
                     }
                 }
-            } catch (err) {
-                console.error('Error rendering company logo in payslip:', err);
             }
         }
 
         if (!logoDrawn) {
-            const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
-            if (fs.existsSync(defaultLogo)) {
-                try {
-                    doc.image(defaultLogo, 40, 20, { width: 110, height: 45, fit: [110, 45] });
-                    logoDrawn = true;
-                } catch {}
-            }
+            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 36, 30);
         }
 
-        if (!logoDrawn) {
-            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 40, 30);
-        }
+        doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF').text('PAYSLIP / SALARY STATEMENT', 220, 26, { align: 'right', width: doc.page.width - 256 });
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#E9D5FF').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 220, 50, { align: 'right', width: doc.page.width - 256 });
 
-        doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF').text('PAYSLIP / SALARY STATEMENT', 230, 26, { align: 'right', width: doc.page.width - 270 });
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#E9D5FF').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 230, 50, { align: 'right', width: doc.page.width - 270 });
-
-        doc.moveTo(40, 95).lineTo(doc.page.width - 40, 95).strokeColor('#E2E8F0').lineWidth(1).stroke();
+        doc.moveTo(36, 95).lineTo(doc.page.width - 36, 95).strokeColor('#E2E8F0').lineWidth(1).stroke();
 
         // Employee & Payment Details Table
         let y = 110;
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('EMPLOYEE DETAILS', 40, y);
-        doc.text('PAYMENT DETAILS', 320, y);
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('EMPLOYEE DETAILS', 36, y);
+        doc.text('PAYMENT DETAILS', 300, y);
         y += 15;
 
         doc.fontSize(9).font('Helvetica').fillColor('#1E293B');
         const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'N/A';
 
-        doc.text(`Employee Name: ${empName}`, 40, y);
-        doc.text(`Payslip No: ${payslip.payslipNo}`, 320, y);
+        doc.text(`Employee Name: ${empName}`, 36, y);
+        doc.text(`Payslip No: ${payslip.payslipNo}`, 300, y);
         y += 14;
 
-        doc.text(`Employee ID: ${payslip.employeeId}`, 40, y);
-        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 320, y);
+        doc.text(`Employee ID: ${payslip.employeeId}`, 36, y);
+        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 300, y);
         y += 14;
 
-        doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 40, y);
-        doc.text(`Payment Method: ${payslip.paymentMethod || 'Bank Transfer'}`, 320, y);
+        doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 36, y);
+        doc.text(`Payment Method: ${payslip.paymentMethod || 'Bank Transfer'}`, 300, y);
         y += 14;
 
-        doc.text(`Department: ${emp?.jobInfo?.department || 'N/A'}`, 40, y);
-        doc.text(`Bank Name: ${emp?.bankDetails?.bankName || 'N/A'}`, 320, y);
+        doc.text(`Department: ${emp?.jobInfo?.department || 'N/A'}`, 36, y);
+        doc.text(`Bank Name: ${emp?.bankDetails?.bankName || 'N/A'}`, 300, y);
         y += 14;
 
-        doc.text(`CNIC: ${emp?.cnic || 'N/A'}`, 40, y);
-        doc.text(`Account No: ${emp?.bankDetails?.accountNumber || 'N/A'}`, 320, y);
+        doc.text(`CNIC: ${emp?.cnic || 'N/A'}`, 36, y);
+        doc.text(`Account No: ${emp?.bankDetails?.accountNumber || 'N/A'}`, 300, y);
         y += 20;
 
         // Attendance Summary Grid
-        doc.rect(40, y, doc.page.width - 80, 45).fillAndStroke('#F8FAFC', '#E2E8F0');
+        doc.rect(36, y, doc.page.width - 72, 45).fillAndStroke('#F8FAFC', '#E2E8F0');
         const boxY = y + 10;
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#475569');
 
-        doc.text('WORKING DAYS', 55, boxY, { width: 75, align: 'center' });
-        doc.text('PRESENT', 135, boxY, { width: 65, align: 'center' });
-        doc.text('LATES', 205, boxY, { width: 65, align: 'center' });
-        doc.text('HALF-DAYS', 275, boxY, { width: 65, align: 'center' });
-        doc.text('ABSENTS', 345, boxY, { width: 65, align: 'center' });
-        doc.text('LEAVES', 415, boxY, { width: 65, align: 'center' });
+        doc.text('WORKING DAYS', 41, boxY, { width: 85, align: 'center' });
+        doc.text('PRESENT', 128, boxY, { width: 85, align: 'center' });
+        doc.text('LATES', 215, boxY, { width: 85, align: 'center' });
+        doc.text('HALF-DAYS', 302, boxY, { width: 85, align: 'center' });
+        doc.text('ABSENTS', 389, boxY, { width: 85, align: 'center' });
+        doc.text('LEAVES', 474, boxY, { width: 85, align: 'center' });
 
         doc.fontSize(10).font('Helvetica-Bold').fillColor('#0F172A');
-        doc.text(String(attSummary.workingDays), 55, boxY + 14, { width: 75, align: 'center' });
-        doc.text(String(attSummary.presentDays), 135, boxY + 14, { width: 65, align: 'center' });
-        doc.text(String(attSummary.lateDays), 205, boxY + 14, { width: 65, align: 'center' });
-        doc.text(String(attSummary.halfDays), 275, boxY + 14, { width: 65, align: 'center' });
-        doc.text(String(attSummary.absentDays), 345, boxY + 14, { width: 65, align: 'center' });
-        doc.text(String(attSummary.leaveDays), 415, boxY + 14, { width: 65, align: 'center' });
+        doc.text(String(attSummary.workingDays), 41, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.presentDays), 128, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.lateDays), 215, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.halfDays), 302, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.absentDays), 389, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.leaveDays), 474, boxY + 14, { width: 85, align: 'center' });
 
         y += 60;
 
         // Earnings & Deductions Tables
-        const tableMargin = 40;
+        const tableMargin = 36;
         const colGap = 20;
         const colWidth = (doc.page.width - (tableMargin * 2) - colGap) / 2;
         const earnLeft = tableMargin;
@@ -432,13 +433,13 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
 
         // QR Code & Signatures
         if (qrCodeDataUri) {
-            doc.image(qrCodeDataUri, 40, y, { width: 65 });
-            doc.fontSize(7).font('Helvetica').fillColor('#64748B').text('Scan to verify payslip authenticity', 40, y + 70);
+            doc.image(qrCodeDataUri, 36, y, { width: 65 });
+            doc.fontSize(7).font('Helvetica').fillColor('#64748B').text('Scan to verify payslip authenticity', 36, y + 70);
         }
 
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B').text('Authorized Signatory', doc.page.width - 200, y + 45, { align: 'center', width: 160 });
-        doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('IT Consulting and Services (ITCS)', doc.page.width - 200, y + 58, { align: 'center', width: 160 });
-        doc.moveTo(doc.page.width - 200, y + 40).lineTo(doc.page.width - 40, y + 40).strokeColor('#CBD5E1').lineWidth(1).stroke();
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B').text('Authorized Signatory', doc.page.width - 196, y + 45, { align: 'center', width: 160 });
+        doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('IT Consulting and Services (ITCS)', doc.page.width - 196, y + 58, { align: 'center', width: 160 });
+        doc.moveTo(doc.page.width - 196, y + 40).lineTo(doc.page.width - 36, y + 40).strokeColor('#CBD5E1').lineWidth(1).stroke();
 
         doc.end();
     } catch (err) {
@@ -568,35 +569,36 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
 
         // Company Logo (Top-Left)
         let logoDrawn = false;
-        if (company?.logoUrl) {
+        if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
             try {
-                if (company.logoUrl.startsWith('data:image/')) {
-                    const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
-                    const buffer = Buffer.from(base64Data, 'base64');
-                    doc.image(buffer, 36, 20, { width: 95, height: 45, fit: [95, 45] });
-                    logoDrawn = true;
-                } else if (fs.existsSync(company.logoUrl)) {
-                    doc.image(company.logoUrl, 36, 20, { width: 95, height: 45, fit: [95, 45] });
-                    logoDrawn = true;
-                } else {
-                    const relPath = path.join(__dirname, '../../', company.logoUrl);
-                    if (fs.existsSync(relPath)) {
-                        doc.image(relPath, 36, 20, { width: 95, height: 45, fit: [95, 45] });
-                        logoDrawn = true;
-                    }
-                }
+                const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                doc.image(buffer, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                logoDrawn = true;
             } catch (err) {
-                console.error('Error rendering company logo in bank advice:', err);
+                console.error('Error rendering base64 company logo in bank advice:', err);
             }
         }
 
         if (!logoDrawn) {
-            const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
-            if (fs.existsSync(defaultLogo)) {
-                try {
-                    doc.image(defaultLogo, 36, 20, { width: 95, height: 45, fit: [95, 45] });
-                    logoDrawn = true;
-                } catch {}
+            const candidatePaths = [
+                company?.logoUrl ? path.join(__dirname, '../../', company.logoUrl) : null,
+                company?.logoUrl ? company.logoUrl : null,
+                path.join(__dirname, '../../../client/src/assets/logo.png'),
+                path.join(__dirname, '../../uploads/logo.png'),
+                path.join(__dirname, '../../../client/public/logo.png')
+            ].filter(Boolean) as string[];
+
+            for (const p of candidatePaths) {
+                if (fs.existsSync(p)) {
+                    try {
+                        doc.image(p, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                        logoDrawn = true;
+                        break;
+                    } catch (err) {
+                        console.error('Error drawing bank advice logo from path:', p, err);
+                    }
+                }
             }
         }
 

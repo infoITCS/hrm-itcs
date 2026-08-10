@@ -60,35 +60,36 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
 
     // 1. Logo (Top-Left)
     let logoDrawn = false;
-    if (company?.logoUrl) {
+    if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
         try {
-            if (company.logoUrl.startsWith('data:image/')) {
-                const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
-                const buffer = Buffer.from(base64Data, 'base64');
-                doc.image(buffer, 50, 30, { width: 110, height: 45, fit: [110, 45] });
-                logoDrawn = true;
-            } else if (fs.existsSync(company.logoUrl)) {
-                doc.image(company.logoUrl, 50, 30, { width: 110, height: 45, fit: [110, 45] });
-                logoDrawn = true;
-            } else {
-                const relPath = path.join(__dirname, '../../', company.logoUrl);
-                if (fs.existsSync(relPath)) {
-                    doc.image(relPath, 50, 30, { width: 110, height: 45, fit: [110, 45] });
-                    logoDrawn = true;
-                }
-            }
+            const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+            const buffer = Buffer.from(base64Data, 'base64');
+            doc.image(buffer, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+            logoDrawn = true;
         } catch (err) {
-            console.error('Error rendering company logo in letterhead:', err);
+            console.error('Error rendering base64 company logo in letterhead:', err);
         }
     }
 
     if (!logoDrawn) {
-        const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
-        if (fs.existsSync(defaultLogo)) {
-            try {
-                doc.image(defaultLogo, 50, 30, { width: 110, height: 45, fit: [110, 45] });
-                logoDrawn = true;
-            } catch {}
+        const candidatePaths = [
+            company?.logoUrl ? path.join(__dirname, '../../', company.logoUrl) : null,
+            company?.logoUrl ? company.logoUrl : null,
+            path.join(__dirname, '../../../client/src/assets/logo.png'),
+            path.join(__dirname, '../../uploads/logo.png'),
+            path.join(__dirname, '../../../client/public/logo.png')
+        ].filter(Boolean) as string[];
+
+        for (const p of candidatePaths) {
+            if (fs.existsSync(p)) {
+                try {
+                    doc.image(p, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                    logoDrawn = true;
+                    break;
+                } catch (err) {
+                    console.error('Error drawing image from path:', p, err);
+                }
+            }
         }
     }
 
@@ -207,25 +208,91 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         // Fetch Company configs for single-tenant deployment
         const company = await Company.findOne().lean() as any;
 
+        const rawDocType = (documentType || '').trim();
+        const escapedDocType = rawDocType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
         // Query DocumentTemplate globally for this single-tenant deployment
         let template = await DocumentTemplate.findOne({
-            documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
-            isActive: true
+            $or: [
+                { documentType: rawDocType },
+                { documentType: { $regex: new RegExp(`^${escapedDocType}$`, 'i') } }
+            ]
         }).lean() as any;
 
+        // Auto-seed default template if not found in database
         if (!template) {
-            template = await DocumentTemplate.findOne({
-                documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
-                isActive: true
-            }).lean() as any;
-        }
+            const defaultTemplates: Record<string, { subject: string; content: string }> = {
+                'Consolidated Pay Slip (6 Months)': {
+                    subject: 'CONSOLIDATED SALARY STATEMENT (6 MONTHS)',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nConsolidated 6-Month Salary Breakdown:\n- Basic Salary: PKR {{basicSalary}}\n- Monthly Gross Salary: PKR {{grossSalary}}\n- Monthly Total Deductions: PKR {{totalDeductions}}\n- Monthly Net Take-Home Pay: PKR {{netPay}}\n\nThis consolidated pay slip is issued upon official request for {{purpose}}.`
+                },
+                'Consolidated Pay Slip (3 Months)': {
+                    subject: 'CONSOLIDATED SALARY STATEMENT (3 MONTHS)',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nConsolidated Salary Disbursement Summary (Past 3 Months):\n- Month 1 ({{month1Name}}): Gross PKR {{month1Gross}} | Net PKR {{month1NetPay}}\n- Month 2 ({{month2Name}}): Gross PKR {{month2Gross}} | Net PKR {{month2NetPay}}\n- Month 3 ({{month3Name}}): Gross PKR {{month3Gross}} | Net PKR {{month3NetPay}}\n\nTotal Net Salary Disbursed: PKR {{totalNetPay3Months}}.\n\nThis statement is issued upon official request for {{purpose}}.`
+                },
+                'Pay Slip': {
+                    subject: 'SALARY PAY SLIP',
+                    content: `SALARY PAY SLIP\n\nEmployee Name: {{employeeName}} (ID: {{employeeId}})\nDesignation: {{designation}} | Department: {{department}}\nPay Period: {{payPeriod}}\n\nBasic Salary: PKR {{basicSalary}}\nAllowances: PKR {{allowances}}\nGross Salary: PKR {{grossSalary}}\nTotal Deductions: PKR {{totalDeductions}}\nNet Take-Home Salary: PKR {{netPay}}`
+                },
+                'Job Offer Letter': {
+                    subject: 'OFFER OF EMPLOYMENT',
+                    content: `Dear {{employeeName}},\n\nWe are pleased to offer you the position of {{designation}} in the {{department}} department at {{companyName}}. Your expected date of joining will be {{joiningDate}}.\n\nYour starting gross salary will be PKR {{grossSalary}} per month.\n\nWelcome to {{companyName}}!`
+                },
+                'Internship Offer Letter': {
+                    subject: 'INTERNSHIP OFFER LETTER',
+                    content: `Dear {{employeeName}},\n\nWe are pleased to offer you an internship position as {{designation}} in the {{department}} department at {{companyName}} for a duration of {{internshipDuration}} starting from {{joiningDate}}.\n\nWe wish you a rewarding learning experience at {{companyName}}.`
+                },
+                'Appointment Letter': {
+                    subject: 'LETTER OF APPOINTMENT',
+                    content: `Dear {{employeeName}},\n\nFurther to your acceptance of our offer, we are pleased to appoint you as {{designation}} in the {{department}} department at {{companyName}} effective {{joiningDate}}.\n\nYour employment will be governed by the standard policies and code of conduct of {{companyName}}.`
+                },
+                'Employment Contract': {
+                    subject: 'EMPLOYMENT CONTRACT & TERMS OF SERVICE',
+                    content: `EMPLOYMENT AGREEMENT\n\nThis agreement is made between {{companyName}} and {{employeeName}} (CNIC: {{cnic}}), appointed as {{designation}} in {{department}}.\n\n1. Commencement: Effective {{joiningDate}}.\n2. Monthly Gross Salary: PKR {{grossSalary}}.\n3. Working Hours: {{workingHours}} ({{workingDays}}).\n\nSigned on behalf of {{companyName}}.`
+                },
+                'No Objection Certificate (NOC)': {
+                    subject: 'NO OBJECTION CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed full-time with {{companyName}} as {{designation}} in the {{department}} department.\n\n{{companyName}} has no objection to {{pronounObject}} pursuing {{purpose}}.\n\nThis certificate is issued at the specific request of the employee.`
+                },
+                'Character Certificate': {
+                    subject: 'CHARACTER CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}}, holding CNIC {{cnic}}, has been working with {{companyName}} as {{designation}} since {{joiningDate}}.\n\nDuring {{pronounPossessive}} tenure, {{pronounSubject}} has demonstrated excellent moral character, professional integrity, and exemplary conduct.\n\nThis certificate is issued upon request for {{purpose}}.`
+                },
+                'Income Verification Letter': {
+                    subject: 'INCOME VERIFICATION CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} is an active full-time employee at {{companyName}}, working as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nFinancial Summary:\n- Basic Salary: PKR {{basicSalary}}\n- Monthly Gross Salary: PKR {{grossSalary}}\n- Monthly Net Pay: PKR {{netPay}}\n\nThis income verification letter is issued upon official request for {{purpose}}.`
+                },
+                'Experience Letter': {
+                    subject: 'EXPERIENCE CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} was employed with {{companyName}} as {{designation}} in the {{department}} department from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{pronounSubject}} was found to be hardworking, dedicated, and honest in {{pronounPossessive}} responsibilities.\n\nWe wish {{pronounObject}} success in all future professional pursuits.`
+                },
+                'Employment Certificate': {
+                    subject: 'EMPLOYMENT VERIFICATION CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nThis certificate is issued upon request of the employee for {{purpose}}.`
+                },
+                'Internship Completion Certificate': {
+                    subject: 'INTERNSHIP COMPLETION CERTIFICATE',
+                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} has successfully completed an internship as {{designation}} in the {{department}} department at {{companyName}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} internship, {{pronounSubject}} displayed commendable enthusiasm and learning aptitude.`
+                },
+                'Relieving Letter': {
+                    subject: 'RELIEVING LETTER',
+                    content: `Dear {{employeeName}},\n\nThis refers to your resignation from {{companyName}}. You are hereby relieved of your responsibilities as {{designation}} in the {{department}} department effective {{lastWorkingDay}}.\n\nWe thank you for your service and wish you best of luck for the future.`
+                }
+            };
 
-        if (!template) {
-            const isAdmin = ['admin', 'super-admin', 'hr'].includes(authReq.user?.role || '');
-            const message = isAdmin
-                ? `Document template for '${documentType}' is not configured yet. Please configure it in Admin Settings under Document Templates.`
-                : `Document template for '${documentType}' has not been configured by HR yet. Please contact your HR administrator to enable this document template.`;
-            return res.status(404).json({ message, code: 'MISSING_TEMPLATE_DETAILS', userRole: authReq.user?.role });
+            const tplInfo = defaultTemplates[rawDocType] || {
+                subject: rawDocType.toUpperCase(),
+                content: `This is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nDocument Type: ${rawDocType}\n\nThis document is issued upon official request for {{purpose}}.`
+            };
+
+            const newTpl = new DocumentTemplate({
+                documentType: rawDocType,
+                subject: tplInfo.subject,
+                content: tplInfo.content,
+                isActive: true
+            });
+            await newTpl.save();
+            template = newTpl.toObject();
         }
 
         // Generate unique Document ID

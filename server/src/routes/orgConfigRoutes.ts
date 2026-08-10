@@ -1,4 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { Department, Designation } from '../models/OrganizationConfig';
 import Company from '../models/Company';
@@ -218,9 +220,19 @@ router.delete('/designations/:id', authenticate, requireAdmin, async (req: Reque
 router.get('/company', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         let company = await Company.findOne();
+        const logoFilePath = path.join(__dirname, '../../../client/src/assets/logo.png');
+        let defaultLogoBase64 = '';
+        if (fs.existsSync(logoFilePath)) {
+            try {
+                const logoBuffer = fs.readFileSync(logoFilePath);
+                defaultLogoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
+            } catch (e) {}
+        }
+
         if (!company) {
             company = new Company({
                 name: 'IT Consulting and Services',
+                logoUrl: defaultLogoBase64 || 'uploads/logo.png',
                 branding: { primaryColor: '#4A148C', secondaryColor: '#1A0933' },
                 contact: {
                     addressLine1: 'Karachi: 6/K Block 2, P.E.C.H.S, Karachi Pakistan | Lahore: Office 32, 1st Floor, IT Tower, Hali Rd, Gulberg III',
@@ -229,7 +241,11 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
                 }
             });
             await company.save();
+        } else if (!company.logoUrl && defaultLogoBase64) {
+            company.logoUrl = defaultLogoBase64;
+            await company.save();
         }
+
         res.json(company);
     } catch (error) {
         next(error);

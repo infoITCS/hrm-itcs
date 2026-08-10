@@ -40,15 +40,15 @@ export async function scopeToTeam(req: AuthRequest, res: Response, next: NextFun
             ).lean() as any[];
 
             req.teamScope = [managerEmp.employeeId, ...subordinates.map((e) => e.employeeId)];
-        } else if (req.user.role === 'employee') {
+        } else if (['employee', 'finance'].includes(req.user.role)) {
             const emp = await Employee.findOne(
                 { userId: req.user.userId, isDeleted: { $ne: true } },
                 { employeeId: 1 }
             ).lean() as any;
             
             req.teamScope = emp ? [emp.employeeId] : [];
-        } else if (['admin', 'super-admin', 'hr', 'finance'].includes(req.user.role)) {
-            // admin, super-admin, hr, finance → unrestricted
+        } else if (['admin', 'super-admin', 'hr'].includes(req.user.role)) {
+            // admin, super-admin, hr → unrestricted
             req.teamScope = null;
         } else {
             // Fail closed for any other roles
