@@ -1601,7 +1601,7 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredApprovals.map((c: any) => (
+                                        {paginatedApprovals.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 text-center align-middle">
                                                     <input 
@@ -1770,7 +1770,7 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredHistory.map((c: any) => (
+                                        {paginatedHistory.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
                                                  <td className="px-4 py-3 text-slate-600 align-middle">

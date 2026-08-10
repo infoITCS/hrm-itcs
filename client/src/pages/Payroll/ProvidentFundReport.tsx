@@ -605,7 +605,7 @@ export default function ProvidentFundReport() {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {filtered.map(emp => {
+                    {paginatedList.map(emp => {
                         const isExpanded = !!expanded[emp.employeeId];
                         const canClaim = emp.isMatured && !emp.pfClaimed && emp.providentFundBalance > 0;
                         const monthsLeft = emp.maturityDate
