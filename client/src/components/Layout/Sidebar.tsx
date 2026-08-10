@@ -88,20 +88,18 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                     ${isImpersonated ? 'top-10 h-[calc(100vh-2.5rem)]' : 'top-0 h-screen'}
                 `}
             >
-                <div className="p-4 min-[992px]:p-6 border-b border-gray-100/50 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="p-2 shrink-0">
-                            <img src={logo} alt="ITCS Logo" className="h-8 w-auto object-contain" />
-                        </div>
-                        <h2 className="text-sm font-bold text-gray-800 truncate">HRM System</h2>
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-center relative shrink-0">
+                    <div className="flex items-center justify-center gap-3">
+                        <img src={logo} alt="ITCS Logo" className="h-9 w-auto object-contain shrink-0" />
+                        <h2 className="text-base font-extrabold text-slate-800 tracking-tight leading-none whitespace-nowrap">HRM System</h2>
                     </div>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 min-[992px]:hidden"
+                        className="absolute right-3 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 min-[992px]:hidden"
                         aria-label="Close menu"
                     >
-                        <X size={20} />
+                        <X size={18} />
                     </button>
                 </div>
 

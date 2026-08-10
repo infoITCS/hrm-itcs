@@ -405,7 +405,7 @@ const Dashboard = () => {
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             border: 'border-rose-100',
-            link: '/claim',
+            link: '/claim?tab=mine',
         },
     ];
 

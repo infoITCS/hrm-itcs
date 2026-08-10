@@ -89,7 +89,7 @@ const ExpenseClaimDashboard = () => {
         if (initialTab && ['submit', 'mine', 'approvals', 'history', 'settings'].includes(initialTab)) {
             return initialTab as Tab;
         }
-        return 'submit';
+        return 'mine';
     });
 
     useEffect(() => {
