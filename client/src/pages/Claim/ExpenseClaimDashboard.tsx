@@ -719,10 +719,19 @@ const ExpenseClaimDashboard = () => {
         return !!pending?.requiresAuthorization;
     }, [decisionClaim]);
 
+    const currentPendingStage = useMemo(() => {
+        if (!decisionClaim?.approvals?.length) return null;
+        return decisionClaim.approvals.find((a: any) => a.status === 'Pending')?.stage;
+    }, [decisionClaim]);
+
     const submitDecision = async () => {
         if (!decisionClaim?._id) return;
         if (decision === 'Approved' && currentRequiresAuthorization && !decisionAuthorizationBy) {
             showToast('Authorization is required for this out-of-policy claim (e.g. HR / Senior Management).', 'warning');
+            return;
+        }
+        if (decision === 'Approved' && currentPendingStage === 'finance' && !decisionErpId.trim()) {
+            showToast('ERP Transaction Reference ID is required when Finance approves/disburses an expense claim.', 'warning');
             return;
         }
 

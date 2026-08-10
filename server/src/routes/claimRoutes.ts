@@ -488,8 +488,15 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
         const role = authReq.user?.role || 'employee';
         if (!role || role === 'employee' || role === 'manager') return res.json({ success: true, data: [] });
 
+        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined'] };
+        if (role === 'finance') {
+            statusQuery = 'Pending Finance';
+        } else if (role === 'hr') {
+            statusQuery = 'Pending HR';
+        }
+
         let claims = await ExpenseClaim.find({
-            status: { $nin: ['Draft', 'Approved', 'Declined'] },
+            status: statusQuery,
         })
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
@@ -595,6 +602,16 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                     }
                 }
 
+                if (currentStage === 'hr' && role === 'finance') {
+                    failedIds.push(claimId);
+                    continue;
+                }
+                if (currentStage === 'finance' && decision === 'Approved') {
+                    // Finance approval requires individual ERP ID entry
+                    failedIds.push(claimId);
+                    continue;
+                }
+
                 pending.status = decision;
                 pending.comments = comments;
                 pending.decidedAt = new Date();
@@ -603,19 +620,6 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 if (decision === 'Declined') {
                     claim.status = 'Declined';
                     claim.approvedTotal = 0;
-                } else if (isAdminLike(role)) {
-                    claim.approvals.forEach((approval: any, approvalIdx: number) => {
-                        if (approvalIdx > idx && approval.status === 'Pending') {
-                            approval.status = 'Approved';
-                            approval.decidedAt = new Date();
-                            approval.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
-                            if (typeof approval.approvedAmount !== 'number') {
-                                approval.approvedAmount = pending.approvedAmount ?? claim.amountAllowed;
-                            }
-                        }
-                    });
-                    claim.status = 'Approved';
-                    claim.approvedTotal = typeof pending.approvedAmount === 'number' ? pending.approvedAmount : claim.amountAllowed;
                 } else {
                     const nextPending = claim.approvals.find((a: any) => a.status === 'Pending');
                     if (nextPending) {
@@ -708,6 +712,15 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             return res.status(403).json({ message: 'Forbidden' });
         }
 
+        // Enforce stage-based permissions
+        if (currentStage === 'hr' && role === 'finance') {
+            return res.status(403).json({ message: 'Expense claims must be approved by HR / Admin before Finance can disburse or approve.' });
+        }
+
+        if (currentStage === 'finance' && decision === 'Approved' && (!erpReferenceId || !String(erpReferenceId).trim())) {
+            return res.status(400).json({ message: 'ERP Transaction Reference ID is required when Finance approves/disburses an expense claim.' });
+        }
+
         const idx = claim.approvals.findIndex((a: any) => a.status === 'Pending');
         const pending = claim.approvals[idx] as any;
 
@@ -755,36 +768,20 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         pending.decidedAt = new Date();
         pending.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
 
-        if (erpReferenceId !== undefined) {
-            claim.erpReferenceId = erpReferenceId;
+        if (erpReferenceId !== undefined && String(erpReferenceId).trim() !== '') {
+            claim.erpReferenceId = String(erpReferenceId).trim();
         }
 
-        // Terminal decision
+        // Stage Progression
         if (decision === 'Declined') {
             claim.status = 'Declined';
             claim.approvedTotal = 0;
-        } else if (['admin', 'super-admin', 'hr', 'finance'].includes(role)) {
-            // Admin/HR can finalize directly from any queue.
-            claim.approvals.forEach((approval: any, approvalIdx: number) => {
-                if (approvalIdx > idx && approval.status === 'Pending') {
-                    approval.status = 'Approved';
-                    approval.decidedAt = new Date();
-                    approval.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
-                    if (typeof approval.approvedAmount !== 'number') {
-                        approval.approvedAmount = pending.approvedAmount ?? claim.amountAllowed;
-                    }
-                }
-            });
-            claim.status = 'Approved';
-            claim.approvedTotal = typeof pending.approvedAmount === 'number' ? pending.approvedAmount : claim.amountAllowed;
         } else {
-            // Move to next stage or approve
             const nextPending = claim.approvals.find((a: any) => a.status === 'Pending');
             if (nextPending) {
                 claim.status = stageToStatus(nextPending.stage) as any;
             } else {
                 claim.status = 'Approved';
-                // approvedTotal = last non-null approvedAmount, fallback to amountAllowed
                 const lastApprovedAmount = [...claim.approvals]
                     .reverse()
                     .find((a: any) => a.status === 'Approved' && typeof a.approvedAmount === 'number')?.approvedAmount;
