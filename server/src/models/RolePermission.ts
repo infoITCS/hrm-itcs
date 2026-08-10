@@ -41,10 +41,6 @@ export async function bootstrapPermissions() {
             permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
         },
         {
-            role: 'hr',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
-        },
-        {
             role: 'finance',
             permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
         },
@@ -69,6 +65,10 @@ export async function bootstrapPermissions() {
                 { upsert: true }
             );
         }
+
+        // Migrate any existing 'hr' users in database to 'admin'
+        const User = mongoose.models.User || mongoose.model('User');
+        await User.updateMany({ role: 'hr' }, { $set: { role: 'admin' } });
     } catch (err) {
         console.error('Error bootstrapping default role permissions:', err);
     }

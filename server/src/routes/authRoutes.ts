@@ -57,6 +57,12 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
       return res.status(403).json({ message: "Your account has been suspended. Please contact your administrator." });
     }
 
+    // Auto-migrate legacy 'hr' role to 'admin'
+    if (user.role === 'hr') {
+      user.role = 'admin';
+      await user.save();
+    }
+
     // Use our new compare method
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
