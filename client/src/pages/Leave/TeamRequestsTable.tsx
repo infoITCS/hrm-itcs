@@ -141,6 +141,15 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
         );
     });
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery]);
+
+    const paginatedRequests = filteredRequests.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     if (loading) {
         return (
             <div className="p-12 text-center">
@@ -189,7 +198,7 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                             </td>
                         </tr>
                     ) : (
-                        filteredRequests.map((req) => (
+                        paginatedRequests.map((req) => (
                         <tr key={req._id} className="hover:bg-slate-50/50 transition-colors group">
                             <td className="px-6 py-5">
                                 <div className="flex items-center gap-3">
@@ -283,6 +292,59 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                     )))}
                 </tbody>
             </table>
+            </div>
+
+            {filteredRequests.length > pageSize && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-slate-100 bg-white">
+                    <div className="text-xs text-slate-500 font-medium">
+                        Showing <span className="font-bold text-slate-700">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                        <span className="font-bold text-slate-700">{Math.min(currentPage * pageSize, filteredRequests.length)}</span> of{' '}
+                        <span className="font-bold text-slate-700">{filteredRequests.length}</span> entries
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Previous
+                        </button>
+                        {Array.from({ length: Math.ceil(filteredRequests.length / pageSize) }, (_, i) => i + 1)
+                            .filter(p => p === 1 || p === Math.ceil(filteredRequests.length / pageSize) || Math.abs(p - currentPage) <= 1)
+                            .reduce((acc: (number | string)[], page, index, array) => {
+                                if (index > 0 && page - (array[index - 1] as number) > 1) {
+                                    acc.push('...');
+                                }
+                                acc.push(page);
+                                return acc;
+                            }, [])
+                            .map((item, idx) =>
+                                typeof item === 'number' ? (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setCurrentPage(item)}
+                                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                            currentPage === item
+                                                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        {item}
+                                    </button>
+                                ) : (
+                                    <span key={idx} className="px-1 text-slate-400 text-xs">...</span>
+                                )
+                            )}
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredRequests.length / pageSize), p + 1))}
+                            disabled={currentPage === Math.ceil(filteredRequests.length / pageSize)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Rejection Reason Modal */}
             {showRejectModal && (
@@ -407,7 +469,7 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                 onSuccess={onStatusChange}
             />
         </div>
-        </div>
+
     );
 };
 

@@ -340,12 +340,21 @@ const MyRequests = () => {
         }
     };
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 9;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter]);
+
     const filteredRequests = requests.filter(req => {
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               req.category.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
+
+    const paginatedRequests = filteredRequests.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -449,7 +458,7 @@ const MyRequests = () => {
                 <div className="text-center py-10">Loading...</div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredRequests.map(req => (
+                    {paginatedRequests.map(req => (
                         <div 
                             key={req._id} 
                             onClick={() => { setSelectedRequest(req); setShowDetailModal(true); }}
@@ -535,6 +544,58 @@ const MyRequests = () => {
                             No requests found. Click on the action cards above to get started.
                         </div>
                     )}
+                </div>
+            )}
+
+            {filteredRequests.length > pageSize && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white rounded-xl border border-gray-200 shadow-sm mt-4">
+                    <div className="text-xs text-gray-500 font-medium">
+                        Showing <span className="font-bold text-gray-700">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                        <span className="font-bold text-gray-700">{Math.min(currentPage * pageSize, filteredRequests.length)}</span> of{' '}
+                        <span className="font-bold text-gray-700">{filteredRequests.length}</span> entries
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Previous
+                        </button>
+                        {Array.from({ length: Math.ceil(filteredRequests.length / pageSize) }, (_, i) => i + 1)
+                            .filter(p => p === 1 || p === Math.ceil(filteredRequests.length / pageSize) || Math.abs(p - currentPage) <= 1)
+                            .reduce((acc: (number | string)[], page, index, array) => {
+                                if (index > 0 && page - (array[index - 1] as number) > 1) {
+                                    acc.push('...');
+                                }
+                                acc.push(page);
+                                return acc;
+                            }, [])
+                            .map((item, idx) =>
+                                typeof item === 'number' ? (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setCurrentPage(item)}
+                                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                            currentPage === item
+                                                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {item}
+                                    </button>
+                                ) : (
+                                    <span key={idx} className="px-1 text-gray-400 text-xs">...</span>
+                                )
+                            )}
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredRequests.length / pageSize), p + 1))}
+                            disabled={currentPage === Math.ceil(filteredRequests.length / pageSize)}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             )}
 

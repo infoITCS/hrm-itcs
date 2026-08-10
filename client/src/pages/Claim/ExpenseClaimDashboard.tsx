@@ -29,6 +29,7 @@ import {
     MessageSquare,
     ChevronLeft,
     ChevronRight,
+    Edit2,
 } from 'lucide-react';
 
 type ForWhom = 'Self' | 'Dependent';
@@ -200,6 +201,34 @@ const ExpenseClaimDashboard = () => {
 
     const isApprover = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
     const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
+    const canSeeAllClaims = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
+
+    const [erpInputs, setErpInputs] = useState<Record<string, string>>({});
+    const [savingErp, setSavingErp] = useState<Record<string, boolean>>({});
+
+    const handleQuickSaveErp = async (claimId: string, erpVal?: string) => {
+        const valueToSave = erpVal !== undefined ? erpVal : erpInputs[claimId];
+        if (!valueToSave || !valueToSave.trim()) {
+            alert('Please enter a valid ERP Reference ID');
+            return;
+        }
+        setSavingErp(prev => ({ ...prev, [claimId]: true }));
+        try {
+            const res = await fetch(`${api.claims}/${claimId}/erp-reference`, {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ erpReferenceId: valueToSave.trim() })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Failed to update ERP Reference ID');
+            fetchHistory();
+            fetchApprovals();
+        } catch (err: any) {
+            alert(err.message || 'Failed to update ERP Reference ID');
+        } finally {
+            setSavingErp(prev => ({ ...prev, [claimId]: false }));
+        }
+    };
 
     const remainingMedicalLimit = useMemo(() => {
         if (!category) return 0;
@@ -290,7 +319,7 @@ const ExpenseClaimDashboard = () => {
     }, [headers, isApprover]);
 
     const fetchHistory = useCallback(async () => {
-        if (!isAdminLike) return;
+        if (!canSeeAllClaims) return;
         setLoadingHistory(true);
         try {
             const r = await fetch(api.claimAll, { headers });
@@ -301,10 +330,10 @@ const ExpenseClaimDashboard = () => {
         } finally {
             setLoadingHistory(false);
         }
-    }, [headers, isAdminLike]);
+    }, [headers, canSeeAllClaims]);
 
     const fetchAllEmployees = useCallback(async () => {
-        if (!isAdminLike) return;
+        if (!canSeeAllClaims) return;
         try {
             const r = await fetch(api.employees, { headers });
             const d = await r.json();
@@ -313,7 +342,7 @@ const ExpenseClaimDashboard = () => {
         } catch {
             // ignore
         }
-    }, [headers, isAdminLike]);
+    }, [headers, canSeeAllClaims]);
 
     const fetchCategories = useCallback(async () => {
         try {
@@ -364,6 +393,87 @@ const ExpenseClaimDashboard = () => {
     const filteredMine = useMemo(() => filterList(mine), [mine, filterList]);
     const filteredApprovals = useMemo(() => filterList(approvals), [approvals, filterList]);
     const filteredHistory = useMemo(() => filterList(history), [history, filterList]);
+
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const pageSize = 10;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [tab, filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate]);
+
+    const paginatedMine = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredMine.slice(start, start + pageSize);
+    }, [filteredMine, currentPage]);
+
+    const paginatedApprovals = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredApprovals.slice(start, start + pageSize);
+    }, [filteredApprovals, currentPage]);
+
+    const paginatedHistory = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredHistory.slice(start, start + pageSize);
+    }, [filteredHistory, currentPage]);
+
+    const renderPagination = (totalItems: number) => {
+        if (totalItems <= pageSize) return null;
+        const totalPages = Math.ceil(totalItems / pageSize);
+        const startItem = (currentPage - 1) * pageSize + 1;
+        const endItem = Math.min(currentPage * pageSize, totalItems);
+
+        return (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-4 py-3 bg-slate-50/70 rounded-xl border border-slate-100">
+                <div className="text-xs text-slate-500 font-medium">
+                    Showing <span className="font-bold text-slate-700">{startItem}</span> to{' '}
+                    <span className="font-bold text-slate-700">{endItem}</span> of{' '}
+                    <span className="font-bold text-slate-700">{totalItems}</span> entries
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Previous
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                        .reduce((acc: (number | string)[], page, index, array) => {
+                            if (index > 0 && page - (array[index - 1] as number) > 1) {
+                                acc.push('...');
+                            }
+                            acc.push(page);
+                            return acc;
+                        }, [])
+                        .map((item, idx) =>
+                            typeof item === 'number' ? (
+                                <button
+                                    key={idx}
+                                    onClick={() => setCurrentPage(item)}
+                                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                        currentPage === item
+                                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ) : (
+                                <span key={idx} className="px-1 text-slate-400 text-xs">...</span>
+                            )
+                        )}
+                    <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     useEffect(() => {
         fetchEmployee();
@@ -802,7 +912,7 @@ const ExpenseClaimDashboard = () => {
         { id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle },
         { id: 'mine' as const, label: 'My Claims', icon: FileText },
         ...(isApprover ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
-        ...(isAdminLike ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
+        ...(canSeeAllClaims ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
         ...(isAdminLike ? [{ id: 'settings' as const, label: 'Category Settings', icon: Tag }] : []),
     ];
 
@@ -1383,7 +1493,7 @@ const ExpenseClaimDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filteredMine.map((c: any) => (
+                                        {paginatedMine.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
                                                 <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
@@ -1447,6 +1557,7 @@ const ExpenseClaimDashboard = () => {
                                 </table>
                             </div>
                         )}
+                        {renderPagination(filteredMine.length)}
                     </div>
                 )}
 
@@ -1631,7 +1742,7 @@ const ExpenseClaimDashboard = () => {
                     </div>
                 )}
 
-                {tab === 'history' && isAdminLike && (
+                {tab === 'history' && canSeeAllClaims && (
                     <div className="p-6">
                         {loadingHistory ? (
                             <div className="text-slate-400 text-sm">Loading…</div>
@@ -1652,6 +1763,7 @@ const ExpenseClaimDashboard = () => {
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">ERP Ref #</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
@@ -1689,6 +1801,49 @@ const ExpenseClaimDashboard = () => {
                                                         {c.status}
                                                     </span>
                                                 </td>
+                                                <td className="px-4 py-3 align-middle">
+                                                    {c.status === 'Approved' ? (
+                                                        c.erpReferenceId ? (
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold whitespace-nowrap">
+                                                                    ✓ {c.erpReferenceId}
+                                                                </span>
+                                                                {(role === 'admin' || role === 'super-admin' || role === 'finance') && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const newErp = prompt('Edit ERP Reference ID:', c.erpReferenceId);
+                                                                            if (newErp !== null && newErp.trim()) {
+                                                                                handleQuickSaveErp(c._id, newErp.trim());
+                                                                            }
+                                                                        }}
+                                                                        className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 underline"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="e.g. ERP-123"
+                                                                    value={erpInputs[c._id] ?? ''}
+                                                                    onChange={(e) => setErpInputs(prev => ({ ...prev, [c._id]: e.target.value }))}
+                                                                    className="w-28 px-2 py-1 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                                                                />
+                                                                <button
+                                                                    onClick={() => handleQuickSaveErp(c._id, erpInputs[c._id])}
+                                                                    disabled={savingErp[c._id]}
+                                                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                                                                >
+                                                                    {savingErp[c._id] ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">—</span>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-500 align-middle">
                                                     {c.audit?.submittedAt ? new Date(c.audit.submittedAt).toLocaleDateString('en-PK') : new Date(c.createdAt).toLocaleDateString('en-PK')}
                                                 </td>
@@ -1709,21 +1864,23 @@ const ExpenseClaimDashboard = () => {
                                                         <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 flex gap-2 align-middle">
-                                                    {c.status !== 'Approved' && c.status !== 'Declined' && (
+                                                <td className="px-4 py-3 flex items-center gap-1.5 align-middle">
+                                                    <button
+                                                        onClick={() => openDecision(c)}
+                                                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-colors flex items-center gap-1"
+                                                        title="View Details & Scanned Receipts"
+                                                    >
+                                                        <Eye size={13} /> Details
+                                                    </button>
+                                                    {isAdminLike && (
                                                         <button
-                                                            onClick={() => openDecision(c)}
-                                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-900"
+                                                            onClick={() => openCorrect(c)}
+                                                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-colors flex items-center gap-1"
+                                                            title="Edit Status / Approved Total"
                                                         >
-                                                            Decision
+                                                            <Edit2 size={13} /> Correct
                                                         </button>
                                                     )}
-                                                    <button
-                                                        onClick={() => openCorrect(c)}
-                                                        className="text-xs font-bold text-slate-600 hover:text-slate-900"
-                                                    >
-                                                        Correct
-                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1731,6 +1888,7 @@ const ExpenseClaimDashboard = () => {
                                 </table>
                             </div>
                         )}
+                        {renderPagination(filteredHistory.length)}
                     </div>
                 )}
 
@@ -2523,13 +2681,27 @@ const ExpenseClaimDashboard = () => {
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
-                            <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200/50">
-                                <span className="font-bold">Requested:</span> {formatMoney(correctClaim?.amountRequested, correctClaim?.currency)} • <span className="font-bold">Allowed:</span> {formatMoney(correctClaim?.amountAllowed, correctClaim?.currency)}
-                                {correctClaim?.amountRequested > correctClaim?.amountAllowed && (
-                                    <div className="text-rose-500 font-bold mt-1">
-                                        Disallowed: {formatMoney(correctClaim.amountRequested - correctClaim.amountAllowed, correctClaim.currency)}
-                                    </div>
-                                )}
+                            <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200/50">
+                                <div>
+                                    <div><span className="font-bold">Category:</span> {correctClaim?.category}</div>
+                                    <div><span className="font-bold">Requested:</span> {formatMoney(correctClaim?.amountRequested, correctClaim?.currency)} • <span className="font-bold">Allowed:</span> {formatMoney(correctClaim?.amountAllowed, correctClaim?.currency)}</div>
+                                    {correctClaim?.amountRequested > correctClaim?.amountAllowed && (
+                                        <div className="text-rose-500 font-bold mt-0.5">
+                                            Disallowed: {formatMoney(correctClaim.amountRequested - correctClaim.amountAllowed, correctClaim.currency)}
+                                        </div>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const claim = correctClaim;
+                                        setCorrectOpen(false);
+                                        openDecision(claim);
+                                    }}
+                                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 flex items-center gap-1 shrink-0"
+                                >
+                                    <Eye size={13} /> Full Details
+                                </button>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">

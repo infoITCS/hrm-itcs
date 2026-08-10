@@ -59,6 +59,12 @@ export default function MyProvidentFund() {
     const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'credit' | 'debit'>('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, filterType]);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -150,6 +156,8 @@ export default function MyProvidentFund() {
 
         return matchesSearch && matchesType;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const paginatedHistory = filteredHistory.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
@@ -354,7 +362,7 @@ export default function MyProvidentFund() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-xs">
-                                {filteredHistory.map((entry, idx) => {
+                                {paginatedHistory.map((entry, idx) => {
                                     const isCredit = entry.type === 'credit';
                                     const periodStr = entry.periodMonth && entry.periodYear
                                         ? `${MONTH_NAMES[entry.periodMonth]} ${entry.periodYear}`
@@ -420,11 +428,64 @@ export default function MyProvidentFund() {
                     )}
                 </div>
 
+                {filteredHistory.length > pageSize && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white border-t border-slate-100">
+                        <div className="text-xs text-slate-500 font-medium">
+                            Showing <span className="font-bold text-slate-700">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                            <span className="font-bold text-slate-700">{Math.min(currentPage * pageSize, filteredHistory.length)}</span> of{' '}
+                            <span className="font-bold text-slate-700">{filteredHistory.length}</span> entries
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Previous
+                            </button>
+                            {Array.from({ length: Math.ceil(filteredHistory.length / pageSize) }, (_, i) => i + 1)
+                                .filter(p => p === 1 || p === Math.ceil(filteredHistory.length / pageSize) || Math.abs(p - currentPage) <= 1)
+                                .reduce((acc: (number | string)[], page, index, array) => {
+                                    if (index > 0 && page - (array[index - 1] as number) > 1) {
+                                        acc.push('...');
+                                    }
+                                    acc.push(page);
+                                    return acc;
+                                }, [])
+                                .map((item, idx) =>
+                                    typeof item === 'number' ? (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setCurrentPage(item)}
+                                            className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                                currentPage === item
+                                                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {item}
+                                        </button>
+                                    ) : (
+                                        <span key={idx} className="px-1 text-slate-400 text-xs">...</span>
+                                    )
+                                )}
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredHistory.length / pageSize), p + 1))}
+                                disabled={currentPage === Math.ceil(filteredHistory.length / pageSize)}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer summary bar */}
                 <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
                     <span>Showing {filteredHistory.length} of {history.length} transactions</span>
                     <span>Calculated Balance: <strong className="text-slate-900 font-bold">{fmtPKR(data.providentFundBalance)}</strong></span>
                 </div>
+
             </div>
 
         </div>

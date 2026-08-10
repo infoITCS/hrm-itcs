@@ -223,7 +223,8 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     let msg = '';
                     let title = '';
 
-                    if (claim.status === 'Approved' && !claim.erpReferenceId) {
+                    const isErpTask = claim.status === 'Approved' && !claim.erpReferenceId;
+                    if (isErpTask) {
                         title = `ERP Entry Required: Claim`;
                         msg = `Log Rs. ${(claim.approvedTotal || claim.amountAllowed).toLocaleString()} approved ${claim.category} claim for ${empName} in ERP and add ERP ID.`;
                     } else {
@@ -237,7 +238,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                         message: msg,
                         time: claim.updatedAt || claim.createdAt,
                         type: 'task',
-                        path: '/claim?tab=approvals'
+                        path: isErpTask ? '/claim?tab=history' : '/claim?tab=approvals'
                     });
                 }
             }

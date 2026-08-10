@@ -61,6 +61,30 @@
     min-width: 0;
   }
 
+  /* Global Hover Pointer (hand/thumb icon) for all interactive elements */
+  button,
+  a,
+  select,
+  summary,
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"],
+  input[type="file"],
+  [role="button"],
+  [tabindex]:not([tabindex="-1"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed !important;
+  }
+
   /* Prevent long text strings (emails, URLs, IDs, amounts) from overflowing containers */
   p, h1, h2, h3, h4, h5, h6, span, label, td, th {
     overflow-wrap: break-word;

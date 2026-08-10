@@ -464,6 +464,15 @@ export default function ProvidentFundReport() {
         return matchSearch && matchFilter;
     });
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const pageSize = 10;
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, filter, activeTab]);
+
+    const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     const totalBalance = data.reduce((s, e) => s + e.providentFundBalance, 0);
     const maturedCount = data.filter(e => e.isMatured && !e.pfClaimed).length;
     const claimedCount = data.filter(e => e.pfClaimed).length;

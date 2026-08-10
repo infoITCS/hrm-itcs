@@ -504,7 +504,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || 'employee';
-        if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
+        if (!isAdminLike(role) && role !== 'finance') return res.status(403).json({ message: 'Forbidden' });
 
         const claims = await ExpenseClaim.find({})
             .select('-receipts.fileData')
@@ -903,6 +903,36 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                 console.error('[Expense Email] Failed to send correction status email to employee:', emailErr);
             }
         })();
+
+        await claim.populate('employeeDetails', 'firstName lastName employeeId');
+        res.json({ success: true, data: sanitizeClaimForJson(claim) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Update ERP Reference ID for an Approved Claim (Finance/Admin)
+router.patch('/:id/erp-reference', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+        if (!isAdminLike(role) && role !== 'finance') return res.status(403).json({ message: 'Forbidden' });
+
+        const { erpReferenceId } = req.body || {};
+        if (!erpReferenceId || typeof erpReferenceId !== 'string' || !erpReferenceId.trim()) {
+            return res.status(400).json({ message: 'erpReferenceId is required' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        claim.erpReferenceId = erpReferenceId.trim();
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+        await claim.save();
 
         await claim.populate('employeeDetails', 'firstName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
