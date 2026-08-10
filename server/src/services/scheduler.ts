@@ -197,7 +197,7 @@ export const initScheduler = () => {
         const dateStr = new Date().toISOString().slice(0, 10);
         logger.info(`[Scheduler] Running auto-close for ${dateStr}...`);
         try {
-            const result = await autoCloseIncompleteRecords(dateStr);
+            const result = await autoCloseIncompleteRecords();
             logger.info(`[Scheduler] Auto-close done. Processed: ${result.processed}, Skipped: ${result.skipped}`);
         } catch (error) {
             logger.error('[Scheduler] Error in auto-close task:', error);

@@ -183,12 +183,28 @@ export async function processEmployeePunches(
         if (checkOut) {
             const otDiff = Math.floor((checkOut.getTime() - shiftEndTime.getTime()) / 60000);
             if (otDiff > 0) overtimeMinutes = otDiff;
-        }
-
-        const leaveType = await checkLeave(resolvedEmployeeId, dateStr);
+        }        const leaveType = await checkLeave(resolvedEmployeeId, dateStr);
 
         let status: AttendanceStatus;
         let note: string | undefined = undefined;
+        let isAutoClosed = false;
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        if (!checkOut && dateStr < todayStr) {
+            // Past day with missing check-out -> Auto Clock-Out at shift end
+            const autoCheckOut = buildShiftTime(dateStr, shiftEnd);
+            checkOut = autoCheckOut > checkIn ? autoCheckOut : new Date(checkIn.getTime() + 30 * 60 * 1000);
+            isAutoClosed = true;
+            note = 'Auto Clocked-Out (Missed Clock-Out)';
+
+            let rawMins = Math.floor((checkOut.getTime() - checkIn.getTime()) / 60000);
+            workDurationMinutes = applyLunchDeduction(rawMins, {
+                enableLunchDeduction: empShift?.enableLunchDeduction ?? true,
+                lunchDeductionMinutes: empShift?.lunchDeductionMinutes ?? 60,
+                lunchThresholdHours: empShift?.lunchThresholdHours ?? 5,
+            });
+        }
 
         if (leaveType) {
             status = 'On Leave';
@@ -198,11 +214,11 @@ export async function processEmployeePunches(
         } else if (diffMins > 60) {
             // Check-in past 10:00 AM = Half-Day status (Whole day salary cut & meal cut per HR Policy)
             status = 'Half-Day';
-            note = 'Arrived after 10:00 AM (Whole day salary cut per HR Policy)';
+            note = isAutoClosed ? 'Auto Clocked-Out (Arrived after 10:00 AM)' : 'Arrived after 10:00 AM (Whole day salary cut per HR Policy)';
         } else if (diffMins > 30) {
             // Check-in between 9:30 AM and 10:00 AM = Late status (0.5 day salary cut & meal cut per HR Policy)
             status = 'Late';
-            note = 'Arrived past 9:30 AM (Half day salary cut per HR Policy)';
+            note = isAutoClosed ? 'Auto Clocked-Out (Arrived past 9:30 AM)' : 'Arrived past 9:30 AM (Half day salary cut per HR Policy)';
         } else if (workDurationMinutes < halfDayHrs * 60 && checkOut) {
             status = 'Half-Day';
         } else if (isEarlyLeave) {
@@ -230,6 +246,7 @@ export async function processEmployeePunches(
                     leaveType: leaveType || undefined,
                     isHalfDay: status === 'Half-Day' || (workDurationMinutes > 0 && workDurationMinutes < (halfDayHrs * 60)),
                     note,
+                    isAutoClosed,
                     allPunches: allPunchTimes,
                 }
             },
@@ -523,16 +540,24 @@ export async function syncFromMachineReport(dateStr: string): Promise<number> {
 /**
  * autoCloseIncompleteRecords — handles employees who forgot to clock out.
  */
-export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
+export async function autoCloseIncompleteRecords(dateStr?: string): Promise<{
     processed: number;
     skipped: number;
     details: { employeeId: string; autoCheckOut: string; status: string }[];
 }> {
-    const incompleteRecords = await AttendanceRecord.find({
-        date: dateStr,
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const queryFilter: any = {
         status: 'Incomplete',
         manuallyAdjusted: { $ne: true },
-    }).lean() as any[];
+    };
+
+    if (dateStr) {
+        queryFilter.date = dateStr;
+    } else {
+        queryFilter.date = { $lte: todayStr };
+    }
+
+    const incompleteRecords = await AttendanceRecord.find(queryFilter).lean() as any[];
 
     if (incompleteRecords.length === 0) {
         return { processed: 0, skipped: 0, details: [] };
@@ -561,6 +586,7 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
             continue;
         }
 
+        const recDateStr = record.date || dateStr || todayStr;
         const deviceConfig: any = deviceMap.get(record.location);
         const employee = employeeMap.get(record.employeeId);
         const empShift = employee?.jobInfo?.shift;
@@ -570,7 +596,7 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
         const shiftStart   = empShift?.startTime        ?? deviceConfig?.shiftStart             ?? DEFAULT_SHIFT_START;
         const graceMins    = empShift?.graceMinutes     ?? deviceConfig?.graceMinutes           ?? DEFAULT_GRACE_MINS;
 
-        const autoCheckOut = buildShiftTime(dateStr, shiftEnd);
+        const autoCheckOut = buildShiftTime(recDateStr, shiftEnd);
         const effectiveCheckOut = autoCheckOut > checkInTime ? autoCheckOut : new Date(checkInTime.getTime() + 30 * 60 * 1000);
 
         let rawMins = Math.floor((effectiveCheckOut.getTime() - checkInTime.getTime()) / 60000);
@@ -581,8 +607,8 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
             lunchThresholdHours: empShift?.lunchThresholdHours ?? 5,
         });
 
-        const shiftStartTime = buildShiftTime(dateStr, shiftStart);
-        const shiftEndTime = buildShiftTime(dateStr, shiftEnd);
+        const shiftStartTime = buildShiftTime(recDateStr, shiftStart);
+        const shiftEndTime = buildShiftTime(recDateStr, shiftEnd);
         const diffMins = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
         const lateMinutes = diffMins > graceMins ? (diffMins - graceMins) : 0;
 
@@ -608,7 +634,8 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<{
                     workDurationMinutes,
                     status,
                     lateMinutes,
-                    note: `Auto-closed: no clock-out recorded (assumed ${checkOutStr})`,
+                    isAutoClosed: true,
+                    note: `Auto Clocked-Out (Missed Clock-Out - Assumed Shift End ${checkOutStr})`,
                 },
             }
         );

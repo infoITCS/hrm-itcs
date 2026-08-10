@@ -213,15 +213,13 @@ router.delete('/designations/:id', authenticate, requireAdmin, async (req: Reque
 
 /**
  * @route   GET /api/config/company
- * @desc    Get company profile/branding details for current employee
+ * @desc    Get company profile/branding details for current single-tenant deployment
  */
 router.get('/company', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
-        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
-        if (!employee || !employee.companyId) {
-            // Return default company config or 404
-            return res.status(200).json({
+        let company = await Company.findOne();
+        if (!company) {
+            company = new Company({
                 name: 'IT Consulting and Services',
                 branding: { primaryColor: '#4A148C', secondaryColor: '#1A0933' },
                 contact: {
@@ -230,11 +228,7 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
                     email: 'info@itcs.com.pk'
                 }
             });
-        }
-
-        const company = await Company.findById(employee.companyId);
-        if (!company) {
-            return res.status(204).json({ message: 'Company settings not found' });
+            await company.save();
         }
         res.json(company);
     } catch (error) {
@@ -248,27 +242,13 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
  */
 router.put('/company', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
-        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
-        if (!employee) {
-            return res.status(404).json({ message: 'Employee profile not found' });
-        }
-
         const { name, logoUrl, branding, contact } = req.body;
 
-        let company;
-        if (employee.companyId) {
-            company = await Company.findByIdAndUpdate(
-                employee.companyId,
-                { name, logoUrl, branding, contact },
-                { new: true, runValidators: true }
-            );
-        } else {
-            // Create a new company config and link to employee
-            company = new Company({ name, logoUrl, branding, contact });
-            await company.save();
-            await Employee.findOneAndUpdate({ userId: authReq.user?.userId }, { companyId: company._id });
-        }
+        const company = await Company.findOneAndUpdate(
+            {},
+            { name, logoUrl, branding, contact },
+            { new: true, upsert: true, runValidators: true }
+        );
 
         res.json(company);
     } catch (error) {
@@ -278,17 +258,11 @@ router.put('/company', authenticate, requireAdmin, async (req: Request, res: Res
 
 /**
  * @route   GET /api/config/templates
- * @desc    List all templates for current company
+ * @desc    List all document templates for current deployment
  */
 router.get('/templates', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
-        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
-        if (!employee || !employee.companyId) {
-            return res.json([]);
-        }
-
-        const templates = await DocumentTemplate.find({ companyId: employee.companyId });
+        const templates = await DocumentTemplate.find();
         res.json(templates);
     } catch (error) {
         next(error);
@@ -301,16 +275,10 @@ router.get('/templates', authenticate, async (req: Request, res: Response, next:
  */
 router.post('/templates', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const authReq = req as AuthRequest;
-        const employee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
-        if (!employee || !employee.companyId) {
-            return res.status(400).json({ message: 'No associated company found. Set company settings first.' });
-        }
-
         const { documentType, subject, content, isActive } = req.body;
 
         const template = await DocumentTemplate.findOneAndUpdate(
-            { companyId: employee.companyId, documentType },
+            { documentType },
             { subject, content, isActive },
             { new: true, upsert: true, runValidators: true }
         );

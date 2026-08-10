@@ -59,18 +59,42 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
     const secondaryColor = company?.branding?.secondaryColor || '#731868';
 
     // 1. Logo (Top-Left)
-    let logoPath = path.join(__dirname, '../../uploads/logo.png');
+    let logoDrawn = false;
     if (company?.logoUrl) {
-        logoPath = path.join(__dirname, '../../', company.logoUrl);
-    }
-    if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 50, 35, { width: 95 });
-    } else {
-        const companyName = company?.name || 'itcs';
-        doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text(companyName.toLowerCase(), 50, 45);
-        if (!company) {
-            doc.fontSize(8).font('Helvetica').fillColor('#555555').text('IT CONSULTING AND SERVICES', 50, 70);
+        try {
+            if (company.logoUrl.startsWith('data:image/')) {
+                const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                doc.image(buffer, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                logoDrawn = true;
+            } else if (fs.existsSync(company.logoUrl)) {
+                doc.image(company.logoUrl, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                logoDrawn = true;
+            } else {
+                const relPath = path.join(__dirname, '../../', company.logoUrl);
+                if (fs.existsSync(relPath)) {
+                    doc.image(relPath, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                    logoDrawn = true;
+                }
+            }
+        } catch (err) {
+            console.error('Error rendering company logo in letterhead:', err);
         }
+    }
+
+    if (!logoDrawn) {
+        const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
+        if (fs.existsSync(defaultLogo)) {
+            try {
+                doc.image(defaultLogo, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                logoDrawn = true;
+            } catch {}
+        }
+    }
+
+    if (!logoDrawn) {
+        const companyName = company?.name || 'IT CONSULTING & SERVICES';
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text(companyName.toUpperCase(), 50, 40);
     }
 
     // 2. Top-Right Geometric Purple Decoration (ITCS Ribbon)
@@ -180,22 +204,14 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             return res.status(404).json({ message: 'Employee profile not found' });
         }
 
-        // Fetch Company configs with fallback
-        const company = employee.companyId 
-            ? await Company.findById(employee.companyId).lean() as any 
-            : await Company.findOne().lean() as any;
+        // Fetch Company configs for single-tenant deployment
+        const company = await Company.findOne().lean() as any;
 
-        const targetCompanyId = employee.companyId || company?._id;
-
-        // Query DocumentTemplate with flexible matching and fallback
-        let template = null;
-        if (targetCompanyId) {
-            template = await DocumentTemplate.findOne({
-                companyId: targetCompanyId,
-                documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
-                isActive: true
-            }).lean() as any;
-        }
+        // Query DocumentTemplate globally for this single-tenant deployment
+        let template = await DocumentTemplate.findOne({
+            documentType: { $regex: new RegExp(`^${(documentType || '').trim()}$`, 'i') },
+            isActive: true
+        }).lean() as any;
 
         if (!template) {
             template = await DocumentTemplate.findOne({
@@ -231,7 +247,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 department: employee.jobInfo?.department,
                 joiningDate: employee.jobInfo?.joiningDate
             },
-            companyId: targetCompanyId
+            companyId: company?._id
         });
         await newDoc.save();
 

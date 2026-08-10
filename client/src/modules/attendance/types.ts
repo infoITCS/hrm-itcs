@@ -147,6 +147,7 @@ export interface MonthlyDayEntry {
     lateMinutes: number;
     status: AttendanceStatus;
     note?: string;
+    isAutoClosed?: boolean;
 }
 
 export interface EmployeeMonthlyDetail {

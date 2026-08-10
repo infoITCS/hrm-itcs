@@ -155,7 +155,6 @@ export interface IEmployee extends Document {
     isDeleted?: boolean;
     deletedAt?: Date;
     deletedBy?: string; // userId of the admin who performed the delete
-    companyId?: Types.ObjectId;
 }
 
 const EmployeeSchema: Schema = new Schema({

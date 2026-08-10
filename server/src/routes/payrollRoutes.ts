@@ -265,7 +265,7 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
             }
         }
 
-        const company = emp?.companyId ? await Company.findById(emp.companyId).lean() as any : null;
+        const company = await Company.findOne().lean() as any;
         const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
 
         const primaryColor = company?.branding?.primaryColor || '#4A148C';
@@ -288,14 +288,41 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
            .closePath()
            .fill(primaryColor);
 
-        let logoPath = path.join(__dirname, '../../uploads/logo.png');
+        let logoDrawn = false;
         if (company?.logoUrl) {
-            logoPath = path.join(__dirname, '../../', company.logoUrl);
+            try {
+                if (company.logoUrl.startsWith('data:image/')) {
+                    const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    doc.image(buffer, 40, 20, { width: 110, height: 45, fit: [110, 45] });
+                    logoDrawn = true;
+                } else if (fs.existsSync(company.logoUrl)) {
+                    doc.image(company.logoUrl, 40, 20, { width: 110, height: 45, fit: [110, 45] });
+                    logoDrawn = true;
+                } else {
+                    const relPath = path.join(__dirname, '../../', company.logoUrl);
+                    if (fs.existsSync(relPath)) {
+                        doc.image(relPath, 40, 20, { width: 110, height: 45, fit: [110, 45] });
+                        logoDrawn = true;
+                    }
+                }
+            } catch (err) {
+                console.error('Error rendering company logo in payslip:', err);
+            }
         }
-        if (fs.existsSync(logoPath)) {
-            doc.image(logoPath, 40, 25, { width: 90 });
-        } else {
-            doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'itcs').toLowerCase(), 40, 30);
+
+        if (!logoDrawn) {
+            const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
+            if (fs.existsSync(defaultLogo)) {
+                try {
+                    doc.image(defaultLogo, 40, 20, { width: 110, height: 45, fit: [110, 45] });
+                    logoDrawn = true;
+                } catch {}
+            }
+        }
+
+        if (!logoDrawn) {
+            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 40, 30);
         }
 
         doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF').text('PAYSLIP / SALARY STATEMENT', 230, 26, { align: 'right', width: doc.page.width - 270 });
@@ -478,13 +505,11 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
         if (paymentMethod !== undefined) payslip.paymentMethod = paymentMethod;
         if (notes !== undefined) payslip.notes = notes;
 
-        payslip.grossPay = (payslip.earnings || []).reduce(
-            (sum: number, e: any) => sum + (e.amount || 0), 0
-        );
-        payslip.totalDeductions = (payslip.deductions || []).reduce(
-            (sum: number, d: any) => sum + (d.amount || 0), 0
-        );
-        payslip.netPay = payslip.grossPay - payslip.totalDeductions;
+        const grossPay = (payslip.earnings || []).reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
+        const totalDeductions = (payslip.deductions || []).reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+        payslip.grossPay = grossPay;
+        payslip.totalDeductions = totalDeductions;
+        payslip.netPay = grossPay - totalDeductions;
 
         await payslip.save();
         return res.json(payslip);
@@ -493,16 +518,6 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
     }
 });
 
-/**
- * @route   GET /api/payroll/:runId
- * @desc    Get a single payroll run + all its payslips (with employee details)
- * @access  admin, super-admin
- */
-/**
- * @route   GET /api/payroll/:runId/bank-advice-pdf
- * @desc    Generate Bank Advice / Salary Transfer PDF Report for Meezan Bank / Records
- * @access  admin, super-admin, finance, hr
- */
 router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
@@ -519,12 +534,21 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
         const payslips = await Payslip.find({ payrollRunId: runId })
-            .populate('employeeDetails', 'firstName lastName employeeId bankDetails jobInfo')
+            .populate({
+                path: 'employeeDetails',
+                select: 'firstName lastName employeeId bankDetails jobInfo companyId'
+            })
             .lean() as any[];
 
         if (!payslips.length) {
             return res.status(400).json({ message: 'No payslips found for this payroll run.' });
         }
+
+        // Fetch company details for branding
+        const company = await Company.findOne().lean() as any;
+
+        const primaryColor = company?.branding?.primaryColor || '#4A148C';
+        const totalNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
 
         const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
 
@@ -533,68 +557,93 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         res.setHeader('Content-Disposition', `attachment; filename="Bank_Advice_${safeTitle}.pdf"`);
         doc.pipe(res);
 
-        const primaryColor = '#4A148C';
-        const headerBg = '#4A148C';
-
-        // Top Accent Graphic Ribbon
+        // Top Accent Graphic Ribbon (matching Payslip PDF polygon geometry & dimensions)
         doc.save()
-           .moveTo(350, 0)
+           .moveTo(440, 0)
            .lineTo(doc.page.width, 0)
-           .lineTo(doc.page.width, 70)
-           .lineTo(390, 70)
+           .lineTo(doc.page.width, 85)
+           .lineTo(470, 85)
            .closePath()
            .fill(primaryColor);
 
-        // Company Logo
-        let logoPath = path.join(__dirname, '../../uploads/logo.png');
-        if (fs.existsSync(logoPath)) {
-            doc.image(logoPath, 40, 20, { width: 90 });
-        } else {
-            doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor).text('itcs', 40, 25);
+        // Company Logo (Top-Left)
+        let logoDrawn = false;
+        if (company?.logoUrl) {
+            try {
+                if (company.logoUrl.startsWith('data:image/')) {
+                    const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    doc.image(buffer, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                    logoDrawn = true;
+                } else if (fs.existsSync(company.logoUrl)) {
+                    doc.image(company.logoUrl, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                    logoDrawn = true;
+                } else {
+                    const relPath = path.join(__dirname, '../../', company.logoUrl);
+                    if (fs.existsSync(relPath)) {
+                        doc.image(relPath, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                        logoDrawn = true;
+                    }
+                }
+            } catch (err) {
+                console.error('Error rendering company logo in bank advice:', err);
+            }
         }
 
-        // Company & Document Title Header Block
-        doc.fontSize(14).font('Helvetica-Bold').fillColor('#1E293B')
-           .text('IT CONSULTING AND SERVICES (PVT) LTD', 150, 24);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#6B21A8')
-           .text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 150, 44);
+        if (!logoDrawn) {
+            const defaultLogo = path.join(__dirname, '../../uploads/logo.png');
+            if (fs.existsSync(defaultLogo)) {
+                try {
+                    doc.image(defaultLogo, 36, 20, { width: 95, height: 45, fit: [95, 45] });
+                    logoDrawn = true;
+                } catch {}
+            }
+        }
 
-        const totalNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF')
-           .text(`Period: ${run.title}`, doc.page.width - 270, 20, { align: 'right', width: 230 });
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#FDE047')
-           .text(`Total Net: PKR ${totalNet.toLocaleString()}`, doc.page.width - 270, 40, { align: 'right', width: 230 });
+        if (!logoDrawn) {
+            doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 36, 30);
+        }
 
-        doc.moveTo(40, 78).lineTo(doc.page.width - 40, 78).strokeColor('#CBD5E1').lineWidth(1).stroke();
+        // Company Full Name & Subtitle on Left (White background area, X=140 to 430)
+        const companyFullName = company?.name ? company.name.toUpperCase() : 'IT CONSULTING AND SERVICES (PVT) LTD';
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1E293B').text(companyFullName, 140, 28, { width: 290 });
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 140, 48, { width: 290 });
 
-        let y = 92;
+        // Title & Subtitle inside Dark Purple Slant Ribbon (Right side, white & #E9D5FF text)
+        doc.fontSize(15).font('Helvetica-Bold').fillColor('#FFFFFF').text('SALARY DISBURSEMENT ADVICE', 460, 26, { align: 'right', width: doc.page.width - 496 });
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#E9D5FF').text(`${run.title} • TOTAL: PKR ${totalNet.toLocaleString()}`, 460, 50, { align: 'right', width: doc.page.width - 496 });
+
+        // Header Divider Line (Y = 95, matching Payslip PDF)
+        doc.moveTo(36, 95).lineTo(doc.page.width - 36, 95).strokeColor('#E2E8F0').lineWidth(1).stroke();
+
+        let y = 110;
 
         // Table Header
         const drawTableHeader = (startY: number) => {
-            doc.rect(36, startY, doc.page.width - 72, 24).fill(headerBg);
+            doc.rect(36, startY, doc.page.width - 72, 25).fill(primaryColor);
             doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF');
             
-            doc.text('Sr #', 45, startY + 7, { width: 30 });
-            doc.text('Emp ID', 80, startY + 7, { width: 65 });
-            doc.text('Employee Name', 150, startY + 7, { width: 160 });
-            doc.text('Bank Name', 315, startY + 7, { width: 135 });
-            doc.text('Account Title / Number / IBAN', 455, startY + 7, { width: 200 });
-            doc.text('Net Pay (PKR)', 660, startY + 7, { width: 120, align: 'right' });
+            doc.text('Sr #', 45, startY + 7, { width: 35 });
+            doc.text('Emp ID', 85, startY + 7, { width: 65 });
+            doc.text('Employee Name', 155, startY + 7, { width: 160 });
+            doc.text('Bank Name', 320, startY + 7, { width: 135 });
+            doc.text('Account Title / Number / IBAN', 460, startY + 7, { width: 200 });
+            doc.text('Net Pay (PKR)', 665, startY + 7, { width: 130, align: 'right' });
         };
 
         drawTableHeader(y);
-        y += 24;
+        y += 25;
 
         payslips.forEach((p: any, idx: number) => {
-            if (y > doc.page.height - 75) {
+            if (y > doc.page.height - 85) {
                 doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
                 y = 36;
                 drawTableHeader(y);
-                y += 24;
+                y += 25;
             }
 
             const bg = idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
-            doc.rect(36, y, doc.page.width - 72, 20).fill(bg).stroke('#E2E8F0');
+            doc.rect(36, y, doc.page.width - 72, 22).fill(bg).stroke('#E2E8F0');
 
             const empName = p.employeeDetails 
                 ? `${p.employeeDetails.firstName || ''} ${p.employeeDetails.lastName || ''}`.trim()
@@ -602,46 +651,46 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
             const bankName = p.employeeDetails?.bankDetails?.bankName || 'Meezan Bank';
             const acctNo = p.employeeDetails?.bankDetails?.accountNumber || 'Pending Account Info';
 
-            doc.fontSize(8).font('Helvetica').fillColor('#334155');
-            doc.text(`${idx + 1}`, 45, y + 5, { width: 30 });
-            doc.text(`${p.employeeId || '—'}`, 80, y + 5, { width: 65 });
-            doc.text(empName, 150, y + 5, { width: 160, ellipsis: true });
-            doc.text(bankName, 315, y + 5, { width: 135, ellipsis: true });
-            doc.text(acctNo, 455, y + 5, { width: 200, ellipsis: true });
+            doc.fontSize(8.5).font('Helvetica').fillColor('#334155');
+            doc.text(`${idx + 1}`, 45, y + 6, { width: 35 });
+            doc.text(`${p.employeeId || '—'}`, 85, y + 6, { width: 65 });
+            doc.text(empName, 155, y + 6, { width: 160, ellipsis: true });
+            doc.text(bankName, 320, y + 6, { width: 135, ellipsis: true });
+            doc.text(acctNo, 460, y + 6, { width: 200, ellipsis: true });
             
-            doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A');
-            doc.text(`PKR ${(p.netPay || 0).toLocaleString()}`, 660, y + 5, { width: 120, align: 'right' });
+            doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0F172A');
+            doc.text(`PKR ${(p.netPay || 0).toLocaleString()}`, 665, y + 6, { width: 130, align: 'right' });
 
-            y += 20;
+            y += 22;
         });
 
-        // Total Summary Footer Row
-        if (y > doc.page.height - 110) {
+        // Grand Total Summary Banner (Matching Payslip Net Take-Home Salary Banner style!)
+        if (y > doc.page.height - 120) {
             doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
             y = 36;
+        } else {
+            y += 8;
         }
 
-        doc.rect(36, y, doc.page.width - 72, 26).fill('#F1F5F9').stroke('#CBD5E1');
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#0F172A');
-        doc.text(`GRAND TOTAL (${payslips.length} Employees):`, 45, y + 8, { width: 400 });
-        doc.fontSize(10.5).font('Helvetica-Bold').fillColor('#059669');
-        doc.text(`PKR ${totalNet.toLocaleString()}`, 650, y + 7, { width: 130, align: 'right' });
+        doc.rect(36, y, doc.page.width - 72, 32).fill(primaryColor);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#FFFFFF');
+        doc.text(`GRAND TOTAL (${payslips.length} Employees):`, 48, y + 10, { width: 400 });
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#FFFFFF');
+        doc.text(`PKR ${totalNet.toLocaleString()}`, 665, y + 8, { width: 130, align: 'right' });
 
-        // Extra spacing before signatures for stamps & physical sign
-        y += 75;
+        y += 50;
 
-        if (y > doc.page.height - 60) {
+        if (y > doc.page.height - 70) {
             doc.addPage({ margin: 36, size: 'A4', layout: 'landscape' });
-            y = 80;
+            y = 70;
         }
 
         // Signature Lines Block
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#334155');
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#475569');
         
-        doc.moveTo(50, y).lineTo(220, y).strokeColor('#94A3B8').lineWidth(1).stroke();
+        doc.moveTo(50, y).lineTo(220, y).strokeColor('#CBD5E1').lineWidth(1).stroke();
         doc.text('Prepared By (HR / Finance)', 50, y + 6);
 
-        doc.moveTo(300, y).lineTo(470, y).strokeColor('#94A3B8').lineWidth(1).stroke();
         doc.text('Verified By (Head of Finance)', 300, y + 6);
 
         doc.moveTo(570, y).lineTo(770, y).strokeColor('#94A3B8').lineWidth(1).stroke();

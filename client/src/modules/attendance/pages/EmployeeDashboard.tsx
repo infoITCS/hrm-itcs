@@ -299,11 +299,18 @@ export default function EmployeeDashboard() {
                                                     <span className="text-sm font-medium text-slate-700">{fmtTime(day.checkOut)}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6">
-                                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[day.status] || 'bg-slate-100 text-slate-500'}`}>
-                                                    {day.status}
-                                                </span>
-                                            </td>
+                                             <td className="py-4 px-6">
+                                                 <div className="flex items-center gap-1.5 flex-wrap">
+                                                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[day.status] || 'bg-slate-100 text-slate-500'}`}>
+                                                         {day.status}
+                                                     </span>
+                                                     {(day.isAutoClosed || day.note?.includes('Auto Clocked-Out') || day.note?.includes('Auto-closed')) && (
+                                                         <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200" title={day.note || 'Auto Clocked-Out at midnight'}>
+                                                             Auto Clocked-Out
+                                                         </span>
+                                                     )}
+                                                 </div>
+                                             </td>
                                             <td className="py-4 px-6 text-sm font-medium text-slate-600">
                                                 {fmtMins(day.workDurationMinutes)}
                                             </td>

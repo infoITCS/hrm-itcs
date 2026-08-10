@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, Building2, Paintbrush, PhoneCall, Eye } from 'lucide-react';
+import { Save, Loader2, Building2, Paintbrush, PhoneCall, Eye, Upload, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 import PdfPreviewModal from '../../components/UI/PdfPreviewModal';
 
@@ -167,19 +167,65 @@ const CompanyManagement = () => {
                                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-700"
                                 value={formData.name}
                                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="e.g. Acme Corp"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Logo URL / Local Path</label>
-                            <input
-                                type="text"
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-700"
-                                value={formData.logoUrl}
-                                onChange={(e) => setFormData(prev => ({ ...prev, logoUrl: e.target.value }))}
-                                placeholder="e.g. uploads/my-logo.png"
-                            />
-                            <p className="text-[10px] text-slate-400 mt-1">Leave empty to use a fallback text-based logo on generated documents.</p>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Company Logo</label>
+                            
+                            {formData.logoUrl && (
+                                <div className="mb-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
+                                            <img
+                                                src={formData.logoUrl.startsWith('data:image/') || formData.logoUrl.startsWith('http') ? formData.logoUrl : `${api.baseURL}/${formData.logoUrl}`}
+                                                alt="Company Logo Preview"
+                                                className="max-h-full max-w-full object-contain"
+                                                onError={(e) => {
+                                                    (e.target as HTMLElement).style.display = 'none';
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="truncate">
+                                            <p className="text-xs font-bold text-slate-700 truncate">Current Logo Active</p>
+                                            <p className="text-[10px] text-slate-400 truncate font-mono">{formData.logoUrl.substring(0, 40)}...</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, logoUrl: '' }))}
+                                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors shrink-0"
+                                        title="Remove Logo"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-3">
+                                <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm">
+                                    <Upload size={16} />
+                                    <span>Upload Logo File</span>
+                                    <input
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (event) => {
+                                                    const base64 = event.target?.result as string;
+                                                    if (base64) {
+                                                        setFormData(prev => ({ ...prev, logoUrl: base64 }));
+                                                    }
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">Supported formats: PNG, JPG, SVG, WebP. Recommended max height: 100px.</p>
                         </div>
                     </div>
 

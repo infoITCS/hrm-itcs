@@ -36,6 +36,7 @@ export interface IAttendanceRecord extends Document {
     // Was manually corrected by admin/manager?
     manuallyAdjusted: boolean;
     adjustedBy?: string;
+    isAutoClosed?: boolean;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -70,6 +71,7 @@ const AttendanceRecordSchema: Schema = new Schema(
         note:                { type: String },
         manuallyAdjusted:    { type: Boolean, default: false },
         adjustedBy:          { type: String },
+        isAutoClosed:        { type: Boolean, default: false },
     },
     { timestamps: true }
 );
