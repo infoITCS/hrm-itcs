@@ -394,23 +394,26 @@ export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: s
 
 export const sendExpenseClaimStatusEmail = async (to: string, employeeName: string, category: string, amount: number, status: string, approvedAmount?: number, adminNote?: string, baseUrl?: string) => {
     const clientUrl = getBaseUrl(baseUrl);
-    const statusColor = status === 'Approved' ? '#10b981' : (status === 'Declined' ? '#ef4444' : '#6b7280');
+    const statusColor = status === 'Approved' || status === 'Pending Finance' ? '#10b981' : (status === 'Declined' ? '#ef4444' : '#6b7280');
+    const displayStatus = status === 'Pending Finance' ? 'Approved by HR (Awaiting Finance Disbursement)' : status;
     
     const mailOptions = {
         from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
-        subject: `Expense Claim Update: ${status}`,
+        subject: `Expense Claim Update: ${category} - ${displayStatus}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
                 <h2 style="color: #4f46e5;">Expense Claim Update</h2>
                 <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
-                <p style="color: #4b5563; font-size: 16px;">Your expense claim for <strong>${category}</strong> (PKR ${amount.toLocaleString()}) has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
-                ${status === 'Approved' && approvedAmount !== undefined ? `
-                <p style="color: #4b5563; font-size: 16px;"><strong>Approved Amount:</strong> PKR ${approvedAmount.toLocaleString()}</p>
+                <p style="color: #4b5563; font-size: 16px;">Your expense claim for <strong>${category}</strong> (PKR ${amount.toLocaleString()}) status is now: <span style="color: ${statusColor}; font-weight: bold;">${displayStatus}</span>.</p>
+                ${approvedAmount !== undefined && approvedAmount > 0 ? `
+                <div style="background-color: #ecfdf5; padding: 12px 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #a7f3d0; color: #065f46;">
+                    <strong>Approved Amount:</strong> PKR ${approvedAmount.toLocaleString()}
+                </div>
                 ` : ''}
                 ${adminNote ? `
                 <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
-                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Comment:</strong> "${adminNote}"</p>
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Remarks:</strong> "${adminNote}"</p>
                 </div>
                 ` : ''}
                 <div style="text-align: center; margin: 30px 0;">

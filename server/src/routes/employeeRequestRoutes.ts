@@ -649,13 +649,18 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
 
         await request.save();
 
-        // Asynchronously notify employee via official work email strictly
+        // Asynchronously notify employee via email on status update
         (async () => {
             try {
-                const employee = await Employee.findOne({ employeeId: request.employeeId }).select('workEmail firstName lastName');
-                if (employee?.workEmail) {
-                    const empName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee';
-                    await sendEmployeeRequestStatusEmail(employee.workEmail, empName, request.category, status, adminComments);
+                const employee = await Employee.findOne({ employeeId: request.employeeId }).select('workEmail personalEmail userId firstName lastName');
+                let targetEmail = employee?.workEmail || employee?.personalEmail;
+                if (!targetEmail && employee?.userId) {
+                    const u = await User.findById(employee.userId).select('email').lean() as any;
+                    targetEmail = u?.email;
+                }
+                if (targetEmail) {
+                    const empName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : 'Employee';
+                    await sendEmployeeRequestStatusEmail(targetEmail, empName, request.category, request.status, adminComments);
                 }
             } catch (err: any) {
                 logger.error('Failed to send request status update email:', err.message);

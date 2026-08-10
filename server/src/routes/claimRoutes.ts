@@ -750,13 +750,24 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
 
         // Partial approvals (primarily HR): allow approvedAmount <= amountAllowed
         if (decision === 'Approved') {
-            const allowed = typeof pending.amountAllowed === 'number' ? pending.amountAllowed : claim.amountAllowed;
+            let maxAllowed = typeof pending.amountAllowed === 'number' ? pending.amountAllowed : claim.amountAllowed;
+            
+            // If current stage is finance, enforce max cap from HR approved amount
+            if (currentStage === 'finance') {
+                const hrApproval = claim.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
+                if (hrApproval && typeof hrApproval.approvedAmount === 'number') {
+                    maxAllowed = hrApproval.approvedAmount;
+                }
+            }
+
             const requested = claim.amountRequested;
-            const proposed = typeof approvedAmount === 'number' ? approvedAmount : Math.min(requested, allowed);
+            const proposed = typeof approvedAmount === 'number' ? approvedAmount : maxAllowed;
             if (proposed < 0) return res.status(400).json({ message: 'approvedAmount must be >= 0' });
-            if (proposed > requested) return res.status(400).json({ message: 'approvedAmount cannot exceed amountRequested' });
+            if (proposed > maxAllowed) {
+                return res.status(400).json({ message: `Approved amount cannot exceed the HR-approved amount of ${maxAllowed}` });
+            }
             pending.approvedAmount = proposed;
-            pending.amountAllowed = allowed;
+            pending.amountAllowed = maxAllowed;
             if (pending.requiresAuthorization && !authorizationBy) {
                 return res.status(400).json({ message: 'authorizationBy is required for out-of-policy approvals' });
             }
@@ -779,6 +790,9 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         } else {
             const nextPending = claim.approvals.find((a: any) => a.status === 'Pending');
             if (nextPending) {
+                if (typeof pending.approvedAmount === 'number') {
+                    nextPending.amountAllowed = pending.approvedAmount;
+                }
                 claim.status = stageToStatus(nextPending.stage) as any;
             } else {
                 claim.status = 'Approved';
@@ -801,19 +815,24 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
                 const emp = await Employee.findOne({
                     $or: [
                         { userId: claim.employeeUserId },
-                        { employeeId: claim.employeeId },
-                        { _id: claim.employeeUserId }
+                        { employeeId: claim.employeeId }
                     ]
-                });
-                const employeeEmail = emp?.workEmail || emp?.email;
+                }).select('workEmail personalEmail firstName lastName');
+                
+                let employeeEmail = emp?.workEmail || emp?.personalEmail;
+                if (!employeeEmail && claim.employeeUserId) {
+                    const u = await User.findById(claim.employeeUserId).select('email').lean() as any;
+                    employeeEmail = u?.email;
+                }
+
                 if (employeeEmail) {
                     await sendExpenseClaimStatusEmail(
                         employeeEmail,
-                        emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                        emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee',
                         claim.category,
                         claim.amountRequested,
                         claim.status,
-                        claim.approvedTotal ?? undefined,
+                        pending.approvedAmount ?? claim.approvedTotal ?? undefined,
                         comments || pending.comments,
                         req.headers.origin as string
                     );

@@ -671,8 +671,18 @@ const ExpenseClaimDashboard = () => {
         setDecisionClaim(c);
         setDecision('Approved');
         setDecisionComments('');
-        const allowed = typeof c?.amountAllowed === 'number' ? c.amountAllowed : c?.amountRequested;
-        const initial = Math.min(c?.amountRequested || 0, allowed || 0);
+
+        const hrApproval = c?.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
+        const currentPendingStage = c?.approvals?.find((a: any) => a.status === 'Pending')?.stage;
+
+        let initial;
+        if (currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number') {
+            initial = hrApproval.approvedAmount;
+        } else {
+            const allowed = typeof c?.amountAllowed === 'number' ? c.amountAllowed : c?.amountRequested;
+            initial = Math.min(c?.amountRequested || 0, allowed || 0);
+        }
+
         setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
         setDecisionAuthorizationBy('');
         setDecisionErpId(c?.erpReferenceId || '');
@@ -2415,65 +2425,102 @@ const ExpenseClaimDashboard = () => {
                             {/* ── Decision Form — full-width bottom strip ───────── */}
                             <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-5 space-y-4">
                                 <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Your Decision</div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
-                                        <div className="grid grid-cols-2 gap-2 mt-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setDecision('Approved');
-                                                    if (decisionApprovedAmount === 0 || decisionApprovedAmount === '') {
-                                                        const initial = decisionClaim.amountAllowed;
-                                                        setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
-                                                    }
-                                                }}
-                                                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
-                                                    decision === 'Approved'
-                                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
-                                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                }`}
-                                            >
-                                                <CheckCircle2 size={16} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
-                                                Approve
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setDecision('Declined');
-                                                    setDecisionApprovedAmount(0);
-                                                }}
-                                                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
-                                                    decision === 'Declined'
-                                                        ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
-                                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                }`}
-                                            >
-                                                <XCircle size={16} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
-                                                Decline
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-600">Approved Amount</label>
-                                        <input
-                                            type="number"
-                                            value={decisionApprovedAmount}
-                                            onChange={e => setDecisionApprovedAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                                            disabled={decision === 'Declined'}
-                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-100 bg-white"
-                                        />
-                                        <p className="text-[11px] text-slate-400 mt-1">
-                                            Requested: <strong>{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</strong>
-                                            {' '}• Allowed: <strong className="text-emerald-600">{formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}</strong>
-                                            {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
-                                                <span className="text-rose-500 font-bold ml-1.5">
-                                                    (Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
-                                                </span>
+                                
+                                {(() => {
+                                    const hrApproval = decisionClaim?.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
+                                    return (
+                                        <>
+                                            {currentPendingStage === 'finance' && hrApproval && (
+                                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 space-y-1.5 text-xs mb-3">
+                                                    <div className="font-bold text-indigo-900 flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-indigo-600" /> HR Approved Amount:</span>
+                                                        <span className="text-emerald-700 font-extrabold text-sm">{formatMoney(hrApproval.approvedAmount ?? decisionClaim.amountAllowed, decisionClaim.currency)}</span>
+                                                    </div>
+                                                    {hrApproval.comments && (
+                                                        <div className="text-indigo-800 text-[11px] font-medium italic pt-1 border-t border-indigo-100/80">
+                                                            HR Remarks: "{hrApproval.comments}"
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
-                                        </p>
-                                    </div>
-                                </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
+                                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setDecision('Approved');
+                                                                if (decisionApprovedAmount === 0 || decisionApprovedAmount === '') {
+                                                                    const initial = currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number'
+                                                                        ? hrApproval.approvedAmount
+                                                                        : decisionClaim.amountAllowed;
+                                                                    setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
+                                                                }
+                                                            }}
+                                                            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                                decision === 'Approved'
+                                                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
+                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <CheckCircle2 size={16} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setDecision('Declined');
+                                                                setDecisionApprovedAmount(0);
+                                                            }}
+                                                            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                                decision === 'Declined'
+                                                                    ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
+                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <XCircle size={16} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
+                                                            Decline
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-600">Approved Amount</label>
+                                                    <input
+                                                        type="number"
+                                                        value={decisionApprovedAmount}
+                                                        onChange={e => {
+                                                            const val = e.target.value === '' ? '' : Number(e.target.value);
+                                                            if (currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' && typeof val === 'number' && val > hrApproval.approvedAmount) {
+                                                                setDecisionApprovedAmount(hrApproval.approvedAmount);
+                                                            } else {
+                                                                setDecisionApprovedAmount(val);
+                                                            }
+                                                        }}
+                                                        disabled={decision === 'Declined' || (currentPendingStage === 'finance' && !!hrApproval && typeof hrApproval.approvedAmount === 'number')}
+                                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-100 bg-white font-bold text-slate-800"
+                                                    />
+                                                    {currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' ? (
+                                                        <p className="text-[11px] text-indigo-600 font-bold mt-1 flex items-center gap-1">
+                                                            🔒 Pre-filled & locked to HR Approved Amount ({formatMoney(hrApproval.approvedAmount, decisionClaim.currency)}).
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                            Requested: <strong>{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</strong>
+                                                            {' '}• Allowed: <strong className="text-emerald-600">{formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}</strong>
+                                                            {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
+                                                                <span className="text-rose-500 font-bold ml-1.5">
+                                                                    (Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
 
                                 {decision === 'Approved' && currentRequiresAuthorization && (
                                     <div>
