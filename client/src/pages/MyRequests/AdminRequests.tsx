@@ -45,8 +45,9 @@ const AdminRequests = () => {
     };
     const handleAction = async (status: 'Pending' | 'Approved' | 'Rejected' | 'Completed') => {
         try {
-            if (status === 'Completed' && (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && !erpReferenceId.trim()) {
-                showToast('ERP Transaction Reference ID is required to complete loan requests.', 'warning');
+            const isLoan = actionModal.category === 'Loan' || actionModal.category === 'Request Loan';
+            if ((status === 'Completed' || (status === 'Approved' && actionModal.status === 'Pending Finance')) && isLoan && !erpReferenceId.trim()) {
+                showToast('ERP Transaction Reference ID is required to approve & disburse loan requests.', 'warning');
                 return;
             }
 
@@ -90,7 +91,11 @@ const AdminRequests = () => {
                               req.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               employeeName.includes(searchTerm.toLowerCase()) ||
                               (req.employee?.employeeId || '').toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
+        const matchesStatus = statusFilter === 'All' 
+            ? true 
+            : statusFilter === 'Pending' 
+            ? (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance')
+            : req.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
 
@@ -152,7 +157,7 @@ const AdminRequests = () => {
                         />
                     </div>
                     <div className="flex gap-2 w-full sm:w-auto overflow-x-auto scrollbar-none pb-1">
-                        {['All', 'Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
+                        {['All', 'Pending', 'Pending HR', 'Pending Finance', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
                             <button
                                 key={status}
                                 onClick={() => setStatusFilter(status)}
@@ -227,7 +232,8 @@ const AdminRequests = () => {
                                                 {new Date(req.requestedAt).toLocaleDateString()}
                                             </td>
                                             <td className="px-6 py-4">
-                                                {req.status === 'Pending' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200"><Clock size={12}/> Pending</span>}
+                                                {(req.status === 'Pending' || req.status === 'Pending HR') && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200"><Clock size={12}/> Pending HR</span>}
+                                                {req.status === 'Pending Finance' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-200"><Clock size={12}/> Pending Finance</span>}
                                                 {req.status === 'Approved' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-200"><CheckCircle size={12}/> Approved</span>}
                                                 {req.status === 'Rejected' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-600 border border-rose-200"><XCircle size={12}/> Rejected</span>}
                                                 {req.status === 'Completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200"><CheckCircle size={12}/> Completed</span>}
@@ -235,14 +241,18 @@ const AdminRequests = () => {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <button 
-                                                    onClick={() => { setActionModal(req); setAdminComments(req.adminComments || ''); }}
+                                                    onClick={() => {
+                                                        setActionModal(req);
+                                                        setAdminComments(req.adminComments || '');
+                                                        setErpReferenceId(req.erpReferenceId || '');
+                                                    }}
                                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                        req.status === 'Pending' 
+                                                        (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') 
                                                         ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                                                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                     }`}
                                                 >
-                                                    {req.status === 'Pending' ? 'Review' : 'View'}
+                                                    {(req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') ? 'Review' : 'View'}
                                                 </button>
                                             </td>
                                         </tr>
@@ -268,7 +278,7 @@ const AdminRequests = () => {
                     <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-slide-up">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Review Request</h3>
-                            <button onClick={() => { setActionModal(null); setAdminComments(''); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
                                 <XCircle size={20} />
                             </button>
                         </div>
@@ -288,7 +298,7 @@ const AdminRequests = () => {
                                         </div>
                                     </div>
                                     
-                                    {actionModal.status !== 'Pending' && actionModal.status !== 'Cancelled' && (
+                                    {(actionModal.status === 'Approved' || actionModal.status === 'Completed' || actionModal.status === 'Rejected') && (
                                         <div className="relative">
                                             <div className="absolute -left-[30px] top-1 bg-emerald-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
                                                 <CheckCircle size={10} />
@@ -312,18 +322,45 @@ const AdminRequests = () => {
                                         </div>
                                     )}
 
-                                    {actionModal.status === 'Pending' && (
+                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
                                         <div className="relative">
                                             <div className="absolute -left-[30px] top-1 bg-amber-400 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
                                                 <Clock size={10} />
                                             </div>
                                             <div>
-                                                <p className="text-xs font-semibold text-gray-900">Awaiting Manager/Admin Review</p>
+                                                <p className="text-xs font-semibold text-gray-900">Awaiting HR / Admin Approval</p>
                                             </div>
                                         </div>
                                     )}
+
+                                    {actionModal.status === 'Pending Finance' && (
+                                        <>
+                                            <div className="relative">
+                                                <div className="absolute -left-[30px] top-1 bg-emerald-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                                    <CheckCircle size={10} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-gray-900">HR / Admin Approved</p>
+                                                </div>
+                                            </div>
+                                            <div className="relative">
+                                                <div className="absolute -left-[30px] top-1 bg-indigo-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                                    <Clock size={10} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-gray-900">Awaiting Finance Approval & Disbursement</p>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
+
+                            {isFinanceRole && (actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium flex items-center gap-2">
+                                    <span>⚠️</span> Awaiting HR/Admin stage 1 approval before Finance can disburse or approve.
+                                </div>
+                            )}
 
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
                                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -338,11 +375,11 @@ const AdminRequests = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm border-t border-gray-200/60 pt-2">
                                     <div>
-                                        <p className="text-gray-500 text-xs">Request Category</p>
+                                        <p className="text-gray-500 text-xs">Category</p>
                                         <p className="font-semibold text-gray-900">{actionModal.category}</p>
                                     </div>
                                     <div>
-                                        <p className="text-gray-500 text-xs">Request Option</p>
+                                        <p className="text-gray-500 text-xs">Request Type</p>
                                         <p className="font-semibold text-gray-900">{actionModal.requestType}</p>
                                     </div>
                                 </div>
@@ -451,7 +488,7 @@ const AdminRequests = () => {
                             </div>
 
                             {/* Render ERP Transaction ID input for completing financial requests */}
-                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved') && (
+                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved' || actionModal.status === 'Pending Finance') && (
                                 <div className="space-y-1">
                                     <label className="block text-xs font-bold text-gray-500 uppercase">
                                         ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
@@ -474,7 +511,25 @@ const AdminRequests = () => {
                             >
                                 Close
                             </button>
-                            {actionModal.status === 'Pending' && (
+                            {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                <>
+                                    <button 
+                                        onClick={() => handleAction('Rejected')}
+                                        className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                    >
+                                        Reject
+                                    </button>
+                                    {!isFinanceRole && (
+                                        <button 
+                                            onClick={() => handleAction('Approved')}
+                                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                        >
+                                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan') ? 'Approve (Forward to Finance)' : 'Approve'}
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                            {actionModal.status === 'Pending Finance' && (
                                 <>
                                     <button 
                                         onClick={() => handleAction('Rejected')}
@@ -486,16 +541,14 @@ const AdminRequests = () => {
                                         onClick={() => handleAction('Approved')}
                                         className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
                                     >
-                                        Approve
+                                        Approve & Disburse
                                     </button>
-                                    {isAdminOrSuper && (
-                                        <button 
-                                            onClick={() => handleAction('Completed')}
-                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                        >
-                                            Complete
-                                        </button>
-                                    )}
+                                    <button 
+                                        onClick={() => handleAction('Completed')}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                    >
+                                        Complete Request
+                                    </button>
                                 </>
                             )}
                             {actionModal.status === 'Approved' && isAdminOrSuper && (

@@ -4,7 +4,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2, Send,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    AlertTriangle, Download,
+    AlertTriangle, Download, FileText,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -250,6 +250,17 @@ const PayrollRunDetail = () => {
         });
     };
 
+    const triggerSuccess = (title: string, message: string) => {
+        setAlertConfig({
+            isOpen: true,
+            title,
+            message,
+            type: 'success',
+            confirmText: 'OK',
+            showCancel: false,
+        });
+    };
+
     const fetchData = useCallback(async () => {
         if (!id) return;
         setLoading(true);
@@ -308,18 +319,27 @@ const PayrollRunDetail = () => {
     };
 
     const handleDisburse = () => {
+        setDisburseErpId(run?.erpReferenceId || '');
         setShowDisburseModal(true);
     };
 
     const handleDisburseConfirm = async () => {
+        if (!disburseErpId.trim()) {
+            triggerError('ERP Reference Required', 'ERP Transaction Reference ID is required before disbursing.');
+            return;
+        }
         setShowDisburseModal(false);
         setActionLoading('disburse');
         try {
-            await axios.put(api.payrollDisburse(id!), { erpReferenceId: disburseErpId.trim() || undefined }, authHeader);
+            await axios.put(api.payrollDisburse(id!), { erpReferenceId: disburseErpId.trim() }, authHeader);
             setDisburseErpId('');
             setRefreshCounter(c => c + 1);
+            triggerSuccess(
+                run?.status === 'Disbursed' ? 'ERP Reference Updated' : 'Payroll Disbursed',
+                run?.status === 'Disbursed' ? 'ERP reference ID updated successfully.' : 'Payroll run has been marked as disbursed.'
+            );
         } catch (err: any) {
-            triggerError('Failed to Disburse', err.response?.data?.message || 'Failed to disburse.');
+            triggerError('Failed', err.response?.data?.message || 'Failed to update ERP reference.');
         } finally {
             setActionLoading(null);
         }
@@ -468,6 +488,20 @@ const PayrollRunDetail = () => {
                             Mark Disbursed
                         </button>
                     )}
+                    {run.status === 'Disbursed' && (
+                        <button 
+                            id="btn-edit-erp-id" 
+                            onClick={() => {
+                                setDisburseErpId(run.erpReferenceId || '');
+                                setShowDisburseModal(true);
+                            }} 
+                            disabled={!!actionLoading}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-all disabled:opacity-60"
+                        >
+                            <FileText size={14} />
+                            {run.erpReferenceId ? 'Edit ERP ID' : '+ Add ERP ID'}
+                        </button>
+                    )}
                     {run.status !== 'Disbursed' && (
                         <button id="btn-delete-run" onClick={handleDeleteRun} disabled={!!actionLoading}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors disabled:opacity-60">
@@ -597,14 +631,20 @@ const PayrollRunDetail = () => {
                                 <Send size={20} />
                             </div>
                             <div>
-                                <h3 className="font-extrabold text-base text-slate-900">Mark as Disbursed?</h3>
-                                <p className="text-xs text-slate-500">Confirm salaries have been paid for "{run?.title}".</p>
+                                <h3 className="font-extrabold text-base text-slate-900">
+                                    {run?.status === 'Disbursed' ? 'Update ERP Reference ID' : 'Mark as Disbursed?'}
+                                </h3>
+                                <p className="text-xs text-slate-500">
+                                    {run?.status === 'Disbursed' 
+                                        ? `Attach or update the ERP transaction ID for "${run?.title}".` 
+                                        : `Confirm salaries have been paid for "${run?.title}".`}
+                                </p>
                             </div>
                         </div>
                         
                         <div className="space-y-1.5">
-                            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                                ERP Transaction Reference ID (Optional)
+                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                                ERP Transaction Reference ID <span className="text-rose-500 font-bold">*</span>
                             </label>
                             <input
                                 type="text"
@@ -626,7 +666,7 @@ const PayrollRunDetail = () => {
                                 onClick={handleDisburseConfirm}
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm flex items-center gap-1.5"
                             >
-                                <Send size={12} /> Confirm Disbursement
+                                <Send size={12} /> {run?.status === 'Disbursed' ? 'Save ERP Reference' : 'Confirm Disbursement'}
                             </button>
                         </div>
                     </div>

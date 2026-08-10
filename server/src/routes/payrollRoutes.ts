@@ -1073,19 +1073,30 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
         const run = await PayrollRun.findById(req.params.runId);
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
+        const { erpReferenceId } = req.body || {};
+
+        if (run.status === 'Disbursed') {
+            if (!erpReferenceId || !erpReferenceId.trim()) {
+                return res.status(400).json({ message: 'ERP Transaction Reference ID is required.' });
+            }
+            run.erpReferenceId = erpReferenceId.trim();
+            await run.save();
+            return res.json(run);
+        }
+
         if (run.status !== 'Approved') {
             return res.status(400).json({
                 message: `Run must be "Approved" before disbursing. Current status: "${run.status}".`,
             });
         }
 
-        const { erpReferenceId } = req.body || {};
+        if (!erpReferenceId || !erpReferenceId.trim()) {
+            return res.status(400).json({ message: 'ERP Transaction Reference ID is required before disbursing payroll.' });
+        }
 
         run.status = 'Disbursed';
         run.disbursedAt = new Date();
-        if (erpReferenceId !== undefined) {
-            run.erpReferenceId = erpReferenceId;
-        }
+        run.erpReferenceId = erpReferenceId.trim();
         await run.save();
 
         return res.json(run);

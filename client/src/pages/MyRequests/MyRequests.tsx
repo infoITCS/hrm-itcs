@@ -350,7 +350,11 @@ const MyRequests = () => {
     const filteredRequests = requests.filter(req => {
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               req.category.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = statusFilter === 'All' || req.status === statusFilter;
+        const matchesStatus = statusFilter === 'All' 
+            ? true 
+            : statusFilter === 'Pending' 
+            ? (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance')
+            : req.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
 
@@ -434,7 +438,7 @@ const MyRequests = () => {
                     />
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto overflow-x-auto scrollbar-none pb-1">
-                    {['All', 'Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
+                    {['All', 'Pending', 'Pending HR', 'Pending Finance', 'Approved', 'Rejected', 'Completed', 'Cancelled'].map((status) => (
                         <button
                             key={status}
                             onClick={() => setStatusFilter(status)}
@@ -484,7 +488,8 @@ const MyRequests = () => {
                                         </div>
                                     </div>
                                     <div className="flex flex-col items-end gap-1.5">
-                                        {req.status === 'Pending' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200"><Clock size={12}/> Pending</span>}
+                                        {(req.status === 'Pending' || req.status === 'Pending HR') && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200"><Clock size={12}/> Pending HR</span>}
+                                        {req.status === 'Pending Finance' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-200"><Clock size={12}/> Pending Finance</span>}
                                         {req.status === 'Approved' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-200"><CheckCircle size={12}/> Approved</span>}
                                         {req.status === 'Rejected' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-600 border border-rose-200"><XCircle size={12}/> Rejected</span>}
                                         {req.status === 'Completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200"><CheckCircle size={12}/> Completed</span>}

@@ -4,7 +4,7 @@ export interface IEmployeeRequest extends Document {
     employeeId: string;
     category: string;
     requestType: string;
-    status: 'Pending' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled';
+    status: 'Pending' | 'Pending HR' | 'Pending Finance' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled';
     details: any;
     adminComments?: string;
     requestedAt: Date;
@@ -17,7 +17,7 @@ const employeeRequestSchema = new Schema<IEmployeeRequest>({
     employeeId: { type: String, required: true },
     category: { type: String, required: true },
     requestType: { type: String, required: true },
-    status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Completed', 'Cancelled'], default: 'Pending' },
+    status: { type: String, enum: ['Pending', 'Pending HR', 'Pending Finance', 'Approved', 'Rejected', 'Completed', 'Cancelled'], default: 'Pending' },
     details: { type: Schema.Types.Mixed, default: {} },
     adminComments: { type: String },
     requestedAt: { type: Date, default: Date.now },

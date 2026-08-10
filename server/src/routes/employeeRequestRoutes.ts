@@ -414,14 +414,16 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(400).json({ message: 'Employee profile not found for the logged-in user' });
         }
 
+        const isLoan = category === 'Loan' || category === 'Request Loan' || requestType === 'Loan';
         const newRequest = new EmployeeRequest({
             employeeId: employee.employeeId,
             category,
             requestType,
+            status: isLoan ? 'Pending HR' : 'Pending',
             details
         });
 
-        if (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan') {
+        if (isLoan) {
             if (details && details.paybackDuration && Number(details.paybackDuration) > 12) {
                 return res.status(400).json({ message: 'Loan payback duration cannot exceed 1 year (12 months).' });
             }
@@ -568,7 +570,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         const role = authReq.user?.role || '';
         const userId = authReq.user?.userId;
         
-        if (!['Pending', 'Approved', 'Rejected', 'Completed'].includes(status)) {
+        if (!['Pending', 'Pending HR', 'Pending Finance', 'Approved', 'Rejected', 'Completed'].includes(status)) {
             return res.status(400).json({ message: 'Invalid status' });
         }
 
@@ -592,7 +594,28 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
             }
         }
 
-        request.status = status;
+        const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+
+        if (isLoan) {
+            const currentStatus = request.status || 'Pending HR';
+
+            if (status === 'Rejected') {
+                request.status = 'Rejected';
+            } else if (currentStatus === 'Pending' || currentStatus === 'Pending HR') {
+                if (role === 'finance') {
+                    return res.status(403).json({ message: 'Loan requests must be approved by HR / Admin before Finance can disburse or approve.' });
+                }
+                // Approving at stage 1 moves status to Pending Finance
+                request.status = (status === 'Approved' || status === 'Pending Finance') ? 'Pending Finance' : status;
+            } else if (currentStatus === 'Pending Finance') {
+                request.status = status;
+            } else {
+                request.status = status;
+            }
+        } else {
+            request.status = status;
+        }
+
         if (adminComments !== undefined) {
             request.adminComments = adminComments;
         }
