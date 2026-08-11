@@ -1,7 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IDocTemplate extends Document {
-    companyId?: mongoose.Types.ObjectId;
     documentType: string;
     subject: string;
     content: string;
@@ -9,7 +8,6 @@ export interface IDocTemplate extends Document {
 }
 
 const DocumentTemplateSchema: Schema = new Schema({
-    companyId: { type: Schema.Types.ObjectId, ref: 'Company' },
     documentType: { type: String, required: true },
     subject: { type: String },
     content: { type: String, required: true },

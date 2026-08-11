@@ -25,6 +25,8 @@ export interface ILeaveRequest extends Document {
     adminNote?: string;
     appliedBy?: string;    // userId
     approvedBy?: string;   // userId
+    approvedByName?: string; // Display name and role of approver/rejecter
+    actionAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -43,6 +45,8 @@ const LeaveRequestSchema: Schema = new Schema({
     adminNote: { type: String }, // [SENSITIVE] Private admin-only commentary
     appliedBy: { type: String },
     approvedBy: { type: String },
+    approvedByName: { type: String },
+    actionAt: { type: Date },
 }, { timestamps: true });
 
 // Index for checking if an employee is on leave on a specific date

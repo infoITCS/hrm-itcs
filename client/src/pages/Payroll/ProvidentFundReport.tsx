@@ -482,7 +482,7 @@ export default function ProvidentFundReport() {
     }
 
     return (
-        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 pb-20">
+        <div className="space-y-6 animate-fadeIn pb-20">
 
             {/* Role Tab Switcher for Admin/HR/Finance */}
             <div className="flex items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl w-fit border border-slate-200 shadow-inner mb-2">

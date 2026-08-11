@@ -1527,9 +1527,22 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
-                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                                        {c.status}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                            {c.status}
+                                                        </span>
+                                                        {c.status === 'Approved' && (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
+                                                                c.payoutStatus === 'Paid'
+                                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                    : c.payoutStatus === 'Included in Payroll'
+                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                            }`}>
+                                                                {c.payoutStatus || 'Unpaid'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
                                                     <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
@@ -1660,9 +1673,22 @@ const ExpenseClaimDashboard = () => {
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
-                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                                        {c.status}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                            {c.status}
+                                                        </span>
+                                                        {c.status === 'Approved' && (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
+                                                                c.payoutStatus === 'Paid'
+                                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                    : c.payoutStatus === 'Included in Payroll'
+                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                            }`}>
+                                                                {c.payoutStatus || 'Unpaid'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
                                                     <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
@@ -1816,9 +1842,22 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
-                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                                        {c.status}
-                                                    </span>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                                            {c.status}
+                                                        </span>
+                                                        {c.status === 'Approved' && (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
+                                                                c.payoutStatus === 'Paid'
+                                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                    : c.payoutStatus === 'Included in Payroll'
+                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                            }`}>
+                                                                {c.payoutStatus || 'Unpaid'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle">
                                                     {c.status === 'Approved' ? (
@@ -1883,23 +1922,25 @@ const ExpenseClaimDashboard = () => {
                                                         <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 flex items-center gap-1.5 align-middle">
-                                                    <button
-                                                        onClick={() => openDecision(c)}
-                                                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-colors flex items-center gap-1"
-                                                        title="View Details & Scanned Receipts"
-                                                    >
-                                                        <Eye size={13} /> Details
-                                                    </button>
-                                                    {isAdminLike && (
+                                                <td className="px-4 py-3 align-middle">
+                                                    <div className="flex items-center gap-1.5">
                                                         <button
-                                                            onClick={() => openCorrect(c)}
-                                                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-colors flex items-center gap-1"
-                                                            title="Edit Status / Approved Total"
+                                                            onClick={() => openDecision(c)}
+                                                            className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-colors flex items-center gap-1"
+                                                            title="View Details & Scanned Receipts"
                                                         >
-                                                            <Edit2 size={13} /> Correct
+                                                            <Eye size={13} /> Details
                                                         </button>
-                                                    )}
+                                                        {isAdminLike && (
+                                                            <button
+                                                                onClick={() => openCorrect(c)}
+                                                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-colors flex items-center gap-1"
+                                                                title="Edit Status / Approved Total"
+                                                            >
+                                                                <Edit2 size={13} /> Correct
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}

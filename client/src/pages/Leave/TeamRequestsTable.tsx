@@ -278,7 +278,7 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                                         setEditTargetNote(req.adminNote || '');
                                                         setShowEditModal(true);
                                                     }}
-                                                    className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 bg-slate-100 text-slate-400 hover:text-indigo-600 rounded-lg opacity-0 group-hover/action:opacity-100 transition-all hover:bg-indigo-50"
+                                                    className="inline-flex items-center justify-center p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-all shadow-2xs cursor-pointer ml-1.5"
                                                     title="Edit Status"
                                                 >
                                                     <Edit3 size={14} />

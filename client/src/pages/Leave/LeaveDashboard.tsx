@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
-    Calendar, Plus, ChevronRight, Filter, FileText, Clock,
+    Calendar, Plus, Eye, Filter, FileText, Clock,
     Plane, Heart
 } from 'lucide-react';
 import { api } from '../../utils/api';
@@ -223,7 +223,7 @@ const STATUS_COLORS: any = {
                                 {isManagement ? 'Leave Management' : 'My Leave'}
                             </span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Time Off Dashboard</h1>
+                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Leave Dashboard</h1>
                         <p className="text-white/70 mt-2 max-w-md text-xs sm:text-sm leading-relaxed">
                             {isManagement
                                 ? 'Manage your time off, review team requests, and approve leave in one place.'
@@ -429,10 +429,11 @@ const STATUS_COLORS: any = {
                                                     setSelectedLeave(leave);
                                                     setShowDetailsModal(true);
                                                 }}
-                                                aria-label="View leave details"
-                                                className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
+                                                title="View leave details"
                                             >
-                                                <ChevronRight size={18} />
+                                                <Eye size={13} />
+                                                Details
                                             </button>
                                         </td>
                                     </tr>
