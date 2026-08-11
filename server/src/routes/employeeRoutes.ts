@@ -1422,6 +1422,40 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         if (updates.socialProfiles) updates.socialProfiles = stripEmptyWizardArrays(updates.socialProfiles, 'platform');
         if (updates.salaryComponents) updates.salaryComponents = stripEmptyWizardArrays(updates.salaryComponents, 'type');
 
+        // Keep salaryComponents in sync when only financeInfo salary fields are filled
+        const mergedFinance = {
+            ...(employee.financeInfo?.toObject?.() ?? employee.financeInfo ?? {}),
+            ...(updates.financeInfo ?? {}),
+        };
+        const mergedComponents = updates.salaryComponents ?? employee.salaryComponents ?? [];
+        const componentTotal = (mergedComponents as any[]).reduce(
+            (sum: number, c: any) => sum + (Number(c?.amount) || 0),
+            0
+        );
+        if (componentTotal === 0) {
+            const status =
+                updates.employmentStatus?.status ??
+                (typeof employee.employmentStatus === 'string'
+                    ? employee.employmentStatus
+                    : employee.employmentStatus?.status);
+            const probationSalary = Number(mergedFinance.probationSalary) || 0;
+            const confirmedSalary = Number(mergedFinance.confirmedSalary) || 0;
+            let amount = 0;
+            let component = 'Basic Salary';
+            if (status === 'Probation' && probationSalary > 0) {
+                amount = probationSalary;
+                component = 'Probation Salary';
+            } else if (confirmedSalary > 0) {
+                amount = confirmedSalary;
+            } else if (probationSalary > 0) {
+                amount = probationSalary;
+                if (status === 'Probation') component = 'Probation Salary';
+            }
+            if (amount > 0) {
+                updates.salaryComponents = [{ component, amount, type: 'fixed' }];
+            }
+        }
+
         // Sanitize jobInfo.shift: if it's an empty string, set it to null 
         // to avoid BSONError/CastError when converting to ObjectId
         if (updates.jobInfo && updates.jobInfo.shift === '') {

@@ -289,8 +289,15 @@ const PayrollRunDetail = () => {
             async () => {
                 setActionLoading('generate');
                 try {
-                    await axios.post(api.payrollGenerate(id!), {}, authHeader);
+                    const res = await axios.post(api.payrollGenerate(id!), {}, authHeader);
                     setRefreshCounter(c => c + 1);
+                    const missing = res.data?.missingSalary as string[] | undefined;
+                    if (missing?.length) {
+                        triggerError(
+                            'Payslips Generated — Salary Missing',
+                            `Generated payslips, but these employees have no salary set in PIM (Finance step):\n\n${missing.join('\n')}\n\nAdd Salary Structure or Confirmed Salary in their employee profile, then click Generate again.`
+                        );
+                    }
                 } catch (err: any) {
                     triggerError('Failed to Generate', err.response?.data?.message || 'Failed to generate payslips.');
                 } finally {

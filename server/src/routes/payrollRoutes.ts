@@ -12,6 +12,7 @@ import Counter from '../models/Counter';
 import EmployeeRequest from '../models/EmployeeRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
 import Company from '../models/Company';
+import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 
 const router = express.Router();
 
@@ -21,6 +22,50 @@ const router = express.Router();
 
 function isAdmin(role: string): boolean {
     return ['super-admin', 'admin', 'finance', 'hr'].includes(role);
+}
+
+const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
+
+function getEmploymentStatus(emp: any): string {
+    if (!emp?.employmentStatus) return '';
+    if (typeof emp.employmentStatus === 'string') return emp.employmentStatus;
+    return emp.employmentStatus.status || '';
+}
+
+/** Resolve payslip earnings from salaryComponents, falling back to financeInfo salary fields. */
+function resolveEmployeeEarnings(emp: any): { component: string; amount: number; type: 'fixed' | 'variable' }[] {
+    const fromComponents = (emp.salaryComponents || [])
+        .filter((sc: any) => sc && sc.component && (Number(sc.amount) || 0) > 0)
+        .map((sc: any) => ({
+            component: sc.component,
+            amount: Number(sc.amount) || 0,
+            type: (sc.type === 'variable' ? 'variable' : 'fixed') as 'fixed' | 'variable',
+        }));
+
+    if (fromComponents.length > 0) return fromComponents;
+
+    const status = getEmploymentStatus(emp);
+    const probationSalary = Number(emp.financeInfo?.probationSalary) || 0;
+    const confirmedSalary = Number(emp.financeInfo?.confirmedSalary) || 0;
+
+    let fallbackAmount = 0;
+    let component = 'Basic Salary';
+
+    if (status === 'Probation' && probationSalary > 0) {
+        fallbackAmount = probationSalary;
+        component = 'Probation Salary';
+    } else if (confirmedSalary > 0) {
+        fallbackAmount = confirmedSalary;
+    } else if (probationSalary > 0) {
+        fallbackAmount = probationSalary;
+        if (status === 'Probation') component = 'Probation Salary';
+    }
+
+    if (fallbackAmount > 0) {
+        return [{ component, amount: fallbackAmount, type: 'fixed' }];
+    }
+
+    return [];
 }
 
 const MONTH_NAMES = [
@@ -755,12 +800,16 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             });
         }
 
-        // Fetch all active, non-deleted employees (isDeleted pre-hook on Employee handles soft-delete)
+        // Fetch all active, non-deleted employees (exclude Terminated/Resigned only)
         const employees = await Employee.find({
-            'employmentStatus.status': {
-                $in: ['Permanent', 'Probation', 'Contract', 'Internship'],
-            },
-        }).select('employeeId firstName lastName salaryComponents bankDetails jobInfo');
+            $or: [
+                { 'employmentStatus.status': { $exists: false } },
+                { 'employmentStatus.status': { $in: [null, ''] } },
+                { 'employmentStatus.status': { $nin: PAYROLL_EXCLUDED_STATUSES } },
+                // Legacy records where employmentStatus was stored as a plain string
+                { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
+            ],
+        }).select('employeeId firstName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo');
 
         if (!employees.length) {
             return res.status(400).json({ message: 'No active employees found to generate payslips.' });
@@ -797,14 +846,36 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         }
         const MEAL_RATE = 500; // PKR per full working day
 
+        // Holidays in this period — never penalize these dates
+        const holidayDates = await getHolidayDatesInPeriod(periodStart, periodEnd);
+        if (holidayDates.size > 0) {
+            for (const [holidayDate, holidayName] of holidayDates) {
+                await AttendanceRecord.updateMany(
+                    {
+                        date: holidayDate,
+                        status: { $in: ['Absent', 'Late', 'Half-Day'] },
+                    },
+                    {
+                        $set: {
+                            status: 'Holiday',
+                            note: holidayName,
+                            workDurationMinutes: 0,
+                            lateMinutes: 0,
+                        },
+                    }
+                );
+            }
+        }
+
         // ── Attendance Penalty Deductions: Late 9:30-10:00 (0.5 day cut), Half-Day >10:00 & Absent (1.0 day cut) ──
         const periodRecords = await AttendanceRecord.find({
             date:   { $gte: periodStart, $lte: periodEnd },
             status: { $in: ['Late', 'Half-Day', 'Absent'] }
-        }).select('employeeId status').lean() as any[];
+        }).select('employeeId status date').lean() as any[];
 
         const attendanceDeductionsMap: Record<string, { halfDays: number; absents: number }> = {};
         for (const r of periodRecords) {
+            if (holidayDates.has(r.date)) continue;
             if (!attendanceDeductionsMap[r.employeeId]) {
                 attendanceDeductionsMap[r.employeeId] = { halfDays: 0, absents: 0 };
             }
@@ -856,13 +927,13 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
 
         const payslips = [];
+        const missingSalary: string[] = [];
         for (const emp of employees) {
-            // Map Employee.salaryComponents[] → Payslip.earnings[]
-            const earnings = (emp.salaryComponents || []).map((sc: any) => ({
-                component: sc.component || 'Basic',
-                amount: sc.amount || 0,
-                type: sc.type || 'fixed',
-            }));
+            // Map salaryComponents (with financeInfo fallback) → Payslip.earnings[]
+            const earnings = resolveEmployeeEarnings(emp);
+            if (earnings.length === 0) {
+                missingSalary.push(`${emp.firstName} ${emp.lastName} (${emp.employeeId})`);
+            }
 
             // Check if employee's work anniversary falls in the run period month
             let hasAnniversaryInMonth = false;
@@ -904,7 +975,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             // Attendance Penalty: 0.5 day cut for Half-Day, 1.0 day cut for Unpaid Absent
             const attInfo = attendanceDeductionsMap[emp.employeeId];
             if (attInfo) {
-                const basicComp = (emp.salaryComponents || []).find((c: any) => (c.component || '').toLowerCase().includes('basic'));
+                const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
                 const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
                 const dailyRate = basicSal / monthlyWorkingDays;
 
@@ -974,6 +1045,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         return res.json({
             message: `Generated ${payslips.length} payslips for ${run.title}.`,
             count: payslips.length,
+            missingSalary: missingSalary.length ? missingSalary : undefined,
         });
     } catch (err) {
         next(err);

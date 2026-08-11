@@ -2,7 +2,7 @@ import AttendancePunch, { IAttendancePunch } from '../models/AttendancePunch';
 import AttendanceRecord, { AttendanceStatus } from '../models/AttendanceRecord';
 import DeviceLocation from '../models/DeviceLocation';
 import LeaveRequest, { LeaveStatus } from '../models/LeaveRequest';
-import Holiday from '../models/Holiday';
+import { findHolidayForDate as lookupHolidayForDate } from '../utils/holidayUtils';
 import Employee from '../models/Employee';
 import WorkShift from '../models/WorkShift';
 import { fetchReport } from './zktCloudService';
@@ -34,17 +34,7 @@ export function isWeekend(dateStr: string): boolean {
 
 /** Check if a given date is a holiday for the specific location */
 export async function checkHoliday(dateStr: string, location?: string): Promise<string | null> {
-    const orConditions: Record<string, unknown>[] = [
-        { location: { $exists: false } },
-        { location: null }
-    ];
-    if (location) orConditions.push({ location });
-
-    const holiday = await Holiday.findOne({
-        date: dateStr,
-        $or: orConditions
-    }).lean() as any;
-    return holiday?.name || null;
+    return lookupHolidayForDate(dateStr, location);
 }
 
 /** Check if an employee is on approved leave for a specific date */

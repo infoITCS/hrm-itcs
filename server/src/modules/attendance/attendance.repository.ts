@@ -7,7 +7,7 @@ import AttendancePunch from '../../models/AttendancePunch';
 import AttendanceRecord from '../../models/AttendanceRecord';
 import DeviceLocation from '../../models/DeviceLocation';
 import Employee from '../../models/Employee';
-import Holiday from '../../models/Holiday';
+import { findHolidayForDate as lookupHolidayForDate } from '../../utils/holidayUtils';
 import LeaveRequest, { LeaveStatus } from '../../models/LeaveRequest';
 import ZktSyncState from '../../models/ZktSyncState';
 import { startOfDay, endOfDay } from '../../shared/utils/dateUtils';
@@ -290,10 +290,7 @@ export async function findApprovedLeavesForDate(
 }
 
 export async function findHolidayForDate(dateStr: string, location?: string): Promise<string | null> {
-    const orConditions: any[] = [{ location: { $exists: false } }, { location: null }];
-    if (location) orConditions.push({ location });
-    const holiday = await Holiday.findOne({ date: dateStr, $or: orConditions }).lean() as any;
-    return holiday?.name || null;
+    return lookupHolidayForDate(dateStr, location);
 }
 
 // ─── Device / Location ────────────────────────────────────────────────────────
