@@ -223,7 +223,7 @@ const STATUS_COLORS: any = {
                                 {isManagement ? 'Leave Management' : 'My Leave'}
                             </span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Time Off Dashboard</h1>
+                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Leave Dashboard</h1>
                         <p className="text-white/70 mt-2 max-w-md text-xs sm:text-sm leading-relaxed">
                             {isManagement
                                 ? 'Manage your time off, review team requests, and approve leave in one place.'
