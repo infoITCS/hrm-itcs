@@ -160,10 +160,10 @@ export default function MyProvidentFund() {
     const paginatedHistory = filteredHistory.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     return (
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+        <div className="space-y-6 animate-fadeIn">
             
             {/* Header Banner */}
-            <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-purple-700 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-purple-700 rounded-2xl p-4 sm:p-6 text-white shadow-xl relative overflow-hidden">
                 <div className="absolute -right-10 -bottom-10 opacity-15 pointer-events-none">
                     <PiggyBank size={240} />
                 </div>

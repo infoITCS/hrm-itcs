@@ -313,8 +313,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 designation: employee.jobInfo?.designation,
                 department: employee.jobInfo?.department,
                 joiningDate: employee.jobInfo?.joiningDate
-            },
-            companyId: company?._id
+            }
         });
         await newDoc.save();
 

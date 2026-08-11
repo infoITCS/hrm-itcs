@@ -100,6 +100,14 @@ const ExpenseClaimSchema = new Schema(
             default: 'Submitted',
             index: true,
         },
+        payoutStatus: {
+            type: String,
+            enum: ['Unpaid', 'Included in Payroll', 'Paid'],
+            default: 'Unpaid',
+            index: true,
+        },
+        payrollRunId: { type: Schema.Types.ObjectId, ref: 'PayrollRun', index: true },
+        paidAt: { type: Date },
         erpReferenceId: { type: String },
 
         eligibility: {

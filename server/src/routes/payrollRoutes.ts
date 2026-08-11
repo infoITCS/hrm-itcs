@@ -12,6 +12,8 @@ import Counter from '../models/Counter';
 import EmployeeRequest from '../models/EmployeeRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
 import Company from '../models/Company';
+import ExpenseClaim from '../models/ExpenseClaim';
+import { sendPayslipDisbursedEmail } from '../utils/email';
 
 const router = express.Router();
 
@@ -247,37 +249,29 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
  * @desc    Generate and download PDF for a specific payslip
  * @access  admin, super-admin, or payslip owner
  */
-router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const authReq = req as AuthRequest;
-        const payslip = await Payslip.findById(req.params.payslipId)
-            .populate('payrollRunId')
-            .lean() as any;
+async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
+    const payslip = await Payslip.findById(payslipId)
+        .populate('payrollRunId')
+        .lean() as any;
 
-        if (!payslip) return res.status(404).json({ message: 'Payslip not found.' });
+    if (!payslip) throw new Error('Payslip not found.');
 
-        const emp = await Employee.findOne({ employeeId: payslip.employeeId }).lean() as any;
+    const emp = await Employee.findOne({ employeeId: payslip.employeeId }).lean() as any;
+    const company = await Company.findOne().lean() as any;
+    const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
 
-        if (!isAdmin(authReq.user!.role)) {
-            const userEmp = await Employee.findOne({ userId: authReq.user!.userId }).select('employeeId').lean() as any;
-            if (!userEmp || userEmp.employeeId !== payslip.employeeId) {
-                return res.status(403).json({ message: 'Forbidden.' });
-            }
-        }
+    const primaryColor = company?.branding?.primaryColor || '#4A148C';
+    const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
+    const verifyUrl = `${clientHost}/verify/${payslip._id}`;
+    const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
-        const company = await Company.findOne().lean() as any;
-        const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
-
-        const primaryColor = company?.branding?.primaryColor || '#4A148C';
-        const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
-        const verifyUrl = `${clientHost}/verify/${payslip._id}`;
-        const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
-
+    return new Promise<Buffer>((resolve, reject) => {
         const doc = new PDFDocument({ margin: 36, size: 'A4' });
+        const chunks: Buffer[] = [];
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="Payslip_${payslip.payslipNo}_${payslip.periodMonth}_${payslip.periodYear}.pdf"`);
-        doc.pipe(res);
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', (err) => reject(err));
 
         // Header & Logo
         doc.save()
@@ -442,6 +436,31 @@ router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: R
         doc.moveTo(doc.page.width - 196, y + 40).lineTo(doc.page.width - 36, y + 40).strokeColor('#CBD5E1').lineWidth(1).stroke();
 
         doc.end();
+    });
+}
+
+/**
+ * @route   GET /api/payroll/payslips/:payslipId/pdf
+ * @desc    Generate and download PDF payslip for a given payslip ID
+ * @access  admin, super-admin, or payslip owner
+ */
+router.get('/payslips/:payslipId/pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const payslip = await Payslip.findById(req.params.payslipId).lean() as any;
+        if (!payslip) return res.status(404).json({ message: 'Payslip not found.' });
+
+        if (!isAdmin(authReq.user!.role)) {
+            const userEmp = await Employee.findOne({ userId: authReq.user!.userId }).select('employeeId').lean() as any;
+            if (!userEmp || userEmp.employeeId !== payslip.employeeId) {
+                return res.status(403).json({ message: 'Forbidden.' });
+            }
+        }
+
+        const pdfBuffer = await generatePayslipPdfBuffer(req.params.payslipId);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Payslip_${payslip.payslipNo}_${payslip.periodMonth}_${payslip.periodYear}.pdf"`);
+        return res.send(pdfBuffer);
     } catch (err) {
         next(err);
     }
@@ -537,7 +556,7 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         const payslips = await Payslip.find({ payrollRunId: runId })
             .populate({
                 path: 'employeeDetails',
-                select: 'firstName lastName employeeId bankDetails jobInfo companyId'
+                select: 'firstName lastName employeeId bankDetails jobInfo'
             })
             .lean() as any[];
 
@@ -846,6 +865,29 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             }
         }
 
+        // ── Approved Expense Claims Reimbursements ──
+        // Unlink previous claims linked to this run before re-generating
+        await ExpenseClaim.updateMany(
+            { payrollRunId: run._id, payoutStatus: 'Included in Payroll' },
+            { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
+        );
+
+        const approvedClaims = await ExpenseClaim.find({
+            status: 'Approved',
+            $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }]
+        }).lean() as any[];
+
+        const expenseClaimMap: Record<string, { total: number; claimIds: any[] }> = {};
+        for (const claim of approvedClaims) {
+            const empId = claim.employeeId;
+            if (!expenseClaimMap[empId]) {
+                expenseClaimMap[empId] = { total: 0, claimIds: [] };
+            }
+            const claimAmt = claim.approvedTotal ?? claim.amountAllowed ?? claim.amountRequested ?? 0;
+            expenseClaimMap[empId].total += Number(claimAmt) || 0;
+            expenseClaimMap[empId].claimIds.push(claim._id);
+        }
+
         const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
         const counter = await Counter.findOneAndUpdate(
             { key: counterKey },
@@ -856,6 +898,8 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
 
         const payslips = [];
+        const usedClaimIds: any[] = [];
+
         for (const emp of employees) {
             // Map Employee.salaryComponents[] → Payslip.earnings[]
             const earnings = (emp.salaryComponents || []).map((sc: any) => ({
@@ -863,6 +907,17 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 amount: sc.amount || 0,
                 type: sc.type || 'fixed',
             }));
+
+            // Expense Reimbursements from approved claims
+            const empClaimInfo = expenseClaimMap[emp.employeeId];
+            if (empClaimInfo && empClaimInfo.total > 0) {
+                earnings.push({
+                    component: 'Expense Reimbursements',
+                    amount: empClaimInfo.total,
+                    type: 'variable',
+                });
+                usedClaimIds.push(...empClaimInfo.claimIds);
+            }
 
             // Check if employee's work anniversary falls in the run period month
             let hasAnniversaryInMonth = false;
@@ -970,6 +1025,13 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         }
 
         await Payslip.insertMany(payslips, { ordered: false });
+
+        if (usedClaimIds.length > 0) {
+            await ExpenseClaim.updateMany(
+                { _id: { $in: usedClaimIds } },
+                { payoutStatus: 'Included in Payroll', payrollRunId: run._id }
+            );
+        }
 
         return res.json({
             message: `Generated ${payslips.length} payslips for ${run.title}.`,
@@ -1099,6 +1161,47 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
         run.erpReferenceId = erpReferenceId.trim();
         await run.save();
 
+        await ExpenseClaim.updateMany(
+            { payrollRunId: run._id },
+            { payoutStatus: 'Paid', paidAt: new Date() }
+        );
+
+        // Dispatch background PDF payslip emails to employees
+        (async () => {
+            try {
+                const payslips = await Payslip.find({ payrollRunId: run._id }).lean() as any[];
+                for (const slip of payslips) {
+                    const emp = await Employee.findOne({ employeeId: slip.employeeId })
+                        .select('firstName lastName workEmail contactInfo userId')
+                        .populate('userId', 'email')
+                        .lean() as any;
+
+                    const recipientEmail = emp?.workEmail || emp?.contactInfo?.email || emp?.userId?.email;
+                    if (!recipientEmail) {
+                        console.warn(`[Payroll Email] No email address found for employee ${slip.employeeId}`);
+                        continue;
+                    }
+
+                    const empName = emp ? `${emp.firstName} ${emp.lastName}` : slip.employeeId;
+                    const pdfBuf = await generatePayslipPdfBuffer(slip._id.toString());
+                    const monthYear = `${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`;
+                    const netPayFormatted = new Intl.NumberFormat('en-PK', { style: 'currency', currency: run.currency || 'PKR', maximumFractionDigits: 0 }).format(slip.netPay || 0);
+                    const filename = `Payslip_${slip.payslipNo}_${run.periodMonth}_${run.periodYear}.pdf`;
+
+                    await sendPayslipDisbursedEmail(
+                        recipientEmail,
+                        empName,
+                        monthYear,
+                        netPayFormatted,
+                        pdfBuf,
+                        filename
+                    );
+                }
+            } catch (emailErr) {
+                console.error('[Payroll Email] Error processing payslip emails:', emailErr);
+            }
+        })();
+
         return res.json(run);
     } catch (err) {
         next(err);
@@ -1127,6 +1230,10 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
         }
 
         await Payslip.deleteMany({ payrollRunId: run._id });
+        await ExpenseClaim.updateMany(
+            { payrollRunId: run._id },
+            { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
+        );
         await run.deleteOne();
 
         return res.json({ message: `Payroll run "${run.title}" deleted successfully.` });

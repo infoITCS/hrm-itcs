@@ -257,38 +257,47 @@ const PayrollDashboard = () => {
         new Intl.NumberFormat('en-PK', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(val);
 
     return (
-        <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Banknote size={26} className="text-indigo-600" />
-                        Payroll Management
-                    </h1>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                        Manage company payroll runs and employee disbursements
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    {isAdmin && (
-                        <>
-                            <button
-                                onClick={() => setRefreshCounter(c => c + 1)}
-                                className="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors border border-slate-200"
-                                title="Refresh"
-                            >
-                                <RefreshCw size={16} />
-                            </button>
-                            <button
-                                id="btn-create-payroll-run"
-                                onClick={() => setShowCreateModal(true)}
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 transition-all shadow-sm"
-                            >
-                                <Plus size={16} />
-                                New Payroll Run
-                            </button>
-                        </>
-                    )}
+        <div className="space-y-6 animate-fadeIn">
+            {/* Header Banner */}
+            <div className="rounded-2xl p-4 sm:p-6 text-white shadow-xl relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700">
+                <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2.5 bg-white/20 backdrop-blur-sm rounded-xl">
+                                <Banknote size={22} />
+                            </div>
+                            <span className="text-sm font-bold uppercase tracking-widest text-white/80">Payroll</span>
+                        </div>
+                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Payroll Management</h1>
+                        <p className="text-white/80 text-sm mt-1">
+                            Manage company payroll runs and employee disbursements
+                        </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        {isAdmin && (
+                            <>
+                                <button
+                                    onClick={() => setRefreshCounter(c => c + 1)}
+                                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-sm transition-all border border-white/15 cursor-pointer"
+                                    title="Refresh"
+                                >
+                                    <RefreshCw size={14} />
+                                    Refresh
+                                </button>
+                                <button
+                                    id="btn-create-payroll-run"
+                                    onClick={() => setShowCreateModal(true)}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-indigo-700 bg-white hover:bg-indigo-50 transition-all shadow-md active:scale-95 cursor-pointer"
+                                >
+                                    <Plus size={16} />
+                                    New Payroll Run
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -303,8 +312,7 @@ const PayrollDashboard = () => {
             )}
 
             {/* Content */}
-                <>
-                    {loading ? (
+            {loading ? (
                         <div className="flex items-center justify-center py-20">
                             <Loader2 size={28} className="animate-spin text-indigo-500" />
                         </div>
@@ -402,7 +410,6 @@ const PayrollDashboard = () => {
                             </div>
                         </div>
                     )}
-                </>
 
             {/* Create Run Modal */}
             {showCreateModal && (

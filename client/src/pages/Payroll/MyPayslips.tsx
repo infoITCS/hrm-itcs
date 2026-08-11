@@ -375,11 +375,11 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
     );
 
     return (
-        <div className={embedded ? '' : 'p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6'}>
+        <div className={embedded ? '' : 'space-y-6 animate-fadeIn'}>
             {!embedded && (
                 <>
                     {/* Header Banner */}
-                    <div className="relative rounded-3xl bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white p-6 sm:p-8 shadow-xl shadow-purple-600/10 overflow-hidden">
+                    <div className="relative rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-700 text-white p-4 sm:p-6 shadow-xl overflow-hidden">
                         <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
                         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                             <div>

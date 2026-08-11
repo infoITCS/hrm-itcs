@@ -680,9 +680,10 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                             to,
                             employeeName,
                             leaveType.name,
-                            new Date(startDate).toLocaleDateString(),
-                            new Date(endDate).toLocaleDateString(),
+                            new Date(startDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            new Date(endDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
                             totalDeducted,
+                            reason,
                             req.headers.origin as string
                         );
                     }
@@ -727,11 +728,17 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
             return res.status(400).json({ message: 'Leave request is already processed' });
         }
 
+        const approverEmp = await Employee.findOne({ userId: user.userId }).select('firstName lastName').lean() as any;
+        const roleLabel = user.role === 'admin' || user.role === 'super-admin' ? 'Admin' : (user.role === 'hr' ? 'HR Manager' : (user.role === 'finance' ? 'Finance Manager' : 'Team Lead'));
+        const actionByName = approverEmp ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` : `${user.role.toUpperCase()} (${roleLabel})`;
+
         const session = await mongoose.startSession();
         try {
             await session.withTransaction(async () => {
                 leave.status = status;
                 leave.approvedBy = user.userId;
+                leave.approvedByName = actionByName;
+                leave.actionAt = new Date();
                 if (adminNote) leave.adminNote = adminNote;
 
                 const start = new Date(leave.startDate);
@@ -825,9 +832,10 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                             employeeEmail,
                             emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
                             leave.type,
-                            new Date(leave.startDate).toLocaleDateString(),
-                            new Date(leave.endDate).toLocaleDateString(),
+                            new Date(leave.startDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            new Date(leave.endDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
                             status,
+                            actionByName,
                             adminNote || leave.adminNote,
                             req.headers.origin as string
                         );

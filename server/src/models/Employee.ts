@@ -204,7 +204,6 @@ const EmployeeSchema: Schema = new Schema({
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
     deletedBy: { type: String }, // userId of admin who performed the delete
-    companyId: { type: Schema.Types.ObjectId, ref: 'Company' },
     jobInfo: {
         designation: { type: String },
         department: { type: String },

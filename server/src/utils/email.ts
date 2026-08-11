@@ -273,23 +273,34 @@ export const sendWorkAnniversaryEmail = async (to: string, firstName: string, ye
     }
 };
 
-export const sendLeaveSubmittedEmail = async (to: string, employeeName: string, leaveType: string, startDate: string, endDate: string, totalDays: number, baseUrl?: string) => {
+export const sendLeaveSubmittedEmail = async (
+    to: string,
+    employeeName: string,
+    leaveType: string,
+    startDate: string,
+    endDate: string,
+    totalDays: number,
+    reason?: string,
+    baseUrl?: string
+) => {
     const clientUrl = getBaseUrl(baseUrl);
     const mailOptions = {
         from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
-        subject: `New Leave Request: ${employeeName}`,
+        subject: `New Leave Request: ${employeeName} (${leaveType})`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
-                <h2 style="color: #4f46e5;">New Leave Request</h2>
-                <p style="color: #4b5563; font-size: 16px;"><strong>${employeeName}</strong> has requested <strong>${leaveType}</strong>.</p>
+                <h2 style="color: #4f46e5; margin-top: 0;">New Leave Request Received</h2>
+                <p style="color: #4b5563; font-size: 16px;"><strong>${employeeName}</strong> has applied for <strong>${leaveType}</strong>.</p>
                 <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #f3f4f6;">
-                    <p style="margin: 0; font-size: 14px; color: #4b5563;"><strong>Start Date:</strong> ${startDate}</p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563;"><strong>End Date:</strong> ${endDate}</p>
-                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Total Days:</strong> ${totalDays}</p>
+                    <p style="margin: 0; font-size: 14px; color: #4b5563;"><strong>Leave Type:</strong> ${leaveType}</p>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Start Date:</strong> ${startDate}</p>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563;"><strong>End Date:</strong> ${endDate}</p>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Total Days:</strong> ${totalDays}</p>
+                    ${reason ? `<p style="margin: 8px 0 0 0; font-size: 14px; color: #4b5563;"><strong>Reason:</strong> ${reason}</p>` : ''}
                 </div>
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="${clientUrl}/leave" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Review Leave Requests</a>
+                    <a href="${clientUrl}/leave" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Review Leave Request</a>
                 </div>
             </div>
         `,
@@ -298,7 +309,7 @@ export const sendLeaveSubmittedEmail = async (to: string, employeeName: string, 
     if (!process.env.SMTP_USER) {
         logger.info(`\n================= LEAVE SUBMITTED EMAIL (MOCK) ===================`);
         logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Leave Type: ${leaveType}, Days: ${totalDays}`);
+        logger.info(`Employee: ${employeeName}, Leave Type: ${leaveType}, Days: ${totalDays}, Reason: ${reason}`);
         logger.info(`==================================================================\n`);
         return true;
     }
@@ -312,22 +323,33 @@ export const sendLeaveSubmittedEmail = async (to: string, employeeName: string, 
     }
 };
 
-export const sendLeaveStatusEmail = async (to: string, employeeName: string, leaveType: string, startDate: string, endDate: string, status: string, adminNote?: string, baseUrl?: string) => {
+export const sendLeaveStatusEmail = async (
+    to: string,
+    employeeName: string,
+    leaveType: string,
+    startDate: string,
+    endDate: string,
+    status: string,
+    actionBy?: string,
+    adminNote?: string,
+    baseUrl?: string
+) => {
     const clientUrl = getBaseUrl(baseUrl);
     const statusColor = status === 'Approved' ? '#10b981' : (status === 'Rejected' ? '#ef4444' : '#6b7280');
-    
+    const actionByText = actionBy ? ` by <strong>${actionBy}</strong>` : '';
+
     const mailOptions = {
         from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
-        subject: `Leave Request Update: ${status}`,
+        subject: `Leave Request ${status}: ${leaveType} (${startDate} to ${endDate})`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
-                <h2 style="color: #4f46e5;">Leave Request Update</h2>
+                <h2 style="color: ${statusColor}; margin-top: 0;">Leave Request ${status}</h2>
                 <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
-                <p style="color: #4b5563; font-size: 16px;">Your request for <strong>${leaveType}</strong> (${startDate} to ${endDate}) has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
+                <p style="color: #4b5563; font-size: 16px; line-height: 1.5;">Your request for <strong>${leaveType}</strong> (${startDate} to ${endDate}) has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>${actionByText}.</p>
                 ${adminNote ? `
                 <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
-                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Note:</strong> "${adminNote}"</p>
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Remarks/Reason:</strong> "${adminNote}"</p>
                 </div>
                 ` : ''}
                 <div style="text-align: center; margin: 30px 0;">
@@ -340,7 +362,7 @@ export const sendLeaveStatusEmail = async (to: string, employeeName: string, lea
     if (!process.env.SMTP_USER) {
         logger.info(`\n================= LEAVE STATUS EMAIL (MOCK) ===================`);
         logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, Note: ${adminNote}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Note: ${adminNote}`);
         logger.info(`================================================================\n`);
         return true;
     }
@@ -640,5 +662,74 @@ export const sendTestEmail = async (to: string) => {
     } catch (error: any) {
         logger.error('Error sending test email:', error);
         return { success: false, error: error.message || String(error) };
+    }
+};
+
+export const sendPayslipDisbursedEmail = async (
+    to: string,
+    employeeName: string,
+    monthYear: string,
+    netPayFormatted: string,
+    pdfBuffer: Buffer,
+    filename: string,
+    baseUrl?: string
+) => {
+    const clientUrl = getBaseUrl(baseUrl);
+
+    const mailOptions = {
+        from: `"ITCS Payroll Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Salary Disbursed - ${monthYear} Payslip (${employeeName})`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #ffffff;">
+                <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: #ffffff;">
+                    <h2 style="margin: 0; font-size: 22px;">Salary Disbursed 🎉</h2>
+                    <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">${monthYear} Payroll</p>
+                </div>
+                <div style="padding: 24px; color: #374151;">
+                    <p style="font-size: 16px; margin-top: 0;">Hello <strong>${employeeName}</strong>,</p>
+                    <p style="font-size: 15px; line-height: 1.5;">Your salary for <strong>${monthYear}</strong> has been successfully processed and disbursed.</p>
+                    
+                    <div style="background-color: #f3f4f6; border-left: 4px solid #4f46e5; padding: 16px; border-radius: 6px; margin: 20px 0;">
+                        <p style="margin: 0; font-size: 13px; color: #6b7280; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px;">Net Disbursed Pay</p>
+                        <p style="margin: 4px 0 0 0; font-size: 24px; font-weight: bold; color: #111827;">${netPayFormatted}</p>
+                    </div>
+
+                    <p style="font-size: 14px; color: #4b5563;">Your detailed official payslip PDF is attached to this email for your records.</p>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${clientUrl}/my-payslips" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">View My Payslips Portal</a>
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #f3f4f6; padding-top: 15px; text-align: center; font-size: 12px; color: #9ca3af;">
+                    This is an automated notification from ITCS HRM System. Please do not reply directly to this email.
+                </div>
+            </div>
+        `,
+        attachments: [
+            {
+                filename: filename || `Payslip_${monthYear.replace(/\s+/g, '_')}.pdf`,
+                content: pdfBuffer,
+                contentType: 'application/pdf',
+            },
+        ],
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= PAYSLIP EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Employee: ${employeeName}, Period: ${monthYear}, Net: ${netPayFormatted}`);
+        logger.info(`Attachment: ${filename} (${pdfBuffer.length} bytes)`);
+        logger.info(`=========================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        logger.info(`✅ Payslip email sent successfully to ${to} (${employeeName})`);
+        return true;
+    } catch (error) {
+        logger.error(`❌ Error sending payslip email to ${to}:`, error);
+        return false;
     }
 };

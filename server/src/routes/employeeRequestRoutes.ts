@@ -360,12 +360,15 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             }).sort({ updatedAt: -1 }).limit(5).lean()) as any[];
 
             for (const leave of recentLeaveUpdates) {
+                const actionByStr = leave.approvedByName ? ` by ${leave.approvedByName}` : '';
+                const noteStr = leave.adminNote ? ` (Note: "${leave.adminNote}")` : '';
+                const startStr = new Date(leave.startDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' });
+                const endStr = new Date(leave.endDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' });
+
                 notifications.push({
                     id: leave._id.toString(),
                     title: `${leave.type} Leave ${leave.status}`,
-                    message: leave.adminNote
-                        ? `Note: "${leave.adminNote}"`
-                        : `Your ${leave.type} leave request has been ${leave.status.toLowerCase()}.`,
+                    message: `Your ${leave.type} leave request (${startStr} - ${endStr}) was ${leave.status.toLowerCase()}${actionByStr}.${noteStr}`,
                     time: leave.updatedAt || leave.createdAt,
                     type: leave.status === 'Approved' ? 'success' : 'alert',
                     path: '/leave'
