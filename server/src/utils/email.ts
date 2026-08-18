@@ -42,12 +42,16 @@ const getBaseUrl = (providedUrl?: string) => {
     return 'https://hrm-itcs-client.vercel.app';
 };
 
+const getSenderName = (defaultSuffix: string = 'Team') => {
+    return process.env.EMAIL_FROM_NAME || `ITCS HRM ${defaultSuffix}`;
+};
+
 export const sendPasswordResetEmail = async (to: string, resetToken: string, baseUrl?: string) => {
     const clientUrl = getBaseUrl(baseUrl);
     const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: 'Password Reset Request',
         html: `
@@ -98,7 +102,7 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUr
     `;
 
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: 'Welcome to ITCS HRM - Account Created',
         html: `
@@ -172,7 +176,7 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
     const clientUrl = getBaseUrl(baseUrl);
     
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: 'Action Required: Complete Your Employee Profile',
         html: `
@@ -205,7 +209,7 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
 
 export const sendBirthdayEmail = async (to: string, firstName: string) => {
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Happy Birthday, ${firstName}! 🎂`,
         html: `
@@ -240,7 +244,7 @@ export const sendBirthdayEmail = async (to: string, firstName: string) => {
 
 export const sendWorkAnniversaryEmail = async (to: string, firstName: string, years: number) => {
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Congratulations on ${years} Year${years > 1 ? 's' : ''} at ITCS! 🎊`,
         html: `
@@ -285,7 +289,7 @@ export const sendLeaveSubmittedEmail = async (
 ) => {
     const clientUrl = getBaseUrl(baseUrl);
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `New Leave Request: ${employeeName} (${leaveType})`,
         html: `
@@ -339,7 +343,7 @@ export const sendLeaveStatusEmail = async (
     const actionByText = actionBy ? ` by <strong>${actionBy}</strong>` : '';
 
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Leave Request ${status}: ${leaveType} (${startDate} to ${endDate})`,
         html: `
@@ -379,7 +383,7 @@ export const sendLeaveStatusEmail = async (
 export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: string, category: string, amount: number, baseUrl?: string) => {
     const clientUrl = getBaseUrl(baseUrl);
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `New Expense Claim: ${employeeName}`,
         html: `
@@ -420,7 +424,7 @@ export const sendExpenseClaimStatusEmail = async (to: string, employeeName: stri
     const displayStatus = status === 'Pending Finance' ? 'Approved by HR (Awaiting Finance Disbursement)' : status;
     
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Expense Claim Update: ${category} - ${displayStatus}`,
         html: `
@@ -464,7 +468,7 @@ export const sendExpenseClaimStatusEmail = async (to: string, employeeName: stri
 
 export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dateStr: string, autoCheckOutTime: string) => {
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Attendance Notice: Shift Auto-Closed`,
         html: `
@@ -500,7 +504,12 @@ export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dat
 export const sendEmployeeRequestSubmittedEmail = async (to: string, employeeName: string, category: string, requestType: string, details: any, baseUrl?: string) => {
     const clientUrl = getBaseUrl(baseUrl);
     const detailRows = [];
-    if (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan') {
+    const isLoanPause = category === 'Loan Pause Request' || category.toLowerCase().includes('loan pause');
+    if (isLoanPause && details?.periodMonth) {
+        const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        detailRows.push(`<p style="margin: 5px 0;"><strong>Target Payroll Period:</strong> ${MONTHS[details.periodMonth] || details.periodMonth} ${details.periodYear || ''}</p>`);
+        detailRows.push(`<p style="margin: 5px 0; color: #d97706;"><strong>Request:</strong> One-month temporary loan installment waiver / pause</p>`);
+    } else if (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan') {
         if (details?.requestedAmount) detailRows.push(`<p style="margin: 5px 0;"><strong>Requested Amount:</strong> Rs. ${details.requestedAmount.toLocaleString()}</p>`);
         if (details?.paybackDuration) detailRows.push(`<p style="margin: 5px 0;"><strong>Payback Duration:</strong> ${details.paybackDuration} Months</p>`);
         if (details?.recommendedMonthlyDeduction) detailRows.push(`<p style="margin: 5px 0;"><strong>Monthly Installment:</strong> Rs. ${details.recommendedMonthlyDeduction.toLocaleString()}</p>`);
@@ -551,7 +560,7 @@ export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: s
     const statusColor = status === 'Approved' || status === 'Completed' ? '#10b981' : (status === 'Rejected' ? '#ef4444' : '#6b7280');
     
     const mailOptions = {
-        from: `"ITCS HRM Team" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: `Request Status Update: ${category} - ${status}`,
         html: `

@@ -48,7 +48,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },
         { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
-        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: null, module: 'payroll' },
+        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'finance'], module: 'payroll' },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
         { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },

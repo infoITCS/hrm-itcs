@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -126,6 +126,7 @@ const AddEmployeeWizard = () => {
     const { showToast } = useToast();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
+    const canEditFinancials = ['super-admin', 'finance'].includes(role);
     const [step, setStep] = useState(1);
     const [isSameAddress, setIsSameAddress] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -2317,174 +2318,188 @@ const AddEmployeeWizard = () => {
                             </div>
                         </div>
 
-                        {/* Salary Structure */}
-                        <div>
-                            <div className="flex justify-between items-end mb-6">
+                        {/* Salary Structure & Bank Details (Restricted to Super-Admin & Finance) */}
+                        {canEditFinancials ? (
+                            <>
                                 <div>
-                                    <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>
-                                    <p className="text-sm text-gray-500">Define the monthly salary breakdown</p>
+                                    <div className="flex justify-between items-end mb-6">
+                                        <div>
+                                            <h3 className="text-lg font-medium text-gray-700">Salary Structure</h3>
+                                            <p className="text-sm text-gray-500">Define the monthly salary breakdown</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Monthly (Gross)</p>
+                                            <p className="text-2xl font-bold text-indigo-600">
+                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
+                                                    formData.salaryComponents.reduce((sum, c) => sum + (c.amount || 0), 0)
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                        {formData.salaryComponents.map((comp, idx) => {
+                                            const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
+                                            const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
+                                            
+                                            return (
+                                                <div key={idx} className="space-y-3 relative group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="flex-1 space-y-2">
+                                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Component Type</label>
+                                                            <select
+                                                                value={commonOptions.includes(comp.component) ? comp.component : (comp.component === '' ? '' : 'Other')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].component = val === 'Other' ? '' : val;
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-slate-50/50 font-medium text-slate-700"
+                                                            >
+                                                                <option value="">Select Component</option>
+                                                                {commonOptions.map(opt => (
+                                                                    <option key={opt} value={opt}>{opt}</option>
+                                                                ))}
+                                                                <option value="Other">Other (Custom Naming)</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="pt-6 pl-2">
+                                                            <button
+                                                                onClick={() => setFormData(p => ({
+                                                                    ...p,
+                                                                    salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
+                                                                }))}
+                                                                className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                                                                title="Remove Component"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {(showCustomInput || (comp.component === '' && !commonOptions.includes(comp.component))) && (
+                                                        <div className="space-y-1 animate-fadeIn">
+                                                            <label className="text-[10px] font-bold text-indigo-400 uppercase">Custom Name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={comp.component}
+                                                                onChange={(e) => {
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].component = e.target.value;
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border-b border-indigo-100 focus:border-indigo-400 px-0 py-1 text-sm outline-none bg-transparent placeholder:text-slate-300 font-medium"
+                                                                placeholder="e.g. Fuel Allowance"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="space-y-2">
+                                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount (Monthly)</label>
+                                                        <div className="relative">
+                                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300">PKR</div>
+                                                            <input
+                                                                type="number"
+                                                                value={comp.amount || ''}
+                                                                onChange={(e) => {
+                                                                    const newComps = [...formData.salaryComponents];
+                                                                    newComps[idx].amount = Number(e.target.value);
+                                                                    setFormData(p => ({ ...p, salaryComponents: newComps }));
+                                                                }}
+                                                                className="w-full border-none bg-slate-50 rounded-xl pl-12 pr-4 py-3 text-lg font-black text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all shadow-inner"
+                                                                placeholder="0"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        
+                                        <button
+                                            onClick={() => setFormData(p => ({
+                                                ...p,
+                                                salaryComponents: [...p.salaryComponents, { component: 'Other Allowance', amount: 0, type: 'fixed' }]
+                                            }))}
+                                            className="md:col-span-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-sm font-medium flex items-center justify-center gap-2"
+                                        >
+                                            <Plus size={16} />
+                                            Add Other Component
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Total Monthly (Gross)</p>
-                                    <p className="text-2xl font-bold text-indigo-600">
-                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
-                                            formData.salaryComponents.reduce((sum, c) => sum + (c.amount || 0), 0)
-                                        )}
+
+                                {/* Bank Details */}
+                                <div className="pt-8 border-t border-gray-100">
+                                    <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
+                                        <Banknote size={20} className="text-indigo-500" />
+                                        Bank Account Details
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Bank Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Chase Bank"
+                                                value={formData.bankDetails.bankName}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Account Holder Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Full name as per bank"
+                                                value={formData.bankDetails.accountName}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Account Number</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Account Number"
+                                                value={formData.bankDetails.accountNumber}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">IBAN</label>
+                                            <input
+                                                type="text"
+                                                placeholder="International Bank Account Number"
+                                                value={formData.bankDetails.iban}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-medium text-gray-500">Swift Code (BIC)</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Swift/BIC Code"
+                                                value={formData.bankDetails.swiftCode}
+                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
+                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="bg-amber-50/70 border border-amber-200/80 p-5 rounded-2xl flex items-center gap-3.5">
+                                <Shield size={22} className="text-amber-600 shrink-0" />
+                                <div>
+                                    <h4 className="text-sm font-bold text-amber-900">Confidential Compensation & Financials</h4>
+                                    <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                                        Salary structure, compensation packages, and bank details are strictly restricted and managed directly by Finance / Super-Admin.
                                     </p>
                                 </div>
                             </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                {formData.salaryComponents.map((comp, idx) => {
-                                    const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
-                                    const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
-                                    
-                                    return (
-                                        <div key={idx} className="space-y-3 relative group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
-                                            <div className="flex justify-between items-center">
-                                                <div className="flex-1 space-y-2">
-                                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Component Type</label>
-                                                    <select
-                                                        value={commonOptions.includes(comp.component) ? comp.component : (comp.component === '' ? '' : 'Other')}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].component = val === 'Other' ? '' : val;
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100 outline-none bg-slate-50/50 font-medium text-slate-700"
-                                                    >
-                                                        <option value="">Select Component</option>
-                                                        {commonOptions.map(opt => (
-                                                            <option key={opt} value={opt}>{opt}</option>
-                                                        ))}
-                                                        <option value="Other">Other (Custom Naming)</option>
-                                                    </select>
-                                                </div>
-                                                <div className="pt-6 pl-2">
-                                                    <button
-                                                        onClick={() => setFormData(p => ({
-                                                            ...p,
-                                                            salaryComponents: p.salaryComponents.filter((_, i) => i !== idx)
-                                                        }))}
-                                                        className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                                                        title="Remove Component"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {(showCustomInput || (comp.component === '' && !commonOptions.includes(comp.component))) && (
-                                                <div className="space-y-1 animate-fadeIn">
-                                                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Custom Name</label>
-                                                    <input
-                                                        type="text"
-                                                        value={comp.component}
-                                                        onChange={(e) => {
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].component = e.target.value;
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border-b border-indigo-100 focus:border-indigo-400 px-0 py-1 text-sm outline-none bg-transparent placeholder:text-slate-300 font-medium"
-                                                        placeholder="e.g. Fuel Allowance"
-                                                    />
-                                                </div>
-                                            )}
-
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount (Monthly)</label>
-                                                <div className="relative">
-                                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-300">PKR</div>
-                                                    <input
-                                                        type="number"
-                                                        value={comp.amount || ''}
-                                                        onChange={(e) => {
-                                                            const newComps = [...formData.salaryComponents];
-                                                            newComps[idx].amount = Number(e.target.value);
-                                                            setFormData(p => ({ ...p, salaryComponents: newComps }));
-                                                        }}
-                                                        className="w-full border-none bg-slate-50 rounded-xl pl-12 pr-4 py-3 text-lg font-black text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all shadow-inner"
-                                                        placeholder="0"
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                
-                                <button
-                                    onClick={() => setFormData(p => ({
-                                        ...p,
-                                        salaryComponents: [...p.salaryComponents, { component: 'Other Allowance', amount: 0, type: 'fixed' }]
-                                    }))}
-                                    className="md:col-span-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-sm font-medium flex items-center justify-center gap-2"
-                                >
-                                    <Plus size={16} />
-                                    Add Other Component
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Bank Details */}
-                        <div className="pt-8 border-t border-gray-100">
-                            <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
-                                <Banknote size={20} className="text-indigo-500" />
-                                Bank Account Details
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">Bank Name</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. Chase Bank"
-                                        value={formData.bankDetails.bankName}
-                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } }))}
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">Account Holder Name</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Full name as per bank"
-                                        value={formData.bankDetails.accountName}
-                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } }))}
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">Account Number</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Account Number"
-                                        value={formData.bankDetails.accountNumber}
-                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">IBAN</label>
-                                    <input
-                                        type="text"
-                                        placeholder="International Bank Account Number"
-                                        value={formData.bankDetails.iban}
-                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs font-medium text-gray-500">Swift Code (BIC)</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Swift/BIC Code"
-                                        value={formData.bankDetails.swiftCode}
-                                        onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        )}
 
                         {/* Benefits Section */}
                         <div className="pt-8 border-t border-slate-100">

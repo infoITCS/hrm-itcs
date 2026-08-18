@@ -9,6 +9,7 @@ import {
 import axios from 'axios';
 import { api } from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
+import AlertModal from '../../components/UI/AlertModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -331,14 +332,28 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
     const [payslips, setPayslips] = useState<Payslip[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [hideSalary, setHideSalary] = useState(() => localStorage.getItem('hideSalary') === 'true');
+    // Default to true (masked with asterisks) for privacy
+    const [hideSalary, setHideSalary] = useState<boolean>(() => {
+        const saved = localStorage.getItem('hideSalary');
+        return saved === null ? true : saved === 'true';
+    });
+    const [showRevealModal, setShowRevealModal] = useState<boolean>(false);
 
-    const toggleHideSalary = () => {
-        setHideSalary(prev => {
-            const next = !prev;
-            localStorage.setItem('hideSalary', String(next));
-            return next;
-        });
+    const handleToggleSalary = () => {
+        if (hideSalary) {
+            // Currently hidden -> Prompt confirmation before exposing financial data on screen
+            setShowRevealModal(true);
+        } else {
+            // Currently revealed -> Immediately hide and mask without prompt
+            setHideSalary(true);
+            localStorage.setItem('hideSalary', 'true');
+        }
+    };
+
+    const handleConfirmReveal = () => {
+        setHideSalary(false);
+        localStorage.setItem('hideSalary', 'false');
+        setShowRevealModal(false);
     };
 
     const fetchPayslips = useCallback(async () => {
@@ -389,7 +404,7 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={toggleHideSalary}
+                                        onClick={handleToggleSalary}
                                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-sm active:scale-95 cursor-pointer"
                                         title={hideSalary ? "Click to show salary figures" : "Click to hide salary figures"}
                                     >
@@ -447,7 +462,7 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                         <div className="flex items-center gap-3">
                             <button
                                 type="button"
-                                onClick={toggleHideSalary}
+                                onClick={handleToggleSalary}
                                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-xs font-semibold border border-slate-200/80 transition-all shadow-xs cursor-pointer"
                             >
                                 {hideSalary ? <EyeOff size={14} className="text-indigo-600" /> : <Eye size={14} className="text-indigo-600" />}
@@ -462,6 +477,19 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                     </div>
                 </div>
             )}
+
+            {/* Privacy Reveal Confirmation Modal */}
+            <AlertModal
+                isOpen={showRevealModal}
+                onClose={() => setShowRevealModal(false)}
+                title="Reveal Confidential Salary Details?"
+                message="You are about to display sensitive salary and payout figures on your screen. Please make sure no one nearby is looking at your screen to protect your privacy."
+                type="warning"
+                confirmText="Yes, Reveal Salary"
+                cancelText="Keep Masked"
+                showCancel={true}
+                onConfirm={handleConfirmReveal}
+            />
         </div>
     );
 };

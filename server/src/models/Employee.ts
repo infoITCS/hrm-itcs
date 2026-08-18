@@ -97,6 +97,15 @@ export interface IEmployee extends Document {
         eligibleDate?: Date;
         status: 'Active' | 'Pending' | 'Expired';
     }[];
+    loans?: {
+        loanId?: string;
+        totalAmount: number;
+        monthlyInstallment: number;
+        remainingAmount: number;
+        status: 'Active' | 'Paid' | 'Suspended';
+        issueDate?: Date;
+        notes?: string;
+    }[];
     // [NEW] Sub-documents
     emergencyContacts?: {
         name: string;
@@ -266,6 +275,15 @@ const EmployeeSchema: Schema = new Schema({
         description: { type: String },
         eligibleDate: { type: Date },
         status: { type: String, enum: ['Active', 'Pending', 'Expired'], default: 'Active' }
+    }],
+    loans: [{
+        loanId: { type: String },
+        totalAmount: { type: Number, required: true },
+        monthlyInstallment: { type: Number, required: true },
+        remainingAmount: { type: Number, required: true },
+        status: { type: String, enum: ['Active', 'Paid', 'Suspended'], default: 'Active' },
+        issueDate: { type: Date, default: Date.now },
+        notes: { type: String }
     }],
     education: [{
         level: { type: String },

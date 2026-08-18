@@ -233,17 +233,26 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
             company = new Company({
                 name: 'IT Consulting and Services',
                 logoUrl: defaultLogoBase64 || 'uploads/logo.png',
-                branding: { primaryColor: '#4A148C', secondaryColor: '#1A0933' },
+                branding: { primaryColor: '#1C0626', secondaryColor: '#721466' },
                 contact: {
-                    addressLine1: 'Karachi: 6/K Block 2, P.E.C.H.S, Karachi Pakistan | Lahore: Office 32, 1st Floor, IT Tower, Hali Rd, Gulberg III',
+                    addressLine1: 'Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan',
+                    addressLine2: 'Lahore: Office 32, 1st Floor, IT Tower 73-E/1, Hali Rd | Islamabad: Office #14, Ground Floor, Malik Plaza F-8',
                     phone: '+92 21 111-482-711',
                     email: 'info@itcs.com.pk'
                 }
             });
             await company.save();
-        } else if (!company.logoUrl && defaultLogoBase64) {
-            company.logoUrl = defaultLogoBase64;
-            await company.save();
+        } else {
+            let updated = false;
+            if (company.branding?.primaryColor !== '#1C0626' || company.branding?.secondaryColor !== '#721466') {
+                company.branding = { primaryColor: '#1C0626', secondaryColor: '#721466' };
+                updated = true;
+            }
+            if (!company.logoUrl && defaultLogoBase64) {
+                company.logoUrl = defaultLogoBase64;
+                updated = true;
+            }
+            if (updated) await company.save();
         }
 
         res.json(company);

@@ -5,9 +5,11 @@ const pick = (obj: Record<string, unknown>, keys: string[]): Record<string, unkn
         return acc;
     }, {});
 import fs from 'fs';
+import path from 'path';
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 import sanitize from 'sanitize-filename';
 import Employee from '../models/Employee';
@@ -16,6 +18,7 @@ import User from '../models/User.model';
 import AttachmentFile from '../models/AttachmentFile';
 import Counter from '../models/Counter';
 import AuditLog from '../models/AuditLog';
+import Company from '../models/Company';
 import { authenticate, authorize, AuthRequest, authenticateFile } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
@@ -66,6 +69,31 @@ const detectMimeFromBuffer = (buf: Buffer): string | null => {
 };
 
 const router = express.Router();
+
+/**
+ * Strips confidential salary, bank details, and financial fields
+ * unless the requester is Super-Admin, Finance, or the Employee viewing their own record.
+ */
+function sanitizeEmployeeForRole(employee: any, requesterRole: string, requesterUserId?: string): any {
+    if (!employee) return employee;
+    
+    // Check if requester is viewing their own profile
+    const empUserId = employee.userId ? (employee.userId._id || employee.userId).toString() : null;
+    const isSelf = empUserId && requesterUserId && empUserId === requesterUserId.toString();
+    const isPrivilegedFinancialViewer = ['super-admin', 'finance'].includes(requesterRole) || isSelf;
+
+    if (!isPrivilegedFinancialViewer) {
+        const sanitized = typeof employee.toObject === 'function' ? employee.toObject() : { ...employee };
+        delete sanitized.salaryComponents;
+        delete sanitized.financeInfo;
+        delete sanitized.bankDetails;
+        delete sanitized.providentFundBalance;
+        delete sanitized.providentFundHistory;
+        delete sanitized.loans;
+        return sanitized;
+    }
+    return employee;
+}
 
 // Helper to create audit log
 const createAuditLog = async (action: string, targetId: string, performedBy: string, details: any) => {
@@ -209,7 +237,8 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
             total = employees.length;
         }
 
-        res.json({ employees, total, page, totalPages: Math.ceil(total / limit) });
+        const sanitizedEmployees = (employees || []).map((emp: any) => sanitizeEmployeeForRole(emp, role, userId));
+        res.json({ employees: sanitizedEmployees, total, page, totalPages: Math.ceil(total / limit) });
     } catch (err: any) {
         next(err);
     }
@@ -333,7 +362,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         // Log action
         await createAuditLog('CREATE', newEmployee.employeeId, authReq.user?.userId || 'unknown', { name: `${newEmployee.firstName} ${newEmployee.lastName}` });
 
-        res.status(201).json(newEmployee);
+        res.status(201).json(sanitizeEmployeeForRole(newEmployee.toObject(), role, userId));
     } catch (err: any) {
         // Handle Mongolian Duplicate Key Error Specifically
         if (err.code === 11000) {
@@ -672,30 +701,96 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
             return parts.join(' ');
         };
 
-        const doc = new PDFDocument({ margin: 50 });
+        const company = await Company.findOne().lean() as any;
+        const darkPurple = company?.branding?.primaryColor || '#1C0626';
+        const magentaAccent = company?.branding?.secondaryColor || '#721466';
+
+        const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
+        const verifyUrl = `${clientHost}/verify/${employee.employeeId}`;
+        const qrCodeDataUri = await QRCode.toDataURL(verifyUrl).catch(() => '');
+
+        const doc = new PDFDocument({ margin: 65, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="PF_Statement_${employee.employeeId}.pdf"`);
         doc.pipe(res);
 
-        // --- Document Header ---
-        doc.fontSize(22).font('Helvetica-Bold').fillColor('#4338ca').text('PROVIDENT FUND STATEMENT', { align: 'center' });
-        doc.moveDown(0.2);
-        doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(`Generated on ${new Date().toLocaleDateString('en-PK')}`, { align: 'center' });
-        
-        // Draw divider line
-        doc.moveDown(0.5);
-        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, doc.y).lineTo(562, doc.y).stroke();
-        doc.moveDown(1);
+        // 1. Logo (Top-Left)
+        let logoDrawn = false;
+        if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
+            try {
+                const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                doc.image(buffer, 60, 22, { width: 140, height: 60, fit: [140, 60] });
+                logoDrawn = true;
+            } catch (err) {
+                console.error('Error rendering base64 company logo in PF statement:', err);
+            }
+        }
+
+        if (!logoDrawn) {
+            const candidatePaths = [
+                company?.logoUrl ? path.join(__dirname, '../../', company.logoUrl) : null,
+                company?.logoUrl ? company.logoUrl : null,
+                path.join(__dirname, '../../../client/src/assets/logo.png'),
+                path.join(__dirname, '../../uploads/logo.png'),
+                path.join(__dirname, '../../../client/public/logo.png')
+            ].filter(Boolean) as string[];
+
+            for (const p of candidatePaths) {
+                if (fs.existsSync(p)) {
+                    try {
+                        doc.image(p, 60, 22, { width: 140, height: 60, fit: [140, 60] });
+                        logoDrawn = true;
+                        break;
+                    } catch (err) {
+                        console.error('Error drawing PF logo from path:', p, err);
+                    }
+                }
+            }
+        }
+
+        if (!logoDrawn) {
+            doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 60, 35);
+        }
+
+        // 2. Top-Right Geometric Purple Decoration (ITCS Official Polygon Ribbon)
+        doc.save()
+           .moveTo(doc.page.width - 170, 0)
+           .lineTo(doc.page.width - 55, 75)
+           .lineTo(doc.page.width - 55, 115)
+           .lineTo(doc.page.width, 40)
+           .lineTo(doc.page.width, 0)
+           .closePath()
+           .fill(darkPurple);
+
+        doc.save()
+           .moveTo(doc.page.width - 55, 75)
+           .lineTo(doc.page.width - 55, 115)
+           .lineTo(doc.page.width, 175)
+           .lineTo(doc.page.width, 40)
+           .closePath()
+           .fill(magentaAccent);
+
+        // 3. Header Divider Line
+        doc.moveTo(60, 105)
+           .lineTo(doc.page.width - 65, 105)
+           .strokeColor('#888888')
+           .lineWidth(0.8)
+           .stroke();
+
+        // Document Title
+        doc.fontSize(14).font('Helvetica-Bold').fillColor(darkPurple).text('PROVIDENT FUND STATEMENT', 200, 45, { align: 'right', width: doc.page.width - 265 });
+        doc.fontSize(9).font('Helvetica').fillColor('#64748B').text(`Generated on ${new Date().toLocaleDateString('en-PK')}`, 200, 65, { align: 'right', width: doc.page.width - 265 });
 
         // --- Employee Details Section ---
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Employee Details');
-        doc.moveDown(0.4);
+        let currentDetailsY = 120;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Employee Details', 60, currentDetailsY);
+        currentDetailsY += 18;
         
-        const detailsX1 = 50;
-        const detailsX2 = 300;
-        const currentDetailsY = doc.y;
+        const detailsX1 = 60;
+        const detailsX2 = 310;
         
-        doc.fontSize(10).font('Helvetica');
+        doc.fontSize(9.5).font('Helvetica');
         doc.fillColor('#4b5563').text('Name:', detailsX1, currentDetailsY);
         doc.font('Helvetica-Bold').fillColor('#111827').text(`${employee.firstName} ${employee.lastName || ''}`, detailsX1 + 90, currentDetailsY);
         
@@ -723,14 +818,14 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
         doc.font('Helvetica-Bold').fillColor(employee.pfClaimed ? '#6b7280' : isMatured ? '#059669' : '#d97706').text(statusText, detailsX2 + 90, currentDetailsY + 54);
 
         doc.y = currentDetailsY + 76;
-        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+        doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(60, doc.y).lineTo(doc.page.width - 60, doc.y).stroke();
         doc.moveDown(0.8);
 
         // --- Fund Summary Grid (2x2 layout) ---
         const summaryY = doc.y;
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Fund Summary', 50, summaryY);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Fund Summary', 60, summaryY);
         
-        const cardWidth = 248;
+        const cardWidth = (doc.page.width - 120 - 15) / 2;
         const cardHeight = 44;
         const cardY1 = summaryY + 18;
         const cardY2 = summaryY + 68;
@@ -741,43 +836,18 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
             doc.fillColor(txtColor).fontSize(13).font('Helvetica-Bold').text(value, xPos + 10, yPos + 22);
         };
 
-        drawCard('Previous PF Balance', fmtPKR_local(totalOpeningBalance), 50, cardY1, '#fefce8', '#a16207');
-        drawCard('Payroll Contributions', fmtPKR_local(payrollCredits), 314, cardY1, '#eff6ff', '#1d4ed8');
-        drawCard('Total Debits / Claims', fmtPKR_local(totalDebits), 50, cardY2, '#fef2f2', '#b91c1c');
-        drawCard('Current Total PF Balance', fmtPKR_local(currentBalance), 314, cardY2, '#f0fdf4', '#15803d');
+        drawCard('Previous PF Balance', fmtPKR_local(totalOpeningBalance), 60, cardY1, '#fefce8', '#a16207');
+        drawCard('Payroll Contributions', fmtPKR_local(payrollCredits), 60 + cardWidth + 15, cardY1, '#eff6ff', '#1d4ed8');
+        drawCard('Total Debits / Claims', fmtPKR_local(totalDebits), 60, cardY2, '#fef2f2', '#b91c1c');
+        drawCard('Current Total PF Balance', fmtPKR_local(currentBalance), 60 + cardWidth + 15, cardY2, '#f0fdf4', '#15803d');
 
-        doc.y = cardY2 + cardHeight + 16;
+        doc.y = cardY2 + cardHeight + 15;
 
-        // --- Statement History Table ---
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Contribution & Adjustment History', 50);
-        doc.moveDown(0.4);
-
-        const tableTop = doc.y;
-        const cols = {
-            date: { x: 50, w: 75, align: 'left' },
-            period: { x: 125, w: 70, align: 'left' },
-            desc: { x: 195, w: 180, align: 'left' },
-            source: { x: 375, w: 55, align: 'center' },
-            type: { x: 430, w: 50, align: 'center' },
-            amount: { x: 480, w: 82, align: 'right' }
-        };
-
-        // Draw Table Header
-        doc.fillColor('#f9fafb').rect(50, tableTop, 512, 22).fill();
-        doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
-        
-        doc.text('DATE', cols.date.x + 4, tableTop + 7, { width: cols.date.w });
-        doc.text('PERIOD', cols.period.x, tableTop + 7, { width: cols.period.w });
-        doc.text('DESCRIPTION', cols.desc.x, tableTop + 7, { width: cols.desc.w });
-        doc.text('SOURCE', cols.source.x, tableTop + 7, { width: cols.source.w, align: 'center' });
-        doc.text('TYPE', cols.type.x, tableTop + 7, { width: cols.type.w, align: 'center' });
-        doc.text('AMOUNT', cols.amount.x, tableTop + 7, { width: cols.amount.w - 4, align: 'right' });
-
-        doc.y = tableTop + 22;
+        // --- Transaction History Ledger ---
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#1f2937').text('Contribution & Adjustment History', 60, doc.y);
+        doc.moveDown(0.5);
 
         const MONTH_SHORT_local = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-        // Build list of history entries including synthetic untracked initial balance if any
         const fullHistory = [...history];
         if (untrackedOpening > 0) {
             fullHistory.push({
@@ -789,82 +859,145 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
             });
         }
 
+        const cols = {
+            date: { x: 60, w: 75 },
+            period: { x: 135, w: 70 },
+            desc: { x: 205, w: 170 },
+            source: { x: 375, w: 50 },
+            type: { x: 425, w: 50 },
+            amount: { x: 475, w: doc.page.width - 60 - 475 }
+        };
+
+        const tableHeaderY = doc.y;
+        doc.fillColor('#f3f4f6').rect(60, tableHeaderY, doc.page.width - 120, 20).fill();
+        doc.strokeColor('#d1d5db').lineWidth(0.5).moveTo(60, tableHeaderY).lineTo(doc.page.width - 60, tableHeaderY).stroke();
+        doc.strokeColor('#d1d5db').lineWidth(0.5).moveTo(60, tableHeaderY + 20).lineTo(doc.page.width - 60, tableHeaderY + 20).stroke();
+
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
+        doc.text('DATE', cols.date.x + 4, tableHeaderY + 6);
+        doc.text('PERIOD', cols.period.x, tableHeaderY + 6);
+        doc.text('DESCRIPTION', cols.desc.x, tableHeaderY + 6);
+        doc.text('SOURCE', cols.source.x, tableHeaderY + 6, { align: 'center', width: cols.source.w });
+        doc.text('TYPE', cols.type.x, tableHeaderY + 6, { align: 'center', width: cols.type.w });
+        doc.text('AMOUNT', cols.amount.x, tableHeaderY + 6, { align: 'right', width: cols.amount.w - 4 });
+
+        let rowY = tableHeaderY + 20;
+
         if (fullHistory.length === 0) {
-            doc.moveDown(1);
-            doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af').text('No contribution history logged yet.', { align: 'center' });
+            doc.fillColor('#ffffff').rect(60, rowY, doc.page.width - 120, 22).fill();
+            doc.fontSize(8.5).font('Helvetica-Oblique').fillColor('#9ca3af').text('No provident fund transactions logged yet.', 60 + 10, rowY + 6);
+            rowY += 22;
         } else {
-            // Sort history descending by date
             const sortedHistory = [...fullHistory].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            
-            let rowY = doc.y;
             let stripe = false;
             
-            doc.fontSize(8.5).font('Helvetica');
             for (const entry of sortedHistory) {
-                // Page break check
-                if (rowY > 700) {
+                if (rowY > doc.page.height - 140) {
                     doc.addPage();
-                    rowY = 50; // reset to top margin
-                    
-                    // Redraw Table Header on new page
-                    doc.fillColor('#f9fafb').rect(50, rowY, 512, 22).fill();
+                    rowY = 125;
+
+                    doc.fillColor('#f3f4f6').rect(60, rowY, doc.page.width - 120, 20).fill();
                     doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
-                    doc.text('DATE', cols.date.x + 4, rowY + 7, { width: cols.date.w });
-                    doc.text('PERIOD', cols.period.x, rowY + 7, { width: cols.period.w });
-                    doc.text('DESCRIPTION', cols.desc.x, rowY + 7, { width: cols.desc.w });
-                    doc.text('SOURCE', cols.source.x, rowY + 7, { width: cols.source.w, align: 'center' });
-                    doc.text('TYPE', cols.type.x, rowY + 7, { width: cols.type.w, align: 'center' });
-                    doc.text('AMOUNT', cols.amount.x, rowY + 7, { width: cols.amount.w - 4, align: 'right' });
-                    
-                    rowY += 22;
-                    doc.fontSize(8.5).font('Helvetica');
+                    doc.text('DATE', cols.date.x + 4, rowY + 6);
+                    doc.text('PERIOD', cols.period.x, rowY + 6);
+                    doc.text('DESCRIPTION', cols.desc.x, rowY + 6);
+                    doc.text('SOURCE', cols.source.x, rowY + 6, { align: 'center', width: cols.source.w });
+                    doc.text('TYPE', cols.type.x, rowY + 6, { align: 'center', width: cols.type.w });
+                    doc.text('AMOUNT', cols.amount.x, rowY + 6, { align: 'right', width: cols.amount.w - 4 });
+                    rowY += 20;
                 }
 
-                // Draw background row stripe
                 if (stripe) {
-                    doc.fillColor('#f9fafb').rect(50, rowY, 512, 20).fill();
+                    doc.fillColor('#f9fafb').rect(60, rowY, doc.page.width - 120, 20).fill();
                 }
-                
-                doc.fillColor('#111827');
-                doc.text(fmtDate_local(entry.date), cols.date.x + 4, rowY + 6, { width: cols.date.w });
-                
+
+                const isCredit = entry.type === 'credit';
+                doc.fontSize(8).font('Helvetica').fillColor('#111827');
+                doc.text(fmtDate_local(entry.date), cols.date.x + 4, rowY + 6);
+
                 const periodStr = entry.periodMonth && entry.periodYear 
                     ? `${MONTH_SHORT_local[entry.periodMonth]} ${entry.periodYear}` 
                     : '-';
-                doc.text(periodStr, cols.period.x, rowY + 6, { width: cols.period.w });
+                doc.text(periodStr, cols.period.x, rowY + 6);
                 doc.text(entry.description || (entry.source === 'manual' ? 'Previous PF Balance' : 'PF Contribution'), cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
-                
+
                 const srcLabel = entry.source === 'manual' ? 'manual' : 'payroll';
                 doc.fillColor(entry.source === 'manual' ? '#92400e' : '#1e40af')
                    .text(srcLabel, cols.source.x, rowY + 6, { width: cols.source.w, align: 'center' });
-                
-                // Color code type
-                const isCredit = entry.type === 'credit';
+
                 doc.fillColor(isCredit ? '#059669' : '#dc2626')
                    .text(isCredit ? '+ Credit' : '- Debit', cols.type.x, rowY + 6, { width: cols.type.w, align: 'center' });
-                
+
                 doc.font('Helvetica-Bold').fillColor(isCredit ? '#059669' : '#dc2626')
                    .text(`${isCredit ? '+' : '-'}${fmtPKR_local(entry.amount)}`, cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
-                
+
                 doc.font('Helvetica');
-                
-                // Draw bottom border line for row
-                doc.strokeColor('#f3f4f6').lineWidth(0.5).moveTo(50, rowY + 20).lineTo(562, rowY + 20).stroke();
+                doc.strokeColor('#f3f4f6').lineWidth(0.5).moveTo(60, rowY + 20).lineTo(doc.page.width - 60, rowY + 20).stroke();
 
                 rowY += 20;
                 stripe = !stripe;
             }
-            
-            // Draw table total row
-            doc.fillColor('#f9fafb').rect(50, rowY, 512, 22).fill();
-            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, rowY).lineTo(562, rowY).stroke();
-            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, rowY + 22).lineTo(562, rowY + 22).stroke();
+
+            doc.fillColor('#f9fafb').rect(60, rowY, doc.page.width - 120, 22).fill();
+            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(60, rowY).lineTo(doc.page.width - 60, rowY).stroke();
+            doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(60, rowY + 22).lineTo(doc.page.width - 60, rowY + 22).stroke();
             
             doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
             doc.text('TOTAL ACCUMULATED PF BALANCE', cols.date.x + 4, rowY + 7, { width: 250 });
             doc.fontSize(9).font('Helvetica-Bold').fillColor('#15803d')
                .text(fmtPKR_local(currentBalance), cols.amount.x, rowY + 6, { width: cols.amount.w - 4, align: 'right' });
         }
+
+        // Footer Section (Dashed Line + Centered Subtitle + Bottom Purple Banner)
+        doc.page.margins.bottom = 0;
+
+        doc.moveTo(60, doc.page.height - 110)
+           .lineTo(doc.page.width - 60, doc.page.height - 110)
+           .dash(2, { space: 2 })
+           .strokeColor('#333333')
+           .stroke();
+
+        if (qrCodeDataUri) {
+            try {
+                const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                const imageBuffer = Buffer.from(base64Data, 'base64');
+                doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
+            } catch (e) {}
+        }
+
+        doc.fillColor('#444444')
+           .fontSize(7)
+           .font('Helvetica-Bold')
+           .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 45, doc.page.height - 52, { align: 'center', width: doc.page.width - 90, lineBreak: false });
+
+        const bannerHeight = 38;
+        const bannerY = doc.page.height - bannerHeight;
+
+        doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(darkPurple);
+
+        doc.save()
+           .moveTo(0, bannerY)
+           .lineTo(85, bannerY)
+           .lineTo(120, doc.page.height)
+           .lineTo(0, doc.page.height)
+           .closePath()
+           .fill(magentaAccent);
+
+        doc.save()
+           .moveTo(doc.page.width - 85, bannerY)
+           .lineTo(doc.page.width, bannerY)
+           .lineTo(doc.page.width, doc.page.height)
+           .lineTo(doc.page.width - 120, doc.page.height)
+           .closePath()
+           .fill(magentaAccent);
+
+        doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
+        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 6, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 16, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 26, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        
+        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 16, { width: 100, align: 'left', lineBreak: false });
+        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 16, { width: 100, align: 'right', lineBreak: false });
 
         doc.end();
     } catch (err) {
@@ -1039,6 +1172,79 @@ router.post('/:id/pf-claim', authenticate, async (req: Request, res: Response, n
     }
 });
 
+/**
+ * POST /api/employees/pf-profit-distribution
+ * Distribute annual/periodic PF profit yield across all employees with an active PF balance.
+ * Admin/super-admin/finance only.
+ */
+router.post('/pf-profit-distribution', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    if (!['super-admin', 'admin', 'finance'].includes(role)) {
+        return res.status(403).json({ message: 'Forbidden. Admin or Finance access required.' });
+    }
+
+    try {
+        const { year, profitPercentage, notes } = req.body;
+        const pct = Number(profitPercentage);
+        const distYear = Number(year) || new Date().getFullYear();
+
+        if (isNaN(pct) || pct === 0) {
+            return res.status(400).json({ message: 'Valid profit percentage is required.' });
+        }
+
+        const employees = await Employee.find({
+            providentFundBalance: { $gt: 0 },
+            $or: [
+                { 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } },
+                { employmentStatus: { $type: 'string', $nin: ['Terminated', 'Resigned'] } },
+                { 'employmentStatus.status': { $exists: false } }
+            ]
+        });
+
+        let totalAllocated = 0;
+        let employeeCount = 0;
+        const now = new Date();
+
+        for (const emp of employees) {
+            const currentBal = emp.providentFundBalance || 0;
+            if (currentBal <= 0) continue;
+
+            const profitAmount = Math.round(currentBal * (pct / 100));
+            if (profitAmount === 0) continue;
+
+            if (!emp.providentFundHistory) emp.providentFundHistory = [];
+
+            const isLoss = profitAmount < 0;
+            emp.providentFundHistory.push({
+                amount: Math.abs(profitAmount),
+                type: isLoss ? 'debit' : 'credit',
+                source: 'manual',
+                date: now,
+                description: `Annual PF Profit Distribution (${pct > 0 ? '+' : ''}${pct}%) - ${distYear}${notes ? ` - ${notes}` : ''}`,
+                periodYear: distYear,
+                erpReferenceId: notes ? String(notes).trim() : undefined
+            } as any);
+
+            emp.providentFundBalance = Math.max(0, currentBal + profitAmount);
+            await emp.save();
+
+            totalAllocated += profitAmount;
+            employeeCount++;
+        }
+
+        return res.json({
+            message: `Successfully distributed ${pct}% profit across ${employeeCount} employee provident fund accounts.`,
+            employeeCount,
+            totalAllocated,
+            year: distYear,
+            profitPercentage: pct
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
@@ -1055,7 +1261,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: Funct
             return res.status(403).json({ message: 'You do not have permission to view this employee' });
         }
 
-        res.json(employee);
+        res.json(sanitizeEmployeeForRole(employee, authReq.user?.role || '', authReq.user?.userId));
     } catch (err: any) {
         next(err);
     }
@@ -1361,6 +1567,18 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
+        // Only super-admin and finance can edit salary / financial components
+        const canEditFinancials = ['super-admin', 'finance'].includes(role);
+        if (!canEditFinancials) {
+            delete updates.salaryComponents;
+            delete updates.financeInfo;
+            delete updates.providentFundBalance;
+            delete updates.loans;
+            if (role === 'hr' || role === 'manager') {
+                delete updates.bankDetails;
+            }
+        }
+
         // Check for manual Provident Fund Balance adjustment
         if (updates.providentFundBalance !== undefined) {
             const oldBalance = employee.providentFundBalance || 0;
@@ -1487,7 +1705,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Log action
         await createAuditLog('UPDATE', req.params.id, authReq.user?.userId || 'unknown', { diff });
 
-        res.json(updatedEmployee);
+        res.json(sanitizeEmployeeForRole(updatedEmployee.toObject(), role, authReq.user?.userId));
     } catch (err: any) {
         logger.error(`[EmployeeUpdate] Error updating ${req.params.id}:`, err);
         

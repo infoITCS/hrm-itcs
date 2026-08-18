@@ -13,7 +13,11 @@ export interface IPayrollRun extends Document {
     approvedBy?: string;     // userId
     approvedAt?: Date;
     disbursedAt?: Date;
-    erpReferenceId?: string;
+    erpTaskId?: string;      // Auto-generated internal batch/task ID e.g. ERP-BATCH-202608-01
+    erpReferenceId?: string; // External ERP Voucher / Transaction ID entered by Finance
+    erpStatus?: 'Pending' | 'Posted' | 'Reconciled';
+    erpNotes?: string;
+    erpPostedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -35,7 +39,15 @@ const PayrollRunSchema: Schema = new Schema(
         approvedBy: { type: String },                  // userId
         approvedAt: { type: Date },
         disbursedAt: { type: Date },
-        erpReferenceId: { type: String }
+        erpTaskId: { type: String, index: true },
+        erpReferenceId: { type: String },
+        erpStatus: {
+            type: String,
+            enum: ['Pending', 'Posted', 'Reconciled'],
+            default: 'Pending',
+        },
+        erpNotes: { type: String },
+        erpPostedAt: { type: Date },
     },
     { timestamps: true }
 );

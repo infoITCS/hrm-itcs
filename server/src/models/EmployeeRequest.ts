@@ -5,6 +5,9 @@ export interface IEmployeeRequest extends Document {
     category: string;
     requestType: string;
     status: 'Pending' | 'Pending HR' | 'Pending Finance' | 'Approved' | 'Rejected' | 'Completed' | 'Cancelled';
+    payoutStatus?: 'Unpaid' | 'Included in Payroll' | 'Paid';
+    payrollRunId?: mongoose.Types.ObjectId | string;
+    paidAt?: Date;
     details: any;
     adminComments?: string;
     requestedAt: Date;
@@ -18,6 +21,9 @@ const employeeRequestSchema = new Schema<IEmployeeRequest>({
     category: { type: String, required: true },
     requestType: { type: String, required: true },
     status: { type: String, enum: ['Pending', 'Pending HR', 'Pending Finance', 'Approved', 'Rejected', 'Completed', 'Cancelled'], default: 'Pending' },
+    payoutStatus: { type: String, enum: ['Unpaid', 'Included in Payroll', 'Paid'], default: 'Unpaid', index: true },
+    payrollRunId: { type: Schema.Types.ObjectId, ref: 'PayrollRun', index: true },
+    paidAt: { type: Date },
     details: { type: Schema.Types.Mixed, default: {} },
     adminComments: { type: String },
     requestedAt: { type: Date, default: Date.now },

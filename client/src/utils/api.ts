@@ -43,6 +43,9 @@ export const api = {
     payrollApprove: (id: string) => `${API_BASE_URL}/api/payroll/${id}/approve`,
     payrollDisburse: (id: string) => `${API_BASE_URL}/api/payroll/${id}/disburse`,
     payrollBankAdvicePdf: (id: string) => `${API_BASE_URL}/api/payroll/${id}/bank-advice-pdf`,
+    payrollExportBankExcel: (id: string) => `${API_BASE_URL}/api/payroll/${id}/export-bank-excel`,
+    payrollErpTask: (id: string) => `${API_BASE_URL}/api/payroll/${id}/erp-task`,
+    payrollPfMaturityProfit: `${API_BASE_URL}/api/payroll/pf/maturity-profit`,
     payrollMyPayslips: `${API_BASE_URL}/api/payroll/my-payslips`,
     payslip: (id: string) => `${API_BASE_URL}/api/payroll/payslips/${id}`,
 

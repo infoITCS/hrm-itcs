@@ -365,14 +365,16 @@ const EmployeeList = () => {
                                 </div>
 
                                 {/* Details Grid */}
-                                <div className="grid grid-cols-2 w-full gap-2 mb-6">
-                                    <div className="bg-slate-50 p-2.5 rounded-2xl">
+                                <div className="flex items-center w-full gap-2 mb-6">
+                                    <div className="bg-slate-50 p-2 sm:p-2.5 rounded-2xl shrink-0">
                                         <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">ID</p>
-                                        <p className="text-sm font-bold text-slate-700">{emp.employeeId}</p>
+                                        <p className="text-xs sm:text-sm font-bold text-slate-700">{emp.employeeId}</p>
                                     </div>
-                                    <div className="bg-slate-50 p-2.5 rounded-2xl">
+                                    <div className="bg-slate-50 p-2 sm:p-2.5 rounded-2xl flex-1 min-w-0">
                                         <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">Status</p>
-                                        <p className="text-sm font-bold text-slate-700">{emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent'}</p>
+                                        <p className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                                            {emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent'}
+                                        </p>
                                     </div>
                                 </div>
 

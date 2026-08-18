@@ -4,12 +4,14 @@ import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
-    ChevronDown, ChevronUp, AlertTriangle
+    ChevronDown, ChevronUp, AlertTriangle, PauseCircle
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 const ICON_MAP: Record<string, any> = {
-    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote
+    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle
 };
 
 const MyRequests = () => {
@@ -43,6 +45,8 @@ const MyRequests = () => {
     const [loanAmount, setLoanAmount] = useState('');
     const [paybackDuration, setPaybackDuration] = useState('');
     const [monthlyDeduction, setMonthlyDeduction] = useState('');
+    const [pauseMonth, setPauseMonth] = useState<number>(new Date().getMonth() + 1);
+    const [pauseYear, setPauseYear] = useState<number>(new Date().getFullYear());
     const [reason, setReason] = useState('');
     const [purposeDetail, setPurposeDetail] = useState('');
     const [internshipStartDate, setInternshipStartDate] = useState('');
@@ -281,7 +285,16 @@ const MyRequests = () => {
             };
             let type = selectedOption;
 
-            if (activeCategory.systemType === 'loan') {
+            const isLoanPause = activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause');
+
+            if (isLoanPause) {
+                type = 'Loan Pause';
+                details = {
+                    ...details,
+                    periodMonth: pauseMonth,
+                    periodYear: pauseYear,
+                };
+            } else if (activeCategory.systemType === 'loan') {
                 type = 'Loan';
                 details = { 
                     ...details,
@@ -625,7 +638,45 @@ const MyRequests = () => {
                                 </div>
                             )}
 
-                            {activeCategory.systemType === 'loan' ? (
+                            {activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause') ? (
+                                <>
+                                    <div className="bg-amber-50 text-amber-900 p-3.5 rounded-xl text-xs border border-amber-200/80 space-y-1">
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                            <PauseCircle size={15} className="text-amber-600 shrink-0" />
+                                            <span>Temporary Loan Installment Pause</span>
+                                        </div>
+                                        <p className="text-amber-800/90 text-[11px] leading-relaxed">
+                                            Request HR / Management to waive your scheduled loan deduction for the selected payroll cycle.
+                                            Your remaining loan balance will stay intact and deduction will automatically resume next month.
+                                        </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">Target Month <span className="text-rose-500">*</span></label>
+                                            <select
+                                                value={pauseMonth}
+                                                onChange={e => setPauseMonth(Number(e.target.value))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-medium text-slate-800"
+                                            >
+                                                {MONTH_NAMES.slice(1).map((m, i) => (
+                                                    <option key={i + 1} value={i + 1}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">Year <span className="text-rose-500">*</span></label>
+                                            <input
+                                                type="number"
+                                                value={pauseYear}
+                                                onChange={e => setPauseYear(Number(e.target.value))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium text-slate-800"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                </>
+                            ) : activeCategory.systemType === 'loan' ? (
                                 <>
                                     <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl text-sm border border-emerald-100 flex flex-col gap-1">
                                         <div className="flex justify-between">
@@ -973,6 +1024,13 @@ const MyRequests = () => {
                                     <span className="text-gray-500">Request Type:</span>
                                     <span className="font-semibold text-gray-900">{selectedRequest.requestType}</span>
                                 </div>
+                                
+                                {selectedRequest.details?.periodMonth && (
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Target Payroll Period:</span>
+                                        <span className="font-semibold text-gray-900">{MONTH_NAMES[selectedRequest.details.periodMonth] || selectedRequest.details.periodMonth} {selectedRequest.details.periodYear || ''}</span>
+                                    </div>
+                                )}
                                 
                                 {selectedRequest.details?.requestedAmount && (
                                     <div className="flex justify-between text-sm">

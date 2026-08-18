@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
-import { Plus, Edit2, Trash2, XCircle, Package, Monitor, Briefcase, FileText, Wrench, Settings, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, XCircle, Package, Monitor, Briefcase, FileText, Wrench, Settings, Eye, EyeOff, Banknote, PauseCircle } from 'lucide-react';
 
 const ICON_OPTIONS = [
     { name: 'Package', component: Package },
@@ -9,7 +9,9 @@ const ICON_OPTIONS = [
     { name: 'Briefcase', component: Briefcase },
     { name: 'FileText', component: FileText },
     { name: 'Tool', component: Wrench },
-    { name: 'Settings', component: Settings }
+    { name: 'Settings', component: Settings },
+    { name: 'Banknote', component: Banknote },
+    { name: 'PauseCircle', component: PauseCircle }
 ];
 
 const CategoryConfig = () => {

@@ -41,6 +41,14 @@ export const seedRequestCategories = async () => {
                 options: ['Employee Card', 'Employee Book', 'Employee Pen', 'Business Cards'],
                 systemType: 'generic',
                 isDeletable: false
+            },
+            {
+                title: 'Loan Pause Request',
+                description: 'Request emergency temporary waiver / pause of your monthly loan deduction.',
+                icon: 'PauseCircle',
+                options: [],
+                systemType: 'generic',
+                isDeletable: false
             }
         ];
 

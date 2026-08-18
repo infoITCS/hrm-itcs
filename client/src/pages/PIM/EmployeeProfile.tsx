@@ -47,6 +47,7 @@ const EmployeeProfile = () => {
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
 
     const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
+    const canViewFinancials = ['super-admin', 'finance'].includes(role);
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -262,7 +263,7 @@ const EmployeeProfile = () => {
         { id: 'contact', label: 'Contact', icon: Phone },
         { id: 'job', label: 'Job', icon: Briefcase },
         { id: 'immigration', label: 'Immigration', icon: Globe },
-        ...(isAdmin ? [{ id: 'finance', label: 'Finance', icon: Banknote }] : []),
+        ...(canViewFinancials ? [{ id: 'finance', label: 'Finance', icon: Banknote }] : []),
         { id: 'benefits', label: 'Benefits', icon: Gift },
         { id: 'history', label: 'Employment History', icon: History },
         { id: 'education', label: 'Education', icon: GraduationCap },
@@ -684,8 +685,8 @@ const EmployeeProfile = () => {
                     </div>
                 )}
 
-                {/* Finance Tab — #10 FIX: only shown in tabs for admins */}
-                {activeTab === 'finance' && isAdmin && (
+                {/* Finance Tab — Only accessible by Super-Admin and Finance */}
+                {activeTab === 'finance' && canViewFinancials && (
                     <div className="space-y-8 animate-fadeIn">
                         <div>
                             <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">

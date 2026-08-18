@@ -55,8 +55,8 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
     const oldBottomMargin = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
-    const primaryColor = company?.branding?.primaryColor || '#4A1248';
-    const secondaryColor = company?.branding?.secondaryColor || '#731868';
+    const darkPurple = company?.branding?.primaryColor || '#1C0626';
+    const magentaAccent = company?.branding?.secondaryColor || '#721466';
 
     // 1. Logo (Top-Left)
     let logoDrawn = false;
@@ -64,7 +64,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
         try {
             const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
             const buffer = Buffer.from(base64Data, 'base64');
-            doc.image(buffer, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+            doc.image(buffer, 60, 22, { width: 140, height: 60, fit: [140, 60] });
             logoDrawn = true;
         } catch (err) {
             console.error('Error rendering base64 company logo in letterhead:', err);
@@ -83,7 +83,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
         for (const p of candidatePaths) {
             if (fs.existsSync(p)) {
                 try {
-                    doc.image(p, 50, 30, { width: 110, height: 45, fit: [110, 45] });
+                    doc.image(p, 60, 22, { width: 140, height: 60, fit: [140, 60] });
                     logoDrawn = true;
                     break;
                 } catch (err) {
@@ -95,91 +95,97 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
 
     if (!logoDrawn) {
         const companyName = company?.name || 'IT CONSULTING & SERVICES';
-        doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text(companyName.toUpperCase(), 50, 40);
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text(companyName.toUpperCase(), 60, 35);
     }
 
-    // 2. Top-Right Geometric Purple Decoration (ITCS Ribbon)
-    // Dark Purple base triangle
+    // 2. Top-Right Geometric Purple Decoration (ITCS Official Polygon Ribbon)
+    // Upper Dark Purple Polygon (#1C0626)
     doc.save()
-       .moveTo(doc.page.width - 140, 0)
-       .lineTo(doc.page.width, 140)
+       .moveTo(doc.page.width - 170, 0)
+       .lineTo(doc.page.width - 55, 75)
+       .lineTo(doc.page.width - 55, 115)
+       .lineTo(doc.page.width, 40)
        .lineTo(doc.page.width, 0)
        .closePath()
-       .fill(primaryColor);
+       .fill(darkPurple);
 
-    // Violet accent strip along the outer diagonal edge
+    // Lower Magenta Accent Flap Polygon (#721466)
     doc.save()
-       .moveTo(doc.page.width - 140, 0)
-       .lineTo(doc.page.width - 120, 0)
-       .lineTo(doc.page.width, 120)
-       .lineTo(doc.page.width, 140)
+       .moveTo(doc.page.width - 55, 75)
+       .lineTo(doc.page.width - 55, 115)
+       .lineTo(doc.page.width, 175)
+       .lineTo(doc.page.width, 40)
        .closePath()
-       .fill(secondaryColor);
+       .fill(magentaAccent);
 
-    // 3. Header Divider Line (Stops cleanly before the corner ribbon)
-    doc.moveTo(50, 95)
-       .lineTo(doc.page.width - 140, 95)
-       .strokeColor('#CCCCCC')
-       .lineWidth(1)
+    // 3. Header Divider Line
+    doc.moveTo(60, 105)
+       .lineTo(doc.page.width - 65, 105)
+       .strokeColor('#888888')
+       .lineWidth(0.8)
        .stroke();
 
     // 4. Footer Dashed Line
-    doc.moveTo(50, doc.page.height - 110)
-       .lineTo(doc.page.width - 50, doc.page.height - 110)
-       .dash(3, { space: 3 })
+    doc.moveTo(60, doc.page.height - 110)
+       .lineTo(doc.page.width - 60, doc.page.height - 110)
+       .dash(2, { space: 2 })
        .strokeColor('#333333')
        .stroke();
 
     // 5. QR Code centered above footer banner
-    const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
-    const imageBuffer = Buffer.from(base64Data, 'base64');
-    doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
+    if (qrCodeDataUri) {
+        try {
+            const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
+        } catch (e) {}
+    }
 
     // Text above banner
-    doc.fillColor('#555555')
+    doc.fillColor('#444444')
        .fontSize(7)
        .font('Helvetica-Bold')
-       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 50, doc.page.height - 52, { align: 'center', width: doc.page.width - 100 });
+       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 45, doc.page.height - 52, { align: 'center', width: doc.page.width - 90, lineBreak: false });
 
     // 6. Bottom Purple Banner
     const bannerHeight = 38;
     const bannerY = doc.page.height - bannerHeight;
 
-    // Outer Purple Banner
-    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(primaryColor);
+    // Dark Purple Background Banner
+    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(darkPurple);
 
-    // Left and Right Accent Polygons inside banner
+    // Left and Right Magenta Accent Polygons
     doc.save()
        .moveTo(0, bannerY)
-       .lineTo(80, bannerY)
-       .lineTo(110, doc.page.height)
+       .lineTo(85, bannerY)
+       .lineTo(120, doc.page.height)
        .lineTo(0, doc.page.height)
        .closePath()
-       .fill(secondaryColor);
+       .fill(magentaAccent);
 
     doc.save()
-       .moveTo(doc.page.width - 80, bannerY)
+       .moveTo(doc.page.width - 85, bannerY)
        .lineTo(doc.page.width, bannerY)
        .lineTo(doc.page.width, doc.page.height)
-       .lineTo(doc.page.width - 110, doc.page.height)
+       .lineTo(doc.page.width - 120, doc.page.height)
        .closePath()
-       .fill(secondaryColor);
+       .fill(magentaAccent);
 
     // Banner White Text (Addresses & Info)
     doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
-    if (company?.contact) {
+    if (company?.contact?.addressLine1 && company.contact.addressLine1.trim().length > 10) {
         const line1 = company.contact.addressLine1 || '';
         const line2 = company.contact.addressLine2 ? ` | ${company.contact.addressLine2}` : '';
-        const line3 = `Info: ${company.contact.email} | Call: ${company.contact.phone}` + (company.contact.website ? ` | Web: ${company.contact.website}` : '');
-        doc.text(`${line1}${line2}`, 10, bannerY + 8, { align: 'center', width: doc.page.width - 20 });
-        doc.text(line3, 10, bannerY + 20, { align: 'center', width: doc.page.width - 20 });
+        const line3 = `Info: ${company.contact.email || 'INFO@ITCS.COM.PK'} | Call: ${company.contact.phone || '+92 21 111-482-711'}` + (company.contact.website ? ` | Web: ${company.contact.website}` : '');
+        doc.text(`${line1}${line2}`, 10, bannerY + 8, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text(line3, 10, bannerY + 20, { align: 'center', width: doc.page.width - 20, lineBreak: false });
     } else {
-        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 5, { align: 'center', width: doc.page.width - 20 });
-        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 15, { align: 'center', width: doc.page.width - 20 });
-        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 25, { align: 'center', width: doc.page.width - 20 });
+        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 6, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 16, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 26, { align: 'center', width: doc.page.width - 20, lineBreak: false });
         
-        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 15, { width: 100, align: 'left' });
-        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 15, { width: 100, align: 'right' });
+        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 16, { width: 100, align: 'left', lineBreak: false });
+        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 16, { width: 100, align: 'right', lineBreak: false });
     }
 
     // Restore text defaults and saved layout position
@@ -218,6 +224,18 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 { documentType: { $regex: new RegExp(`^${escapedDocType}$`, 'i') } }
             ]
         }).lean() as any;
+
+        // Auto-seed or update default template if missing/outdated
+        const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as an {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
+
+        if (template && (rawDocType === 'Experience Letter' || template.documentType === 'Experience Letter') && !template.content.includes('Afreen Saeed')) {
+            await DocumentTemplate.updateOne(
+                { _id: template._id },
+                { $set: { subject: 'EXPERIENCE LETTER', content: defaultExperienceText } }
+            );
+            template.subject = 'EXPERIENCE LETTER';
+            template.content = defaultExperienceText;
+        }
 
         // Auto-seed default template if not found in database
         if (!template) {
@@ -263,8 +281,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                     content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} is an active full-time employee at {{companyName}}, working as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nFinancial Summary:\n- Basic Salary: PKR {{basicSalary}}\n- Monthly Gross Salary: PKR {{grossSalary}}\n- Monthly Net Pay: PKR {{netPay}}\n\nThis income verification letter is issued upon official request for {{purpose}}.`
                 },
                 'Experience Letter': {
-                    subject: 'EXPERIENCE CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} was employed with {{companyName}} as {{designation}} in the {{department}} department from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{pronounSubject}} was found to be hardworking, dedicated, and honest in {{pronounPossessive}} responsibilities.\n\nWe wish {{pronounObject}} success in all future professional pursuits.`
+                    subject: 'EXPERIENCE LETTER',
+                    content: `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as an {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`
                 },
                 'Employment Certificate': {
                     subject: 'EMPLOYMENT VERIFICATION CERTIFICATE',
@@ -321,13 +339,13 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         const verifyUrl = `${clientHost}/verify/${documentId}`;
         const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
-        // Initialize PDF Kit with page margins adjusted to prevent header/footer collision
+        // Initialize PDF Kit with page margins adjusted for side spacing and letterhead header/footer
         const doc = new PDFDocument({
             margins: {
                 top: 125,
                 bottom: 125,
-                left: 50,
-                right: 50
+                left: 65,
+                right: 65
             }
         });
 

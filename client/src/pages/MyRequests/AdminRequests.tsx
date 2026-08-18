@@ -6,6 +6,8 @@ import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Sea
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
 
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 const AdminRequests = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -433,6 +435,15 @@ const AdminRequests = () => {
                                             })()
                                         )}
                                     </>
+                                )}
+
+                                {actionModal.details?.periodMonth && (
+                                    <div className="mt-3 text-sm border-t border-gray-200/60 pt-2 flex justify-between items-center">
+                                        <span className="text-gray-500 text-xs">Target Payroll Period</span>
+                                        <span className="font-semibold text-gray-900 bg-amber-50 px-2 py-0.5 rounded text-amber-900 border border-amber-200">
+                                            {MONTH_NAMES[actionModal.details.periodMonth] || actionModal.details.periodMonth} {actionModal.details.periodYear || ''}
+                                        </span>
+                                    </div>
                                 )}
 
                                 {(actionModal.category !== 'Loan' && actionModal.category !== 'Request Loan') && actionModal.details?.quantity && (

@@ -15,6 +15,7 @@ import Company from '../models/Company';
 import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 import ExpenseClaim from '../models/ExpenseClaim';
 import { sendPayslipDisbursedEmail } from '../utils/email';
+import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────────────────────
 
 function isAdmin(role: string): boolean {
-    return ['super-admin', 'admin', 'finance', 'hr'].includes(role);
+    return ['super-admin', 'finance'].includes(role);
 }
 
 const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
@@ -144,6 +145,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
 
         const title = `${MONTH_NAMES[month]} ${year} Payroll`;
+        const erpTaskId = `BATCH-${year}${String(month).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
         const run = await PayrollRun.create({
             title,
@@ -153,6 +155,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             notes,
             createdBy: authReq.user!.userId,
             status: 'Draft',
+            erpTaskId,
+            erpStatus: 'Pending',
         });
 
         return res.status(201).json(run);
@@ -276,7 +280,12 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
             .lean() as any[];
 
         const enrichedPayslips = await Promise.all(payslips.map(async (p: any) => {
+            if (p.attendanceSummary && p.attendanceSummary.workingDays > 0) {
+                return p;
+            }
             const attSummary = await getOrComputeAttendanceSummary(p.employeeId, p.periodYear, p.periodMonth, p.attendanceSummary);
+            // Asynchronously persist to database so subsequent loads are instant
+            Payslip.updateOne({ _id: p._id }, { $set: { attendanceSummary: attSummary } }).catch(() => {});
             return {
                 ...p,
                 attendanceSummary: attSummary
@@ -305,34 +314,28 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
     const company = await Company.findOne().lean() as any;
     const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
 
-    const primaryColor = company?.branding?.primaryColor || '#4A148C';
+    const darkPurple = company?.branding?.primaryColor || '#1C0626';
+    const magentaAccent = company?.branding?.secondaryColor || '#721466';
+
     const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
     const verifyUrl = `${clientHost}/verify/${payslip._id}`;
-    const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
+    const qrCodeDataUri = await QRCode.toDataURL(verifyUrl).catch(() => '');
 
     return new Promise<Buffer>((resolve, reject) => {
-        const doc = new PDFDocument({ margin: 36, size: 'A4' });
+        const doc = new PDFDocument({ margin: 65, size: 'A4' });
         const chunks: Buffer[] = [];
 
         doc.on('data', (chunk) => chunks.push(chunk));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
         doc.on('error', (err) => reject(err));
 
-        // Header & Logo
-        doc.save()
-           .moveTo(200, 0)
-           .lineTo(doc.page.width, 0)
-           .lineTo(doc.page.width, 85)
-           .lineTo(230, 85)
-           .closePath()
-           .fill(primaryColor);
-
+        // 1. Logo (Top-Left)
         let logoDrawn = false;
         if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
             try {
                 const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
                 const buffer = Buffer.from(base64Data, 'base64');
-                doc.image(buffer, 36, 20, { width: 115, height: 48, fit: [115, 48] });
+                doc.image(buffer, 60, 22, { width: 140, height: 60, fit: [140, 60] });
                 logoDrawn = true;
             } catch (err) {
                 console.error('Error rendering base64 company logo in payslip:', err);
@@ -351,7 +354,7 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
             for (const p of candidatePaths) {
                 if (fs.existsSync(p)) {
                     try {
-                        doc.image(p, 36, 20, { width: 115, height: 48, fit: [115, 48] });
+                        doc.image(p, 60, 22, { width: 140, height: 60, fit: [140, 60] });
                         logoDrawn = true;
                         break;
                     } catch (err) {
@@ -362,123 +365,200 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
         }
 
         if (!logoDrawn) {
-            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 36, 30);
+            doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 60, 35);
         }
 
-        doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF').text('PAYSLIP / SALARY STATEMENT', 220, 26, { align: 'right', width: doc.page.width - 256 });
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#E9D5FF').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 220, 50, { align: 'right', width: doc.page.width - 256 });
+        // 2. Top-Right Geometric Purple Decoration (ITCS Official Polygon Ribbon)
+        doc.save()
+           .moveTo(doc.page.width - 170, 0)
+           .lineTo(doc.page.width - 55, 75)
+           .lineTo(doc.page.width - 55, 115)
+           .lineTo(doc.page.width, 40)
+           .lineTo(doc.page.width, 0)
+           .closePath()
+           .fill(darkPurple);
 
-        doc.moveTo(36, 95).lineTo(doc.page.width - 36, 95).strokeColor('#E2E8F0').lineWidth(1).stroke();
+        doc.save()
+           .moveTo(doc.page.width - 55, 75)
+           .lineTo(doc.page.width - 55, 115)
+           .lineTo(doc.page.width, 175)
+           .lineTo(doc.page.width, 40)
+           .closePath()
+           .fill(magentaAccent);
+
+        // 3. Header Divider Line
+        doc.moveTo(60, 105)
+           .lineTo(doc.page.width - 65, 105)
+           .strokeColor('#888888')
+           .lineWidth(0.8)
+           .stroke();
+
+        // Title text in top right white region (positioned to the left of the ribbon to prevent overlap)
+        doc.fontSize(11).font('Helvetica-Bold').fillColor(darkPurple).text('PAYSLIP / SALARY STATEMENT', 100, 45, { align: 'right', width: doc.page.width - 290 });
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 100, 62, { align: 'right', width: doc.page.width - 290 });
 
         // Employee & Payment Details Table
-        let y = 110;
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('EMPLOYEE DETAILS', 36, y);
-        doc.text('PAYMENT DETAILS', 300, y);
+        let y = 120;
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569').text('EMPLOYEE DETAILS', 60, y);
+        doc.text('PAYMENT DETAILS', 310, y);
         y += 15;
 
         doc.fontSize(9).font('Helvetica').fillColor('#1E293B');
         const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'N/A';
 
-        doc.text(`Employee Name: ${empName}`, 36, y);
-        doc.text(`Payslip No: ${payslip.payslipNo}`, 300, y);
+        doc.text(`Employee Name: ${empName}`, 60, y);
+        doc.text(`Payslip No: ${payslip.payslipNo}`, 310, y);
         y += 14;
 
-        doc.text(`Employee ID: ${payslip.employeeId}`, 36, y);
-        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 300, y);
+        doc.text(`Employee ID: ${payslip.employeeId}`, 60, y);
+        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 310, y);
         y += 14;
 
-        doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 36, y);
-        doc.text(`Payment Method: ${payslip.paymentMethod || 'Bank Transfer'}`, 300, y);
+        doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 60, y);
+        doc.text(`Payment Method: ${payslip.paymentMethod || 'Bank Transfer'}`, 310, y);
         y += 14;
 
-        doc.text(`Department: ${emp?.jobInfo?.department || 'N/A'}`, 36, y);
-        doc.text(`Bank Name: ${emp?.bankDetails?.bankName || 'N/A'}`, 300, y);
+        doc.text(`Department: ${emp?.jobInfo?.department || 'N/A'}`, 60, y);
+        doc.text(`Bank Name: ${emp?.bankDetails?.bankName || 'N/A'}`, 310, y);
         y += 14;
 
-        doc.text(`CNIC: ${emp?.cnic || 'N/A'}`, 36, y);
-        doc.text(`Account No: ${emp?.bankDetails?.accountNumber || 'N/A'}`, 300, y);
+        doc.text(`CNIC: ${emp?.cnic || 'N/A'}`, 60, y);
+        doc.text(`Account No: ${emp?.bankDetails?.accountNumber || 'N/A'}`, 310, y);
         y += 20;
 
         // Attendance Summary Grid
-        doc.rect(36, y, doc.page.width - 72, 45).fillAndStroke('#F8FAFC', '#E2E8F0');
+        doc.rect(60, y, doc.page.width - 120, 45).fillAndStroke('#F8FAFC', '#E2E8F0');
         const boxY = y + 10;
         doc.fontSize(8).font('Helvetica-Bold').fillColor('#475569');
 
-        doc.text('WORKING DAYS', 41, boxY, { width: 85, align: 'center' });
-        doc.text('PRESENT', 128, boxY, { width: 85, align: 'center' });
-        doc.text('LATES', 215, boxY, { width: 85, align: 'center' });
-        doc.text('HALF-DAYS', 302, boxY, { width: 85, align: 'center' });
-        doc.text('ABSENTS', 389, boxY, { width: 85, align: 'center' });
-        doc.text('LEAVES', 474, boxY, { width: 85, align: 'center' });
+        doc.text('WORKING DAYS', 65, boxY, { width: 75, align: 'center' });
+        doc.text('PRESENT', 145, boxY, { width: 75, align: 'center' });
+        doc.text('LATES', 225, boxY, { width: 75, align: 'center' });
+        doc.text('HALF-DAYS', 305, boxY, { width: 75, align: 'center' });
+        doc.text('ABSENTS', 385, boxY, { width: 75, align: 'center' });
+        doc.text('LEAVES', 465, boxY, { width: 75, align: 'center' });
 
         doc.fontSize(10).font('Helvetica-Bold').fillColor('#0F172A');
-        doc.text(String(attSummary.workingDays), 41, boxY + 14, { width: 85, align: 'center' });
-        doc.text(String(attSummary.presentDays), 128, boxY + 14, { width: 85, align: 'center' });
-        doc.text(String(attSummary.lateDays), 215, boxY + 14, { width: 85, align: 'center' });
-        doc.text(String(attSummary.halfDays), 302, boxY + 14, { width: 85, align: 'center' });
-        doc.text(String(attSummary.absentDays), 389, boxY + 14, { width: 85, align: 'center' });
-        doc.text(String(attSummary.leaveDays), 474, boxY + 14, { width: 85, align: 'center' });
+        doc.text(String(attSummary.workingDays), 65, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.presentDays), 145, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.lateDays), 225, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.halfDays), 305, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.absentDays), 385, boxY + 14, { width: 75, align: 'center' });
+        doc.text(String(attSummary.leaveDays), 465, boxY + 14, { width: 75, align: 'center' });
 
         y += 60;
 
         // Earnings & Deductions Tables
-        const tableMargin = 36;
-        const colGap = 20;
-        const colWidth = (doc.page.width - (tableMargin * 2) - colGap) / 2;
-        const earnLeft = tableMargin;
-        const dedLeft = tableMargin + colWidth + colGap;
+        const tableMargin = 60;
+        const tableWidth = doc.page.width - (tableMargin * 2);
+        const colWidth = (tableWidth / 2) - 10;
+        const dedLeft = tableMargin + colWidth + 20;
 
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B');
-        doc.text('EARNINGS', earnLeft, y);
-        doc.text('DEDUCTIONS', dedLeft, y);
-        y += 18;
+        doc.rect(tableMargin, y, colWidth, 24).fill('#F1F5F9');
+        doc.rect(dedLeft, y, colWidth, 24).fill('#F1F5F9');
 
-        let earnY = y;
-        doc.fontSize(9).font('Helvetica').fillColor('#334155');
-        for (const e of payslip.earnings || []) {
-            doc.text(e.component, earnLeft, earnY, { width: colWidth - 90 });
-            doc.text(`PKR ${e.amount.toLocaleString()}`, earnLeft, earnY, { align: 'right', width: colWidth });
-            earnY += 16;
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#334155');
+        doc.text('EARNINGS', tableMargin + 10, y + 7);
+        doc.text('AMOUNT (PKR)', tableMargin, y + 7, { align: 'right', width: colWidth - 10 });
+        doc.text('DEDUCTIONS', dedLeft + 10, y + 7);
+        doc.text('AMOUNT (PKR)', dedLeft, y + 7, { align: 'right', width: colWidth - 10 });
+
+        y += 24;
+
+        const maxRows = Math.max(payslip.earnings?.length || 0, payslip.deductions?.length || 0, 1);
+        doc.fontSize(8.5).font('Helvetica').fillColor('#1E293B');
+
+        for (let i = 0; i < maxRows; i++) {
+            const earn = payslip.earnings?.[i];
+            const ded = payslip.deductions?.[i];
+
+            const rowBg = i % 2 === 0 ? '#FFFFFF' : '#F8FAFC';
+            doc.rect(tableMargin, y, colWidth, 20).fill(rowBg);
+            doc.rect(dedLeft, y, colWidth, 20).fill(rowBg);
+
+            doc.fillColor('#1E293B');
+
+            if (earn) {
+                doc.text(earn.component, tableMargin + 10, y + 5, { width: colWidth - 100 });
+                doc.text(earn.amount.toLocaleString(), tableMargin, y + 5, { align: 'right', width: colWidth - 10 });
+            }
+
+            if (ded) {
+                doc.text(ded.component, dedLeft + 10, y + 5, { width: colWidth - 100 });
+                doc.text(ded.amount.toLocaleString(), dedLeft, y + 5, { align: 'right', width: colWidth - 10 });
+            }
+
+            y += 20;
         }
 
-        let dedY = y;
-        for (const d of payslip.deductions || []) {
-            doc.text(d.component, dedLeft, dedY, { width: colWidth - 90 });
-            doc.text(`PKR ${d.amount.toLocaleString()}`, dedLeft, dedY, { align: 'right', width: colWidth });
-            dedY += 16;
-        }
+        // Totals Row
+        doc.rect(tableMargin, y, colWidth, 24).fill('#E2E8F0');
+        doc.rect(dedLeft, y, colWidth, 24).fill('#E2E8F0');
 
-        y = Math.max(earnY, dedY) + 15;
-
-        // Subtotals
-        doc.rect(tableMargin, y, doc.page.width - (tableMargin * 2), 25).fill('#F1F5F9');
         doc.fontSize(9).font('Helvetica-Bold').fillColor('#0F172A');
-
-        doc.text('Gross Earnings:', earnLeft + 10, y + 7, { width: 110 });
-        doc.text(`PKR ${payslip.grossPay.toLocaleString()}`, earnLeft, y + 7, { align: 'right', width: colWidth - 10 });
-
+        doc.text('Total Earnings:', tableMargin + 10, y + 7, { width: 110 });
+        doc.text(`PKR ${payslip.grossPay.toLocaleString()}`, tableMargin, y + 7, { align: 'right', width: colWidth - 10 });
         doc.text('Total Deductions:', dedLeft + 10, y + 7, { width: 110 });
         doc.text(`PKR ${payslip.totalDeductions.toLocaleString()}`, dedLeft, y + 7, { align: 'right', width: colWidth - 10 });
 
-        y += 35;
+        y += 32;
 
         // Net Pay Banner
-        doc.rect(tableMargin, y, doc.page.width - (tableMargin * 2), 40).fill(primaryColor);
-        doc.fontSize(12).font('Helvetica-Bold').fillColor('#FFFFFF');
-        doc.text('NET TAKE-HOME SALARY:', tableMargin + 15, y + 14);
-        doc.fontSize(14).font('Helvetica-Bold').text(`PKR ${payslip.netPay.toLocaleString()}`, tableMargin, y + 13, { align: 'right', width: doc.page.width - (tableMargin * 2) - 15 });
+        doc.rect(tableMargin, y, doc.page.width - (tableMargin * 2), 36).fill(darkPurple);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#FFFFFF');
+        doc.text('NET TAKE-HOME SALARY:', tableMargin + 15, y + 12);
+        doc.fontSize(13).font('Helvetica-Bold').text(`PKR ${payslip.netPay.toLocaleString()}`, tableMargin, y + 11, { align: 'right', width: doc.page.width - (tableMargin * 2) - 15 });
 
-        y += 55;
+        // Footer Section (Dashed Line + Centered Subtitle + Bottom Purple Banner)
+        doc.page.margins.bottom = 0;
 
-        // QR Code & Signatures
+        doc.moveTo(60, doc.page.height - 110)
+           .lineTo(doc.page.width - 60, doc.page.height - 110)
+           .dash(2, { space: 2 })
+           .strokeColor('#333333')
+           .stroke();
+
         if (qrCodeDataUri) {
-            doc.image(qrCodeDataUri, 36, y, { width: 65 });
-            doc.fontSize(7).font('Helvetica').fillColor('#64748B').text('Scan to verify payslip authenticity', 36, y + 70);
+            try {
+                const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                const imageBuffer = Buffer.from(base64Data, 'base64');
+                doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
+            } catch (e) {}
         }
 
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B').text('Authorized Signatory', doc.page.width - 196, y + 45, { align: 'center', width: 160 });
-        doc.fontSize(8).font('Helvetica').fillColor('#64748B').text('IT Consulting and Services (ITCS)', doc.page.width - 196, y + 58, { align: 'center', width: 160 });
-        doc.moveTo(doc.page.width - 196, y + 40).lineTo(doc.page.width - 36, y + 40).strokeColor('#CBD5E1').lineWidth(1).stroke();
+        doc.fillColor('#444444')
+           .fontSize(7)
+           .font('Helvetica-Bold')
+           .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 45, doc.page.height - 52, { align: 'center', width: doc.page.width - 90, lineBreak: false });
+
+        const bannerHeight = 38;
+        const bannerY = doc.page.height - bannerHeight;
+
+        doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(darkPurple);
+
+        doc.save()
+           .moveTo(0, bannerY)
+           .lineTo(85, bannerY)
+           .lineTo(120, doc.page.height)
+           .lineTo(0, doc.page.height)
+           .closePath()
+           .fill(magentaAccent);
+
+        doc.save()
+           .moveTo(doc.page.width - 85, bannerY)
+           .lineTo(doc.page.width, bannerY)
+           .lineTo(doc.page.width, doc.page.height)
+           .lineTo(doc.page.width - 120, doc.page.height)
+           .closePath()
+           .fill(magentaAccent);
+
+        doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
+        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 6, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 16, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 26, { align: 'center', width: doc.page.width - 20, lineBreak: false });
+        
+        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 16, { width: 100, align: 'left', lineBreak: false });
+        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 16, { width: 100, align: 'right', lineBreak: false });
 
         doc.end();
     });
@@ -563,12 +643,26 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
             });
         }
 
-        const { earnings, deductions, paymentMethod, notes } = req.body;
+        const {
+            earnings, deductions, paymentMethod, notes,
+            beneficiaryAccount, beneficiaryName, beneficiaryBank, customerReference,
+            taxDeduction, loanDeduction, pfPayout
+        } = req.body;
 
         if (earnings !== undefined) payslip.earnings = earnings;
         if (deductions !== undefined) payslip.deductions = deductions;
         if (paymentMethod !== undefined) payslip.paymentMethod = paymentMethod;
         if (notes !== undefined) payslip.notes = notes;
+        if (beneficiaryAccount !== undefined) payslip.beneficiaryAccount = beneficiaryAccount;
+        if (beneficiaryName !== undefined) payslip.beneficiaryName = beneficiaryName;
+        if (beneficiaryBank !== undefined) payslip.beneficiaryBank = beneficiaryBank;
+        if (customerReference) {
+            payslip.customerReference = customerReference;
+        } else if (!payslip.customerReference) {
+            payslip.customerReference = generateCustomerReference(payslip.periodYear, payslip.periodMonth, 1);
+        }
+        if (loanDeduction !== undefined) payslip.loanDeduction = Number(loanDeduction) || 0;
+        if (pfPayout !== undefined) payslip.pfPayout = Number(pfPayout) || 0;
 
         const grossPay = (payslip.earnings || []).reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
         const totalDeductions = (payslip.deductions || []).reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
@@ -612,7 +706,8 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         // Fetch company details for branding
         const company = await Company.findOne().lean() as any;
 
-        const primaryColor = company?.branding?.primaryColor || '#4A148C';
+        const darkPurple = company?.branding?.primaryColor || '#1C0626';
+        const magentaAccent = company?.branding?.secondaryColor || '#721466';
         const totalNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
 
         const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
@@ -622,14 +717,23 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         res.setHeader('Content-Disposition', `attachment; filename="Bank_Advice_${safeTitle}.pdf"`);
         doc.pipe(res);
 
-        // Top Accent Graphic Ribbon (matching Payslip PDF polygon geometry & dimensions)
+        // Top Accent Graphic Ribbon (matching ITCS polygon geometry)
         doc.save()
-           .moveTo(440, 0)
+           .moveTo(doc.page.width - 240, 0)
+           .lineTo(doc.page.width - 90, 75)
+           .lineTo(doc.page.width - 90, 115)
+           .lineTo(doc.page.width, 40)
            .lineTo(doc.page.width, 0)
-           .lineTo(doc.page.width, 85)
-           .lineTo(470, 85)
            .closePath()
-           .fill(primaryColor);
+           .fill(darkPurple);
+
+        doc.save()
+           .moveTo(doc.page.width - 90, 75)
+           .lineTo(doc.page.width - 90, 115)
+           .lineTo(doc.page.width, 175)
+           .lineTo(doc.page.width, 40)
+           .closePath()
+           .fill(magentaAccent);
 
         // Company Logo (Top-Left)
         let logoDrawn = false;
@@ -667,7 +771,7 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         }
 
         if (!logoDrawn) {
-            doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 36, 30);
+            doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text((company?.name || 'IT CONSULTING & SERVICES').toUpperCase(), 36, 30);
         }
 
         // Company Full Name & Subtitle on Left (White background area, X=140 to 430)
@@ -686,7 +790,7 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
 
         // Table Header
         const drawTableHeader = (startY: number) => {
-            doc.rect(36, startY, doc.page.width - 72, 25).fill(primaryColor);
+            doc.rect(36, startY, doc.page.width - 72, 25).fill(darkPurple);
             doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#FFFFFF');
             
             doc.text('Sr #', 45, startY + 7, { width: 35 });
@@ -738,7 +842,7 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
             y += 8;
         }
 
-        doc.rect(36, y, doc.page.width - 72, 32).fill(primaryColor);
+        doc.rect(36, y, doc.page.width - 72, 32).fill(darkPurple);
         doc.fontSize(11).font('Helvetica-Bold').fillColor('#FFFFFF');
         doc.text(`GRAND TOTAL (${payslips.length} Employees):`, 48, y + 10, { width: 400 });
         doc.fontSize(12).font('Helvetica-Bold').fillColor('#FFFFFF');
@@ -936,6 +1040,25 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             }
         }
 
+        // Check for approved Loan Pause Requests for this period
+        const approvedLoanPauses = await EmployeeRequest.find({
+            status: { $in: ['Approved', 'Completed'] },
+            $or: [
+                { category: { $regex: /loan.*pause|pause.*loan/i } },
+                { requestType: { $regex: /loan.*pause|pause.*loan/i } }
+            ]
+        }).lean();
+
+        const pausedEmployeesMap: Record<string, string> = {};
+        for (const pauseReq of approvedLoanPauses) {
+            const reqMonth = Number(pauseReq.details?.periodMonth || (pauseReq.details?.month ? new Date(pauseReq.details.month).getMonth() + 1 : null));
+            const reqYear = Number(pauseReq.details?.periodYear || (pauseReq.details?.year ? new Date(pauseReq.details.year).getFullYear() : null));
+            
+            if ((!reqMonth || reqMonth === run.periodMonth) && (!reqYear || reqYear === run.periodYear)) {
+                pausedEmployeesMap[pauseReq.employeeId] = pauseReq.details?.reason || 'Approved HR Loan Waiver / Pause';
+            }
+        }
+
         // ── Approved Expense Claims Reimbursements ──
         // Unlink previous claims linked to this run before re-generating
         await ExpenseClaim.updateMany(
@@ -959,6 +1082,31 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             expenseClaimMap[empId].claimIds.push(claim._id);
         }
 
+        // Ensure ERP Task ID exists for this run
+        if (!run.erpTaskId) {
+            run.erpTaskId = `BATCH-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+            run.erpStatus = run.erpStatus || 'Pending';
+            await run.save();
+        }
+
+        // ── Approved Provident Fund (PF) Withdrawal Claims ──
+        const approvedPfRequests = await EmployeeRequest.find({
+            status: { $in: ['Approved', 'Completed'] },
+            category: { $in: ['Provident Fund', 'PF Withdrawal', 'Request Provident Fund'] },
+            $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }]
+        }).lean() as any[];
+
+        const pfRequestMap: Record<string, { total: number; requestIds: any[] }> = {};
+        for (const pfr of approvedPfRequests) {
+            const empId = pfr.employeeId;
+            if (!pfRequestMap[empId]) {
+                pfRequestMap[empId] = { total: 0, requestIds: [] };
+            }
+            const pfAmt = Number((pfr as any).details?.requestedAmount || (pfr as any).amount || 0);
+            pfRequestMap[empId].total += pfAmt;
+            pfRequestMap[empId].requestIds.push(pfr._id);
+        }
+
         const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
         const counter = await Counter.findOneAndUpdate(
             { key: counterKey },
@@ -971,8 +1119,11 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         const payslips = [];
         const missingSalary: string[] = [];
         const usedClaimIds: any[] = [];
+        const usedPfRequestIds: any[] = [];
 
+        let empIndex = 0;
         for (const emp of employees) {
+            empIndex++;
             // Map salaryComponents (with financeInfo fallback) → Payslip.earnings[]
             const earnings = resolveEmployeeEarnings(emp);
             if (earnings.length === 0) {
@@ -988,6 +1139,19 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                     type: 'variable',
                 });
                 usedClaimIds.push(...empClaimInfo.claimIds);
+            }
+
+            // Non-taxable PF Withdrawal payout
+            let pfPayoutAmount = 0;
+            const empPfInfo = pfRequestMap[emp.employeeId];
+            if (empPfInfo && empPfInfo.total > 0) {
+                pfPayoutAmount = empPfInfo.total;
+                earnings.push({
+                    component: 'PF Withdrawal (Non-Taxable)',
+                    amount: pfPayoutAmount,
+                    type: 'variable',
+                });
+                usedPfRequestIds.push(...empPfInfo.requestIds);
             }
 
             // Check if employee's work anniversary falls in the run period month
@@ -1059,16 +1223,24 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 }
             }
             
+            let loanDeductAmount = 0;
+            let loanPauseNote = '';
             const loanInfo = loanBalanceMap[emp.employeeId];
             if (loanInfo && loanInfo.balance > 0) {
-                // If they still owe money, calculate deduction
-                const amountToDeduct = Math.min(loanInfo.balance, loanInfo.monthlyDeduction);
-                if (amountToDeduct > 0) {
-                    deductions.push({
-                        component: 'Loan Deduction',
-                        amount: amountToDeduct
-                    });
-                    totalDeductions += amountToDeduct;
+                if (pausedEmployeesMap[emp.employeeId]) {
+                    loanDeductAmount = 0;
+                    loanPauseNote = `Loan deduction paused for ${MONTH_NAMES[run.periodMonth] || 'month'} ${run.periodYear} (Approved Request)`;
+                } else {
+                    // If they still owe money, calculate deduction
+                    const amountToDeduct = Math.min(loanInfo.balance, loanInfo.monthlyDeduction);
+                    if (amountToDeduct > 0) {
+                        loanDeductAmount = amountToDeduct;
+                        deductions.push({
+                            component: 'Loan Deduction',
+                            amount: amountToDeduct
+                        });
+                        totalDeductions += amountToDeduct;
+                    }
                 }
             }
             
@@ -1077,6 +1249,16 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
             nextSeq++;
 
+            // Guaranteed non-duplicating unique customer reference
+            const customerReference = generateCustomerReference(run.periodYear, run.periodMonth, empIndex);
+
+            // Default bank details from employee, or leave empty for finance/boss to fill
+            const beneficiaryAccount = emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
+            const beneficiaryName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+            const beneficiaryBank = emp.bankDetails?.bankName || 'Meezan Bank';
+
+            const payslipNotes = [notes, loanPauseNote].filter(Boolean).join(' • ');
+
             payslips.push({
                 payslipNo,
                 employeeId: emp.employeeId,
@@ -1084,6 +1266,13 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 periodMonth: run.periodMonth,
                 periodYear: run.periodYear,
                 currency: run.currency,
+                beneficiaryAccount,
+                beneficiaryName,
+                beneficiaryBank,
+                customerReference,
+                taxDeduction: 0,
+                loanDeduction: loanDeductAmount,
+                pfPayout: pfPayoutAmount,
                 earnings,
                 deductions,
                 grossPay,
@@ -1091,7 +1280,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 netPay,
                 status: 'Draft',
                 paymentMethod: 'Bank Transfer',
-                notes: notes || undefined,
+                notes: payslipNotes || undefined,
             });
         }
 
@@ -1100,6 +1289,13 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         if (usedClaimIds.length > 0) {
             await ExpenseClaim.updateMany(
                 { _id: { $in: usedClaimIds } },
+                { payoutStatus: 'Included in Payroll', payrollRunId: run._id }
+            );
+        }
+
+        if (usedPfRequestIds.length > 0) {
+            await EmployeeRequest.updateMany(
+                { _id: { $in: usedPfRequestIds } },
                 { payoutStatus: 'Included in Payroll', payrollRunId: run._id }
             );
         }
@@ -1179,11 +1375,38 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                     await employee.save();
                 }
             }
+
+            // Update Employee loans remainingAmount and status
+            const loanDed = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction');
+            if (loanDed && loanDed.amount > 0 && employee.loans && employee.loans.length > 0) {
+                let remDeduction = loanDed.amount;
+                for (const loan of employee.loans) {
+                    if (loan.status === 'Active' && loan.remainingAmount > 0 && remDeduction > 0) {
+                        const deductThis = Math.min(loan.remainingAmount, remDeduction);
+                        loan.remainingAmount -= deductThis;
+                        remDeduction -= deductThis;
+                        if (loan.remainingAmount <= 0) {
+                            loan.remainingAmount = 0;
+                            loan.status = 'Paid';
+                        }
+                    }
+                }
+                await employee.save();
+            }
         }
 
         run.status = 'Approved';
         run.approvedBy = authReq.user!.userId;
         (run as any).approvedAt = new Date();
+
+        // Auto-generate internal ERP Batch / Task ID if not set
+        if (!run.erpTaskId) {
+            run.erpTaskId = `ERP-BATCH-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}-${String(run._id).slice(-4).toUpperCase()}`;
+        }
+        if (!run.erpStatus) {
+            run.erpStatus = 'Pending';
+        }
+
         await run.save();
 
         return res.json(run);
@@ -1235,7 +1458,38 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
 
         await ExpenseClaim.updateMany(
             { payrollRunId: run._id },
-            { payoutStatus: 'Paid', paidAt: new Date() }
+            { payoutStatus: 'Paid', paidAt: new Date(), erpReferenceId: erpReferenceId.trim() }
+        );
+
+        // Process PF withdrawal debits from employee balances upon disbursement
+        const payslipsForPF = await Payslip.find({ payrollRunId: run._id });
+        for (const slip of payslipsForPF) {
+            if (slip.pfPayout && slip.pfPayout > 0) {
+                const emp = await Employee.findOne({ employeeId: slip.employeeId });
+                if (emp) {
+                    const currentBal = emp.providentFundBalance || 0;
+                    const payoutAmt = Math.min(currentBal, slip.pfPayout);
+                    emp.providentFundBalance = Math.max(0, currentBal - payoutAmt);
+                    if (!emp.providentFundHistory) emp.providentFundHistory = [];
+                    emp.providentFundHistory.push({
+                        amount: payoutAmt,
+                        type: 'debit',
+                        source: 'payroll',
+                        date: new Date(),
+                        description: `PF Withdrawal (Disbursed in Payroll - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear})`,
+                        periodMonth: run.periodMonth,
+                        periodYear: run.periodYear,
+                        payrollRunId: run._id.toString(),
+                        erpReferenceId: erpReferenceId.trim()
+                    } as any);
+                    await emp.save();
+                }
+            }
+        }
+
+        await EmployeeRequest.updateMany(
+            { payrollRunId: run._id, category: { $in: ['Provident Fund', 'Provident Fund Withdrawal', 'PF Withdrawal'] } },
+            { status: 'Completed', payoutStatus: 'Paid', paidAt: new Date(), erpReferenceId: erpReferenceId.trim() }
         );
 
         // Dispatch background PDF payslip emails to employees
@@ -1314,6 +1568,149 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
     }
 });
 
+/**
+ * @route   GET /api/payroll/:runId/export-bank-excel
+ * @desc    Export Bank Disbursement Advice as 4-column CSV/Excel compatible sheet
+ *          Columns: Account Number, Beneficiary Name, Customer Reference, Transaction Amount
+ * @access  admin, super-admin, finance
+ */
+router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
 
+        const { runId } = req.params;
+        const run = await PayrollRun.findById(runId).lean() as any;
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        const payslips = await Payslip.find({ payrollRunId: runId })
+            .populate('employeeDetails', 'firstName lastName bankDetails')
+            .lean() as any[];
+
+        if (!payslips.length) {
+            return res.status(400).json({ message: 'No payslips found for this run.' });
+        }
+
+        // CSV Header with 4 exact required columns
+        const headers = ['Account Number', 'Beneficiary Name', 'Customer Reference', 'Transaction Amount'];
+        const rows = payslips.map((p, idx) => {
+            const rawAcc = p.beneficiaryAccount || p.employeeDetails?.bankDetails?.accountNumber || p.employeeDetails?.bankDetails?.iban || '';
+            const accNo = String(rawAcc).trim();
+            const name = p.beneficiaryName || `${p.employeeDetails?.firstName || ''} ${p.employeeDetails?.lastName || ''}`.trim() || p.employeeId;
+            const ref = p.customerReference || generateCustomerReference(run.periodYear, run.periodMonth, idx + 1);
+            const amount = p.netPay || 0;
+
+            // Preserve exact account digits in Excel without scientific notation or leading zero loss
+            const formattedAcc = accNo ? `="${accNo.replace(/"/g, '')}"` : '""';
+            const escapeCsv = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+            return [formattedAcc, escapeCsv(name), escapeCsv(ref), amount].join(',');
+        });
+
+        // Add UTF-8 BOM so Excel opens with correct encoding
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+
+        const safeTitle = (run.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="Bank_Disbursement_4Col_${safeTitle}.csv"`);
+        return res.send(csvContent);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   PUT /api/payroll/:runId/erp-task
+ * @desc    Finance workflow to track ERP Task ID, enter ERP reference/voucher ID, and set status
+ * @access  admin, super-admin, finance
+ */
+router.put('/:runId/erp-task', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const run = await PayrollRun.findById(req.params.runId);
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        const { erpReferenceId, erpStatus, erpNotes } = req.body;
+
+        if (erpReferenceId !== undefined) run.erpReferenceId = String(erpReferenceId).trim();
+        if (erpStatus !== undefined) {
+            run.erpStatus = erpStatus;
+            if (erpStatus === 'Posted') run.erpPostedAt = new Date();
+        }
+        if (erpNotes !== undefined) run.erpNotes = erpNotes;
+
+        await run.save();
+        return res.json(run);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   POST /api/payroll/pf/maturity-profit
+ * @desc    Distribute annual Provident Fund profit/yield based on company performance %
+ * @access  admin, super-admin, finance
+ */
+router.post('/pf/maturity-profit', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const { profitPercentage, note, year } = req.body;
+        const rate = Number(profitPercentage);
+        const fiscalYear = Number(year) || new Date().getFullYear();
+
+        if (isNaN(rate)) {
+            return res.status(400).json({ message: 'Valid profit percentage is required.' });
+        }
+
+        const employees = await Employee.find({
+            providentFundBalance: { $gt: 0 }
+        });
+
+        let updatedCount = 0;
+        let totalProfitDistributed = 0;
+
+        for (const emp of employees) {
+            const currentBal = emp.providentFundBalance || 0;
+            const profitAmount = Math.round((currentBal * rate) / 100);
+
+            if (profitAmount !== 0) {
+                const historyEntry = {
+                    amount: Math.abs(profitAmount),
+                    type: profitAmount >= 0 ? 'credit' : 'debit',
+                    source: 'manual',
+                    date: new Date(),
+                    description: `Annual PF Maturity Profit Allocation (${rate > 0 ? '+' : ''}${rate}% for FY ${fiscalYear}) - ${note || 'Company Performance Yield'}`,
+                    periodYear: fiscalYear
+                };
+
+                if (!emp.providentFundHistory) emp.providentFundHistory = [];
+                emp.providentFundHistory.push(historyEntry as any);
+                emp.providentFundBalance = currentBal + profitAmount;
+                await emp.save();
+
+                updatedCount++;
+                totalProfitDistributed += profitAmount;
+            }
+        }
+
+        return res.json({
+            message: `Successfully allocated ${rate}% PF profit across ${updatedCount} employees.`,
+            updatedCount,
+            totalProfitDistributed,
+            fiscalYear
+        });
+    } catch (err) {
+        next(err);
+    }
+});
 
 export default router;

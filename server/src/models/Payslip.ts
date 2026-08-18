@@ -19,6 +19,17 @@ export interface IPayslip extends Document {
     periodYear: number;
     currency: string;                   // inherited from PayrollRun
 
+    // Beneficiary Account Info (allows custom/proxy account if employee has no account)
+    beneficiaryAccount?: string;
+    beneficiaryName?: string;
+    beneficiaryBank?: string;
+    customerReference?: string;         // Unique bank transfer reference
+
+    // Financial Breakdown
+    taxDeduction?: number;
+    loanDeduction?: number;
+    pfPayout?: number;
+
     // Earnings — auto-populated from Employee.salaryComponents[]
     earnings: IPayslipEarning[];
 
@@ -72,6 +83,15 @@ const PayslipSchema: Schema = new Schema(
         periodMonth: { type: Number, required: true, min: 1, max: 12 },
         periodYear: { type: Number, required: true },
         currency: { type: String, default: 'PKR' },
+
+        beneficiaryAccount: { type: String },
+        beneficiaryName: { type: String },
+        beneficiaryBank: { type: String },
+        customerReference: { type: String, index: true },
+
+        taxDeduction: { type: Number, default: 0 },
+        loanDeduction: { type: Number, default: 0 },
+        pfPayout: { type: Number, default: 0 },
 
         // Populated from Employee.salaryComponents[] on generation
         earnings: { type: [EarningSchema], default: [] },

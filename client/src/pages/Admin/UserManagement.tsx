@@ -376,6 +376,7 @@ const UserManagement = () => {
                             <option value="all">All Roles</option>
                             <option value="super-admin">Super Admin</option>
                             <option value="admin">Admin</option>
+                            <option value="hr">HR</option>
                             <option value="finance">Finance</option>
                             <option value="manager">Manager</option>
                             <option value="employee">Employee</option>
@@ -457,6 +458,7 @@ const UserManagement = () => {
                                             >
                                                 <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
                                                 <option value="admin">Admin</option>
+                                                <option value="hr">HR</option>
                                                 <option value="finance">Finance</option>
                                                 <option value="manager">Manager</option>
                                                 <option value="employee">Employee</option>
@@ -588,6 +590,7 @@ const UserManagement = () => {
                                 >
                                     <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
                                     <option value="admin">Admin</option>
+                                    <option value="hr">HR</option>
                                     <option value="finance">Finance</option>
                                     <option value="manager">Manager</option>
                                     <option value="employee">Employee</option>

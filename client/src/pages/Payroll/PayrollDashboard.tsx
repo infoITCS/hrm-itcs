@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type ElementType, type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
@@ -119,8 +120,8 @@ const CreateRunModal = ({
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -200,7 +201,8 @@ const CreateRunModal = ({
                     </div>
                 </form>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

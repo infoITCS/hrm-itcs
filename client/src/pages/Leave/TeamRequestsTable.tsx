@@ -260,29 +260,31 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                         </>
                                     ) : (
                                         <div className="flex flex-col items-center group/action relative w-full">
-                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                                                req.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
-                                            }`}>
-                                                {req.status}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                                    req.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
+                                                }`}>
+                                                    {req.status}
+                                                </span>
+                                                {isAdmin && (
+                                                    <button 
+                                                        onClick={() => {
+                                                            setEditTargetId(req._id);
+                                                            setEditTargetStatus(req.status);
+                                                            setEditTargetNote(req.adminNote || '');
+                                                            setShowEditModal(true);
+                                                        }}
+                                                        className="inline-flex items-center justify-center p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-all shadow-2xs cursor-pointer"
+                                                        title="Edit Status"
+                                                    >
+                                                        <Edit3 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
                                             {req.adminNote && (
-                                                <span className="text-[8px] text-slate-400 mt-1 max-w-[80px] truncate italic" title={req.adminNote}>
+                                                <span className="text-[8px] text-slate-400 mt-1 max-w-[120px] truncate italic text-center" title={req.adminNote}>
                                                     "{req.adminNote}"
                                                 </span>
-                                            )}
-                                            {isAdmin && (
-                                                <button 
-                                                    onClick={() => {
-                                                        setEditTargetId(req._id);
-                                                        setEditTargetStatus(req.status);
-                                                        setEditTargetNote(req.adminNote || '');
-                                                        setShowEditModal(true);
-                                                    }}
-                                                    className="inline-flex items-center justify-center p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-all shadow-2xs cursor-pointer ml-1.5"
-                                                    title="Edit Status"
-                                                >
-                                                    <Edit3 size={14} />
-                                                </button>
                                             )}
                                         </div>
                                     )}
