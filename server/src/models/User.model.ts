@@ -46,13 +46,15 @@ const UserSchema: Schema = new Schema({
 UserSchema.pre<IUser>('save', async function (next) {
     try {
         if (this.isModified('password') && this.password) {
-            try { bcrypt.getRounds(this.password); } catch {
+            const isHashed = /^\$2[aby]\$\d{2}\$/.test(this.password);
+            if (!isHashed) {
                 const salt = await bcrypt.genSalt(10);
                 this.password = await bcrypt.hash(this.password, salt);
             }
         }
         if (this.isModified('salaryPin') && this.salaryPin) {
-            try { bcrypt.getRounds(this.salaryPin); } catch {
+            const isPinHashed = /^\$2[aby]\$\d{2}\$/.test(this.salaryPin);
+            if (!isPinHashed) {
                 const salt = await bcrypt.genSalt(10);
                 this.salaryPin = await bcrypt.hash(this.salaryPin, salt);
             }
@@ -65,12 +67,30 @@ UserSchema.pre<IUser>('save', async function (next) {
 
 UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
     if (!this.password) return false;
-    return bcrypt.compare(candidatePassword, this.password);
+    if (this.password.startsWith('$2')) {
+        return bcrypt.compare(candidatePassword, this.password);
+    }
+    // Fallback if previously saved as plaintext
+    const isPlainMatch = candidatePassword === this.password;
+    if (isPlainMatch) {
+        // Auto-upgrade to bcrypt hash
+        this.password = candidatePassword;
+        await this.save();
+    }
+    return isPlainMatch;
 };
 
 UserSchema.methods.compareSalaryPin = async function (candidatePin: string): Promise<boolean> {
     if (!this.salaryPin) return false;
-    return bcrypt.compare(candidatePin, this.salaryPin);
+    if (this.salaryPin.startsWith('$2')) {
+        return bcrypt.compare(candidatePin, this.salaryPin);
+    }
+    const isPlainMatch = candidatePin === this.salaryPin;
+    if (isPlainMatch) {
+        this.salaryPin = candidatePin;
+        await this.save();
+    }
+    return isPlainMatch;
 };
 
 export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

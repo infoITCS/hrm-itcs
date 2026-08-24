@@ -201,8 +201,8 @@ export const SalaryPinModal: React.FC<SalaryPinModalProps> = ({
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden animate-scaleIn border border-slate-100 relative">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full max-h-[calc(100vh-2rem)] overflow-y-auto animate-scaleIn border border-slate-100 relative my-auto">
                 {/* Close Button */}
                 <button
                     onClick={onClose}

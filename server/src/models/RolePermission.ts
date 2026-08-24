@@ -66,9 +66,17 @@ export async function bootstrapPermissions() {
             );
         }
 
-        // Migrate any existing 'hr' users in database to 'admin'
+        // Auto-encrypt any legacy unhashed passwords or salary PINs in the database
         const User = mongoose.models.User || mongoose.model('User');
-        await User.updateMany({ role: 'hr' }, { $set: { role: 'admin' } });
+        const unhashedUsers = await User.find({
+            $or: [
+                { password: { $exists: true, $ne: '', $not: /^\$2[aby]\$/ } },
+                { salaryPin: { $exists: true, $ne: '', $not: /^\$2[aby]\$/ } }
+            ]
+        });
+        for (const u of unhashedUsers) {
+            await u.save(); // triggers our updated pre-save hook to hash with bcrypt (10 rounds)
+        }
     } catch (err) {
         console.error('Error bootstrapping default role permissions:', err);
     }
