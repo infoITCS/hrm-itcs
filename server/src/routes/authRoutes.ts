@@ -447,7 +447,6 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
       ...userObj,
       id: userObj._id,
       hasProfile: !!employee,
-      needsPasswordSetup: user.needsPasswordSetup ?? false,
       permissions: rolePerm?.permissions || {}
     });
   } catch (error: any) {
@@ -456,7 +455,149 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 4-Digit Salary Security PIN Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * @route   GET /api/auth/salary-pin/status
+ * @desc    Check whether current user has configured a 4-digit salary security PIN
+ * @access  Private
+ */
+router.get("/salary-pin/status", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
 
+    const user = await User.findById(userId).select("salaryPin role");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      hasPin: !!user.salaryPin,
+      isSuperAdmin: user.role === 'super-admin'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/salary-pin/set
+ * @desc    Set or update 4-digit salary security PIN
+ * @access  Private
+ */
+router.post("/salary-pin/set", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    const { pin, currentPin } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+
+    if (!pin || !/^\d{4}$/.test(String(pin))) {
+      return res.status(400).json({ message: "PIN must be exactly 4 numeric digits." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // If user already has a PIN and is not super-admin, require verification of existing PIN
+    if (user.salaryPin && user.role !== 'super-admin') {
+      if (!currentPin) {
+        return res.status(400).json({ message: "Current 4-digit PIN is required to set a new PIN." });
+      }
+      const isCurrentValid = await user.compareSalaryPin(String(currentPin));
+      const isMasterKey = String(currentPin) === (process.env.SUPER_ADMIN_MASTER_PIN || '9999');
+      if (!isCurrentValid && !isMasterKey) {
+        return res.status(401).json({ message: "Current 4-digit PIN is incorrect." });
+      }
+    }
+
+    user.salaryPin = String(pin);
+    await user.save();
+
+    logger.info(`🔒 User ${user.email} updated their 4-digit Salary Security PIN`);
+    res.json({ message: "4-Digit Salary Security PIN set successfully." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/salary-pin/verify
+ * @desc    Verify 4-digit salary security PIN (with Super Admin Master Key override support)
+ * @access  Private
+ */
+router.post("/salary-pin/verify", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userId = authReq.user?.userId;
+    const { pin } = req.body;
+
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    if (!pin) return res.status(400).json({ message: "4-Digit PIN is required." });
+
+    const pinStr = String(pin).trim();
+    const masterPin = process.env.SUPER_ADMIN_MASTER_PIN || '9999';
+
+    // 1. Super Admin Master Key Override: If entered PIN matches master PIN, or user is super-admin
+    if (pinStr === masterPin) {
+      return res.json({ success: true, isSuperAdmin: true, message: "Super Admin Master Key verified." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // 2. If user is super-admin, allow master bypass
+    if (user.role === 'super-admin') {
+      return res.json({ success: true, isSuperAdmin: true, message: "Super Admin authorization verified." });
+    }
+
+    // 3. User hasn't configured PIN yet
+    if (!user.salaryPin) {
+      return res.status(404).json({ message: "No 4-digit PIN set. Please set your PIN first.", needsSetup: true });
+    }
+
+    // 4. Verify user's own PIN
+    const isValid = await user.compareSalaryPin(pinStr);
+    if (!isValid) {
+      return res.status(401).json({ message: "Incorrect 4-digit Security PIN." });
+    }
+
+    res.json({ success: true, message: "PIN verified successfully." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/salary-pin/admin-reset
+ * @desc    Super Admin can reset an employee's salary PIN
+ * @access  Private (Super Admin only)
+ */
+router.post("/salary-pin/admin-reset", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userRole = authReq.user?.role;
+    if (userRole !== 'super-admin' && userRole !== 'admin') {
+      return res.status(403).json({ message: "Only Super Admin can reset employee PINs." });
+    }
+
+    const { targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ message: "targetUserId is required." });
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) return res.status(404).json({ message: "Target user not found." });
+
+    targetUser.salaryPin = undefined;
+    await targetUser.save();
+
+    res.json({ message: `Salary PIN reset successfully for ${targetUser.email}.` });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;
+

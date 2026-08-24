@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     FileText, Loader2, ChevronDown, ChevronUp,
-    TrendingDown, CreditCard, Banknote, Download,
-    CheckCircle2, Calendar, ShieldCheck, Clock,
-    AlertTriangle, UserCheck, Palmtree, ArrowDownCircle,
-    Sparkles, Receipt, Eye, EyeOff
+    TrendingDown, Download,
+    CheckCircle2, Clock,
+    AlertTriangle, Palmtree,
+    Sparkles, Receipt, EyeOff, Lock
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
-import AlertModal from '../../components/UI/AlertModal';
+import SalaryPinModal from '../../components/UI/SalaryPinModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -83,7 +83,7 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
         lateDays: 0,
         halfDays: 0,
         absentDays: 0,
-        leaveDays: 0
+        leaveDays: 0,
     };
 
     const handleDownloadPdf = async (e: React.MouseEvent) => {
@@ -91,151 +91,124 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
         setDownloading(true);
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${api.baseURL || ''}/api/payroll/payslips/${payslip._id}/pdf`, {
-                headers: { Authorization: `Bearer ${token}` },
-                responseType: 'blob',
-            });
-            const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `Payslip_${payslip.payslipNo}_${MONTH_NAMES[payslip.periodMonth]}_${payslip.periodYear}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-        } catch (err) {
-            showToast('Failed to download PDF. Please try again.', 'error');
+            const res = await axios.get(
+                `${api.baseURL}/api/payroll/payslips/${payslip._id}/pdf`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob',
+                }
+            );
+
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Payslip-${payslip.payslipNo}-${MONTH_NAMES[payslip.periodMonth]}-${payslip.periodYear}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            showToast(`Payslip for ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear} downloaded successfully.`, 'success');
+        } catch (err: any) {
+            showToast('Failed to download payslip PDF. Please try again.', 'error');
         } finally {
             setDownloading(false);
         }
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-            {/* Header / Summary row */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all overflow-hidden">
+            {/* Header / Summary Row */}
             <div
-                id={`payslip-toggle-${payslip._id}`}
                 onClick={() => setExpanded(e => !e)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setExpanded(prev => !prev); } }}
-                role="button"
-                tabIndex={0}
-                className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 text-left bg-gradient-to-r from-white via-slate-50/40 to-indigo-50/20 hover:bg-slate-50 transition-colors gap-3 cursor-pointer"
+                className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-50/60 transition-colors"
             >
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/20 text-white shrink-0">
-                        <FileText size={20} />
+                <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+                        <Receipt size={22} />
                     </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-bold text-slate-800 text-sm sm:text-base whitespace-nowrap">
+                    <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-800 text-base">
                                 {MONTH_NAMES[payslip.periodMonth]} {payslip.periodYear}
-                            </h3>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold tracking-wide bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono whitespace-nowrap">
+                            </span>
+                            <span className="text-[11px] font-mono font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
                                 {payslip.payslipNo}
                             </span>
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                payslip.status === 'Paid'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                    : 'bg-indigo-50 text-indigo-700 border border-indigo-200/60'
+                            }`}>
+                                <CheckCircle2 size={11} /> {payslip.status}
+                            </span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 whitespace-nowrap">
-                            <Calendar size={12} className="text-slate-400 shrink-0" /> Issued: {payslip.paidAt ? new Date(payslip.paidAt).toLocaleDateString() : 'Finalized'}
+                        <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
+                            <span>Paid via <strong className="font-semibold text-slate-700">{payslip.paymentMethod}</strong></span>
+                            {payslip.paidAt && (
+                                <>
+                                    <span>•</span>
+                                    <span>{new Date(payslip.paidAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                </>
+                            )}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-6 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                    <div className="text-left sm:text-right">
-                        <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider whitespace-nowrap">Net Take-Home</p>
-                        <p className="text-base sm:text-lg font-black text-indigo-700">{fmt(payslip.netPay)}</p>
+                <div className="flex items-center justify-between sm:justify-end gap-5">
+                    <div className="text-right">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Net Salary</p>
+                        <p className="text-lg sm:text-xl font-black text-indigo-600">
+                            {fmt(payslip.netPay)}
+                        </p>
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <span className={`hidden sm:inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
-                            run?.status === 'Disbursed'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}>
-                            <CheckCircle2 size={12} />
-                            {run?.status || 'Finalized'}
-                        </span>
-
                         <button
                             type="button"
                             onClick={handleDownloadPdf}
                             disabled={downloading}
-                            className="p-2.5 rounded-xl bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 transition-all duration-200 shadow-sm"
+                            className="p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 transition-colors border border-slate-200/80 cursor-pointer disabled:opacity-50"
                             title="Download PDF Payslip"
                         >
-                            {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                            {downloading ? <Loader2 size={16} className="animate-spin text-indigo-600" /> : <Download size={16} />}
                         </button>
-
-                        <div className="p-1 rounded-lg text-slate-400">
-                            {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        <div className="text-slate-400 p-1">
+                            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Expanded details */}
+            {/* Expanded Detailed Breakdown */}
             {expanded && (
-                <div className="border-t border-slate-100 p-5 space-y-6 bg-slate-50/30">
+                <div className="border-t border-slate-100 bg-slate-50/40 p-4 sm:p-6 space-y-5 animate-fadeIn">
                     
-                    {/* Meta bar */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                        <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                            <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><Calendar size={12} className="text-indigo-500" /> Pay Period</span>
-                            <span className="font-bold text-slate-700">{MONTH_NAMES[payslip.periodMonth]} {payslip.periodYear}</span>
-                            {run?.startDate && run?.endDate && (
-                                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{run.startDate} → {run.endDate}</span>
-                            )}
-                        </div>
-                        <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                            <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><Banknote size={12} className="text-emerald-500" /> Payment Method</span>
-                            <span className="font-bold text-slate-700">{payslip.paymentMethod || 'Bank Transfer'}</span>
-                        </div>
-                        <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                            <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><ShieldCheck size={12} className="text-blue-500" /> Disbursed Date</span>
-                            <span className="font-bold text-slate-700">
-                                {run?.disbursedAt ? new Date(run.disbursedAt).toLocaleDateString() : 'Processed'}
-                            </span>
-                        </div>
-                        <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs flex items-center justify-between">
-                            <div>
-                                <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><Receipt size={12} className="text-purple-500" /> PDF Document</span>
-                                <span className="font-bold text-indigo-600">Verified Statement</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={handleDownloadPdf}
-                                disabled={downloading}
-                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs flex items-center gap-1 shadow-sm transition-all"
-                            >
-                                {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                                PDF
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Attendance Breakdown Grid */}
-                    <div>
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <Clock size={14} className="text-indigo-600" /> Monthly Attendance Summary
+                    {/* Attendance Mini Summary Bar */}
+                    <div className="bg-white rounded-xl border border-slate-200/80 p-3.5 space-y-2">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <Clock size={13} className="text-indigo-600" /> Attendance Breakdown for Period
                         </h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
-                            <div className="bg-white rounded-xl p-3 border border-slate-100 text-center">
-                                <p className="text-[11px] font-semibold text-slate-400 uppercase">Working Days</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
+                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                <p className="text-[11px] font-semibold text-slate-500 uppercase">Working Days</p>
                                 <p className="text-lg font-black text-slate-800 mt-0.5">{att.workingDays}</p>
                             </div>
                             <div className="bg-emerald-50/60 rounded-xl p-3 border border-emerald-100 text-center">
-                                <p className="text-[11px] font-semibold text-emerald-600 uppercase flex items-center justify-center gap-1"><UserCheck size={11} /> Present</p>
+                                <p className="text-[11px] font-semibold text-emerald-600 uppercase flex items-center justify-center gap-1"><CheckCircle2 size={11} /> Present</p>
                                 <p className="text-lg font-black text-emerald-700 mt-0.5">{att.presentDays}</p>
                             </div>
                             <div className="bg-amber-50/60 rounded-xl p-3 border border-amber-100 text-center">
-                                <p className="text-[11px] font-semibold text-amber-600 uppercase flex items-center justify-center gap-1"><Clock size={11} /> Lates</p>
+                                <p className="text-[11px] font-semibold text-amber-600 uppercase flex items-center justify-center gap-1"><Clock size={11} /> Late</p>
                                 <p className="text-lg font-black text-amber-700 mt-0.5">{att.lateDays}</p>
                             </div>
                             <div className="bg-orange-50/60 rounded-xl p-3 border border-orange-100 text-center">
-                                <p className="text-[11px] font-semibold text-orange-600 uppercase flex items-center justify-center gap-1"><AlertTriangle size={11} /> Half-Days</p>
+                                <p className="text-[11px] font-semibold text-orange-600 uppercase flex items-center justify-center gap-1"><TrendingDown size={11} /> Half-Days</p>
                                 <p className="text-lg font-black text-orange-700 mt-0.5">{att.halfDays}</p>
                             </div>
                             <div className="bg-rose-50/60 rounded-xl p-3 border border-rose-100 text-center">
-                                <p className="text-[11px] font-semibold text-rose-600 uppercase flex items-center justify-center gap-1"><ArrowDownCircle size={11} /> Absents</p>
+                                <p className="text-[11px] font-semibold text-rose-600 uppercase flex items-center justify-center gap-1"><TrendingDown size={11} /> Absents</p>
                                 <p className="text-lg font-black text-rose-700 mt-0.5">{att.absentDays}</p>
                             </div>
                             <div className="bg-purple-50/60 rounded-xl p-3 border border-purple-100 text-center">
@@ -245,76 +218,55 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
                         </div>
                     </div>
 
-                    {/* Earnings & Deductions Tables (Side by Side) */}
+                    {/* Earnings & Deductions Tables */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        
-                        {/* Earnings Panel */}
                         <div className="bg-white rounded-xl border border-slate-200/80 p-4 space-y-3">
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Sparkles size={14} className="text-emerald-500" /> Earnings Breakdown
-                                </h4>
-                                <span className="text-xs font-bold text-emerald-600">PKR</span>
-                            </div>
+                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2">
+                                <Sparkles size={14} className="text-emerald-500" /> Earnings
+                            </h4>
                             <div className="space-y-2 text-xs">
                                 {payslip.earnings.map((e, i) => (
-                                    <div key={i} className="flex justify-between items-center py-1 border-b border-slate-50">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-medium text-slate-700">{e.component}</span>
-                                            {e.type === 'variable' && (
-                                                <span className="text-[10px] font-medium bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded">Variable</span>
-                                            )}
-                                        </div>
+                                    <div key={i} className="flex justify-between items-center py-1">
+                                        <span className="text-slate-600">{e.component}</span>
                                         <span className="font-bold text-slate-800">{fmt(e.amount)}</span>
                                     </div>
                                 ))}
                             </div>
-                            <div className="flex justify-between items-center pt-2 font-bold text-sm text-slate-800 border-t border-slate-200">
-                                <span>Gross Earnings</span>
+                            <div className="flex justify-between items-center pt-2 font-bold text-sm border-t">
+                                <span>Gross Total</span>
                                 <span className="text-emerald-600">{fmt(payslip.grossPay)}</span>
                             </div>
                         </div>
 
-                        {/* Deductions Panel */}
                         <div className="bg-white rounded-xl border border-slate-200/80 p-4 space-y-3">
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                    <TrendingDown size={14} className="text-rose-500" /> Deductions Breakdown
-                                </h4>
-                                <span className="text-xs font-bold text-rose-500">PKR</span>
-                            </div>
+                            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2">
+                                <TrendingDown size={14} className="text-rose-500" /> Deductions
+                            </h4>
                             <div className="space-y-2 text-xs">
-                                {payslip.deductions.length === 0 ? (
-                                    <p className="text-slate-400 italic py-2">No deductions recorded for this pay period.</p>
-                                ) : (
-                                    payslip.deductions.map((d, i) => (
-                                        <div key={i} className="flex justify-between items-center py-1 border-b border-slate-50">
-                                            <span className="font-medium text-slate-700">{d.component}</span>
-                                            <span className="font-bold text-rose-500">- {fmt(d.amount)}</span>
-                                        </div>
-                                    ))
-                                )}
+                                {payslip.deductions.map((d, i) => (
+                                    <div key={i} className="flex justify-between items-center py-1">
+                                        <span className="text-slate-600">{d.component}</span>
+                                        <span className="font-bold text-rose-500">- {fmt(d.amount)}</span>
+                                    </div>
+                                ))}
                             </div>
-                            <div className="flex justify-between items-center pt-2 font-bold text-sm text-slate-800 border-t border-slate-200">
+                            <div className="flex justify-between items-center pt-2 font-bold text-sm border-t">
                                 <span>Total Deductions</span>
                                 <span className="text-rose-500">- {fmt(payslip.totalDeductions)}</span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Net Take-Home Salary Banner */}
-                    <div className="bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-800 rounded-2xl p-5 text-white flex flex-col sm:flex-row justify-between items-center gap-4 shadow-lg shadow-indigo-500/15">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white shrink-0">
-                                <CreditCard size={20} />
-                            </div>
-                            <div>
-                                <p className="text-xs font-medium text-indigo-200 uppercase tracking-wider">Net Take-Home Salary</p>
-                                <p className="text-xs text-indigo-100 mt-0.5">Disbursed via {payslip.paymentMethod || 'Bank Transfer'}</p>
-                            </div>
+                    {/* Net Pay Box */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100 flex items-center justify-between">
+                        <div>
+                            <p className="text-xs font-bold uppercase tracking-wider text-indigo-900">Net Disbursed Take-Home Pay</p>
+                            <p className="text-[11px] text-indigo-700/80 mt-0.5">Calculated as Gross Earnings minus Total Deductions</p>
                         </div>
                         <div className="text-right">
-                            <span className="text-2xl sm:text-3xl font-black tracking-tight text-white">{fmt(payslip.netPay)}</span>
+                            <p className="text-xl sm:text-2xl font-black text-indigo-600">
+                                {fmt(payslip.netPay)}
+                            </p>
                         </div>
                     </div>
 
@@ -338,27 +290,37 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // Default to true (masked with asterisks) for privacy
-    const [hideSalary, setHideSalary] = useState<boolean>(() => {
-        const saved = localStorage.getItem('hideSalary');
-        return saved === null ? true : saved === 'true';
-    });
-    const [showRevealModal, setShowRevealModal] = useState<boolean>(false);
+    const [hideSalary, setHideSalary] = useState<boolean>(true);
+    const [showPinModal, setShowPinModal] = useState<boolean>(false);
+    const lockTimerRef = useRef<any>(null);
+
+    const startAutoLockTimer = () => {
+        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+        lockTimerRef.current = setTimeout(() => {
+            setHideSalary(true);
+        }, 5 * 60 * 1000); // 5 minutes auto-lock
+    };
+
+    useEffect(() => {
+        return () => {
+            if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+        };
+    }, []);
 
     const handleToggleSalary = () => {
         if (hideSalary) {
-            // Currently hidden -> Prompt confirmation before exposing financial data on screen
-            setShowRevealModal(true);
+            // Currently hidden -> Open 4-digit PIN verification modal
+            setShowPinModal(true);
         } else {
-            // Currently revealed -> Immediately hide and mask without prompt
+            // Currently revealed -> Immediately hide and lock
+            if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
             setHideSalary(true);
-            localStorage.setItem('hideSalary', 'true');
         }
     };
 
-    const handleConfirmReveal = () => {
+    const handlePinSuccess = () => {
         setHideSalary(false);
-        localStorage.setItem('hideSalary', 'false');
-        setShowRevealModal(false);
+        startAutoLockTimer();
     };
 
     const fetchPayslips = useCallback(async () => {
@@ -411,10 +373,10 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                                         type="button"
                                         onClick={handleToggleSalary}
                                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-sm active:scale-95 cursor-pointer"
-                                        title={hideSalary ? "Click to show salary figures" : "Click to hide salary figures"}
+                                        title={hideSalary ? "Click to unlock salary figures with 4-digit PIN" : "Click to mask salary figures"}
                                     >
-                                        {hideSalary ? <EyeOff size={13} className="text-white/90" /> : <Eye size={13} className="text-white/90" />}
-                                        <span>{hideSalary ? 'Show Salary' : 'Hide Salary'}</span>
+                                        {hideSalary ? <Lock size={12} className="text-white/90" /> : <EyeOff size={12} className="text-white/90" />}
+                                        <span>{hideSalary ? 'Unlock with PIN' : 'Hide Salary'}</span>
                                     </button>
                                 </div>
                                 <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
@@ -468,10 +430,10 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                             <button
                                 type="button"
                                 onClick={handleToggleSalary}
-                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-xs font-semibold border border-slate-200/80 transition-all shadow-xs cursor-pointer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-xs font-semibold border border-slate-200/80 transition-all shadow-xs cursor-pointer"
                             >
-                                {hideSalary ? <EyeOff size={14} className="text-indigo-600" /> : <Eye size={14} className="text-indigo-600" />}
-                                <span>{hideSalary ? 'Show Salary' : 'Hide Salary'}</span>
+                                {hideSalary ? <Lock size={13} className="text-indigo-600" /> : <EyeOff size={13} className="text-indigo-600" />}
+                                <span>{hideSalary ? 'Unlock with PIN' : 'Hide Salary'}</span>
                             </button>
                             <span className="hidden sm:inline text-xs font-semibold text-slate-400">Click any month to expand full details</span>
                         </div>
@@ -483,17 +445,13 @@ const MyPayslips = ({ embedded = false }: { embedded?: boolean }) => {
                 </div>
             )}
 
-            {/* Privacy Reveal Confirmation Modal */}
-            <AlertModal
-                isOpen={showRevealModal}
-                onClose={() => setShowRevealModal(false)}
-                title="Reveal Confidential Salary Details?"
-                message="You are about to display sensitive salary and payout figures on your screen. Please make sure no one nearby is looking at your screen to protect your privacy."
-                type="warning"
-                confirmText="Yes, Reveal Salary"
-                cancelText="Keep Masked"
-                showCancel={true}
-                onConfirm={handleConfirmReveal}
+            {/* 4-Digit Salary Security PIN Verification Modal */}
+            <SalaryPinModal
+                isOpen={showPinModal}
+                onClose={() => setShowPinModal(false)}
+                onSuccess={handlePinSuccess}
+                title="Verify 4-Digit Salary PIN"
+                description="Enter your 4-digit PIN to securely view your confidential salary statements."
             />
         </div>
     );

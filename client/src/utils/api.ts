@@ -58,6 +58,12 @@ export const api = {
     zktSync:         `${API_BASE_URL}/api/attendance/zkt/sync`,
     zktSyncReport:   `${API_BASE_URL}/api/attendance/zkt/sync-report`,
 
+    // Salary Security PIN
+    salaryPinStatus: `${API_BASE_URL}/api/auth/salary-pin/status`,
+    salaryPinSet: `${API_BASE_URL}/api/auth/salary-pin/set`,
+    salaryPinVerify: `${API_BASE_URL}/api/auth/salary-pin/verify`,
+    salaryPinAdminReset: `${API_BASE_URL}/api/auth/salary-pin/admin-reset`,
+
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,
     // Appends ?token= so browser <img> tags can authenticate (they can't send headers)

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation, Cloud } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation, Cloud, Lock } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
+import SalaryPinModal from '../../components/UI/SalaryPinModal';
 import countriesData from '../../data/countries.json';
 import api, { api as apiHelpers } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -136,6 +137,24 @@ const MyInfo = () => {
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('personal');
+    const [isSalaryUnlocked, setIsSalaryUnlocked] = useState(false);
+    const [showSalaryPinModal, setShowSalaryPinModal] = useState(false);
+    const [salaryPlanType, setSalaryPlanType] = useState<'direct' | 'probation'>('direct');
+    const salaryLockTimerRef = useRef<any>(null);
+
+    const handleSalaryUnlockSuccess = () => {
+        setIsSalaryUnlocked(true);
+        if (salaryLockTimerRef.current) clearTimeout(salaryLockTimerRef.current);
+        salaryLockTimerRef.current = setTimeout(() => {
+            setIsSalaryUnlocked(false);
+        }, 5 * 60 * 1000); // 5 minutes auto-lock
+    };
+
+    useEffect(() => {
+        return () => {
+            if (salaryLockTimerRef.current) clearTimeout(salaryLockTimerRef.current);
+        };
+    }, []);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [avatarImgError, setAvatarImgError] = useState(false);
     const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
@@ -614,8 +633,8 @@ const MyInfo = () => {
                             financeInfo: {
                                 probationSalary: employee.financeInfo?.probationSalary || 0,
                                 confirmedSalary: employee.financeInfo?.confirmedSalary || 0,
-                                probationMonths: employee.financeInfo?.probationMonths || 3,
-                                probationDays: employee.financeInfo?.probationDays || 90
+                                probationMonths: employee.financeInfo?.probationMonths || 0,
+                                probationDays: employee.financeInfo?.probationDays || 0
                             },
                             benefits: employee.benefits?.length ? employee.benefits.map((b: any) => ({
                                 name: b.name || '',
@@ -1536,136 +1555,183 @@ const MyInfo = () => {
                     {/* Finance Tab */}
                     {activeTab === 'finance' && (
                         <div className="space-y-8 animate-fadeIn">
-                            {/* Probation & Post-Probation Terms */}
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Probation & Confirmation Terms</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="p-5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl text-white shadow-md">
-                                        <span className="text-xs font-black uppercase tracking-wider text-amber-100 block mb-1">Probation Base Salary</span>
-                                        <p className="text-2xl font-black">
-                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.probationSalary || 0).replace('PKR', 'Rs.')}
-                                        </p>
-                                        <p className="text-xs text-amber-100 mt-2 font-medium">Duration: {rawEmployee.financeInfo?.probationMonths || 3} Months ({rawEmployee.financeInfo?.probationDays || 90} Days)</p>
+                            {!isSalaryUnlocked ? (
+                                <div className="bg-slate-50/80 rounded-3xl p-8 border border-slate-200/80 text-center max-w-md mx-auto my-6 shadow-xs">
+                                    <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3.5 ring-8 ring-indigo-50/50">
+                                        <Lock size={26} />
                                     </div>
-                                    <div className="p-5 bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl text-white shadow-md">
-                                        <span className="text-xs font-black uppercase tracking-wider text-emerald-100 block mb-1">Confirmed Base Salary</span>
-                                        <p className="text-2xl font-black">
-                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.confirmedSalary || 0).replace('PKR', 'Rs.')}
-                                        </p>
-                                        <p className="text-xs text-emerald-100 mt-2 font-medium">Applies after successful probation completion</p>
-                                    </div>
+                                    <h3 className="text-base font-bold text-slate-800">Financial Information Protected</h3>
+                                    <p className="text-xs text-slate-500 mt-1 mb-5 leading-relaxed">
+                                        Salary breakdown, probation terms, and Provident Fund balance are locked with your 4-digit Security PIN to ensure privacy.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowSalaryPinModal(true)}
+                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all inline-flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <Lock size={13} /> Unlock with 4-Digit PIN
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Breakdown Components</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {rawEmployee.salaryComponents?.length > 0 ? (
-                                        rawEmployee.salaryComponents.map((comp: any, i: number) => (
-                                            <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                                                        <DollarSign size={16} />
-                                                    </div>
-                                                    <span className="text-xs font-bold text-slate-400 uppercase">{comp.type}</span>
-                                                </div>
-                                                <p className="text-sm font-bold text-gray-800">{comp.component}</p>
-                                                <p className="text-2xl font-black text-indigo-600 mt-1">
-                                                    {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
-                                                </p>
-                                            </div>
-                                        ))
-                                    ) : <p className="text-gray-400 italic">No salary components recorded</p>}
-                                    {rawEmployee.salaryComponents?.length > 0 && (
-                                        <div className="p-4 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl border border-indigo-400 shadow-lg text-white">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <div className="p-2 bg-white/20 rounded-lg">
-                                                    <CreditCard size={16} />
-                                                </div>
-                                                <span className="text-xs font-bold text-indigo-100 uppercase">Gross Monthly</span>
-                                            </div>
-                                            <p className="text-sm font-bold opacity-90">Total Payable Salary</p>
-                                            <p className="text-2xl font-black mt-1">
-                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(
-                                                    rawEmployee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
-                                                ).replace('PKR', 'Rs.')}
-                                            </p>
+                            ) : (
+                                <>
+                                    <div className="flex items-center justify-between bg-indigo-50/60 p-3 rounded-2xl border border-indigo-100">
+                                        <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900">
+                                            <Shield size={14} className="text-indigo-600" />
+                                            <span>Salary & PF details unlocked for this session</span>
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Provident Fund Details */}
-                            <div className="pt-8 border-t border-slate-100">
-                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Provident Fund Details</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
-                                    {renderField('Current PF Balance', rawEmployee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0')}
-                                </div>
-
-                                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
-                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsSalaryUnlocked(false)}
+                                            className="inline-flex items-center gap-1 px-3 py-1 bg-white hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-200 transition-all cursor-pointer"
+                                        >
+                                            <Lock size={11} /> Lock Figures
+                                        </button>
                                     </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse text-sm">
-                                            <thead>
-                                                <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
-                                                    <th className="px-6 py-3">Date</th>
-                                                    <th className="px-6 py-3">Description</th>
-                                                    <th className="px-6 py-3">Source</th>
-                                                    <th className="px-6 py-3">Type</th>
-                                                    <th className="px-6 py-3 text-right">Amount</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
-                                                {rawEmployee.providentFundHistory?.length > 0 ? (
-                                                    [...rawEmployee.providentFundHistory]
-                                                        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                                        .map((entry: any, index: number) => (
-                                                            <tr key={index} className="hover:bg-slate-50/40 transition-colors">
-                                                                <td className="px-6 py-4 text-xs text-slate-400">
-                                                                    {new Date(entry.date).toLocaleString()}
-                                                                </td>
-                                                                <td className="px-6 py-4 font-semibold text-slate-800">
-                                                                    {entry.description}
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                                                                        entry.source === 'payroll' 
-                                                                            ? 'bg-blue-50 text-blue-600 border-blue-100' 
-                                                                            : 'bg-amber-50 text-amber-600 border-amber-100'
-                                                                    }`}>
-                                                                        {entry.source}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                                                        entry.type === 'credit' 
-                                                                            ? 'bg-emerald-50 text-emerald-600' 
-                                                                            : 'bg-rose-50 text-rose-600'
-                                                                    }`}>
-                                                                        {entry.type === 'credit' ? '+ Credit' : '- Debit'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className={`px-6 py-4 text-right font-black ${
-                                                                    entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
-                                                                }`}>
-                                                                    Rs. {entry.amount.toLocaleString()}
+
+                                    {/* Salary Terms */}
+                                    <div>
+                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Salary & Employment Terms</h3>
+                                        {(rawEmployee.financeInfo?.probationMonths > 0 && rawEmployee.financeInfo?.probationSalary !== rawEmployee.financeInfo?.confirmedSalary) ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="p-5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl text-white shadow-md">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-amber-100 block mb-1">Probation Base Salary</span>
+                                                    <p className="text-2xl font-black">
+                                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.probationSalary || 0).replace('PKR', 'Rs.')}
+                                                    </p>
+                                                    <p className="text-xs text-amber-100 mt-2 font-medium">Duration: {rawEmployee.financeInfo?.probationMonths || 3} Months ({rawEmployee.financeInfo?.probationDays || 90} Days)</p>
+                                                </div>
+                                                <div className="p-5 bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl text-white shadow-md">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-emerald-100 block mb-1">Confirmed Base Salary</span>
+                                                    <p className="text-2xl font-black">
+                                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.confirmedSalary || 0).replace('PKR', 'Rs.')}
+                                                    </p>
+                                                    <p className="text-xs text-emerald-100 mt-2 font-medium">Applies after successful probation completion</p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="p-5 bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl text-white shadow-md">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-indigo-100 block mb-1">Direct Monthly Base Salary</span>
+                                                    <p className="text-2xl font-black">
+                                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(rawEmployee.financeInfo?.confirmedSalary || rawEmployee.financeInfo?.probationSalary || 0).replace('PKR', 'Rs.')}
+                                                    </p>
+                                                    <p className="text-xs text-indigo-200 mt-2 font-medium">Direct / Confirmed Employment</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Breakdown Components</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {rawEmployee.salaryComponents?.length > 0 ? (
+                                                rawEmployee.salaryComponents.map((comp: any, i: number) => (
+                                                    <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                                        <div className="flex items-center gap-3 mb-2">
+                                                            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                                                <DollarSign size={16} />
+                                                            </div>
+                                                            <span className="text-xs font-bold text-slate-400 uppercase">{comp.type}</span>
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-800">{comp.component}</p>
+                                                        <p className="text-2xl font-black text-indigo-600 mt-1">
+                                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
+                                                        </p>
+                                                    </div>
+                                                ))
+                                            ) : <p className="text-gray-400 italic">No salary components recorded</p>}
+                                            {rawEmployee.salaryComponents?.length > 0 && (
+                                                <div className="p-4 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl border border-indigo-400 shadow-lg text-white">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="p-2 bg-white/20 rounded-lg">
+                                                            <CreditCard size={16} />
+                                                        </div>
+                                                        <span className="text-xs font-bold text-indigo-100 uppercase">Gross Monthly</span>
+                                                    </div>
+                                                    <p className="text-sm font-bold opacity-90">Total Payable Salary</p>
+                                                    <p className="text-2xl font-black mt-1">
+                                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(
+                                                            rawEmployee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
+                                                        ).replace('PKR', 'Rs.')}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Provident Fund Details */}
+                                    <div className="pt-8 border-t border-slate-100">
+                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Provident Fund Details</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
+                                            {renderField('Current PF Balance', rawEmployee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0')}
+                                        </div>
+
+                                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                                            <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
+                                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-collapse text-sm">
+                                                    <thead>
+                                                        <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
+                                                            <th className="px-6 py-3">Date</th>
+                                                            <th className="px-6 py-3">Description</th>
+                                                            <th className="px-6 py-3">Source</th>
+                                                            <th className="px-6 py-3">Type</th>
+                                                            <th className="px-6 py-3 text-right">Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
+                                                        {rawEmployee.providentFundHistory?.length > 0 ? (
+                                                            [...rawEmployee.providentFundHistory]
+                                                                .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                                .map((entry: any, index: number) => (
+                                                                    <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                                                                        <td className="px-6 py-4 text-xs text-slate-400">
+                                                                            {new Date(entry.date).toLocaleString()}
+                                                                        </td>
+                                                                        <td className="px-6 py-4 font-semibold text-slate-800">
+                                                                            {entry.description}
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                                                entry.source === 'payroll' 
+                                                                                    ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                                                                                    : 'bg-amber-50 text-amber-600 border-amber-100'
+                                                                            }`}>
+                                                                                {entry.source}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                                entry.type === 'credit' 
+                                                                                    ? 'bg-emerald-50 text-emerald-600' 
+                                                                                    : 'bg-rose-50 text-rose-600'
+                                                                            }`}>
+                                                                                {entry.type === 'credit' ? '+ Credit' : '- Debit'}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className={`px-6 py-4 text-right font-black ${
+                                                                            entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
+                                                                        }`}>
+                                                                            Rs. {entry.amount.toLocaleString()}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))
+                                                        ) : (
+                                                            <tr>
+                                                                <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                                                    No contribution history recorded.
                                                                 </td>
                                                             </tr>
-                                                        ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
-                                                            No contribution history recorded.
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
+                                </>
+                            )}
 
                             <div className="pt-8 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Bank Account Details</h3>
@@ -3206,75 +3272,163 @@ const MyInfo = () => {
                                 {/* Salary Structure */}
                                 {isAdmin && (
                                     <div>
-                                        {/* Probation & Confirmed Salary Inputs */}
-                                        <div className="mb-8 p-6 bg-slate-50 rounded-2xl border border-slate-200">
-                                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Probation & Confirmed Salary Terms</h4>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        {/* Salary & Employment Terms */}
+                                        <div className="mb-8 p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
                                                 <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation Salary (PKR)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.financeInfo?.probationSalary || ''}
-                                                        onChange={(e) => setFormData(prev => ({
-                                                            ...prev,
-                                                            financeInfo: {
-                                                                ...prev.financeInfo,
-                                                                probationSalary: Number(e.target.value)
-                                                            }
-                                                        }))}
-                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
-                                                        placeholder="e.g. 150000"
-                                                    />
+                                                    <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Salary & Employment Terms</h4>
+                                                    <p className="text-xs text-gray-500 mt-0.5 font-medium">Select whether this employee is hired directly or under probation</p>
                                                 </div>
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Confirmed Salary (PKR)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.financeInfo?.confirmedSalary || ''}
-                                                        onChange={(e) => setFormData(prev => ({
-                                                            ...prev,
-                                                            financeInfo: {
-                                                                ...prev.financeInfo,
-                                                                confirmedSalary: Number(e.target.value)
+                                                
+                                                {/* Dropdown Style Plan Selector */}
+                                                <div className="w-full sm:w-80">
+                                                    <select
+                                                        value={salaryPlanType}
+                                                        onChange={(e) => {
+                                                            const newType = e.target.value as 'direct' | 'probation';
+                                                            setSalaryPlanType(newType);
+                                                            if (newType === 'direct') {
+                                                                const currentSalary = formData.financeInfo?.confirmedSalary || formData.financeInfo?.probationSalary || 0;
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    financeInfo: {
+                                                                        ...prev.financeInfo,
+                                                                        probationSalary: currentSalary,
+                                                                        confirmedSalary: currentSalary,
+                                                                        probationMonths: 0,
+                                                                        probationDays: 0
+                                                                    }
+                                                                }));
+                                                            } else {
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    financeInfo: {
+                                                                        ...prev.financeInfo,
+                                                                        probationMonths: prev.financeInfo?.probationMonths || 3,
+                                                                        probationDays: prev.financeInfo?.probationDays || 90
+                                                                    }
+                                                                }));
                                                             }
-                                                        }))}
-                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
-                                                        placeholder="e.g. 200000"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Months)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.financeInfo?.probationMonths || 3}
-                                                        onChange={(e) => setFormData(prev => ({
-                                                            ...prev,
-                                                            financeInfo: {
-                                                                ...prev.financeInfo,
-                                                                probationMonths: Number(e.target.value)
-                                                            }
-                                                        }))}
-                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
-                                                        placeholder="3"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Probation (Days)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.financeInfo?.probationDays || 90}
-                                                        onChange={(e) => setFormData(prev => ({
-                                                            ...prev,
-                                                            financeInfo: {
-                                                                ...prev.financeInfo,
-                                                                probationDays: Number(e.target.value)
-                                                            }
-                                                        }))}
-                                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
-                                                        placeholder="90"
-                                                    />
+                                                        }}
+                                                        className="w-full bg-white border border-indigo-200 text-indigo-950 font-bold text-xs rounded-xl px-3.5 py-2.5 shadow-xs focus:ring-2 focus:ring-indigo-300 outline-none cursor-pointer"
+                                                    >
+                                                        <option value="direct">💼 Direct / Confirmed Salary (Permanent)</option>
+                                                        <option value="probation">⏳ Probationary Terms (Probation → Confirmed)</option>
+                                                    </select>
                                                 </div>
                                             </div>
+
+                                            {salaryPlanType === 'direct' ? (
+                                                /* Single Clean Direct Salary Field */
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200/70">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                                            Direct Monthly Salary (PKR) <span className="text-rose-500">*</span>
+                                                        </label>
+                                                        <div className="relative">
+                                                            <input
+                                                                type="number"
+                                                                value={formData.financeInfo?.confirmedSalary || ''}
+                                                                onChange={(e) => {
+                                                                    const val = Number(e.target.value);
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        financeInfo: {
+                                                                            ...prev.financeInfo,
+                                                                            confirmedSalary: val,
+                                                                            probationSalary: val,
+                                                                            probationMonths: 0,
+                                                                            probationDays: 0
+                                                                        }
+                                                                    }));
+                                                                }}
+                                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-black text-slate-900"
+                                                                placeholder="e.g. 150000"
+                                                            />
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
+                                                            Standard monthly gross base salary for permanent / confirmed staff.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Probation Terms Breakdown Fields */
+                                                <div className="pt-4 border-t border-slate-200/70">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-amber-800 uppercase tracking-wider mb-2">Probation Salary (PKR)</label>
+                                                            <input
+                                                                type="number"
+                                                                value={formData.financeInfo?.probationSalary || ''}
+                                                                onChange={(e) => setFormData(prev => ({
+                                                                    ...prev,
+                                                                    financeInfo: {
+                                                                        ...prev.financeInfo,
+                                                                        probationSalary: Number(e.target.value)
+                                                                    }
+                                                                }))}
+                                                                className="w-full border border-amber-300 bg-amber-50/50 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-amber-200 outline-none font-bold text-slate-800"
+                                                                placeholder="e.g. 120000"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Confirmed Salary (PKR)</label>
+                                                            <input
+                                                                type="number"
+                                                                value={formData.financeInfo?.confirmedSalary || ''}
+                                                                onChange={(e) => setFormData(prev => ({
+                                                                    ...prev,
+                                                                    financeInfo: {
+                                                                        ...prev.financeInfo,
+                                                                        confirmedSalary: Number(e.target.value)
+                                                                    }
+                                                                }))}
+                                                                className="w-full border border-emerald-300 bg-emerald-50/50 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800"
+                                                                placeholder="e.g. 150000"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Probation (Months)</label>
+                                                            <input
+                                                                type="number"
+                                                                value={formData.financeInfo?.probationMonths ?? 3}
+                                                                onChange={(e) => {
+                                                                    const months = Number(e.target.value);
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        financeInfo: {
+                                                                            ...prev.financeInfo,
+                                                                            probationMonths: months,
+                                                                            probationDays: months * 30
+                                                                        }
+                                                                    }));
+                                                                }}
+                                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                                placeholder="3"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Probation (Days)</label>
+                                                            <input
+                                                                type="number"
+                                                                value={formData.financeInfo?.probationDays ?? 90}
+                                                                onChange={(e) => setFormData(prev => ({
+                                                                    ...prev,
+                                                                    financeInfo: {
+                                                                        ...prev.financeInfo,
+                                                                        probationDays: Number(e.target.value)
+                                                                    }
+                                                                }))}
+                                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                                                placeholder="90"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl mt-3 font-medium border border-amber-200/60">
+                                                        ⏳ Employee will start at Probation Salary and automatically switch to Confirmed Salary upon probation completion.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="flex justify-between items-end mb-6">
@@ -4129,6 +4283,15 @@ const MyInfo = () => {
                     </div>
                 </div>
             , document.body)}
+
+            {/* 4-Digit Salary Security PIN Modal */}
+            <SalaryPinModal
+                isOpen={showSalaryPinModal}
+                onClose={() => setShowSalaryPinModal(false)}
+                onSuccess={handleSalaryUnlockSuccess}
+                title="Verify 4-Digit Salary PIN"
+                description="Enter your 4-digit PIN to securely view your confidential salary & PF details."
+            />
         </div>
     );
 };
