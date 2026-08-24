@@ -115,8 +115,8 @@ export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, on
     }, [password, confirm, allMet, passwordsMatch, onSuccess]);
 
     const modalContent = (
-        <div style={styles.overlay}>
-            <div style={styles.card}>
+        <div id="spm-overlay" style={styles.overlay}>
+            <div id="spm-card" style={styles.card}>
                 {/* Decorative top gradient bar */}
                 <div style={styles.topBar} />
 
@@ -279,8 +279,17 @@ export const SetPasswordModal: React.FC<SetPasswordModalProps> = ({ userName, on
                 )}
             </div>
 
-            {/* Spinner animation keyframes */}
+            {/* Spinner animation keyframes & scrollbar suppression */}
             <style>{`
+                #spm-card::-webkit-scrollbar, #spm-overlay::-webkit-scrollbar {
+                    display: none !important;
+                    width: 0px !important;
+                    height: 0px !important;
+                }
+                #spm-card, #spm-overlay {
+                    scrollbar-width: none !important;
+                    -ms-overflow-style: none !important;
+                }
                 @keyframes spm-spin { to { transform: rotate(360deg); } }
                 @keyframes spm-fadeIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
                 @keyframes spm-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
@@ -307,6 +316,8 @@ const styles: Record<string, React.CSSProperties> = {
         zIndex: 99999,
         padding: '16px',
         overflowY: 'auto',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
     },
     card: {
         backgroundColor: '#ffffff',
@@ -316,6 +327,8 @@ const styles: Record<string, React.CSSProperties> = {
         maxHeight: 'calc(100vh - 32px)',
         boxShadow: '0 25px 60px -12px rgba(0,0,0,0.3)',
         overflowY: 'auto',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
         animation: 'spm-fadeIn 0.3s ease-out',
         position: 'relative',
         margin: 'auto',
@@ -460,9 +473,9 @@ const styles: Record<string, React.CSSProperties> = {
         backgroundColor: '#f8fafc',
         borderRadius: '12px',
         padding: '8px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '5px',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '6px 10px',
         border: '1px solid #e2e8f0',
     },
     reqRow: {
