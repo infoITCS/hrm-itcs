@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
@@ -26,6 +27,47 @@ const EmployeeList = () => {
     });
     const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
     const [departments, setDepartments] = React.useState<string[]>([]);
+    const [showQuickInviteModal, setShowQuickInviteModal] = React.useState(false);
+    const [inviteData, setInviteData] = React.useState({ firstName: '', lastName: '', email: '', role: 'employee' });
+    const [isInviting, setIsInviting] = React.useState(false);
+    const [inviteSuccess, setInviteSuccess] = React.useState<string | null>(null);
+    const [inviteError, setInviteError] = React.useState<string | null>(null);
+
+    const handleQuickInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inviteData.email || !inviteData.firstName || !inviteData.lastName) {
+            setInviteError('Please fill in all required fields.');
+            return;
+        }
+        setIsInviting(true);
+        setInviteError(null);
+        setInviteSuccess(null);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/admin/users`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(inviteData)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to send invitation');
+            }
+            setInviteSuccess(`Invitation email sent successfully to ${inviteData.email}!`);
+            setTimeout(() => {
+                setShowQuickInviteModal(false);
+                setInviteSuccess(null);
+                setInviteData({ firstName: '', lastName: '', email: '', role: 'employee' });
+            }, 1800);
+        } catch (err: any) {
+            setInviteError(err.message || 'Failed to send invitation.');
+        } finally {
+            setIsInviting(false);
+        }
+    };
 
     React.useEffect(() => {
         const fetchConfig = async () => {
@@ -315,12 +357,20 @@ const EmployeeList = () => {
                         <div className="h-8 w-[1px] bg-slate-200 hidden xl:block" />
 
                         {canCreateUser() && (
-                            <button
-                                onClick={() => navigate('/pim/add')}
-                                className="flex-1 xl:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-indigo-200 shadow-lg hover:shadow-indigo-300 active:scale-95"
-                            >
-                                <Plus size={18} /> Add New
-                            </button>
+                            <div className="flex items-center gap-2.5 w-full xl:w-auto">
+                                <button
+                                    onClick={() => setShowQuickInviteModal(true)}
+                                    className="flex-1 xl:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-emerald-200 shadow-md hover:shadow-emerald-300 active:scale-95 cursor-pointer"
+                                >
+                                    <Mail size={16} /> Quick Invite via Email
+                                </button>
+                                <button
+                                    onClick={() => navigate('/pim/add')}
+                                    className="flex-1 xl:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-indigo-200 shadow-md hover:shadow-indigo-300 active:scale-95 cursor-pointer"
+                                >
+                                    <Plus size={18} /> Add Full Profile
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -575,6 +625,129 @@ const EmployeeList = () => {
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmDelete}
             />
+
+            {/* Quick Invite via Email Modal */}
+            {showQuickInviteModal && createPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 relative">
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                setShowQuickInviteModal(false);
+                                setInviteError(null);
+                                setInviteSuccess(null);
+                            }}
+                            className="absolute top-6 right-6 p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                            <X size={20} />
+                        </button>
+
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs">
+                                <Mail size={24} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900">Quick Invite Employee</h3>
+                                <p className="text-xs text-slate-500 font-medium">Sends an onboarding email with login link</p>
+                            </div>
+                        </div>
+
+                        {inviteSuccess && (
+                            <div className="mb-5 p-3.5 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-2">
+                                <CheckCircle size={16} className="text-emerald-600 flex-shrink-0" />
+                                <span>{inviteSuccess}</span>
+                            </div>
+                        )}
+
+                        {inviteError && (
+                            <div className="mb-5 p-3.5 bg-rose-50 text-rose-800 rounded-xl text-xs font-bold border border-rose-200">
+                                {inviteError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleQuickInvite} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">First Name <span className="text-rose-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={inviteData.firstName}
+                                        onChange={(e) => setInviteData({ ...inviteData, firstName: e.target.value })}
+                                        placeholder="e.g. John"
+                                        className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Last Name <span className="text-rose-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={inviteData.lastName}
+                                        onChange={(e) => setInviteData({ ...inviteData, lastName: e.target.value })}
+                                        placeholder="e.g. Doe"
+                                        className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Company Work Email <span className="text-rose-500">*</span></label>
+                                <input
+                                    type="email"
+                                    required
+                                    value={inviteData.email}
+                                    onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
+                                    placeholder="e.g. john.doe@itcs.com.pk"
+                                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-emerald-200 outline-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">System Role</label>
+                                <select
+                                    value={inviteData.role}
+                                    onChange={(e) => setInviteData({ ...inviteData, role: e.target.value })}
+                                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold bg-white text-slate-800 focus:ring-2 focus:ring-emerald-200 outline-none cursor-pointer"
+                                >
+                                    <option value="employee">Employee</option>
+                                    <option value="manager">Manager</option>
+                                    <option value="hr">HR</option>
+                                    <option value="finance">Finance</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 font-medium pt-1">
+                                💡 The employee will receive a Welcome Email with a direct login link and will be guided to complete their own 7-step onboarding profile.
+                            </p>
+
+                            <div className="flex items-center gap-3 pt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowQuickInviteModal(false)}
+                                    className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isInviting}
+                                    className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    {isInviting ? (
+                                        <span>Sending...</span>
+                                    ) : (
+                                        <>
+                                            <Send size={13} /> Send Email Invite
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            , document.body)}
         </div>
     );
 };
