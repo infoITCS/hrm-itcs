@@ -124,7 +124,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
 
-        const { periodMonth, periodYear, currency = 'PKR', notes } = req.body;
+        const { periodMonth, periodYear, startDate, endDate, currency = 'PKR', notes } = req.body;
 
         if (!periodMonth || !periodYear) {
             return res.status(400).json({ message: 'periodMonth and periodYear are required.' });
@@ -144,6 +144,18 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             });
         }
 
+        // Calculate default startDate & endDate if not provided
+        const lastDay = new Date(year, month, 0).getDate();
+        const defaultStart = `${year}-${String(month).padStart(2, '0')}-01`;
+        const defaultEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        const finalStart = startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : defaultStart;
+        const finalEnd = endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? endDate : defaultEnd;
+
+        if (finalStart > finalEnd) {
+            return res.status(400).json({ message: 'Start date must be before or equal to End date.' });
+        }
+
         const title = `${MONTH_NAMES[month]} ${year} Payroll`;
         const erpTaskId = `BATCH-${year}${String(month).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -151,6 +163,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             title,
             periodMonth: month,
             periodYear: year,
+            startDate: finalStart,
+            endDate: finalEnd,
             currency,
             notes,
             createdBy: authReq.user!.userId,
@@ -160,6 +174,60 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         });
 
         return res.status(201).json(run);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   PUT /api/payroll/:runId
+ * @desc    Update a Draft payroll run (e.g. adjust calculation start/end date or notes)
+ * @access  admin, super-admin
+ */
+router.put('/:runId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const { runId } = req.params;
+        if (!mongoose.isValidObjectId(runId)) {
+            return res.status(400).json({ message: 'Invalid run ID.' });
+        }
+
+        const run = await PayrollRun.findById(runId);
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        if (run.status !== 'Draft') {
+            return res.status(400).json({ message: `Cannot modify a payroll run with status "${run.status}".` });
+        }
+
+        const { startDate, endDate, notes, title } = req.body;
+
+        if (startDate !== undefined) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+                return res.status(400).json({ message: 'Invalid start date format (expected YYYY-MM-DD).' });
+            }
+            run.startDate = startDate;
+        }
+
+        if (endDate !== undefined) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+                return res.status(400).json({ message: 'Invalid end date format (expected YYYY-MM-DD).' });
+            }
+            run.endDate = endDate;
+        }
+
+        if (run.startDate && run.endDate && run.startDate > run.endDate) {
+            return res.status(400).json({ message: 'Start date must be before or equal to End date.' });
+        }
+
+        if (notes !== undefined) run.notes = notes;
+        if (title !== undefined && String(title).trim()) run.title = String(title).trim();
+
+        await run.save();
+        return res.json(run);
     } catch (err) {
         next(err);
     }
@@ -188,13 +256,16 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
         const runs = await query.lean();
 
         const runIds = runs.map((r: any) => r._id);
-        const counts = await Payslip.aggregate([
-            { $match: { payrollRunId: { $in: runIds } } },
-            { $group: { _id: '$payrollRunId', count: { $sum: 1 }, totalNet: { $sum: '$netPay' } } },
-        ]);
+        const payslips = await Payslip.find({ payrollRunId: { $in: runIds } }).select('payrollRunId netPay').lean() as any[];
         const countMap: Record<string, { count: number; totalNet: number }> = {};
-        counts.forEach((c: any) => {
-            countMap[c._id.toString()] = { count: c.count, totalNet: c.totalNet };
+        payslips.forEach((p: any) => {
+            const runId = p.payrollRunId?.toString();
+            if (!runId) return;
+            if (!countMap[runId]) {
+                countMap[runId] = { count: 0, totalNet: 0 };
+            }
+            countMap[runId].count += 1;
+            countMap[runId].totalNet += Number(p.netPay) || 0;
         });
 
         const result = runs.map((r: any) => ({
@@ -210,19 +281,23 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
 });
 
 // Helper to compute or retrieve attendance summary for a payslip
-async function getOrComputeAttendanceSummary(employeeId: string, year: number, month: number, storedSummary?: any) {
+async function getOrComputeAttendanceSummary(employeeId: string, year: number, month: number, storedSummary?: any, customStart?: string, customEnd?: string) {
     if (storedSummary && storedSummary.workingDays > 0) {
         return storedSummary;
     }
     const lastDay = new Date(year, month, 0).getDate();
-    const periodStart = `${year}-${String(month).padStart(2, '0')}-01`;
-    const periodEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const periodStart = customStart || `${year}-${String(month).padStart(2, '0')}-01`;
+    const periodEnd = customEnd || `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     let workingDays = 0;
-    for (let d = 1; d <= lastDay; d++) {
-        const dayOfWeek = new Date(year, month - 1, d).getDay();
+    const cur = new Date(periodStart + 'T12:00:00.000Z');
+    const stop = new Date(periodEnd + 'T12:00:00.000Z');
+    while (cur <= stop) {
+        const dayOfWeek = cur.getUTCDay();
         if (dayOfWeek !== 0 && dayOfWeek !== 6) workingDays++;
+        cur.setUTCDate(cur.getUTCDate() + 1);
     }
+    if (workingDays === 0) workingDays = 22;
 
     const records = await AttendanceRecord.find({
         employeeId,
@@ -275,7 +350,7 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
             employeeId: emp.employeeId,
             status: 'Finalized',
         })
-            .populate('payrollRunId', 'title periodMonth periodYear status disbursedAt currency')
+            .populate('payrollRunId', 'title periodMonth periodYear startDate endDate status disbursedAt currency')
             .sort({ periodYear: -1, periodMonth: -1 })
             .lean() as any[];
 
@@ -283,7 +358,8 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
             if (p.attendanceSummary && p.attendanceSummary.workingDays > 0) {
                 return p;
             }
-            const attSummary = await getOrComputeAttendanceSummary(p.employeeId, p.periodYear, p.periodMonth, p.attendanceSummary);
+            const run = p.payrollRunId;
+            const attSummary = await getOrComputeAttendanceSummary(p.employeeId, p.periodYear, p.periodMonth, p.attendanceSummary, run?.startDate, run?.endDate);
             // Asynchronously persist to database so subsequent loads are instant
             Payslip.updateOne({ _id: p._id }, { $set: { attendanceSummary: attSummary } }).catch(() => {});
             return {
@@ -312,10 +388,18 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
 
     const emp = await Employee.findOne({ employeeId: payslip.employeeId }).lean() as any;
     const company = await Company.findOne().lean() as any;
-    const attSummary = await getOrComputeAttendanceSummary(payslip.employeeId, payslip.periodYear, payslip.periodMonth, payslip.attendanceSummary);
 
     const darkPurple = company?.branding?.primaryColor || '#1C0626';
     const magentaAccent = company?.branding?.secondaryColor || '#721466';
+
+    const attSummary = await getOrComputeAttendanceSummary(
+        payslip.employeeId,
+        payslip.periodYear,
+        payslip.periodMonth,
+        payslip.attendanceSummary,
+        payslip.payrollRunId?.startDate,
+        payslip.payrollRunId?.endDate
+    );
 
     const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
     const verifyUrl = `${clientHost}/verify/${payslip._id}`;
@@ -393,9 +477,13 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
            .lineWidth(0.8)
            .stroke();
 
+        const periodSubtitle = payslip.payrollRunId?.startDate && payslip.payrollRunId?.endDate
+            ? `${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear} (${payslip.payrollRunId.startDate} to ${payslip.payrollRunId.endDate})`
+            : `${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`;
+
         // Title text in top right white region (positioned to the left of the ribbon to prevent overlap)
         doc.fontSize(11).font('Helvetica-Bold').fillColor(darkPurple).text('PAYSLIP / SALARY STATEMENT', 100, 45, { align: 'right', width: doc.page.width - 290 });
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text(`${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 100, 62, { align: 'right', width: doc.page.width - 290 });
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text(periodSubtitle, 100, 62, { align: 'right', width: doc.page.width - 290 });
 
         // Employee & Payment Details Table
         let y = 120;
@@ -411,7 +499,7 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
         y += 14;
 
         doc.text(`Employee ID: ${payslip.employeeId}`, 60, y);
-        doc.text(`Pay Period: ${MONTH_NAMES[payslip.periodMonth]} ${payslip.periodYear}`, 310, y);
+        doc.text(`Pay Period: ${periodSubtitle}`, 310, y, { width: 220, ellipsis: true });
         y += 14;
 
         doc.text(`Designation: ${emp?.jobInfo?.designation || 'N/A'}`, 60, y);
@@ -941,18 +1029,21 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         // Delete any previously generated payslips for this run
         await Payslip.deleteMany({ payrollRunId: runId });
 
-        // ── Meal Allowance: PKR 500 per FULL working day ('Present' only, no WFH/Late/Half-Day) ──
-        const lastDay     = new Date(run.periodYear, run.periodMonth, 0).getDate();
-        const periodStart = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
-        const periodEnd   = `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        // ── Attendance Period & Working Days Calculation ──
+        const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
+        const periodStart = run.startDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
+        const periodEnd   = run.endDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
 
-        // Calculate actual working days (Monday - Friday) in the payroll month
+        // Calculate actual working days (Monday - Friday) across the selected period [periodStart, periodEnd]
         let workingDaysCount = 0;
-        for (let d = 1; d <= lastDay; d++) {
-            const dayOfWeek = new Date(run.periodYear, run.periodMonth - 1, d).getDay();
+        const curDate = new Date(periodStart + 'T12:00:00.000Z');
+        const stopDate = new Date(periodEnd + 'T12:00:00.000Z');
+        while (curDate <= stopDate) {
+            const dayOfWeek = curDate.getUTCDay();
             if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Sunday, 6 = Saturday
                 workingDaysCount++;
             }
+            curDate.setUTCDate(curDate.getUTCDate() + 1);
         }
         const monthlyWorkingDays = workingDaysCount > 0 ? workingDaysCount : 22;
         
@@ -990,14 +1081,38 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             }
         }
 
-        // ── Attendance Penalty Deductions: Late 9:30-10:00 (0.5 day cut), Half-Day >10:00 & Absent (1.0 day cut) ──
+        // ── Pre-calculate full attendance summary & penalty deductions for this period ──
         const periodRecords = await AttendanceRecord.find({
             date:   { $gte: periodStart, $lte: periodEnd },
-            status: { $in: ['Late', 'Half-Day', 'Absent'] }
         }).select('employeeId status date').lean() as any[];
+
+        const employeeAttendanceMap: Record<string, {
+            workingDays: number;
+            presentDays: number;
+            lateDays: number;
+            halfDays: number;
+            absentDays: number;
+            leaveDays: number;
+        }> = {};
 
         const attendanceDeductionsMap: Record<string, { halfDays: number; absents: number }> = {};
         for (const r of periodRecords) {
+            if (!employeeAttendanceMap[r.employeeId]) {
+                employeeAttendanceMap[r.employeeId] = {
+                    workingDays: monthlyWorkingDays,
+                    presentDays: 0,
+                    lateDays: 0,
+                    halfDays: 0,
+                    absentDays: 0,
+                    leaveDays: 0,
+                };
+            }
+            if (r.status === 'Present') employeeAttendanceMap[r.employeeId].presentDays++;
+            else if (r.status === 'Late') employeeAttendanceMap[r.employeeId].lateDays++;
+            else if (r.status === 'Half-Day') employeeAttendanceMap[r.employeeId].halfDays++;
+            else if (r.status === 'Absent') employeeAttendanceMap[r.employeeId].absentDays++;
+            else if (r.status === 'On Leave') employeeAttendanceMap[r.employeeId].leaveDays++;
+
             if (holidayDates.has(r.date)) continue;
             if (!attendanceDeductionsMap[r.employeeId]) {
                 attendanceDeductionsMap[r.employeeId] = { halfDays: 0, absents: 0 };
@@ -1257,6 +1372,15 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             const beneficiaryName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
             const beneficiaryBank = emp.bankDetails?.bankName || 'Meezan Bank';
 
+            const empAttSummary = employeeAttendanceMap[emp.employeeId] || {
+                workingDays: monthlyWorkingDays,
+                presentDays: 0,
+                lateDays: 0,
+                halfDays: 0,
+                absentDays: 0,
+                leaveDays: 0,
+            };
+
             const payslipNotes = [notes, loanPauseNote].filter(Boolean).join(' • ');
 
             payslips.push({
@@ -1281,6 +1405,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 status: 'Draft',
                 paymentMethod: 'Bank Transfer',
                 notes: payslipNotes || undefined,
+                attendanceSummary: empAttSummary,
             });
         }
 

@@ -5,7 +5,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    Eye, EyeOff, FileSpreadsheet, Building2
+    Eye, EyeOff, FileSpreadsheet, Building2, Calendar
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -52,6 +52,8 @@ interface PayrollRun {
     title: string;
     periodMonth: number;
     periodYear: number;
+    startDate?: string;
+    endDate?: string;
     currency: string;
     status: 'Draft' | 'Approved' | 'Disbursed';
     notes?: string;
@@ -64,6 +66,11 @@ interface PayrollRun {
     erpNotes?: string;
     erpPostedAt?: string;
 }
+
+const MONTH_NAMES = [
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 const PRESET_EARNINGS = [
     'Basic Salary',
@@ -516,6 +523,62 @@ const PayrollRunDetail = () => {
     const [erpRefInput, setErpRefInput] = useState('');
     const [erpNotesInput, setErpNotesInput] = useState('');
 
+    // Attendance Period Editing State
+    const [showEditPeriodModal, setShowEditPeriodModal] = useState(false);
+    const [editStartInput, setEditStartInput] = useState('');
+    const [editEndInput, setEditEndInput] = useState('');
+
+    const countWorkingDays = (startStr: string, endStr: string) => {
+        if (!startStr || !endStr || startStr > endStr) return 0;
+        let count = 0;
+        const cur = new Date(startStr + 'T12:00:00.000Z');
+        const stop = new Date(endStr + 'T12:00:00.000Z');
+        while (cur <= stop) {
+            const day = cur.getUTCDay();
+            if (day !== 0 && day !== 6) count++;
+            cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+        return count;
+    };
+
+    const handleOpenEditPeriod = () => {
+        if (!run) return;
+        const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
+        const curStart = run.startDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
+        const curEnd = run.endDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
+        setEditStartInput(curStart);
+        setEditEndInput(curEnd);
+        setShowEditPeriodModal(true);
+    };
+
+    const handleSavePeriod = async () => {
+        if (!editStartInput || !editEndInput) {
+            triggerError('Invalid Dates', 'Please select both start date and end date.');
+            return;
+        }
+        if (editStartInput > editEndInput) {
+            triggerError('Invalid Date Range', 'Start date must be before or equal to end date.');
+            return;
+        }
+        setActionLoading('save-period');
+        try {
+            await axios.put(api.payrollRun(id!), {
+                startDate: editStartInput,
+                endDate: editEndInput,
+            }, authHeader);
+            setShowEditPeriodModal(false);
+            setRefreshCounter(c => c + 1);
+            triggerSuccess(
+                'Period Updated',
+                `Payroll calculation period updated to ${editStartInput} → ${editEndInput}. Click "Generate" to recalculate payslips for this period.`
+            );
+        } catch (err: any) {
+            triggerError('Failed to Update Period', err.response?.data?.message || 'Failed to update calculation period.');
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     const [alertConfig, setAlertConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -591,9 +654,13 @@ const PayrollRunDetail = () => {
     const authHeader = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
 
     const handleGenerate = async () => {
+        const defaultLastDay = run ? new Date(run.periodYear, run.periodMonth, 0).getDate() : 30;
+        const periodStartStr = run?.startDate || `${run?.periodYear}-${String(run?.periodMonth).padStart(2, '0')}-01`;
+        const periodEndStr = run?.endDate || `${run?.periodYear}-${String(run?.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
+        
         triggerConfirm(
             'Regenerate Payslips?',
-            `This will recalculate attendance penalties, loan installments, and non-taxable PF withdrawals for "${run?.title}". Existing draft payslips will be refreshed. Continue?`,
+            `This will count working days and calculate attendance penalties, meal allowances, and loans for "${run?.title}" over the period (${periodStartStr} to ${periodEndStr}). Existing draft payslips will be refreshed. Continue?`,
             async () => {
                 setActionLoading('generate');
                 try {
@@ -752,6 +819,26 @@ const PayrollRunDetail = () => {
                                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                                     {run.currency}
                                 </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500">
+                                <span className="inline-flex items-center gap-1.5 font-medium text-indigo-900 bg-indigo-50/80 border border-indigo-100/90 px-2.5 py-0.5 rounded-lg">
+                                    <Calendar size={12} className="text-indigo-600" />
+                                    <span>
+                                        {run.startDate && run.endDate ? `${run.startDate} → ${run.endDate}` : `${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`}
+                                    </span>
+                                    <span className="text-indigo-600 font-bold ml-0.5">
+                                        ({countWorkingDays(run.startDate || '', run.endDate || '') || 22} Working Days)
+                                    </span>
+                                </span>
+                                {run.status === 'Draft' && (
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenEditPeriod}
+                                        className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
+                                    >
+                                        <PencilLine size={12} /> Edit Period
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -975,6 +1062,77 @@ const PayrollRunDetail = () => {
                     onClose={() => setEditingPayslip(null)}
                     onSaved={() => { setEditingPayslip(null); setRefreshCounter(c => c + 1); }}
                 />
+            )}
+
+            {/* Edit Attendance Period Modal */}
+            {showEditPeriodModal && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2 text-slate-900">
+                                <Calendar size={20} className="text-indigo-600" />
+                                <h3 className="font-bold text-base">Edit Payroll Calculation Period</h3>
+                            </div>
+                            <button onClick={() => setShowEditPeriodModal(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-slate-700 uppercase">Payroll Calculation Period</span>
+                                <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                    {countWorkingDays(editStartInput, editEndInput)} Working Days
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Date (From)</label>
+                                    <input
+                                        type="date"
+                                        value={editStartInput}
+                                        onChange={e => setEditStartInput(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">End Date (To)</label>
+                                    <input
+                                        type="date"
+                                        value={editEndInput}
+                                        onChange={e => setEditEndInput(e.target.value)}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 italic">
+                                Changing the date range updates which days are counted for payroll calculation and working days.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                onClick={() => setShowEditPeriodModal(false)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSavePeriod}
+                                disabled={actionLoading === 'save-period'}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                            >
+                                {actionLoading === 'save-period' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                Save Period
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* Finance ERP Task Modal */}

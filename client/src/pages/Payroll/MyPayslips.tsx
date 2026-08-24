@@ -48,6 +48,8 @@ interface Payslip {
         title: string;
         periodMonth: number;
         periodYear: number;
+        startDate?: string;
+        endDate?: string;
         status: string;
         disbursedAt?: string;
         currency: string;
@@ -179,6 +181,9 @@ const PayslipCard = ({ payslip, hideSalary = false }: { payslip: Payslip; hideSa
                         <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
                             <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><Calendar size={12} className="text-indigo-500" /> Pay Period</span>
                             <span className="font-bold text-slate-700">{MONTH_NAMES[payslip.periodMonth]} {payslip.periodYear}</span>
+                            {run?.startDate && run?.endDate && (
+                                <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{run.startDate} → {run.endDate}</span>
+                            )}
                         </div>
                         <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
                             <span className="text-slate-400 flex items-center gap-1 mb-1 font-medium"><Banknote size={12} className="text-emerald-500" /> Payment Method</span>

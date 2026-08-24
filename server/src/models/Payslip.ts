@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
+import { encryptNumber, decryptNumber, decryptPayslipFields } from '../utils/encryption';
 
 export interface IPayslipEarning {
     component: string;              // mirrors Employee.salaryComponents[].component
@@ -52,7 +53,7 @@ export interface IPayslip extends Document {
 const EarningSchema = new Schema(
     {
         component: { type: String, required: true },
-        amount: { type: Number, required: true, min: 0 },
+        amount: { type: Schema.Types.Mixed, required: true, get: decryptNumber, set: encryptNumber },
         type: { type: String, enum: ['fixed', 'variable'], default: 'fixed' },
     },
     { _id: false }
@@ -61,7 +62,7 @@ const EarningSchema = new Schema(
 const DeductionSchema = new Schema(
     {
         component: { type: String, required: true },
-        amount: { type: Number, required: true, min: 0 },
+        amount: { type: Schema.Types.Mixed, required: true, get: decryptNumber, set: encryptNumber },
     },
     { _id: false }
 );
@@ -89,9 +90,9 @@ const PayslipSchema: Schema = new Schema(
         beneficiaryBank: { type: String },
         customerReference: { type: String, index: true },
 
-        taxDeduction: { type: Number, default: 0 },
-        loanDeduction: { type: Number, default: 0 },
-        pfPayout: { type: Number, default: 0 },
+        taxDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
+        loanDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
+        pfPayout: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
 
         // Populated from Employee.salaryComponents[] on generation
         earnings: { type: [EarningSchema], default: [] },
@@ -99,9 +100,9 @@ const PayslipSchema: Schema = new Schema(
         // Manually added by admin (tax, EOBI, advances, etc.)
         deductions: { type: [DeductionSchema], default: [] },
 
-        grossPay: { type: Number, required: true, min: 0, default: 0 },
-        totalDeductions: { type: Number, required: true, min: 0, default: 0 },
-        netPay: { type: Number, required: true, min: 0, default: 0 },
+        grossPay: { type: Schema.Types.Mixed, required: true, default: 0, get: decryptNumber, set: encryptNumber },
+        totalDeductions: { type: Schema.Types.Mixed, required: true, default: 0, get: decryptNumber, set: encryptNumber },
+        netPay: { type: Schema.Types.Mixed, required: true, default: 0, get: decryptNumber, set: encryptNumber },
 
         status: {
             type: String,
@@ -125,7 +126,11 @@ const PayslipSchema: Schema = new Schema(
             leaveDays: { type: Number, default: 0 },
         },
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        toJSON: { getters: true, virtuals: true },
+        toObject: { getters: true, virtuals: true }
+    }
 );
 
 // Prevent duplicate payslips for the same employee in the same run
@@ -140,8 +145,27 @@ PayslipSchema.virtual('employeeDetails', {
     justOne: true,
 });
 
-PayslipSchema.set('toObject', { virtuals: true });
-PayslipSchema.set('toJSON', { virtuals: true });
+// Decrypt financial fields automatically on document hydration and queries (including .lean())
+PayslipSchema.post('init', function(doc: any) {
+    decryptPayslipFields(doc);
+});
+
+PayslipSchema.post(/^find/, function(result: any) {
+    if (!result) return;
+    if (Array.isArray(result)) {
+        result.forEach(doc => decryptPayslipFields(doc));
+    } else {
+        decryptPayslipFields(result);
+    }
+});
+
+PayslipSchema.post('findOneAndUpdate', function(doc: any) {
+    if (doc) decryptPayslipFields(doc);
+});
+
+PayslipSchema.set('toObject', { getters: true, virtuals: true });
+PayslipSchema.set('toJSON', { getters: true, virtuals: true });
 
 export default mongoose.models.Payslip ||
     mongoose.model<IPayslip>('Payslip', PayslipSchema);
+

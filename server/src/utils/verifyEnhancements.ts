@@ -1,5 +1,13 @@
 import assert from 'assert';
-import { generateCustomerReference } from './encryption';
+import {
+    generateCustomerReference,
+    encryptNumber,
+    decryptNumber,
+    encryptFinancialField,
+    decryptFinancialField,
+    decryptEmployeeFields,
+    decryptPayslipFields
+} from './encryption';
 import { generateCSV } from './csv';
 
 console.log('--- Running HRM & Payroll Enhancements Self-Check ---');
@@ -79,5 +87,77 @@ const absentPenalty = Math.round(fullDayAbsents * 1.0 * dailyRate); // 5000
 assert.strictEqual(halfDayPenalty, 5000);
 assert.strictEqual(absentPenalty, 5000);
 console.log('✓ Attendance half-day and absence salary penalty logic verified.');
+
+// 5. Check AES-256-GCM Financial Encryption & Decryption
+const testAmounts = [0, 100, 150000, 325450.75, -5000];
+for (const amt of testAmounts) {
+    const encrypted = encryptNumber(amt);
+    assert(encrypted.startsWith('enc:v1:'), `Encrypted format missing enc:v1 prefix for ${amt}: ${encrypted}`);
+    assert.notStrictEqual(encrypted, String(amt), `Value was not encrypted: ${amt}`);
+    const decrypted = decryptNumber(encrypted);
+    assert.strictEqual(decrypted, amt, `Decryption mismatch for ${amt}, got ${decrypted}`);
+}
+
+// Backwards compatibility with legacy unencrypted numbers
+assert.strictEqual(decryptNumber(185000), 185000);
+assert.strictEqual(decryptNumber('185000'), 185000);
+assert.strictEqual(decryptNumber(0), 0);
+assert.strictEqual(decryptNumber(null), 0);
+assert.strictEqual(decryptNumber(undefined), 0);
+
+// Tamper resistance check: altering ciphertext or tag causes safe decryption fallback
+const validCipher = encryptNumber(250000);
+const parts = validCipher.split(':');
+parts[4] = '00' + parts[4].slice(2); // Alter ciphertext
+const tampered = parts.join(':');
+assert.strictEqual(decryptNumber(tampered), 0, 'Tampered ciphertext must not decrypt to arbitrary value');
+
+// Test Employee In-Place Decryption
+const mockEmp = {
+    employeeId: 'ITCS-001',
+    financeInfo: {
+        probationSalary: encryptNumber(80000),
+        confirmedSalary: encryptNumber(120000)
+    },
+    salaryComponents: [
+        { component: 'Basic Salary', amount: encryptNumber(100000) },
+        { component: 'Fuel Allowance', amount: encryptNumber(20000) }
+    ],
+    providentFundBalance: encryptNumber(45000),
+    providentFundHistory: [
+        { amount: encryptNumber(5000), type: 'credit', description: 'Payroll deduction' }
+    ]
+};
+
+decryptEmployeeFields(mockEmp);
+assert.strictEqual(mockEmp.financeInfo.probationSalary, 80000);
+assert.strictEqual(mockEmp.financeInfo.confirmedSalary, 120000);
+assert.strictEqual(mockEmp.salaryComponents[0].amount, 100000);
+assert.strictEqual(mockEmp.salaryComponents[1].amount, 20000);
+assert.strictEqual(mockEmp.providentFundBalance, 45000);
+assert.strictEqual(mockEmp.providentFundHistory[0].amount, 5000);
+
+// Test Payslip In-Place Decryption
+const mockPayslip = {
+    payslipNo: 'PS-2026-08-001',
+    grossPay: encryptNumber(150000),
+    totalDeductions: encryptNumber(25000),
+    netPay: encryptNumber(125000),
+    taxDeduction: encryptNumber(15000),
+    loanDeduction: encryptNumber(10000),
+    earnings: [{ component: 'Basic', amount: encryptNumber(150000) }],
+    deductions: [{ component: 'Tax', amount: encryptNumber(15000) }]
+};
+
+decryptPayslipFields(mockPayslip);
+assert.strictEqual(mockPayslip.grossPay, 150000);
+assert.strictEqual(mockPayslip.totalDeductions, 25000);
+assert.strictEqual(mockPayslip.netPay, 125000);
+assert.strictEqual(mockPayslip.taxDeduction, 15000);
+assert.strictEqual(mockPayslip.loanDeduction, 10000);
+assert.strictEqual(mockPayslip.earnings[0].amount, 150000);
+assert.strictEqual(mockPayslip.deductions[0].amount, 15000);
+
+console.log('✓ AES-256-GCM encryption, decryption, tamper-detection & batch transforms verified.');
 
 console.log('--- ALL SELF-CHECKS PASSED SUCCESSFULLY ---');

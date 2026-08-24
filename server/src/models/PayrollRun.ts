@@ -6,6 +6,8 @@ export interface IPayrollRun extends Document {
     title: string;           // Auto: "June 2026 Payroll"
     periodMonth: number;     // 1–12
     periodYear: number;      // e.g., 2026
+    startDate?: string;      // Calculation start date e.g. "2026-07-25"
+    endDate?: string;        // Calculation end date e.g. "2026-08-24"
     currency: string;        // Default: 'PKR'
     status: PayrollRunStatus;
     notes?: string;
@@ -27,6 +29,8 @@ const PayrollRunSchema: Schema = new Schema(
         title: { type: String, required: true },
         periodMonth: { type: Number, required: true, min: 1, max: 12 },
         periodYear: { type: Number, required: true },
+        startDate: { type: String },
+        endDate: { type: String },
         currency: { type: String, default: 'PKR' },
         status: {
             type: String,

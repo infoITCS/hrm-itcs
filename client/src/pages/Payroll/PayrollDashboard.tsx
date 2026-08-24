@@ -18,6 +18,8 @@ interface PayrollRun {
     title: string;
     periodMonth: number;
     periodYear: number;
+    startDate?: string;
+    endDate?: string;
     currency: string;
     status: 'Draft' | 'Approved' | 'Disbursed';
     notes?: string;
@@ -84,12 +86,39 @@ const StatCard = ({ icon: Icon, label, value, color }: StatCardProps) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Create Run Modal
 // ─────────────────────────────────────────────────────────────────────────────
+const computeDefaultDates = (mStr: string, yStr: string) => {
+    const m = Number(mStr);
+    const y = Number(yStr);
+    if (!m || !y) return { start: '', end: '' };
+    const lastDay = new Date(y, m, 0).getDate();
+    const start = `${y}-${String(m).padStart(2, '0')}-01`;
+    const end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return { start, end };
+};
+
+const countWorkingDays = (startStr: string, endStr: string) => {
+    if (!startStr || !endStr || startStr > endStr) return 0;
+    let count = 0;
+    const cur = new Date(startStr + 'T12:00:00.000Z');
+    const stop = new Date(endStr + 'T12:00:00.000Z');
+    while (cur <= stop) {
+        const day = cur.getUTCDay();
+        if (day !== 0 && day !== 6) count++;
+        cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return count;
+};
+
 const CreateRunModal = ({
     onClose, onCreated,
 }: { onClose: () => void; onCreated: () => void }) => {
     const now = new Date();
     const [month, setMonth] = useState(String(now.getMonth() + 1));
     const [year, setYear] = useState(String(now.getFullYear()));
+    
+    const initialDates = computeDefaultDates(String(now.getMonth() + 1), String(now.getFullYear()));
+    const [startDate, setStartDate] = useState(initialDates.start);
+    const [endDate, setEndDate] = useState(initialDates.end);
     const [currency, setCurrency] = useState('PKR');
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
@@ -98,14 +127,40 @@ const CreateRunModal = ({
     const currentYear = now.getFullYear();
     const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
+    const handleMonthChange = (newMonth: string) => {
+        setMonth(newMonth);
+        const { start, end } = computeDefaultDates(newMonth, year);
+        setStartDate(start);
+        setEndDate(end);
+    };
+
+    const handleYearChange = (newYear: string) => {
+        setYear(newYear);
+        const { start, end } = computeDefaultDates(month, newYear);
+        setStartDate(start);
+        setEndDate(end);
+    };
+
+    const workingDays = countWorkingDays(startDate, endDate);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        if (!startDate || !endDate) {
+            setError('Please select both Start Date and End Date for payroll calculation.');
+            return;
+        }
+        if (startDate > endDate) {
+            setError('Start Date must be before or equal to End Date.');
+            return;
+        }
         setLoading(true);
         try {
             await axios.post(api.payrollRuns, {
                 periodMonth: Number(month),
                 periodYear: Number(year),
+                startDate,
+                endDate,
                 currency,
                 notes: notes.trim() || undefined,
             }, {
@@ -122,7 +177,7 @@ const CreateRunModal = ({
 
     return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
                         <Banknote size={18} className="text-indigo-600" />
@@ -140,10 +195,10 @@ const CreateRunModal = ({
                     )}
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Month</label>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payroll Month</label>
                             <select
                                 value={month}
-                                onChange={e => setMonth(e.target.value)}
+                                onChange={e => handleMonthChange(e.target.value)}
                                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 required
                             >
@@ -153,10 +208,10 @@ const CreateRunModal = ({
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Year</label>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payroll Year</label>
                             <select
                                 value={year}
-                                onChange={e => setYear(e.target.value)}
+                                onChange={e => handleYearChange(e.target.value)}
                                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 required
                             >
@@ -164,6 +219,46 @@ const CreateRunModal = ({
                             </select>
                         </div>
                     </div>
+
+                    {/* Payroll Calculation Date Range */}
+                    <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                                Payroll Calculation Period
+                            </label>
+                            <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
+                                {workingDays} Working Days
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Date (From)</label>
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={e => setStartDate(e.target.value)}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">End Date (To)</label>
+                                <input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={e => setEndDate(e.target.value)}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 italic">
+                            Payroll calculation and working days will be counted from <strong>{startDate || '—'}</strong> to <strong>{endDate || '—'}</strong>.
+                        </p>
+                    </div>
+
                     <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Currency</label>
                         <select
@@ -194,7 +289,7 @@ const CreateRunModal = ({
                             Cancel
                         </button>
                         <button type="submit" disabled={loading}
-                            className="px-5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-60">
+                            className="px-5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-60 cursor-pointer">
                             {loading ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                             Create Run
                         </button>
@@ -357,7 +452,9 @@ const PayrollDashboard = () => {
                                             >
                                                 <td className="px-5 py-4">
                                                     <p className="font-semibold text-slate-800">{run.title}</p>
-                                                    <p className="text-xs text-slate-400 mt-0.5">{run.currency}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                                                        {run.startDate && run.endDate ? `${run.startDate} → ${run.endDate}` : run.currency}
+                                                    </p>
                                                 </td>
                                                 <td className="px-5 py-4"><StatusBadge status={run.status} /></td>
                                                 <td className="px-5 py-4 hidden sm:table-cell">

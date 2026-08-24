@@ -1,4 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
+import { encryptNumber, decryptNumber, decryptEmployeeFields } from '../utils/encryption';
+
 
 export interface IEmployee extends Document {
     employeeId: string;
@@ -223,12 +225,12 @@ const EmployeeSchema: Schema = new Schema({
     },
     salaryComponents: [{
         component: { type: String },
-        amount: { type: Number },
+        amount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         type: { type: String, enum: ['fixed', 'variable'], default: 'fixed' }
     }],
     financeInfo: {
-        probationSalary: { type: Number },
-        confirmedSalary: { type: Number },
+        probationSalary: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
+        confirmedSalary: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         probationMonths: { type: Number, default: 3 },
         probationDays: { type: Number, default: 90 }
     },
@@ -239,9 +241,9 @@ const EmployeeSchema: Schema = new Schema({
         iban: { type: String },
         swiftCode: { type: String }
     },
-    providentFundBalance: { type: Number, default: 0 },
+    providentFundBalance: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
     providentFundHistory: [{
-        amount: { type: Number, required: true },
+        amount: { type: Schema.Types.Mixed, required: true, get: decryptNumber, set: encryptNumber },
         type: { type: String, enum: ['credit', 'debit'], required: true },
         source: { type: String, enum: ['manual', 'payroll'], required: true },
         date: { type: Date, default: Date.now },
@@ -318,17 +320,21 @@ const EmployeeSchema: Schema = new Schema({
     }],
     salaryHistory: [{
         effectiveDate: { type: Date },
-        amount: { type: Number },
+        amount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         changeType: { type: String },
         reason: { type: String },
-        previousAmount: { type: Number },
+        previousAmount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         components: [{
             component: { type: String },
-            amount: { type: Number },
+            amount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
             type: { type: String, enum: ['fixed', 'variable'] }
         }]
     }]
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { getters: true, virtuals: true },
+    toObject: { getters: true, virtuals: true }
+});
 
 // Pre-hook to globally filter out soft-deleted records from find queries unless explicitly requested
 EmployeeSchema.pre(/^find/, function(this: mongoose.Query<any, any>, next) {
@@ -351,7 +357,24 @@ EmployeeSchema.pre('aggregate', function(next) {
     next();
 });
 
-// Encryption removed as per user request
+// Decrypt financial fields automatically on document hydration and queries (including .lean())
+EmployeeSchema.post('init', function(doc: any) {
+    decryptEmployeeFields(doc);
+});
+
+EmployeeSchema.post(/^find/, function(result: any) {
+    if (!result) return;
+    if (Array.isArray(result)) {
+        result.forEach(doc => decryptEmployeeFields(doc));
+    } else {
+        decryptEmployeeFields(result);
+    }
+});
+
+EmployeeSchema.post('findOneAndUpdate', function(doc: any) {
+    if (doc) decryptEmployeeFields(doc);
+});
+
 
 // Performance indexes
 EmployeeSchema.index({ userId: 1 });

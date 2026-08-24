@@ -1194,7 +1194,6 @@ router.post('/pf-profit-distribution', authenticate, async (req: Request, res: R
         }
 
         const employees = await Employee.find({
-            providentFundBalance: { $gt: 0 },
             $or: [
                 { 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } },
                 { employmentStatus: { $type: 'string', $nin: ['Terminated', 'Resigned'] } },
