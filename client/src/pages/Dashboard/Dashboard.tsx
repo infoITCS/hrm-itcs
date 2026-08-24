@@ -77,18 +77,16 @@ const Dashboard = () => {
     const calculateOnboardingProgress = (emp: any) => {
         const empData = emp || {};
 
+        const hasPersonal = !!(empData.firstName && empData.lastName);
+        const hasContact = !!(empData.address?.city || empData.address?.street || empData.phone || empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone));
+        const hasHistory = !!(empData.education?.some((edu: any) => edu.level || edu.institute) || empData.employmentHistory?.some((eh: any) => eh.companyName) || (empData.skills && empData.skills.length > 0));
+        const hasDocuments = !!((empData.attachments && empData.attachments.length > 0) || empData.avatar);
+
         const steps = [
-            { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && empData.cnic && empData.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!(empData.address?.city && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
-            { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level) || empData.employmentHistory?.some((eh: any) => eh.companyName)) },
-            { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link)) },
-            { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture, Signed Contract)', completed: !!(
-                empData.attachments?.some((a: any) => a.fileType === 'CNIC Front') &&
-                empData.attachments?.some((a: any) => a.fileType === 'CNIC Back') &&
-                empData.attachments?.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - ')) &&
-                empData.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture') &&
-                empData.attachments?.some((a: any) => a.fileType === 'Signed Contract' || a.fileType === 'Contract')
-            )}
+            { id: 'personal', label: 'Personal Information', completed: hasPersonal },
+            { id: 'contact', label: 'Contact & Emergency', completed: hasContact },
+            { id: 'history', label: 'Employment & Skills', completed: hasHistory },
+            { id: 'documents', label: 'Identity Documents & Photo', completed: hasDocuments }
         ];
 
         const completedCount = steps.filter(s => s.completed).length;

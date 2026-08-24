@@ -991,13 +991,13 @@ const MyInfo = () => {
             }
 
             setInitialLockedFields({
-                cnic: !!employeeData.cnic,
-                dateOfBirth: !!employeeData.dateOfBirth,
-                fatherName: !!employeeData.fatherName,
-                nationality: !!employeeData.nationality,
-                domicile: !!employeeData.domicile,
-                bloodGroup: !!employeeData.bloodGroup,
-                religion: !!employeeData.religion
+                cnic: !!savedEmployee.cnic,
+                dateOfBirth: !!savedEmployee.dateOfBirth,
+                fatherName: !!savedEmployee.fatherName,
+                nationality: !!savedEmployee.nationality,
+                domicile: !!savedEmployee.domicile,
+                bloodGroup: !!savedEmployee.bloodGroup,
+                religion: !!savedEmployee.religion
             });
 
             if (!isBackground) {

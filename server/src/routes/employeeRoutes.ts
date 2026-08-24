@@ -271,11 +271,14 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         const EMPLOYEE_EDITABLE_FIELDS = [
             'firstName', 'lastName', 'middleName', 'phone', 'address', 'temporaryAddress', 'cnic', 
             'dateOfBirth', 'gender', 'maritalStatus', 'nationality', 'email', 'userId',
-            'fatherName', 'bloodGroup', 'religion', 'domicile'
+            'fatherName', 'bloodGroup', 'religion', 'domicile',
+            'emergencyContacts', 'dependents', 'education', 'employmentHistory',
+            'immigrationHistory', 'socialProfiles', 'skills', 'certifications',
+            'bankDetails', 'licenseNumber', 'simNumber', 'workEmail', 'otherEmail'
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
-            'workEmail', 'otherEmail', 'employeeId', 'biometricPin'
+            'employeeId', 'biometricPin', 'providentFundBalance'
         ];
 
         const allowedFields = (['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role))
@@ -1544,17 +1547,16 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // SECURITY: Mass Assignment Protection — explicit field allowlists per role
         // ─────────────────────────────────────────────────────────────────────────
         const EMPLOYEE_EDITABLE_FIELDS = [
+            'firstName', 'lastName', 'middleName', 'cnic', 'dateOfBirth', 'gender',
+            'maritalStatus', 'nationality', 'domicile', 'fatherName', 'bloodGroup', 'religion',
             'phone', 'address', 'temporaryAddress', 'emergencyContacts', 'dependents',
             'education', 'employmentHistory', 'immigrationHistory',
             'socialProfiles', 'skills', 'certifications', 'bankDetails',
-            'licenseNumber', 'simNumber', 'workEmail', 'otherEmail',
-            'email', 'fatherName', 'bloodGroup', 'religion', 'domicile'
+            'licenseNumber', 'simNumber', 'workEmail', 'otherEmail', 'email'
         ];
         const ADMIN_EXTRA_FIELDS = [
-            'firstName', 'lastName', 'middleName', 'dateOfBirth', 'gender',
-            'maritalStatus', 'nationality', 'domicile', 'cnic', 'jobInfo', 'employmentStatus',
-            'salaryComponents', 'financeInfo', 'benefits', 'workEmail', 'otherEmail', 'avatar', 'biometricPin',
-            'providentFundBalance'
+            'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
+            'employeeId', 'biometricPin', 'avatar', 'providentFundBalance'
         ];
 
         const allowedFields = isAdmin
