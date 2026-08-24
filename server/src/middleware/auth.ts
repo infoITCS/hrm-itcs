@@ -5,6 +5,7 @@ import { AuthUtils } from './auth.utils';
 export interface AuthRequest extends Request {
     user?: {
         userId: string;
+        email?: string;
         role: string; // 'admin', 'hr', 'employee'
     };
 }
@@ -36,6 +37,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     // Set user info from token payload
     authReq.user = {
         userId: decoded.userId,
+        email: decoded.email,
         role: decoded.role || 'employee'
     };
 
@@ -77,6 +79,7 @@ export const authenticateFile = (req: Request, res: Response, next: NextFunction
 
     authReq.user = {
         userId: decoded.userId,
+        email: decoded.email,
         role: decoded.role || 'employee'
     };
 

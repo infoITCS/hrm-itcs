@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import MyProvidentFund from './MyProvidentFund';
+import SalaryPinModal from '../../components/UI/SalaryPinModal';
 import {
     Banknote, Search, ChevronDown, ChevronRight, CheckCircle2,
     Clock, XCircle, TrendingUp, Users, BadgeCheck,
     AlertTriangle, FileText, X, CalendarDays, User, Building2,
-    Percent, Loader2
+    Percent, Loader2, Lock, Unlock
 } from 'lucide-react';
 
 interface PFEntry {
@@ -396,6 +397,8 @@ export default function ProvidentFundReport() {
     const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
 
     const [activeTab, setActiveTab] = useState<'my-pf' | 'company-pf'>('my-pf');
+    const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
+    const [showMasterPinModal, setShowMasterPinModal] = useState(false);
     const [data, setData] = useState<EmpPFData[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -556,8 +559,40 @@ export default function ProvidentFundReport() {
 
             {activeTab === 'my-pf' ? (
                 <MyProvidentFund />
+            ) : !isFinancialUnlocked ? (
+                <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-12 space-y-5 animate-fadeIn">
+                    <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                        <Lock size={30} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800">Company PF Ledger Protected</h3>
+                        <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                            Company-wide Provident Fund balances, maturity disbursements, and dividend distribution require Universal Master Security authorization.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowMasterPinModal(true)}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                    >
+                        <Lock size={15} /> Unlock Company PF Ledger
+                    </button>
+                </div>
             ) : (
                 <>
+                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
+                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                            <Unlock size={16} className="text-emerald-600" />
+                            <span>Company PF Ledger Unlocked (Master Security Active)</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsFinancialUnlocked(false)}
+                            className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                        >
+                            <Lock size={12} /> Lock
+                        </button>
+                    </div>
 
             {/* Statement Modal */}
             {statement && (
@@ -940,6 +975,16 @@ export default function ProvidentFundReport() {
                 </div>,
                 document.body
             )}
+
+            {/* Universal Master Financial Security Modal */}
+            <SalaryPinModal
+                isOpen={showMasterPinModal}
+                onClose={() => setShowMasterPinModal(false)}
+                onSuccess={() => setIsFinancialUnlocked(true)}
+                requireMasterPin={true}
+                title="Universal Master Security Lock"
+                description="Enter the 4-digit Master Financial PIN to access company-wide Provident Fund records."
+            />
         </div>
     );
 }

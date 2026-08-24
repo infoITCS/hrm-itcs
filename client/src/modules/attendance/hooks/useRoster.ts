@@ -35,10 +35,14 @@ export function useRoster(date?: string, location?: string, enabled = true) {
         };
     }, [fetch]);
 
-    // Auto-poll
+    // Auto-poll (pauses in background tabs)
     useEffect(() => {
         if (!enabled) return;
-        const id = setInterval(() => fetch(true), POLL_INTERVAL_MS);
+        const id = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                fetch(true);
+            }
+        }, POLL_INTERVAL_MS);
         return () => clearInterval(id);
     }, [fetch, enabled]);
 

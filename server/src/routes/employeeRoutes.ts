@@ -182,6 +182,24 @@ router.get('/directory', authenticate, async (req: Request, res: Response, next:
     }
 });
 
+// Ultra-fast lightweight employee dropdown (Reporting Manager / selector lookups)
+// Bypasses heavy document hydration, encryption overhead, and large subdocuments
+router.get('/dropdown', authenticate, async (req: Request, res: Response, next: Function) => {
+    try {
+        const employees = await Employee.find({ isDeleted: { $ne: true } })
+            .select('employeeId firstName lastName jobInfo.designation jobInfo.department')
+            .sort({ firstName: 1 })
+            .lean();
+
+        res.json(employees.map((e: any) => ({
+            value: e.employeeId,
+            label: `${e.firstName} ${e.lastName} (${e.employeeId})`
+        })));
+    } catch (err: any) {
+        next(err);
+    }
+});
+
 // Get all employees (Protected) - Role-based filtering
 router.get('/', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
@@ -317,16 +335,28 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         // Auto-generate employeeId if not provided (standard for new creations)
         if (!employeeData.employeeId) {
-            // H3 FIX: Atomic Counter implementation using findOneAndUpdate to prevent race conditions
             const PREFIX = 'itcs-';
-            const counter = await Counter.findOneAndUpdate(
-                { key: 'employeeId' },
-                { $inc: { seq: 1 } },
-                { upsert: true, new: true }
-            );
-            
-            const nextNum = counter.seq;
+            const existingEmployees = await Employee.find({ employeeId: { $regex: /^itcs-\d+$/i }, isDeleted: { $ne: true } })
+                .select('employeeId')
+                .lean();
+
+            let maxSeq = 0;
+            for (const emp of existingEmployees) {
+                const match = (emp.employeeId || '').match(/^itcs-(\d+)$/i);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxSeq) maxSeq = num;
+                }
+            }
+
+            const nextNum = maxSeq + 1;
             employeeData.employeeId = `${PREFIX}${nextNum.toString().padStart(3, '0')}`;
+
+            await Counter.findOneAndUpdate(
+                { key: 'employeeId' },
+                { $set: { seq: nextNum } },
+                { upsert: true }
+            );
         }
 
         // Sanitize jobInfo.shift: if it's an empty string, set it to null 
@@ -418,8 +448,9 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
         const currentMonth = today.getMonth() + 1; // 1-12
         const currentYear = today.getFullYear();
 
-        // Find employees with birthdays or joining in this month
+        // Find active employees with birthdays or joining in this month
         const employees = await Employee.find({
+            isDeleted: { $ne: true },
             $or: [
                 {
                     $expr: { $eq: [{ $month: "$dateOfBirth" }, currentMonth] }
@@ -428,18 +459,19 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                     $expr: { $eq: [{ $month: "$jobInfo.joiningDate" }, currentMonth] }
                 }
             ]
-        }).select('firstName lastName employeeId avatar dateOfBirth jobInfo.joiningDate jobInfo.designation jobInfo.jobTitle');
+        }).select('firstName lastName middleName employeeId avatar dateOfBirth jobInfo.joiningDate jobInfo.designation jobInfo.jobTitle');
 
         const specials: any[] = [];
         for (const emp of employees) {
             const isBirthdayInMonth = emp.dateOfBirth && (emp.dateOfBirth.getMonth() + 1 === currentMonth);
             const isAnniversaryInMonth = emp.jobInfo?.joiningDate && (emp.jobInfo.joiningDate.getMonth() + 1 === currentMonth);
+            const employeeFullName = [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ') || 'Employee';
 
             if (isBirthdayInMonth && emp.dateOfBirth) {
                 const dateStr = emp.dateOfBirth.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
                 specials.push({
                     id: `${emp.employeeId}-birthday`,
-                    name: `${emp.firstName} ${emp.lastName}`,
+                    name: employeeFullName,
                     avatar: emp.avatar,
                     type: 'birthday',
                     date: dateStr,
@@ -454,7 +486,7 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                 if (yearsCompleted > 0) {
                     specials.push({
                         id: `${emp.employeeId}-anniversary`,
-                        name: `${emp.firstName} ${emp.lastName}`,
+                        name: employeeFullName,
                         avatar: emp.avatar,
                         type: 'anniversary',
                         yearsCompleted,
@@ -465,7 +497,7 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
                 } else {
                     specials.push({
                         id: `${emp.employeeId}-newjoiner`,
-                        name: `${emp.firstName} ${emp.lastName}`,
+                        name: employeeFullName,
                         avatar: emp.avatar,
                         type: 'new_joiner',
                         designation: emp.jobInfo?.designation || emp.jobInfo?.jobTitle || 'New Joiner',

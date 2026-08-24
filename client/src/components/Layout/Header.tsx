@@ -278,8 +278,23 @@ function NotificationBell() {
 
     useEffect(() => {
         fetchNotifications();
-        const interval = setInterval(fetchNotifications, 45000); // refresh every 45s
-        return () => clearInterval(interval);
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                fetchNotifications();
+            }
+        }, 60000); // 60s active refresh
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                fetchNotifications();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, []);
 
     useEffect(() => {

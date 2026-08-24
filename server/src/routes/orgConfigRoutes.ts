@@ -316,10 +316,14 @@ router.post('/templates', authenticate, requireAdmin, async (req: Request, res: 
 
 /**
  * @route   GET /api/config/roles-permissions
- * @desc    Get permissions configuration for all roles
+ * @desc    Get permissions configuration for all roles (Super-Admin only)
  */
-router.get('/roles-permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/roles-permissions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const authReq = req as AuthRequest;
+        if (authReq.user?.role !== 'super-admin') {
+            return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+        }
         const permissions = await RolePermission.find().sort({ role: 1 });
         res.json(permissions);
     } catch (error) {
@@ -329,10 +333,14 @@ router.get('/roles-permissions', authenticate, requireAdmin, async (req: Request
 
 /**
  * @route   PUT /api/config/roles-permissions
- * @desc    Save matrix permissions updates
+ * @desc    Save matrix permissions updates (Super-Admin only)
  */
-router.put('/roles-permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.put('/roles-permissions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const authReq = req as AuthRequest;
+        if (authReq.user?.role !== 'super-admin') {
+            return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+        }
         const { matrix } = req.body;
         if (!Array.isArray(matrix)) {
             return res.status(400).json({ message: 'Matrix payload must be an array.' });
@@ -355,9 +363,13 @@ router.put('/roles-permissions', authenticate, requireAdmin, async (req: Request
 
 /**
  * @route   POST /api/config/roles-permissions/reset
- * @desc    Reset all role permissions to system defaults (force overwrite)
+ * @desc    Reset all role permissions to system defaults (Super-Admin only)
  */
-router.post('/roles-permissions/reset', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/roles-permissions/reset', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    if (authReq.user?.role !== 'super-admin') {
+        return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+    }
     const defaults = [
         { role: 'super-admin', permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },
         { role: 'admin',       permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },

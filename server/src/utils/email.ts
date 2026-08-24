@@ -742,3 +742,62 @@ export const sendPayslipDisbursedEmail = async (
         return false;
     }
 };
+
+export const sendMasterPinResetOtpEmail = async (to: string, otp: string) => {
+    const mailOptions = {
+        from: `"${getSenderName('Security')}" <${process.env.SMTP_USER || 'security@itcs.com'}>`,
+        to,
+        subject: '🔒 Critical Security Alert: Master Financial PIN Reset OTP',
+        html: `
+            <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 16px; background-color: #fee2e2; color: #dc2626; font-size: 28px;">
+                        🛡️
+                    </div>
+                    <h2 style="color: #0f172a; margin: 12px 0 4px; font-size: 22px; font-weight: 800;">Master Security PIN Reset</h2>
+                    <p style="color: #64748b; font-size: 14px; margin: 0;">Authorized Request for Universal Financial PIN</p>
+                </div>
+
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+                    <p style="color: #475569; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px;">Your 6-Digit Verification OTP</p>
+                    <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #4f46e5; font-family: monospace; padding: 8px 0;">
+                        ${otp}
+                    </div>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 8px 0 0;">⏱️ Valid for 10 minutes • Never share this code with anyone</p>
+                </div>
+
+                <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 6px; margin: 20px 0;">
+                    <p style="margin: 0; font-size: 13px; color: #92400e; line-height: 1.5;">
+                        <strong>Security Notice:</strong> Changing the Universal Master PIN affects all financial masking, PIM Step 7 salary data, and payroll authorization across the entire organization.
+                    </p>
+                </div>
+
+                <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin-top: 20px;">
+                    If you did not initiate this request, someone may be attempting to access your system. Please audit your server logs immediately.
+                </p>
+
+                <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+                <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">
+                    ITCS HRM Enterprise Security • Automated System Dispatch
+                </p>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= MASTER PIN RESET OTP (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`OTP Code: ${otp}`);
+        logger.info(`=================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        logger.info(`✅ Master PIN OTP email sent successfully to ${to}`);
+        return true;
+    } catch (error) {
+        logger.error(`❌ Error sending Master PIN OTP email to ${to}:`, error);
+        return false;
+    }
+};

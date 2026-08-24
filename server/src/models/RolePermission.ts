@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 export interface IRolePermission extends Document {
     role: string;
@@ -74,8 +75,40 @@ export async function bootstrapPermissions() {
                 { salaryPin: { $exists: true, $ne: '', $not: /^\$2[aby]\$/ } }
             ]
         });
-        for (const u of unhashedUsers) {
-            await u.save(); // triggers our updated pre-save hook to hash with bcrypt (10 rounds)
+        // Auto-recalibrate employeeId counter to match highest existing non-deleted employee
+        const Employee = mongoose.models.Employee || mongoose.model('Employee');
+        const Counter = mongoose.models.Counter || mongoose.model('Counter');
+        const employees = await Employee.find({ employeeId: { $regex: /^itcs-\d+$/i }, isDeleted: { $ne: true } })
+            .select('employeeId')
+            .lean();
+        
+        let maxSeq = 0;
+        for (const emp of employees) {
+            const match = (emp.employeeId || '').match(/^itcs-(\d+)$/i);
+            if (match) {
+                const num = parseInt(match[1], 10);
+                if (num > maxSeq) maxSeq = num;
+            }
+        }
+        await Counter.findOneAndUpdate(
+            { key: 'employeeId' },
+            { $set: { seq: maxSeq } },
+            { upsert: true }
+        );
+        console.log(`[Counter Sync] Employee ID sequence calibrated to: ${maxSeq} (Next will be itcs-${String(maxSeq + 1).padStart(3, '0')})`);
+
+        // Initialize Master Financial Security PIN if not already set
+        const MasterSecurityPin = mongoose.models.MasterSecurityPin || mongoose.model('MasterSecurityPin');
+        const existingMasterPin = await MasterSecurityPin.findOne();
+        if (!existingMasterPin) {
+            const initialPin = process.env.SUPER_ADMIN_MASTER_PIN || '7777';
+            const salt = await bcrypt.genSalt(10);
+            const hashedMasterPin = await bcrypt.hash(initialPin, salt);
+            await MasterSecurityPin.create({
+                hashedMasterPin,
+                lastChangedBy: 'System Init'
+            });
+            console.log(`[Master PIN] Initialized Universal Master Financial PIN.`);
         }
     } catch (err) {
         console.error('Error bootstrapping default role permissions:', err);

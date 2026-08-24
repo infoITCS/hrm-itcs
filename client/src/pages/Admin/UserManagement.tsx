@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
 import { useAuth } from '../../contexts/AuthContext';
+import RoleManagement from './RoleManagement';
 
 interface UserData {
     _id: string;
@@ -28,6 +29,7 @@ interface UserData {
 const UserManagement = () => {
     const { role: currentUserRole } = usePermissions();
     const { impersonate } = useAuth();
+    const [subTab, setSubTab] = useState<'users' | 'permissions'>('users');
     const [users, setUsers] = useState<UserData[]>([]);
     const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -336,16 +338,42 @@ const UserManagement = () => {
                     <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                         <UserCog className="text-indigo-600" /> User & Role Management
                     </h2>
-                    <p className="text-gray-500 mt-1">Control access, assign roles, and manage authentication across the system.</p>
+                    <p className="text-gray-500 mt-1">Control access, assign roles, and manage authentication and permissions across the system.</p>
                 </div>
                 
-                <button 
-                    onClick={() => setShowInviteModal(true)}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95 shrink-0 self-start md:self-auto"
-                >
-                    <Plus size={18} /> Add New User
-                </button>
+                {subTab === 'users' && (
+                    <button 
+                        onClick={() => setShowInviteModal(true)}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95 shrink-0 self-start md:self-auto"
+                    >
+                        <Plus size={18} /> Add New User
+                    </button>
+                )}
             </div>
+
+            {/* Sub-Tabs: Role Permissions is strictly restricted to Super Admin */}
+            {currentUserRole === 'super-admin' && (
+                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-fit">
+                    <button
+                        onClick={() => setSubTab('users')}
+                        className={`flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                            subTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        <Users size={16} />
+                        <span>Users Directory</span>
+                    </button>
+                    <button
+                        onClick={() => setSubTab('permissions')}
+                        className={`flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                            subTab === 'permissions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        <ShieldCheck size={16} />
+                        <span>Role Permissions</span>
+                    </button>
+                </div>
+            )}
 
             {error && (
                 <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 flex items-center gap-3">
@@ -354,182 +382,181 @@ const UserManagement = () => {
                 </div>
             )}
 
-            <div className="bg-white rounded-3xl shadow-xl shadow-indigo-100/20 border border-gray-100 overflow-hidden">
-                <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row gap-4 justify-between items-center">
-                    <div className="relative w-full sm:w-96">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Search by name, email, or employee ID..."
-                            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+            {subTab === 'permissions' && currentUserRole === 'super-admin' ? (
+                <RoleManagement />
+            ) : (
+                <div className="bg-white rounded-3xl shadow-xl shadow-indigo-100/20 border border-gray-100 overflow-hidden">
+                    <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                        <div className="relative w-full sm:w-96">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input 
+                                type="text" 
+                                placeholder="Search by name, email, or employee ID..."
+                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <span className="text-sm font-bold text-slate-500 uppercase tracking-widest hidden sm:block whitespace-nowrap">Filter by Role:</span>
+                            <select 
+                                className="bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm font-medium text-slate-700 outline-none w-full sm:w-auto focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
+                                value={filterRole}
+                                onChange={(e) => setFilterRole(e.target.value)}
+                            >
+                                <option value="all">All Roles</option>
+                                <option value="super-admin">Super Admin</option>
+                                <option value="admin">Admin</option>
+                                <option value="hr">HR</option>
+                                <option value="finance">Finance</option>
+                                <option value="manager">Manager</option>
+                                <option value="employee">Employee</option>
+                            </select>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <span className="text-sm font-bold text-slate-500 uppercase tracking-widest hidden sm:block whitespace-nowrap">Filter by Role:</span>
-                        <select 
-                            className="bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-sm font-medium text-slate-700 outline-none w-full sm:w-auto focus:ring-4 focus:ring-indigo-500/10 transition-all cursor-pointer"
-                            value={filterRole}
-                            onChange={(e) => setFilterRole(e.target.value)}
-                        >
-                            <option value="all">All Roles</option>
-                            <option value="super-admin">Super Admin</option>
-                            <option value="admin">Admin</option>
-                            <option value="hr">HR</option>
-                            <option value="finance">Finance</option>
-                            <option value="manager">Manager</option>
-                            <option value="employee">Employee</option>
-                        </select>
-                    </div>
-                </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/80">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">User Details</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Linked Employee</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">System Role</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Status</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Access & Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {loading ? (
-                                Array(5).fill(0).map((_, i) => (
-                                    <tr key={i} className="animate-pulse">
-                                        <td colSpan={5} className="px-6 py-8"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
-                                    </tr>
-                                ))
-                            ) : filteredUsers.length > 0 ? (
-                                filteredUsers.map((user) => (
-                                    <tr key={user._id} className="hover:bg-indigo-50/20 transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100">
-                                                    {user.firstName ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}` : <User size={18} />}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800">
-                                                        {user.firstName || user.employeeInfo?.firstName} {user.lastName || user.employeeInfo?.lastName}
-                                                        {!user.firstName && !user.employeeInfo && <span className="text-slate-400 italic">No Name Set</span>}
-                                                    </p>
-                                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight italic">
-                                                        {user.employeeInfo?.employeeId || user.email}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {user.employeeInfo ? (
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                                                        <Briefcase size={12} className="text-slate-400" />
-                                                        {user.employeeInfo.designation || 'No Designation'}
-                                                    </span>
-                                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded w-fit mt-1 border border-indigo-100">
-                                                        {user.employeeInfo.employeeId}
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-col gap-2">
-                                                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex items-center gap-1 w-fit">
-                                                        <ShieldAlert size={12} /> Not Linked
-                                                    </span>
-                                                    <button
-                                                        onClick={() => {
-                                                            setLinkingUser(user);
-                                                            setShowLinkModal(true);
-                                                        }}
-                                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 ml-1"
-                                                    >
-                                                        <Plus size={10} /> Link Profile
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <select
-                                                value={user.role}
-                                                onChange={(e) => handleRoleChange(user._id, e.target.value)}
-                                                disabled={user.role === 'super-admin' && currentUserRole !== 'super-admin'}
-                                                className={`text-xs font-bold px-3 py-1.5 rounded-lg border outline-none cursor-pointer transition-all ${getRoleBadgeColor(user.role)} ${user.role === 'super-admin' && currentUserRole !== 'super-admin' ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-sm'}`}
-                                            >
-                                                <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
-                                                <option value="admin">Admin</option>
-                                                <option value="hr">HR</option>
-                                                <option value="finance">Finance</option>
-                                                <option value="manager">Manager</option>
-                                                <option value="employee">Employee</option>
-                                            </select>
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <button
-                                                onClick={() => handleStatusToggle(user._id, user.isActive)}
-                                                disabled={user.role === 'super-admin' && currentUserRole !== 'super-admin'}
-                                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none transition-all ${user.role === 'super-admin' && currentUserRole !== 'super-admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                            >
-                                                <div className={`absolute inset-0 rounded-full transition-colors duration-300 ${user.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                                <span
-                                                    className={`absolute h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-300 ${user.isActive ? 'translate-x-1.5' : '-translate-x-1.5'}`}
-                                                />
-                                            </button>
-                                            <p className={`text-[9px] font-black uppercase mt-1 tracking-wider ${user.isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                {user.isActive ? 'Active' : 'Suspended'}
-                                            </p>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`px-2 py-1 text-[10px] font-bold rounded border ${user.microsoftId ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                                                        SSO
-                                                    </span>
-                                                    <span className="px-2 py-1 text-[10px] font-bold rounded border bg-slate-50 text-slate-700 border-slate-200">
-                                                        Email
-                                                    </span>
-                                                </div>
-                                                {currentUserRole === 'super-admin' && (
-                                                    <button
-                                                        onClick={() => {
-                                                            setResettingUser(user);
-                                                            setShowResetModal(true);
-                                                        }}
-                                                        className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-md hover:bg-amber-100 transition-colors w-fit shadow-sm"
-                                                        title="Reset Password"
-                                                    >
-                                                        <Key size={10} /> Reset Password
-                                                    </button>
-                                                )}
-                                                {currentUserRole === 'super-admin' && user.role !== 'super-admin' && (
-                                                    <button
-                                                        onClick={() => handleImpersonate(user._id)}
-                                                        className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
-                                                        title="Impersonate User"
-                                                    >
-                                                        <Eye size={10} /> Impersonate
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="p-4 bg-slate-50 rounded-full">
-                                                <UserCog size={32} className="text-slate-300" />
-                                            </div>
-                                            <p className="font-medium">No users found matching your criteria.</p>
-                                        </div>
-                                    </td>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50/80">
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">User Details</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Linked Employee</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">System Role</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Status</th>
+                                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Access & Actions</th>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {loading ? (
+                                    Array(5).fill(0).map((_, i) => (
+                                        <tr key={i} className="animate-pulse">
+                                            <td colSpan={5} className="px-6 py-8"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
+                                        </tr>
+                                    ))
+                                ) : filteredUsers.length > 0 ? (
+                                    filteredUsers.map((user) => (
+                                        <tr key={user._id} className="hover:bg-indigo-50/20 transition-colors group">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100">
+                                                        {user.firstName ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}` : <User size={18} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-slate-800">
+                                                            {user.firstName || user.employeeInfo?.firstName} {user.lastName || user.employeeInfo?.lastName}
+                                                            {!user.firstName && !user.employeeInfo && <span className="text-slate-400 italic">No Name Set</span>}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight italic">
+                                                            {user.employeeInfo?.employeeId || user.email}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {user.employeeInfo ? (
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                                            <Briefcase size={12} className="text-slate-400" />
+                                                            {user.employeeInfo.designation || 'No Designation'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded w-fit mt-1 border border-indigo-100">
+                                                            {user.employeeInfo.employeeId}
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col gap-2">
+                                                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex items-center gap-1 w-fit">
+                                                            <ShieldAlert size={12} /> Not Linked
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setLinkingUser(user);
+                                                                setShowLinkModal(true);
+                                                            }}
+                                                            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 ml-1"
+                                                        >
+                                                            <Plus size={10} /> Link Profile
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <select
+                                                    value={user.role}
+                                                    onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                                                    disabled={user.role === 'super-admin' && currentUserRole !== 'super-admin'}
+                                                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border outline-none cursor-pointer transition-all ${getRoleBadgeColor(user.role)} ${user.role === 'super-admin' && currentUserRole !== 'super-admin' ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-sm'}`}
+                                                >
+                                                    <option value="super-admin" disabled={currentUserRole !== 'super-admin'}>Super Admin</option>
+                                                    <option value="admin">Admin</option>
+                                                    <option value="hr">HR</option>
+                                                    <option value="finance">Finance</option>
+                                                    <option value="manager">Manager</option>
+                                                    <option value="employee">Employee</option>
+                                                </select>
+                                            </td>
+                                            <td className="px-6 py-4 text-center">
+                                                <button
+                                                    onClick={() => handleStatusToggle(user._id, user.isActive)}
+                                                    disabled={user.role === 'super-admin' && currentUserRole !== 'super-admin'}
+                                                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full outline-none transition-all ${user.role === 'super-admin' && currentUserRole !== 'super-admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`absolute inset-0 rounded-full transition-colors duration-300 ${user.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                                    <span
+                                                        className={`absolute h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-300 ${user.isActive ? 'translate-x-1.5' : '-translate-x-1.5'}`}
+                                                    />
+                                                </button>
+                                                <p className={`text-[9px] font-black uppercase mt-1 tracking-wider ${user.isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                    {user.isActive ? 'Active' : 'Suspended'}
+                                                </p>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2 py-1 text-[10px] font-bold rounded border ${user.microsoftId ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                                            {user.microsoftId ? 'Microsoft SSO' : 'Local Account'}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                setResettingUser(user);
+                                                                setShowResetModal(true);
+                                                            }}
+                                                            className="text-[10px] font-bold text-slate-600 hover:text-indigo-600 flex items-center gap-1 border border-slate-200 px-2 py-1 rounded bg-white hover:bg-slate-50 transition-all shadow-sm"
+                                                            title="Reset Password"
+                                                        >
+                                                            <Key size={10} /> Reset
+                                                        </button>
+                                                    </div>
+                                                    {currentUserRole === 'super-admin' && (
+                                                        <button
+                                                            onClick={() => handleImpersonate(user._id)}
+                                                            className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
+                                                            title="Impersonate User"
+                                                        >
+                                                            <Eye size={10} /> Impersonate
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                                            <div className="flex flex-col items-center gap-3">
+                                                <div className="p-4 bg-slate-50 rounded-full">
+                                                    <UserCog size={32} className="text-slate-300" />
+                                                </div>
+                                                <p className="font-medium">No users found matching your criteria.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Create User Modal */}
             {showInviteModal && createPortal(

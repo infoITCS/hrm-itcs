@@ -159,14 +159,27 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                             } else {
                                 // 4. Auto-provision a new employee record
                                 const PREFIX = 'itcs-';
-                                const counter = await Counter.findOneAndUpdate(
-                                    { key: 'employeeId' },
-                                    { $inc: { seq: 1 } },
-                                    { upsert: true, new: true }
-                                );
-                                
-                                const nextNum = counter.seq;
+                                const existingEmployees = await Employee.find({ employeeId: { $regex: /^itcs-\d+$/i }, isDeleted: { $ne: true } })
+                                    .select('employeeId')
+                                    .lean();
+
+                                let maxSeq = 0;
+                                for (const emp of (existingEmployees as any[])) {
+                                    const match = (emp.employeeId || '').match(/^itcs-(\d+)$/i);
+                                    if (match) {
+                                        const num = parseInt(match[1], 10);
+                                        if (num > maxSeq) maxSeq = num;
+                                    }
+                                }
+
+                                const nextNum = maxSeq + 1;
                                 const employeeId = `${PREFIX}${nextNum.toString().padStart(3, '0')}`;
+
+                                await Counter.findOneAndUpdate(
+                                    { key: 'employeeId' },
+                                    { $set: { seq: nextNum } },
+                                    { upsert: true }
+                                );
 
                                 employeeDoc = await Employee.create({
                                     employeeId,

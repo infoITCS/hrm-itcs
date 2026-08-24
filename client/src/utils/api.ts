@@ -6,6 +6,7 @@ const API_BASE_URL = rawBase.endsWith('/api') ? rawBase.slice(0, -4) : rawBase;
 export const api = {
     baseURL: API_BASE_URL,
     employees: `${API_BASE_URL}/api/employees`,
+    employeesDropdown: `${API_BASE_URL}/api/employees/dropdown`,
     directory: `${API_BASE_URL}/api/employees/directory`,
     todaySpecials: `${API_BASE_URL}/api/employees/today-specials`,
     audit: `${API_BASE_URL}/api/audit-logs`,
@@ -63,6 +64,11 @@ export const api = {
     salaryPinSet: `${API_BASE_URL}/api/auth/salary-pin/set`,
     salaryPinVerify: `${API_BASE_URL}/api/auth/salary-pin/verify`,
     salaryPinAdminReset: `${API_BASE_URL}/api/auth/salary-pin/admin-reset`,
+
+    // Universal Master Financial Security PIN & Email OTP Reset
+    masterPinVerify: `${API_BASE_URL}/api/auth/master-pin/verify`,
+    masterPinRequestOtp: `${API_BASE_URL}/api/auth/master-pin/request-otp`,
+    masterPinConfirmReset: `${API_BASE_URL}/api/auth/master-pin/confirm-reset`,
 
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,

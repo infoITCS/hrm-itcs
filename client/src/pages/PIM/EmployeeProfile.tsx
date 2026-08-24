@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
-    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut
+    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock
 } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -14,8 +14,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
 import DeleteModal from '../../components/UI/DeleteModal';
-
-
+import SalaryPinModal from '../../components/UI/SalaryPinModal';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
@@ -37,6 +36,10 @@ const EmployeeProfile = () => {
     // All employees list — used to resolve reporting manager name
     const [allEmployees, setAllEmployees] = useState<any[]>([]);
 
+    // Financial Lock state
+    const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
+    const [showMasterPinModal, setShowMasterPinModal] = useState(false);
+
     // Offboard modal state
     const [showOffboardModal, setShowOffboardModal] = useState(false);
     const [offboardStatus, setOffboardStatus] = useState<'Terminated' | 'Resigned'>('Terminated');
@@ -47,7 +50,7 @@ const EmployeeProfile = () => {
     const [attachmentToDelete, setAttachmentToDelete] = useState<string | null>(null);
 
     const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
-    const canViewFinancials = ['super-admin', 'finance'].includes(role);
+    const canViewFinancials = ['super-admin', 'finance', 'hr'].includes(role);
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -685,142 +688,184 @@ const EmployeeProfile = () => {
                     </div>
                 )}
 
-                {/* Finance Tab — Only accessible by Super-Admin and Finance */}
+                {/* Finance Tab — Only accessible by Super-Admin, Finance, and HR */}
                 {activeTab === 'finance' && canViewFinancials && (
-                    <div className="space-y-8 animate-fadeIn">
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <DollarSign size={16} /> Salary Structure
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {employee.salaryComponents?.length > 0 ? (
-                                    employee.salaryComponents.map((comp: any, i: number) => (
-                                        <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                                                        <DollarSign size={16} />
+                    !isFinancialUnlocked ? (
+                        <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-8 space-y-5 animate-fadeIn">
+                            <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                                <Lock size={30} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Confidential Financial Profile Locked</h3>
+                                <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                                    Salary components, compensation packages, Provident Fund balance, and bank records are protected. Enter the Universal Master Financial PIN to unlock.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowMasterPinModal(true)}
+                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                            >
+                                <Lock size={15} /> Unlock Financial Records
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-8 animate-fadeIn">
+                            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
+                                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                    <Unlock size={16} className="text-emerald-600" />
+                                    <span>Financial Profile Unlocked (Master Security Active)</span>
+                                </div>
+                                <button
+                                    onClick={() => setIsFinancialUnlocked(false)}
+                                    className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                    <Lock size={12} /> Lock
+                                </button>
+                            </div>
+
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <DollarSign size={16} /> Salary Structure
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {employee.salaryComponents?.length > 0 ? (
+                                        employee.salaryComponents.map((comp: any, i: number) => (
+                                            <div key={i} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                                                            <DollarSign size={16} />
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-800">{comp.component}</p>
                                                     </div>
-                                                    <p className="text-sm font-bold text-gray-800">{comp.component}</p>
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                                        comp.type === 'variable'
+                                                            ? 'bg-purple-100 text-purple-700'
+                                                            : 'bg-emerald-100 text-emerald-700'
+                                                    }`}>
+                                                        {comp.type || 'fixed'}
+                                                    </span>
                                                 </div>
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                                    comp.type === 'variable'
-                                                        ? 'bg-purple-100 text-purple-700'
-                                                        : 'bg-emerald-100 text-emerald-700'
-                                                }`}>
-                                                    {comp.type || 'fixed'}
-                                                </span>
+                                                <p className="text-2xl font-black text-indigo-600 mt-1">
+                                                    {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
+                                                </p>
                                             </div>
-                                            <p className="text-2xl font-black text-indigo-600 mt-1">
-                                                {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR', currencyDisplay: 'code' }).format(comp.amount).replace('PKR', 'Rs.')}
-                                            </p>
-                                        </div>
-                                    ))
-                                ) : <p className="text-gray-400 italic text-sm">No salary components recorded</p>}
-                            </div>
-                            {/* Total gross */}
-                            {employee.salaryComponents?.length > 0 && (
-                                <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
-                                    <p className="text-sm font-bold text-indigo-700">Total Monthly Gross</p>
-                                    <p className="text-xl font-black text-indigo-700">
-                                        {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
-                                            employee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
-                                        )}
-                                    </p>
+                                        ))
+                                    ) : <p className="text-gray-400 italic text-sm">No salary components recorded</p>}
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Provident Fund Balance */}
-                        <div className="pt-8 border-t border-slate-100 animate-fadeIn">
-                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <Banknote size={16} className="text-emerald-500" /> Provident Fund Details
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
-                                <Field 
-                                    label="Current PF Balance" 
-                                    value={employee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(employee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0'} 
-                                />
-                            </div>
-
-                            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
-                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse text-sm">
-                                        <thead>
-                                            <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
-                                                <th className="px-6 py-3">Date</th>
-                                                <th className="px-6 py-3">Description</th>
-                                                <th className="px-6 py-3">Source</th>
-                                                <th className="px-6 py-3">Type</th>
-                                                <th className="px-6 py-3 text-right">Amount</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                                            {employee.providentFundHistory?.length > 0 ? (
-                                                [...employee.providentFundHistory]
-                                                    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                                    .map((entry: any, index: number) => (
-                                                        <tr key={index} className="hover:bg-slate-50/40 transition-colors">
-                                                            <td className="px-6 py-4 text-xs text-slate-400">
-                                                                {new Date(entry.date).toLocaleString()}
-                                                            </td>
-                                                            <td className="px-6 py-4 font-semibold text-slate-800">
-                                                                {entry.description}
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                                                                    entry.source === 'payroll' 
-                                                                        ? 'bg-blue-50 text-blue-600 border-blue-100' 
-                                                                        : 'bg-amber-50 text-amber-600 border-amber-100'
-                                                                }`}>
-                                                                    {entry.source}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                                                    entry.type === 'credit' 
-                                                                        ? 'bg-emerald-50 text-emerald-600' 
-                                                                        : 'bg-rose-50 text-rose-600'
-                                                                }`}>
-                                                                    {entry.type === 'credit' ? '+ Credit' : '- Debit'}
-                                                                </span>
-                                                            </td>
-                                                            <td className={`px-6 py-4 text-right font-black ${
-                                                                entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
-                                                            }`}>
-                                                                Rs. {entry.amount.toLocaleString()}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                            ) : (
-                                                <tr>
-                                                    <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
-                                                        No contribution history recorded.
-                                                    </td>
-                                                </tr>
+                                {/* Total gross */}
+                                {employee.salaryComponents?.length > 0 && (
+                                    <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                                        <p className="text-sm font-bold text-indigo-700">Total Monthly Gross</p>
+                                        <p className="text-xl font-black text-indigo-700">
+                                            {new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(
+                                                employee.salaryComponents.reduce((sum: number, c: any) => sum + (c.amount || 0), 0)
                                             )}
-                                        </tbody>
-                                    </table>
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Provident Fund Balance */}
+                            <div className="pt-8 border-t border-slate-100 animate-fadeIn">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <Banknote size={16} className="text-emerald-500" /> Provident Fund Details
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
+                                    <Field 
+                                        label="Current PF Balance" 
+                                        value={employee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(employee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0'} 
+                                    />
+                                    <Field 
+                                        label="PF Enrolled Since" 
+                                        value={employee.employmentDetails?.joiningDate ? formatDate(employee.employmentDetails.joiningDate) : 'Not Enrolled'} 
+                                    />
+                                    <Field 
+                                        label="PF Match Scheme" 
+                                        value="Standard Employee + Employer Match" 
+                                    />
+                                </div>
+
+                                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-sm">
+                                            <thead>
+                                                <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
+                                                    <th className="px-6 py-3">Date</th>
+                                                    <th className="px-6 py-3">Description</th>
+                                                    <th className="px-6 py-3">Source</th>
+                                                    <th className="px-6 py-3">Type</th>
+                                                    <th className="px-6 py-3 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                                                {employee.providentFundHistory?.length > 0 ? (
+                                                    [...employee.providentFundHistory]
+                                                        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                        .map((entry: any, index: number) => (
+                                                            <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                                                                <td className="px-6 py-4 text-xs text-slate-400">
+                                                                    {new Date(entry.date).toLocaleString()}
+                                                                </td>
+                                                                <td className="px-6 py-4 font-semibold text-slate-800">
+                                                                    {entry.description}
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                                        entry.source === 'payroll' 
+                                                                            ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                                                                            : 'bg-amber-50 text-amber-600 border-amber-100'
+                                                                    }`}>
+                                                                        {entry.source}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                        entry.type === 'credit' 
+                                                                            ? 'bg-emerald-50 text-emerald-600' 
+                                                                            : 'bg-rose-50 text-rose-600'
+                                                                    }`}>
+                                                                        {entry.type === 'credit' ? '+ Credit' : '- Debit'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={`px-6 py-4 text-right font-black ${
+                                                                    entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
+                                                                }`}>
+                                                                    Rs. {entry.amount.toLocaleString()}
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                                            No contribution history recorded.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Bank Account Details */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <Banknote size={16} /> Bank Account Details
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
+                                    <Field label="Bank Name" value={employee.bankDetails?.bankName} />
+                                    <Field label="Account Holder" value={employee.bankDetails?.accountName} />
+                                    <Field label="Account Number" value={employee.bankDetails?.accountNumber} />
+                                    <Field label="IBAN" value={employee.bankDetails?.iban} />
+                                    <Field label="Swift Code" value={employee.bankDetails?.swiftCode} />
                                 </div>
                             </div>
                         </div>
-
-                        <div className="pt-8 border-t border-slate-100">
-                            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <Banknote size={16} /> Bank Account Details
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
-                                <Field label="Bank Name" value={employee.bankDetails?.bankName} />
-                                <Field label="Account Holder" value={employee.bankDetails?.accountName} />
-                                <Field label="Account Number" value={employee.bankDetails?.accountNumber} />
-                                <Field label="IBAN" value={employee.bankDetails?.iban} />
-                                <Field label="Swift Code" value={employee.bankDetails?.swiftCode} />
-                            </div>
-                        </div>
-                    </div>
+                    )
                 )}
 
                 {/* Benefits Tab */}
@@ -1211,6 +1256,16 @@ const EmployeeProfile = () => {
                 onConfirm={confirmDelete}
                 title="Delete Document?"
                 message="This document will be permanently removed from the employee record. This action cannot be undone."
+            />
+
+            {/* Universal Master Financial Security Modal */}
+            <SalaryPinModal
+                isOpen={showMasterPinModal}
+                onClose={() => setShowMasterPinModal(false)}
+                onSuccess={() => setIsFinancialUnlocked(true)}
+                requireMasterPin={true}
+                title="Universal Master Financial PIN"
+                description="Enter the 4-digit Master Financial PIN to unlock and view employee compensation details."
             />
         </div>
     );

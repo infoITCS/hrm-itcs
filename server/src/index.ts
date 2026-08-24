@@ -276,10 +276,9 @@ async function connectDB(): Promise<void> {
             dbName: 'hrm',
             autoIndex: true,
 
-            // --- Serverless-friendly pool settings ---
-            // Allow a small pool but scale down to 0
-            minPoolSize: 0,
-            maxPoolSize: 10,
+            // Allow concurrent connection pooling for 30-50+ concurrent users
+            minPoolSize: 5,
+            maxPoolSize: 50,
 
             // CRITICAL FOR COSMOS DB: Azure aggressively drops idle connections after 4 minutes.
             // We tell Mongoose to cleanly close any connection idle for 2 minutes and open a fresh one.

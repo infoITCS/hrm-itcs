@@ -26,13 +26,14 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
 
         if (errorParam) {
             const errorMap: Record<string, string> = {
-                'access_denied': 'Access denied by Microsoft.',
-                'microsoft_auth_failed': 'Microsoft authentication failed.',
-                'no_code': 'No authorization code received.',
-                'no_email': 'No email address found in your Microsoft account.',
-                'callback_failed': 'Authentication callback failed. Please try again.',
-                'server_error': 'Internal server error during authentication.',
-                'login_failed': msgParam || 'Microsoft login failed. Your account may be suspended.'
+                'access_denied': 'Sign-in was canceled. Please try again.',
+                'microsoft_auth_failed': 'Microsoft sign-in was interrupted. Please try again.',
+                'no_code': 'No authorization code received. Please try again.',
+                'no_email': 'No email address found in your Microsoft account. Please contact your administrator.',
+                'callback_failed': 'Temporary connection issue. Please try signing in again.',
+                'server_error': 'Temporary server error. Please try again in a moment.',
+                'login_failed': msgParam || 'Sign-in could not be completed. Please click "Sign in with Microsoft" to try again.',
+                'account_suspended': msgParam || 'Your account is deactivated. Please contact your system administrator.'
             };
             setError(errorMap[errorParam] || decodeURIComponent(errorParam).replace(/_/g, ' '));
         }

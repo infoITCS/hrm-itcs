@@ -5,9 +5,10 @@ import { User, IUser } from "../models/User.model";
 import Employee from "../models/Employee";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import crypto from "crypto";
-import { sendPasswordResetEmail } from "../utils/email";
-import AuditLog from "../models/AuditLog";
+import bcrypt from "bcryptjs";
+import { sendPasswordResetEmail, sendMasterPinResetOtpEmail } from "../utils/email";
 import RolePermission from "../models/RolePermission";
+import MasterSecurityPin from "../models/MasterSecurityPin";
 import rateLimit from "express-rate-limit";
 import logger from '../utils/logger';
 
@@ -318,7 +319,7 @@ router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
     req.query.prompt = prompt;
   }
   
-  if (req.query.sync === 'true') {
+  if (req.query.sync === 'true' && (req as any).session) {
       (req as any).session.force_ms_sync = true;
   }
 
@@ -355,19 +356,21 @@ router.get(
       const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       return res.redirect(`${clientUrl}/login?error=microsoft_not_configured`);
     }
-    passport.authenticate("microsoft", {
-      failureRedirect: `${process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173'}/login?error=login_failed`,
-      session: false, // We use JWT, so no session needed
-    })(req, res, (err: any) => {
+    passport.authenticate("microsoft", { session: false }, (err: any, user: any, info: any) => {
+      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       if (err) {
         logger.error("Passport Auth Error:", err.message || String(err));
-        const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
-        return res.redirect(
-          `${clientUrl}/login?error=passport_err&msg=${encodeURIComponent(err.message || String(err))}`,
-        );
+        return res.redirect(`${clientUrl}/login?error=callback_failed`);
       }
+      if (!user) {
+        const isSuspended = info?.message?.toLowerCase().includes('deactivated') || info?.message?.toLowerCase().includes('suspended');
+        const errorType = isSuspended ? 'account_suspended' : 'login_failed';
+        const msg = info?.message || 'Sign-in could not be completed. Please try again.';
+        return res.redirect(`${clientUrl}/login?error=${errorType}&msg=${encodeURIComponent(msg)}`);
+      }
+      req.user = user;
       next();
-    });
+    })(req, res, next);
   },
   async (req: Request, res: Response) => {
     try {
@@ -508,7 +511,11 @@ router.post("/salary-pin/set", authenticate, async (req: Request, res: Response,
         return res.status(400).json({ message: "Current 4-digit PIN is required to set a new PIN." });
       }
       const isCurrentValid = await user.compareSalaryPin(String(currentPin));
-      const isMasterKey = String(currentPin) === (process.env.SUPER_ADMIN_MASTER_PIN || '9999');
+      const masterDoc = await MasterSecurityPin.findOne();
+      const isMasterKey = masterDoc 
+        ? await masterDoc.comparePin(String(currentPin)) 
+        : (String(currentPin) === (process.env.SUPER_ADMIN_MASTER_PIN || '7777'));
+      
       if (!isCurrentValid && !isMasterKey) {
         return res.status(401).json({ message: "Current 4-digit PIN is incorrect." });
       }
@@ -526,7 +533,8 @@ router.post("/salary-pin/set", authenticate, async (req: Request, res: Response,
 
 /**
  * @route   POST /api/auth/salary-pin/verify
- * @desc    Verify 4-digit salary security PIN (with Super Admin Master Key override support)
+ * @desc    Verify 4-digit salary security PIN for personal account with Master PIN fallback.
+ *          ZERO AUTOMATIC ROLE BYPASS: PIN must always be provided!
  * @access  Private
  */
 router.post("/salary-pin/verify", authenticate, async (req: Request, res: Response, next: NextFunction) => {
@@ -539,33 +547,172 @@ router.post("/salary-pin/verify", authenticate, async (req: Request, res: Respon
     if (!pin) return res.status(400).json({ message: "4-Digit PIN is required." });
 
     const pinStr = String(pin).trim();
-    const masterPin = process.env.SUPER_ADMIN_MASTER_PIN || '9999';
 
-    // 1. Super Admin Master Key Override: If entered PIN matches master PIN, or user is super-admin
-    if (pinStr === masterPin) {
-      return res.json({ success: true, isSuperAdmin: true, message: "Super Admin Master Key verified." });
+    // 1. Check against Universal Master Financial PIN
+    const masterDoc = await MasterSecurityPin.findOne();
+    if (masterDoc && (await masterDoc.comparePin(pinStr))) {
+      return res.json({ success: true, isMaster: true, message: "Universal Master Security PIN verified." });
     }
 
+    // 2. Check against User's personal PIN
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // 2. If user is super-admin, allow master bypass
-    if (user.role === 'super-admin') {
-      return res.json({ success: true, isSuperAdmin: true, message: "Super Admin authorization verified." });
-    }
-
-    // 3. User hasn't configured PIN yet
     if (!user.salaryPin) {
       return res.status(404).json({ message: "No 4-digit PIN set. Please set your PIN first.", needsSetup: true });
     }
 
-    // 4. Verify user's own PIN
     const isValid = await user.compareSalaryPin(pinStr);
     if (!isValid) {
       return res.status(401).json({ message: "Incorrect 4-digit Security PIN." });
     }
 
-    res.json({ success: true, message: "PIN verified successfully." });
+    res.json({ success: true, message: "Personal Security PIN verified successfully." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/master-pin/verify
+ * @desc    Verify Universal Master Financial PIN for Super Admin / HR (Zero-Bypass)
+ * @access  Private (Super Admin / HR / Admin / Finance)
+ */
+router.post("/master-pin/verify", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userRole = authReq.user?.role;
+    const { pin } = req.body;
+
+    if (!['super-admin', 'hr', 'admin', 'finance'].includes(userRole || '')) {
+      return res.status(403).json({ message: "Unauthorized. Financial access restricted." });
+    }
+
+    if (!pin) return res.status(400).json({ message: "4-Digit Master PIN is required." });
+
+    const pinStr = String(pin).trim();
+    const masterDoc = await MasterSecurityPin.findOne();
+    
+    if (!masterDoc) {
+      return res.status(500).json({ message: "Master Security PIN is not configured on the server." });
+    }
+
+    const isValid = await masterDoc.comparePin(pinStr);
+    if (!isValid) {
+      return res.status(401).json({ message: "Incorrect Universal Master Security PIN." });
+    }
+
+    logger.info(`🔒 Master Financial PIN successfully verified for user ${authReq.user?.email} (${userRole})`);
+    res.json({ success: true, isMaster: true, message: "Universal Master Security PIN verified." });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/master-pin/request-otp
+ * @desc    Request a 6-digit OTP sent to Super Admin email to reset the Universal Master PIN
+ * @access  Private (Super Admin only)
+ */
+router.post("/master-pin/request-otp", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userRole = authReq.user?.role;
+    const userId = authReq.user?.userId;
+
+    if (userRole !== 'super-admin') {
+      return res.status(403).json({ message: "Only the verified Super Admin can request a Master PIN reset." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Target email is strictly locked to the server environment Super Admin email
+    // This guarantees that even if someone maliciously edits their MongoDB role to super-admin,
+    // the OTP is ONLY sent to the real owner's inbox (abdul.raheem@itcs.com.pk), never to the attacker's email!
+    const targetEmail = process.env.SUPER_ADMIN_EMAIL || 'abdul.raheem@itcs.com.pk';
+
+    // Generate secure 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const salt = await bcrypt.genSalt(10);
+    const hashedOtp = await bcrypt.hash(otp, salt);
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    let masterDoc = await MasterSecurityPin.findOne();
+    if (!masterDoc) {
+      const defaultPinHash = await bcrypt.hash(process.env.SUPER_ADMIN_MASTER_PIN || '7777', 10);
+      masterDoc = new MasterSecurityPin({ hashedMasterPin: defaultPinHash });
+    }
+
+    masterDoc.resetOtp = hashedOtp;
+    masterDoc.otpExpiresAt = otpExpiresAt;
+    await masterDoc.save();
+
+    // Send email dispatch
+    await sendMasterPinResetOtpEmail(targetEmail, otp);
+
+    // Mask email for privacy (e.g., ab***m@itcs.com.pk)
+    const emailParts = targetEmail.split('@');
+    const maskedUser = emailParts[0].length > 2 
+      ? `${emailParts[0].substring(0, 2)}***${emailParts[0].slice(-1)}` 
+      : `${emailParts[0]}***`;
+    const maskedEmail = `${maskedUser}@${emailParts[1]}`;
+
+    logger.info(`📧 Master PIN Reset OTP dispatched to Super Admin email: ${targetEmail}`);
+    res.json({ 
+      success: true, 
+      message: `A 6-digit verification OTP has been dispatched to ${maskedEmail}.`,
+      maskedEmail 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/auth/master-pin/confirm-reset
+ * @desc    Verify 6-digit Email OTP and update Universal Master Financial PIN
+ * @access  Private (Super Admin only)
+ */
+router.post("/master-pin/confirm-reset", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authReq = req as AuthRequest;
+    const userRole = authReq.user?.role;
+
+    if (userRole !== 'super-admin') {
+      return res.status(403).json({ message: "Only the verified Super Admin can reset the Master PIN." });
+    }
+
+    const { otp, newPin } = req.body;
+
+    if (!otp || !/^\d{6}$/.test(String(otp).trim())) {
+      return res.status(400).json({ message: "OTP must be a valid 6-digit code." });
+    }
+
+    if (!newPin || !/^\d{4}$/.test(String(newPin).trim())) {
+      return res.status(400).json({ message: "New Master PIN must be exactly 4 numeric digits." });
+    }
+
+    const masterDoc = await MasterSecurityPin.findOne();
+    if (!masterDoc || !masterDoc.resetOtp) {
+      return res.status(400).json({ message: "No active reset request found. Please request a new OTP." });
+    }
+
+    const isOtpValid = await masterDoc.compareOtp(String(otp).trim());
+    if (!isOtpValid) {
+      return res.status(401).json({ message: "Invalid or expired OTP code. Please request a new one." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    masterDoc.hashedMasterPin = await bcrypt.hash(String(newPin).trim(), salt);
+    masterDoc.resetOtp = undefined;
+    masterDoc.otpExpiresAt = undefined;
+    masterDoc.lastChangedAt = new Date();
+    masterDoc.lastChangedBy = authReq.user?.email || 'Super Admin';
+    await masterDoc.save();
+
+    logger.info(`🔒 Universal Master Financial PIN has been successfully changed by Super Admin (${authReq.user?.email})`);
+    res.json({ success: true, message: "Universal Master Security PIN updated successfully." });
   } catch (error) {
     next(error);
   }
@@ -573,7 +720,7 @@ router.post("/salary-pin/verify", authenticate, async (req: Request, res: Respon
 
 /**
  * @route   POST /api/auth/salary-pin/admin-reset
- * @desc    Super Admin can reset an employee's salary PIN
+ * @desc    Super Admin can reset an individual employee's personal salary PIN
  * @access  Private (Super Admin only)
  */
 router.post("/salary-pin/admin-reset", authenticate, async (req: Request, res: Response, next: NextFunction) => {
@@ -593,7 +740,7 @@ router.post("/salary-pin/admin-reset", authenticate, async (req: Request, res: R
     targetUser.salaryPin = undefined;
     await targetUser.save();
 
-    res.json({ message: `Salary PIN reset successfully for ${targetUser.email}.` });
+    res.json({ message: `Personal Salary PIN reset successfully for ${targetUser.email}.` });
   } catch (error) {
     next(error);
   }

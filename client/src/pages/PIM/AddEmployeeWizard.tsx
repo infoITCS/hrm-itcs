@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock} from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
 import DeleteModal from '../../components/UI/DeleteModal';
+import SalaryPinModal from '../../components/UI/SalaryPinModal';
 
 import countriesData from '../../data/countries.json';
 import api from '../../utils/api';
@@ -126,7 +127,9 @@ const AddEmployeeWizard = () => {
     const { showToast } = useToast();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
-    const canEditFinancials = ['super-admin', 'finance'].includes(role);
+    const canEditFinancials = ['super-admin', 'finance', 'hr'].includes(role);
+    const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
+    const [showMasterPinModal, setShowMasterPinModal] = useState(false);
     const [step, setStep] = useState(1);
     const [isSameAddress, setIsSameAddress] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -206,15 +209,10 @@ const AddEmployeeWizard = () => {
         const fetchEmployees = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch(api.employees, { headers: { 'Authorization': `Bearer ${token}` } });
+                const res = await fetch(api.employeesDropdown, { headers: { 'Authorization': `Bearer ${token}` } });
                 if (res.ok) {
                     const data = await res.json();
-                    // Handle paginated response { employees } or plain array
-                    const empArray = Array.isArray(data) ? data : (data.employees || []);
-                    setEmployeesList(empArray.map((emp: any) => ({
-                        value: emp.employeeId,
-                        label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`
-                    })));
+                    setEmployeesList(Array.isArray(data) ? data : []);
                 }
             } catch (err) {
                 console.error('Failed to fetch employees list for dropdown', err);
@@ -295,7 +293,6 @@ const AddEmployeeWizard = () => {
                 check(formData.jobInfo.designation, 'Designation');
                 check(formData.jobInfo.department, 'Department');
                 check(formData.jobInfo.joiningDate, 'Joining Date');
-                if (!formData.files.some(f => f.type === 'Employment Contract') && !formData.existingAttachments.some(a => a.fileType === 'Employment Contract')) missing.push('Employment Contract');
                 break;
             case 5:
                 if (!isAdmin) {
@@ -312,9 +309,6 @@ const AddEmployeeWizard = () => {
                     check(formData.bankDetails.bankName, 'Bank Name');
                     check(formData.bankDetails.accountName, 'Account Name');
                     check(formData.bankDetails.accountNumber, 'Account Number');
-                } else {
-                    // Employees must upload Contract on their final Documents step
-                    if (!formData.files.some(f => f.type === 'Contract') && !formData.existingAttachments.some(a => a.fileType === 'Contract')) missing.push('Employment Contract');
                 }
                 break;
             case 8:
@@ -712,16 +706,6 @@ const AddEmployeeWizard = () => {
     const handleSubmit = async (shouldNavigate = true, isBackground = false) => {
         if (!isBackground) setLoading(true);
         setError(null);
-
-        // Employee (non-admin) must upload the Contract on the final Documents step before submitting
-        if (shouldNavigate && !isBackground && !isAdmin && step === steps.length) {
-            const hasContract = formData.files.some(f => f.type === 'Contract') || formData.existingAttachments.some(a => a.fileType === 'Contract');
-            if (!hasContract) {
-                setError('Employment Contract is mandatory. Please upload the contract before submitting.');
-                setLoading(false);
-                return;
-            }
-        }
 
         try {
             const token = localStorage.getItem('token');
@@ -2247,9 +2231,43 @@ const AddEmployeeWizard = () => {
 
                 {/* Step 7: Finance — admin only (#9) */}
                 {step === 7 && isAdmin && (
-                    <div className="space-y-8 animate-slide-up pb-20">
-                        {/* Salary & Employment Terms */}
-                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
+                    !isFinancialUnlocked ? (
+                        <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-8 space-y-5 animate-fadeIn">
+                            <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                                <Lock size={30} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Financial Configuration Locked</h3>
+                                <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                                    Configuring base salary, probation terms, bank details, and Provident Fund balance requires Universal Master Security authorization.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowMasterPinModal(true)}
+                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                            >
+                                <Lock size={15} /> Unlock with Master Security PIN
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-8 animate-slide-up pb-20">
+                            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
+                                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                    <Unlock size={16} className="text-emerald-600" />
+                                    <span>Financial Session Unlocked (Master Security Active)</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsFinancialUnlocked(false)}
+                                    className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                    <Lock size={12} /> Lock
+                                </button>
+                            </div>
+
+                            {/* Salary & Employment Terms */}
+                            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
                                 <div>
                                     <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Salary & Employment Terms</h4>
@@ -2724,7 +2742,7 @@ const AddEmployeeWizard = () => {
                         </div>
 
                     </div>
-                )}
+                ))}
 
                 {/* Step 7: Documents — step 8 for admins, step 7 for non-admins */}
                 {step === (isAdmin ? 8 : 7) && (
@@ -2909,10 +2927,7 @@ const AddEmployeeWizard = () => {
                                                             <Upload size={28} />
                                                         </div>
                                                         <span className="text-sm font-bold text-gray-700 relative z-0">{label}</span>
-                                                        {label === 'Contract' && !isAdmin && (
-                                                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest mt-1 relative z-0">Required *</span>
-                                                        )}
-                                                        {label === 'Contract' && isAdmin && (
+                                                        {label === 'Contract' && (
                                                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 relative z-0">Optional</span>
                                                         )}
                                                         {label === 'Other Documents' && (
@@ -3159,6 +3174,16 @@ const AddEmployeeWizard = () => {
                 onConfirm={confirmDeleteAttachment}
                 title="Delete Document?"
                 message={`Are you sure you want to delete ${attachmentToDelete?.fileName}? This action cannot be undone.`}
+            />
+
+            {/* Universal Master Financial Security Modal */}
+            <SalaryPinModal
+                isOpen={showMasterPinModal}
+                onClose={() => setShowMasterPinModal(false)}
+                onSuccess={() => setIsFinancialUnlocked(true)}
+                requireMasterPin={true}
+                title="Universal Master Financial PIN"
+                description="Enter the 4-digit Master Financial PIN to configure compensation and banking details."
             />
         </div>
     );
