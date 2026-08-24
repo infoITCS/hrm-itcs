@@ -7,7 +7,7 @@ const GCM_IV_LENGTH = 12; // 12 bytes recommended for AES-GCM
  * Derives a 32-byte AES-256 key from environment variable or secure fallback.
  */
 function getEncryptionKey(): Buffer {
-    const secret = process.env.FINANCIAL_ENCRYPTION_KEY || 'hrm-itcs-secure-financial-key-2026';
+    const secret = process.env.FINANCIAL_ENCRYPTION_KEY || 'bc9e7bcaa5caf06ec88f838fb5d43143e39261797cca9696b7df47c808cd7b22';
     return crypto.createHash('sha256').update(secret).digest();
 }
 

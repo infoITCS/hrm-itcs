@@ -181,84 +181,94 @@ const PayslipEditPanel = ({
 
     return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100">
+                {/* Modal Header */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-white shrink-0">
                     <div>
-                        <h2 className="text-base font-bold text-slate-800">Edit Payslip & Beneficiary Details</h2>
-                        <p className="text-xs text-slate-500">
-                            {payslip.employeeDetails?.firstName} {payslip.employeeDetails?.lastName} ({payslip.employeeId}) • {payslip.payslipNo}
+                        <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                            <span>Edit Payslip & Beneficiary Details</span>
+                        </h2>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                            <span className="font-semibold text-slate-700">{payslip.employeeDetails?.firstName} {payslip.employeeDetails?.lastName}</span>
+                            <span className="text-slate-400 font-mono ml-1">({payslip.employeeId})</span>
+                            <span className="text-slate-300 mx-1.5">•</span>
+                            <span className="font-mono text-indigo-600 font-medium">{payslip.payslipNo}</span>
                         </p>
                     </div>
-                    <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+                    <button 
+                        onClick={onClose} 
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                        <X size={16} />
+                    </button>
                 </div>
 
-                <div className="p-6 space-y-5">
-                    {error && <div className="bg-rose-50 text-rose-700 text-sm px-3 py-2 rounded-lg border border-rose-200">{error}</div>}
+                {/* Modal Body */}
+                <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                    {error && (
+                        <div className="bg-rose-50 text-rose-700 text-xs px-3 py-2 rounded-lg border border-rose-200 font-medium">
+                            {error}
+                        </div>
+                    )}
 
                     {/* Bank Disbursement Section */}
                     {hasEmployeeBank && !isProxyMode ? (
-                        <div className="bg-emerald-50/60 rounded-xl p-4 border border-emerald-100 space-y-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="bg-emerald-50/70 rounded-xl p-3.5 border border-emerald-200/80 space-y-2.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                                 <div className="flex items-center gap-2">
-                                    <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
-                                        <Building2 size={16} />
+                                    <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
+                                        <Building2 size={14} />
                                     </div>
                                     <div>
                                         <h3 className="text-xs font-bold text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
                                             Employee Registered Bank Account
-                                            <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                                                <CheckCircle2 size={11} className="text-emerald-600" /> On File
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
+                                                <CheckCircle2 size={10} className="text-emerald-600" /> On File
                                             </span>
                                         </h3>
-                                        <p className="text-[11px] text-slate-500">Disbursement will be paid directly to employee's primary bank</p>
                                     </div>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={() => setIsProxyMode(true)}
-                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline decoration-indigo-300 hover:decoration-indigo-600 transition-colors text-left sm:text-right"
+                                    className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline transition-colors"
                                 >
                                     Use Proxy / Alternate Account
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-white p-3 rounded-lg border border-emerald-100/80 text-xs shadow-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-white/90 p-2.5 rounded-lg border border-emerald-100 text-xs">
                                 <div>
                                     <span className="block text-[10px] font-bold uppercase text-slate-400">Account / IBAN</span>
-                                    <span className="font-mono font-bold text-slate-800">{empOwnAccount}</span>
+                                    <span className="font-mono font-bold text-slate-800 text-[11px] truncate block">{empOwnAccount}</span>
                                 </div>
                                 <div>
                                     <span className="block text-[10px] font-bold uppercase text-slate-400">Account Title</span>
-                                    <span className="font-semibold text-slate-700">{empOwnName || '—'}</span>
+                                    <span className="font-medium text-slate-700 text-[11px] truncate block">{empOwnName || '—'}</span>
                                 </div>
                                 <div>
                                     <span className="block text-[10px] font-bold uppercase text-slate-400">Bank Name</span>
-                                    <span className="font-semibold text-slate-700">{empOwnBank}</span>
+                                    <span className="font-medium text-slate-700 text-[11px] truncate block">{empOwnBank}</span>
                                 </div>
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-amber-50/60 rounded-xl p-4 border border-amber-200/80 space-y-3">
+                        <div className="bg-amber-50/70 rounded-xl p-3.5 border border-amber-200/80 space-y-2.5">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
                                     <h3 className="text-xs font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
-                                        <Building2 size={14} className="text-amber-600" />
+                                        <Building2 size={13} className="text-amber-600" />
                                         {hasEmployeeBank ? 'Proxy / Alternate Beneficiary Account' : 'Beneficiary Account (No Bank Info On File)'}
                                     </h3>
-                                    <p className="text-[11px] text-amber-800/80">
-                                        {hasEmployeeBank
-                                            ? 'Routing salary disbursement to an alternate/proxy beneficiary account'
-                                            : 'Employee profile has no bank account on file. Enter details or choose a proxy account.'}
-                                    </p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {hasEmployeeBank && (
                                         <button
                                             type="button"
                                             onClick={handleRevertToOwnBank}
-                                            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline"
+                                            className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline"
                                         >
-                                            Use Employee's Account
+                                            Use Primary Account
                                         </button>
                                     )}
                                     <div className="flex items-center gap-1.5">
@@ -266,7 +276,7 @@ const PayslipEditPanel = ({
                                         <select 
                                             onChange={(e) => handleCopyFromOtherEmployee(e.target.value)}
                                             defaultValue=""
-                                            className="text-xs bg-white border border-amber-300 text-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                            className="h-7 text-xs bg-white border border-amber-300 text-slate-700 rounded-lg px-2 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
                                         >
                                             <option value="">Select Employee Account...</option>
                                             {allPayslips
@@ -282,167 +292,204 @@ const PayslipEditPanel = ({
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <div>
-                                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Account Number / IBAN</label>
+                                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Account Number / IBAN</label>
                                     <input
                                         type="text"
-                                        placeholder="Enter account number / IBAN"
+                                        placeholder="Enter account / IBAN"
                                         value={beneficiaryAccount}
                                         onChange={e => setBeneficiaryAccount(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono"
+                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Beneficiary Name</label>
+                                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Beneficiary Name</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. Abdul Raheem"
+                                        placeholder="Account title"
                                         value={beneficiaryName}
                                         onChange={e => setBeneficiaryName(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">Bank Name</label>
+                                    <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Bank Name</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. Meezan Bank"
+                                        placeholder="Bank name"
                                         value={beneficiaryBank}
                                         onChange={e => setBeneficiaryBank(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Earnings with Dropdowns */}
+                    {/* Earnings Section */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                                <TrendingDown size={14} className="rotate-180 text-emerald-500" /> Earnings
+                        <div className="flex items-center justify-between mb-1.5">
+                            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                                <TrendingDown size={13} className="rotate-180 text-emerald-600" /> 
+                                <span>Earnings</span>
                             </h3>
                             <button 
                                 onClick={() => setEarnings(e => [...e, { component: 'Performance Bonus', amount: 0, type: 'variable' }])}
-                                className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
+                                className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold hover:underline cursor-pointer"
                             >
-                                <Plus size={13} /> Add Earning
+                                <Plus size={12} /> Add Earning
                             </button>
                         </div>
-                        <div className="space-y-2">
-                            {earnings.map((e, i) => (
-                                <div key={i} className="grid grid-cols-6 gap-2 items-center">
-                                    <select
-                                        value={PRESET_EARNINGS.includes(e.component) ? e.component : 'Custom / Other'}
-                                        onChange={ev => {
-                                            const val = ev.target.value;
-                                            setEarnings(arr => arr.map((x, j) => j === i ? { ...x, component: val === 'Custom / Other' ? '' : val } : x));
-                                        }}
-                                        className="col-span-3 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-medium"
-                                    >
-                                        {PRESET_EARNINGS.map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                    </select>
-                                    {!PRESET_EARNINGS.slice(0, -1).includes(e.component) && (
-                                        <input
-                                            value={e.component}
-                                            onChange={ev => setEarnings(arr => arr.map((x, j) => j === i ? { ...x, component: ev.target.value } : x))}
-                                            placeholder="Custom component name"
-                                            className="col-span-3 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                        />
-                                    )}
-                                    <input
-                                        type="number"
-                                        value={e.amount}
-                                        onChange={ev => setEarnings(arr => arr.map((x, j) => j === i ? { ...x, amount: Number(ev.target.value) } : x))}
-                                        placeholder="Amount"
-                                        className={`${!PRESET_EARNINGS.slice(0, -1).includes(e.component) ? 'col-span-2' : 'col-span-2'} border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-right font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-300`}
-                                    />
-                                    <button
-                                        onClick={() => setEarnings(arr => arr.filter((_, j) => j !== i))}
-                                        className="p-1.5 text-rose-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 justify-self-center"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
+
+                        <div className="space-y-1.5">
+                            {earnings.map((e, i) => {
+                                const isPreset = PRESET_EARNINGS.includes(e.component) && e.component !== 'Custom / Other';
+                                return (
+                                    <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
+                                        <select
+                                            value={isPreset ? e.component : 'Custom / Other'}
+                                            onChange={ev => {
+                                                const val = ev.target.value;
+                                                setEarnings(arr => arr.map((x, j) => j === i ? { ...x, component: val === 'Custom / Other' ? '' : val } : x));
+                                            }}
+                                            className="w-48 shrink-0 h-8 border border-slate-200 rounded-lg px-2 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                                        >
+                                            {PRESET_EARNINGS.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+
+                                        {!isPreset && (
+                                            <input
+                                                value={e.component}
+                                                onChange={ev => setEarnings(arr => arr.map((x, j) => j === i ? { ...x, component: ev.target.value } : x))}
+                                                placeholder="Custom component name"
+                                                className="flex-1 min-w-0 h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                        )}
+
+                                        {isPreset && <div className="flex-1" />}
+
+                                        <div className="relative w-28 shrink-0">
+                                            <input
+                                                type="number"
+                                                value={e.amount || ''}
+                                                onChange={ev => setEarnings(arr => arr.map((x, j) => j === i ? { ...x, amount: Number(ev.target.value) } : x))}
+                                                placeholder="0"
+                                                className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs text-right font-bold text-emerald-700 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setEarnings(arr => arr.filter((_, j) => j !== i))}
+                                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                            title="Delete"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Deductions with Dropdowns */}
+                    {/* Deductions Section */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                                <TrendingDown size={14} className="text-rose-500" /> Deductions
+                        <div className="flex items-center justify-between mb-1.5">
+                            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                                <TrendingDown size={13} className="text-rose-500" /> 
+                                <span>Deductions</span>
                             </h3>
                             <button 
                                 onClick={() => setDeductions(d => [...d, { component: 'Income Tax / Withholding Tax', amount: 0 }])}
-                                className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
+                                className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold hover:underline cursor-pointer"
                             >
-                                <Plus size={13} /> Add Deduction
+                                <Plus size={12} /> Add Deduction
                             </button>
                         </div>
-                        <div className="space-y-2">
+
+                        <div className="space-y-1.5">
                             {deductions.length === 0 && (
-                                <p className="text-xs text-slate-400 italic">No deductions yet. Click Add to select Income Tax, Loan, EOBI, etc.</p>
+                                <p className="text-xs text-slate-400 italic py-1">No deductions added.</p>
                             )}
-                            {deductions.map((d, i) => (
-                                <div key={i} className="grid grid-cols-6 gap-2 items-center">
-                                    <select
-                                        value={PRESET_DEDUCTIONS.includes(d.component) ? d.component : 'Custom / Other'}
-                                        onChange={ev => {
-                                            const val = ev.target.value;
-                                            setDeductions(arr => arr.map((x, j) => j === i ? { ...x, component: val === 'Custom / Other' ? '' : val } : x));
-                                        }}
-                                        className="col-span-3 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 font-medium"
-                                    >
-                                        {PRESET_DEDUCTIONS.map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                        ))}
-                                    </select>
-                                    {!PRESET_DEDUCTIONS.slice(0, -1).includes(d.component) && (
-                                        <input
-                                            value={d.component}
-                                            onChange={ev => setDeductions(arr => arr.map((x, j) => j === i ? { ...x, component: ev.target.value } : x))}
-                                            placeholder="Custom deduction name"
-                                            className="col-span-3 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                        />
-                                    )}
-                                    <input
-                                        type="number"
-                                        value={d.amount}
-                                        onChange={ev => setDeductions(arr => arr.map((x, j) => j === i ? { ...x, amount: Number(ev.target.value) } : x))}
-                                        placeholder="Amount"
-                                        className={`${!PRESET_DEDUCTIONS.slice(0, -1).includes(d.component) ? 'col-span-2' : 'col-span-2'} border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-right font-semibold text-rose-600 focus:outline-none focus:ring-2 focus:ring-indigo-300`}
-                                    />
-                                    <button
-                                        onClick={() => setDeductions(arr => arr.filter((_, j) => j !== i))}
-                                        className="p-1.5 text-rose-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 justify-self-center"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
+                            {deductions.map((d, i) => {
+                                const isPreset = PRESET_DEDUCTIONS.includes(d.component) && d.component !== 'Custom / Other';
+                                return (
+                                    <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
+                                        <select
+                                            value={isPreset ? d.component : 'Custom / Other'}
+                                            onChange={ev => {
+                                                const val = ev.target.value;
+                                                setDeductions(arr => arr.map((x, j) => j === i ? { ...x, component: val === 'Custom / Other' ? '' : val } : x));
+                                            }}
+                                            className="w-48 shrink-0 h-8 border border-slate-200 rounded-lg px-2 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                                        >
+                                            {PRESET_DEDUCTIONS.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+
+                                        {!isPreset && (
+                                            <input
+                                                value={d.component}
+                                                onChange={ev => setDeductions(arr => arr.map((x, j) => j === i ? { ...x, component: ev.target.value } : x))}
+                                                placeholder="Custom deduction name"
+                                                className="flex-1 min-w-0 h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                        )}
+
+                                        {isPreset && <div className="flex-1" />}
+
+                                        <div className="relative w-28 shrink-0">
+                                            <input
+                                                type="number"
+                                                value={d.amount || ''}
+                                                onChange={ev => setDeductions(arr => arr.map((x, j) => j === i ? { ...x, amount: Number(ev.target.value) } : x))}
+                                                placeholder="0"
+                                                className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs text-right font-bold text-rose-600 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setDeductions(arr => arr.filter((_, j) => j !== i))}
+                                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                                            title="Delete"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Live totals */}
-                    <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 text-sm">
-                        <div className="flex justify-between text-slate-600"><span>Gross Pay</span><span className="font-semibold text-emerald-600">{fmt(grossPay)}</span></div>
-                        <div className="flex justify-between text-slate-600"><span>Total Deductions</span><span className="font-semibold text-rose-600">- {fmt(totalDeductions)}</span></div>
-                        <div className="flex justify-between text-slate-800 font-bold border-t border-slate-200 pt-1.5 mt-1"><span>Net Pay</span><span className="text-indigo-600">{fmt(netPay)}</span></div>
+                    {/* Live Totals Card */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/70 space-y-1 text-xs">
+                        <div className="flex justify-between text-slate-600">
+                            <span>Gross Pay</span>
+                            <span className="font-bold text-emerald-700">{fmt(grossPay)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                            <span>Total Deductions</span>
+                            <span className="font-bold text-rose-600">- {fmt(totalDeductions)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1.5 mt-1 text-xs">
+                            <span className="uppercase tracking-wider text-[10px] text-slate-500">Net Disbursable Pay</span>
+                            <span className="text-indigo-600 text-sm font-extrabold">{fmt(netPay)}</span>
+                        </div>
                     </div>
 
-                    {/* Payment method, Customer Reference & Notes */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Payment Method, Ref & Notes */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                         <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
+                            <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Payment Method</label>
                             <select
                                 value={paymentMethod}
                                 onChange={e => setPaymentMethod(e.target.value)}
-                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                             >
                                 <option value="Bank Transfer">Bank Transfer</option>
                                 <option value="Cash">Cash</option>
@@ -450,31 +497,40 @@ const PayslipEditPanel = ({
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Customer / Bank Ref</label>
+                            <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Customer / Bank Ref</label>
                             <input
                                 value={customerReference}
                                 onChange={e => setCustomerReference(e.target.value)}
                                 placeholder="e.g. PAY-202608-001"
-                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+                                className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+                            <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">Notes</label>
                             <input
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}
                                 placeholder="Optional payslip note..."
-                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                             />
                         </div>
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-2 px-6 pb-5">
-                    <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 font-medium">Cancel</button>
-                    <button onClick={handleSave} disabled={saving}
-                        className="px-5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 flex items-center gap-2 disabled:opacity-60">
-                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {/* Modal Footer */}
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/50 shrink-0">
+                    <button 
+                        onClick={onClose} 
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200/70 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleSave} 
+                        disabled={saving}
+                        className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm flex items-center gap-1.5 disabled:opacity-60 transition-all cursor-pointer"
+                    >
+                        {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                         Save Changes
                     </button>
                 </div>
