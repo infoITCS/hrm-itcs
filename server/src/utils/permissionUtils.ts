@@ -82,8 +82,7 @@ export const SYSTEM_MODULES: SystemModuleDefinition[] = [
         name: 'Provident Fund',
         subTabs: [
             { key: 'my-pf', name: 'My PF Statement & Balance', defaultRoles: ['all'] },
-            { key: 'company-pf', name: 'Company-wide PF Ledger', defaultRoles: ['super-admin', 'finance', 'admin'] },
-            { key: 'profit-distribution', name: 'Annual Profit Distribution', defaultRoles: ['super-admin', 'finance', 'admin'] },
+            { key: 'company-pf', name: 'Company-wide PF Ledger', defaultRoles: ['super-admin', 'admin'] },
         ]
     },
     {
@@ -115,8 +114,8 @@ export function getDefaultScopeForRole(role: string, moduleName: string): 'none'
         return 'manager';
     }
     if (normalized === 'finance') {
-        if (['payroll', 'claim', 'provident-fund'].includes(moduleName)) return 'admin';
-        return 'manager';
+        if (['payroll', 'claim'].includes(moduleName)) return 'admin';
+        return 'employee';
     }
     if (normalized === 'manager') {
         return 'manager';

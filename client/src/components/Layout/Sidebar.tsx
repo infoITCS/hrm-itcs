@@ -35,7 +35,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
 
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'dashboard', end: true },
-        { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
+        { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim', subTab: 'employee-list' },
@@ -46,7 +46,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },
-        { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'payroll', subTab: 'my-payslips', end: true },
+        { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
         { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'finance'], module: 'payroll', subTab: 'payroll-runs' },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', subTab: 'my-requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests', subTab: 'manage-requests' },

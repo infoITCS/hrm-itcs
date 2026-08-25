@@ -321,9 +321,20 @@ router.get('/my-payslips', authenticate, async (req: Request, res: Response, nex
     try {
         const authReq = req as AuthRequest;
 
-        const emp = await Employee.findOne({ userId: authReq.user!.userId })
+        let emp = await Employee.findOne({ userId: authReq.user!.userId })
             .select('employeeId')
             .lean() as any;
+
+        if (!emp && authReq.user?.email) {
+            emp = await Employee.findOne({
+                isDeleted: { $ne: true },
+                $or: [
+                    { workEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { personalEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
+                ]
+            }).select('employeeId').lean() as any;
+        }
 
         if (!emp) {
             return res.status(404).json({ message: 'No employee record linked to your account.' });
@@ -1798,68 +1809,6 @@ router.put('/:runId/erp-task', authenticate, async (req: Request, res: Response,
 
         await run.save();
         return res.json(run);
-    } catch (err) {
-        next(err);
-    }
-});
-
-/**
- * @route   POST /api/payroll/pf/maturity-profit
- * @desc    Distribute annual Provident Fund profit/yield based on company performance %
- * @access  admin, super-admin, finance
- */
-router.post('/pf/maturity-profit', authenticate, async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const authReq = req as AuthRequest;
-        if (!isAdmin(authReq.user!.role)) {
-            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
-        }
-
-        const { profitPercentage, note, year } = req.body;
-        const rate = Number(profitPercentage);
-        const fiscalYear = Number(year) || new Date().getFullYear();
-
-        if (isNaN(rate)) {
-            return res.status(400).json({ message: 'Valid profit percentage is required.' });
-        }
-
-        const employees = await Employee.find({
-            providentFundBalance: { $gt: 0 }
-        });
-
-        let updatedCount = 0;
-        let totalProfitDistributed = 0;
-
-        for (const emp of employees) {
-            const currentBal = emp.providentFundBalance || 0;
-            const profitAmount = Math.round((currentBal * rate) / 100);
-
-            if (profitAmount !== 0) {
-                const historyEntry = {
-                    amount: Math.abs(profitAmount),
-                    type: profitAmount >= 0 ? 'credit' : 'debit',
-                    source: 'manual',
-                    date: new Date(),
-                    description: `Annual PF Maturity Profit Allocation (${rate > 0 ? '+' : ''}${rate}% for FY ${fiscalYear}) - ${note || 'Company Performance Yield'}`,
-                    periodYear: fiscalYear
-                };
-
-                if (!emp.providentFundHistory) emp.providentFundHistory = [];
-                emp.providentFundHistory.push(historyEntry as any);
-                emp.providentFundBalance = currentBal + profitAmount;
-                await emp.save();
-
-                updatedCount++;
-                totalProfitDistributed += profitAmount;
-            }
-        }
-
-        return res.json({
-            message: `Successfully allocated ${rate}% PF profit across ${updatedCount} employees.`,
-            updatedCount,
-            totalProfitDistributed,
-            fiscalYear
-        });
     } catch (err) {
         next(err);
     }

@@ -532,25 +532,27 @@ const UserManagement = () => {
                                                             <Key size={10} /> Reset
                                                         </button>
                                                     </div>
-                                                    {currentUserRole === 'super-admin' && (
+                                                    {['super-admin', 'admin'].includes(currentUserRole) && (
                                                         <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={() => {
                                                                     setPermissionsUser(user);
                                                                     setShowPermissionsModal(true);
                                                                 }}
-                                                                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors w-fit shadow-sm"
+                                                                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors w-fit shadow-sm cursor-pointer"
                                                                 title="Configure Granular Permissions & Scopes"
                                                             >
                                                                 <Sliders size={10} /> Permissions
                                                             </button>
-                                                            <button
-                                                                onClick={() => handleImpersonate(user._id)}
-                                                                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
-                                                                title="Impersonate User"
-                                                            >
-                                                                <Eye size={10} /> Impersonate
-                                                            </button>
+                                                            {currentUserRole === 'super-admin' && (
+                                                                <button
+                                                                    onClick={() => handleImpersonate(user._id)}
+                                                                    className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm cursor-pointer"
+                                                                    title="Impersonate User"
+                                                                >
+                                                                    <Eye size={10} /> Impersonate
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>

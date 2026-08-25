@@ -12,11 +12,11 @@ import { SYSTEM_MODULES, computeEffectivePermissionsAndScopes, getDefaultScopeFo
 
 const router = Router();
 
-// Middleware to ensure user is an admin
+// Middleware to ensure user is an admin or super-admin
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
-    if (authReq.user?.role !== 'super-admin') {
-        return res.status(403).json({ message: 'Forbidden. Super Admin access required.' });
+    if (!['super-admin', 'admin'].includes(authReq.user?.role || '')) {
+        return res.status(403).json({ message: 'Forbidden. Admin access required.' });
     }
     next();
 };
@@ -542,13 +542,16 @@ router.put('/users/:id/permissions', authenticate, requireAdmin, async (req: Req
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         if (customPermissions && typeof customPermissions === 'object') {
-            user.customPermissions = customPermissions;
+            user.set('customPermissions', customPermissions);
+            user.markModified('customPermissions');
         }
         if (customScopes && typeof customScopes === 'object') {
-            user.customScopes = customScopes;
+            user.set('customScopes', customScopes);
+            user.markModified('customScopes');
         }
         if (customSubPermissions && typeof customSubPermissions === 'object') {
-            user.customSubPermissions = customSubPermissions;
+            user.set('customSubPermissions', customSubPermissions);
+            user.markModified('customSubPermissions');
         }
 
         await user.save();
@@ -593,9 +596,12 @@ router.post('/users/:id/permissions/reset', authenticate, requireAdmin, async (r
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
-        user.customPermissions = {} as any;
-        user.customScopes = {} as any;
-        user.customSubPermissions = {} as any;
+        user.set('customPermissions', {});
+        user.set('customScopes', {});
+        user.set('customSubPermissions', {});
+        user.markModified('customPermissions');
+        user.markModified('customScopes');
+        user.markModified('customSubPermissions');
         await user.save();
 
         await AuditLog.create({

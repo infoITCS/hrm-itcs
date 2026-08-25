@@ -86,6 +86,13 @@ export const usePermissions = () => {
             return user.subPermissions[fullKey];
         }
 
+        // Sub-tabs restricted to super-admin/admin by default (e.g., company-wide PF is not given to finance by default)
+        if (moduleName === 'provident-fund') {
+            if (subTabKey === 'company-pf') {
+                return ['super-admin', 'admin'].includes(normalizedRole);
+            }
+        }
+
         return true;
     }, [user, normalizedRole]);
 

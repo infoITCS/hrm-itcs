@@ -551,7 +551,6 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
         res.status(500).json({ message: err.message });
     }
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Provident Fund Management
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,9 +566,22 @@ const PF_MATURITY_MONTHS = 36;
  */
 router.get('/pf-report', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
-    const role = authReq.user?.role || '';
-    if (!['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
-        return res.status(403).json({ message: 'Admin access required.' });
+    const role = (authReq.user?.role || '').toLowerCase().trim();
+    const isSuperOrAdmin = ['super-admin', 'admin'].includes(role);
+
+    let hasExplicitPfPermission = false;
+    if (authReq.user?.userId) {
+        const userDoc = await User.findById(authReq.user.userId).select('customSubPermissions').lean() as any;
+        const customSub = userDoc?.customSubPermissions instanceof Map
+            ? Object.fromEntries(userDoc.customSubPermissions)
+            : (userDoc?.customSubPermissions || {});
+        if (customSub['provident-fund:company-pf'] === true) {
+            hasExplicitPfPermission = true;
+        }
+    }
+
+    if (!isSuperOrAdmin && !hasExplicitPfPermission) {
+        return res.status(403).json({ message: 'Admin access or explicit company-wide PF permission required.' });
     }
 
     try {
@@ -621,7 +633,8 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
 
 /**
  * GET /api/employees/my-pf
- * Returns the currently authenticated employee's personal PF details (balance, statement, maturity).
+ * Returns PF statement & balance for the currently authenticated employee.
+ * Accessible to all authenticated employees.
  */
 router.get('/my-pf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -632,9 +645,22 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        const employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
+        let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
             .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
             .lean() as any;
+
+        if (!employee && authReq.user?.email) {
+            employee = await Employee.findOne({
+                isDeleted: { $ne: true },
+                $or: [
+                    { workEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { personalEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
+                ]
+            })
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
+            .lean() as any;
+        }
 
         if (!employee) {
             return res.status(404).json({ message: 'Employee profile not found for current user.' });
@@ -1202,78 +1228,6 @@ router.post('/:id/pf-claim', authenticate, async (req: Request, res: Response, n
             message: 'PF claimed successfully.',
             claimedAmount: balance,
             pfClaimedAt: now
-        });
-    } catch (err) {
-        next(err);
-    }
-});
-
-/**
- * POST /api/employees/pf-profit-distribution
- * Distribute annual/periodic PF profit yield across all employees with an active PF balance.
- * Admin/super-admin/finance only.
- */
-router.post('/pf-profit-distribution', authenticate, async (req: Request, res: Response, next: NextFunction) => {
-    const authReq = req as AuthRequest;
-    const role = authReq.user?.role || '';
-    if (!['super-admin', 'admin', 'finance'].includes(role)) {
-        return res.status(403).json({ message: 'Forbidden. Admin or Finance access required.' });
-    }
-
-    try {
-        const { year, profitPercentage, notes } = req.body;
-        const pct = Number(profitPercentage);
-        const distYear = Number(year) || new Date().getFullYear();
-
-        if (isNaN(pct) || pct === 0) {
-            return res.status(400).json({ message: 'Valid profit percentage is required.' });
-        }
-
-        const employees = await Employee.find({
-            $or: [
-                { 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } },
-                { employmentStatus: { $type: 'string', $nin: ['Terminated', 'Resigned'] } },
-                { 'employmentStatus.status': { $exists: false } }
-            ]
-        });
-
-        let totalAllocated = 0;
-        let employeeCount = 0;
-        const now = new Date();
-
-        for (const emp of employees) {
-            const currentBal = emp.providentFundBalance || 0;
-            if (currentBal <= 0) continue;
-
-            const profitAmount = Math.round(currentBal * (pct / 100));
-            if (profitAmount === 0) continue;
-
-            if (!emp.providentFundHistory) emp.providentFundHistory = [];
-
-            const isLoss = profitAmount < 0;
-            emp.providentFundHistory.push({
-                amount: Math.abs(profitAmount),
-                type: isLoss ? 'debit' : 'credit',
-                source: 'manual',
-                date: now,
-                description: `Annual PF Profit Distribution (${pct > 0 ? '+' : ''}${pct}%) - ${distYear}${notes ? ` - ${notes}` : ''}`,
-                periodYear: distYear,
-                erpReferenceId: notes ? String(notes).trim() : undefined
-            } as any);
-
-            emp.providentFundBalance = Math.max(0, currentBal + profitAmount);
-            await emp.save();
-
-            totalAllocated += profitAmount;
-            employeeCount++;
-        }
-
-        return res.json({
-            message: `Successfully distributed ${pct}% profit across ${employeeCount} employee provident fund accounts.`,
-            employeeCount,
-            totalAllocated,
-            year: distYear,
-            profitPercentage: pct
         });
     } catch (err) {
         next(err);

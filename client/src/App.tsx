@@ -205,8 +205,8 @@ function AppRoutes() {
           <Route path="payroll/runs/:id" element={<ModuleProtectedRoute moduleName="payroll"><PayrollRunDetail /></ModuleProtectedRoute>} />
         </Route>
 
-        {/* Restricted to Admins & Managers */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr']} />}>
+        {/* Restricted to Admins & Managers & HR */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
           <Route path="pim" element={<ModuleProtectedRoute moduleName="pim"><PIM /></ModuleProtectedRoute>}>
             <Route index element={<EmployeeList />} />
@@ -216,8 +216,8 @@ function AppRoutes() {
           </Route>
         </Route>
 
-        {/* Restricted to Super Admins only */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin']} />}>
+        {/* Restricted to Super Admins & Admins */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="admin" element={<UserManagement />} />
         </Route>
 

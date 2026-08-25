@@ -321,8 +321,8 @@ router.post('/templates', authenticate, requireAdmin, async (req: Request, res: 
 router.get('/roles-permissions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        if (authReq.user?.role !== 'super-admin') {
-            return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+        if (!['super-admin', 'admin'].includes(authReq.user?.role || '')) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
         const permissions = await RolePermission.find().sort({ role: 1 });
         res.json(permissions);
@@ -333,13 +333,13 @@ router.get('/roles-permissions', authenticate, async (req: Request, res: Respons
 
 /**
  * @route   PUT /api/config/roles-permissions
- * @desc    Save matrix permissions updates (Super-Admin only)
+ * @desc    Save matrix permissions updates (Admin & Super-Admin)
  */
 router.put('/roles-permissions', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
-        if (authReq.user?.role !== 'super-admin') {
-            return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+        if (!['super-admin', 'admin'].includes(authReq.user?.role || '')) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
         const { matrix } = req.body;
         if (!Array.isArray(matrix)) {
@@ -363,12 +363,12 @@ router.put('/roles-permissions', authenticate, async (req: Request, res: Respons
 
 /**
  * @route   POST /api/config/roles-permissions/reset
- * @desc    Reset all role permissions to system defaults (Super-Admin only)
+ * @desc    Reset all role permissions to system defaults (Admin & Super-Admin)
  */
 router.post('/roles-permissions/reset', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
-    if (authReq.user?.role !== 'super-admin') {
-        return res.status(403).json({ message: 'Forbidden. Only Super Admin can view or manage role permissions.' });
+    if (!['super-admin', 'admin'].includes(authReq.user?.role || '')) {
+        return res.status(403).json({ message: 'Forbidden. Admin access required.' });
     }
     const defaults = [
         { role: 'super-admin', permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true } },

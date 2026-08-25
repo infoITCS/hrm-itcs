@@ -47,8 +47,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         microsoftId: userData.microsoftId,
                         permissions: userData.permissions || {},
                         scopes: userData.scopes || {},
+                        subPermissions: userData.subPermissions || {},
                         customPermissions: userData.customPermissions || {},
-                        customScopes: userData.customScopes || {}
+                        customScopes: userData.customScopes || {},
+                        customSubPermissions: userData.customSubPermissions || {}
                     };
                     setUser(user);
                     setIsImpersonated(!!localStorage.getItem('original_token'));
@@ -132,7 +134,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             hasProfile: userData.hasProfile,
             needsPasswordSetup: userData.needsPasswordSetup,
             microsoftId: userData.microsoftId,
-            permissions: userData.permissions
+            permissions: userData.permissions || {},
+            scopes: userData.scopes || {},
+            subPermissions: userData.subPermissions || {},
+            customPermissions: userData.customPermissions || {},
+            customScopes: userData.customScopes || {},
+            customSubPermissions: userData.customSubPermissions || {}
         };
         
         setUser(userObj);
@@ -168,7 +175,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 hasProfile: userData.hasProfile,
                 needsPasswordSetup: userData.needsPasswordSetup,
                 microsoftId: userData.microsoftId,
-                permissions: userData.permissions || {}
+                permissions: userData.permissions || {},
+                scopes: userData.scopes || {},
+                subPermissions: userData.subPermissions || {},
+                customPermissions: userData.customPermissions || {},
+                customScopes: userData.customScopes || {},
+                customSubPermissions: userData.customSubPermissions || {}
             };
             setUser(userObj);
             sessionStorage.setItem('itcs_user', JSON.stringify(userObj));

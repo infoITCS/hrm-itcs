@@ -14,6 +14,8 @@ export interface User {
     needsPasswordSetup?: boolean;
     permissions?: Record<string, boolean>;
     scopes?: Record<string, 'none' | 'employee' | 'manager' | 'admin' | string>;
+    subPermissions?: Record<string, boolean>;
     customPermissions?: Record<string, boolean>;
     customScopes?: Record<string, string>;
+    customSubPermissions?: Record<string, boolean>;
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { api } from '../../utils/api';
 import MyProvidentFund from './MyProvidentFund';
@@ -10,7 +9,7 @@ import {
     Banknote, Search, ChevronDown, ChevronRight, CheckCircle2,
     Clock, XCircle, TrendingUp, Users, BadgeCheck,
     AlertTriangle, FileText, X, CalendarDays, User, Building2,
-    Percent, Loader2, Lock, Unlock
+    Lock, Unlock
 } from 'lucide-react';
 
 interface PFEntry {
@@ -396,7 +395,6 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
 }
 
 export default function ProvidentFundReport() {
-    const { user } = useAuth();
     const { hasSubAccess } = usePermissions();
     const canSeeCompanyPF = hasSubAccess('provident-fund', 'company-pf');
     const canSeeMyPF = hasSubAccess('provident-fund', 'my-pf');
@@ -418,51 +416,10 @@ export default function ProvidentFundReport() {
     const [claimErpId, setClaimErpId] = useState('');
     const [statement, setStatement] = useState<EmpPFData | null>(null);
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-    const [showProfitModal, setShowProfitModal] = useState(false);
-    const [profitRate, setProfitRate] = useState('10');
-    const [profitYear, setProfitYear] = useState(String(new Date().getFullYear()));
-    const [profitNotes, setProfitNotes] = useState('Annual Company Performance Yield');
-    const [profitSubmitting, setProfitSubmitting] = useState(false);
 
     const showToast = (msg: string, ok: boolean) => {
         setToast({ msg, ok });
         setTimeout(() => setToast(null), 3500);
-    };
-
-    const handleDistributeProfit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!profitRate || isNaN(Number(profitRate))) {
-            showToast('Please enter a valid profit percentage', false);
-            return;
-        }
-        setProfitSubmitting(true);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${api.baseURL}/api/employees/pf-profit-distribution`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    profitPercentage: Number(profitRate),
-                    year: Number(profitYear),
-                    notes: profitNotes.trim() || undefined
-                })
-            });
-            const body = await res.json();
-            if (res.ok) {
-                showToast(body.message || `Profit distributed successfully.`, true);
-                setShowProfitModal(false);
-                load();
-            } else {
-                showToast(body.message || 'Profit distribution failed', false);
-            }
-        } catch {
-            showToast('Network error during profit allocation', false);
-        } finally {
-            setProfitSubmitting(false);
-        }
     };
 
     const load = useCallback(async () => {
@@ -638,12 +595,6 @@ export default function ProvidentFundReport() {
                         Employee PF balances • 36-month maturity from joining date • Monthly contributions
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowProfitModal(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-2xl transition-all shadow-md w-fit shrink-0"
-                >
-                    <Percent size={14} /> Allocate Annual PF Profit
-                </button>
             </div>
 
             {/* Stats */}
@@ -906,85 +857,6 @@ export default function ProvidentFundReport() {
                 </div>
             )}
             </>
-            )}
-
-            {/* Annual PF Profit Allocation Modal */}
-            {showProfitModal && createPortal(
-                <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                            <div className="flex items-center gap-2.5 text-slate-900">
-                                <div className="p-2 bg-purple-50 text-purple-600 rounded-xl">
-                                    <Percent size={20} />
-                                </div>
-                                <div>
-                                    <h3 className="font-extrabold text-base">Annual PF Profit / Yield Allocation</h3>
-                                    <p className="text-xs text-slate-500">Distribute profit yield across active balances</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setShowProfitModal(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-xl">
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleDistributeProfit} className="space-y-3.5 text-xs">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block font-bold text-slate-700 mb-1">Profit Yield (%) <span className="text-rose-500">*</span></label>
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        placeholder="e.g. 10 or 12.5"
-                                        value={profitRate}
-                                        onChange={e => setProfitRate(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block font-bold text-slate-700 mb-1">Fiscal Year</label>
-                                    <input
-                                        type="number"
-                                        value={profitYear}
-                                        onChange={e => setProfitYear(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold"
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block font-bold text-slate-700 mb-1">Note / Reference Description</label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. Annual Company Performance Yield"
-                                    value={profitNotes}
-                                    onChange={e => setProfitNotes(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400"
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowProfitModal(false)}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={profitSubmitting}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white transition-all shadow-md flex items-center gap-1.5 disabled:opacity-60"
-                                >
-                                    {profitSubmitting ? <Loader2 size={13} className="animate-spin" /> : <Percent size={13} />}
-                                    Distribute to All Balances
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>,
-                document.body
             )}
 
             {/* Universal Master Financial Security Modal */}
