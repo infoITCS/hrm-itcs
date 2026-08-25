@@ -1039,10 +1039,11 @@ router.post('/:id/rescan', authenticate, async (req: Request, res: Response, nex
         );
 
         // Update receipt extraction details
-        claim.receipts = receipts.map((r: any, i: number) => {
+        (claim as any).receipts = receipts.map((r: any, i: number) => {
             const extracted = analysis.receipts[i];
+            const base = typeof r?.toObject === 'function' ? r.toObject() : r;
             return {
-                ...r.toObject(),
+                ...base,
                 extractedDate: extracted?.extractedDate,
                 extractedAmount: extracted?.extractedAmount,
                 extractedCurrency: extracted?.extractedCurrency,
@@ -1065,12 +1066,18 @@ router.post('/:id/rescan', authenticate, async (req: Request, res: Response, nex
             'ReceiptExtractionFailed',
             'ReceiptDateUnreadable'
         ];
-        const existingFlags = (claim.eligibility?.flags || []).filter((f: string) => !ocrFlags.includes(f));
+        const currentFlags = (claim.eligibility && Array.isArray((claim.eligibility as any).flags))
+            ? (claim.eligibility as any).flags
+            : [];
+        const existingFlags = currentFlags.filter((f: string) => !ocrFlags.includes(f));
         for (const f of analysis.flags) {
             if (!existingFlags.includes(f)) existingFlags.push(f);
         }
-        if (!claim.eligibility) claim.eligibility = { passed: true, flags: [] } as any;
-        claim.eligibility.flags = existingFlags;
+        (claim as any).eligibility = {
+            ...((claim as any).eligibility || {}),
+            eligible: existingFlags.length === 0,
+            flags: existingFlags,
+        };
 
         await claim.save();
         await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');

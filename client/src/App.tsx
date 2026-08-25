@@ -28,6 +28,7 @@ import ExpenseClaimDashboard from './pages/Claim/ExpenseClaimDashboard';
 import LeaveDashboard from './pages/Leave/LeaveDashboard';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import Terms from './pages/Terms';
+import CompanyPolicy from './pages/CompanyPolicy/CompanyPolicy';
 //testing stash
 // NEW V2 Attendance Pages
 import AttendanceRouter from './modules/attendance/AttendanceRouter';
@@ -100,6 +101,10 @@ function AppRoutes() {
         element={<PrivacyPolicy />}
       />
       <Route
+        path="/company-policy"
+        element={<CompanyPolicy />}
+      />
+      <Route
         path="/terms"
         element={<Terms />}
       />
@@ -129,6 +134,7 @@ function AppRoutes() {
         <Route path="my-info" element={<MyInfo />} />
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
+        <Route path="company-policy" element={<CompanyPolicy />} />
         <Route path="claim" element={<ModuleProtectedRoute moduleName="claim"><ExpenseClaimDashboard /></ModuleProtectedRoute>} />
         <Route path="attendance" element={<ModuleProtectedRoute moduleName="attendance"><AttendanceRouter /></ModuleProtectedRoute>} />
         <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />

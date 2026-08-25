@@ -268,7 +268,7 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                     <div className="pt-6 text-center">
                         <p className="text-xs text-gray-400">
                             Protected by Enterprise Grade Security. <br />
-                            By signing in, you agree to our <Link to="/terms" className="underline hover:text-gray-600">Terms</Link> and <Link to="/privacy-policy" className="underline hover:text-gray-600">Privacy Policy</Link>.
+                            By signing in, you agree to our <Link to="/terms" className="underline hover:text-gray-600">Terms</Link>, <Link to="/privacy-policy" className="underline hover:text-gray-600">Privacy Policy</Link>, and <Link to="/company-policy" className="underline hover:text-gray-600">Company Policy</Link>.
                         </p>
                     </div>
                 </div>

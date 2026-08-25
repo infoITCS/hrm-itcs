@@ -14,7 +14,7 @@ import {
     Receipt,
     FileText,
     PiggyBank,
-    // Shield,
+    Shield,
     X,
     ScanFace,
     Inbox,
@@ -52,6 +52,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
         { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
+        { name: 'Company Policy', icon: Shield, path: '/company-policy', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
     ];
 
     const menuItems = allMenuItems.filter(item => {

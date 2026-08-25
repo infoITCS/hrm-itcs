@@ -29,6 +29,7 @@ interface ScrollDropdownProps {
     placeholder: string;
     disabled?: boolean;
     loading?: boolean;
+    allowCustom?: boolean;
     className?: string;
 }
 
@@ -39,6 +40,7 @@ const ScrollDropdown = ({
     placeholder,
     disabled = false,
     loading = false,
+    allowCustom = true,
     className = '',
 }: ScrollDropdownProps) => {
     const [open, setOpen] = useState(false);
@@ -118,15 +120,22 @@ const ScrollDropdown = ({
                             <input
                                 ref={searchInputRef}
                                 type="text"
-                                placeholder="Search..."
+                                placeholder={allowCustom ? "Search or type custom..." : "Search..."}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Escape') setOpen(false);
-                                    if (e.key === 'ArrowDown') {
+                                    if (e.key === 'Enter') {
                                         e.preventDefault();
-                                        // Potential improvement: focus first option
+                                        const trimmed = searchQuery.trim();
+                                        const filtered = options.filter(opt => opt.toLowerCase().includes(trimmed.toLowerCase()));
+                                        if (filtered.length > 0) {
+                                            onChange(filtered[0]);
+                                        } else if (allowCustom && trimmed) {
+                                            onChange(trimmed);
+                                        }
+                                        setOpen(false);
                                     }
                                 }}
                             />
@@ -139,6 +148,19 @@ const ScrollDropdown = ({
                     </div>
 
                     <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: '180px' }}>
+                        {allowCustom && searchQuery.trim() && !options.some(opt => opt.toLowerCase() === searchQuery.trim().toLowerCase()) && (
+                            <div
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    onChange(searchQuery.trim());
+                                    setOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs font-semibold bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer border-b border-indigo-100 flex items-center gap-1.5"
+                            >
+                                <span className="font-bold text-sm leading-none text-indigo-500">+</span>
+                                <span>Use &ldquo;<span className="underline font-bold">{searchQuery.trim()}</span>&rdquo;</span>
+                            </div>
+                        )}
                         {options
                             .filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase()))
                             .map(opt => (
@@ -155,7 +177,7 @@ const ScrollDropdown = ({
                                 {opt}
                             </div>
                         ))}
-                        {options.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                        {options.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && !searchQuery.trim() && (
                             <div className="px-3 py-8 text-center text-slate-400 text-xs italic">
                                 No matches found
                             </div>
@@ -165,6 +187,95 @@ const ScrollDropdown = ({
             )}
         </div>
     );
+};
+
+// ─── Pakistan Regional Districts / Cities Supplement ───────────────────────
+const PAKISTAN_REGIONAL_CITIES: Record<string, string[]> = {
+    'Gilgit-Baltistan': [
+        'Skardu',
+        'Kharmang',
+        'Shigar',
+        'Ghanche',
+        'Roundu',
+        'Gilgit',
+        'Hunza',
+        'Nagar',
+        'Ghizer',
+        'Diamer',
+        'Astore',
+    ],
+    'Azad Jammu and Kashmir': [
+        'Muzaffarabad',
+        'Mirpur',
+        'Rawalakot',
+        'Kotli',
+        'Bhimber',
+        'Bagh',
+        'Haveli',
+        'Sudhanoti',
+        'Neelam',
+        'Hattian Bala',
+    ],
+    'Islamabad': [
+        'Islamabad',
+    ],
+    'Balochistan': [
+        'Quetta',
+        'Gwadar',
+        'Turbat',
+        'Khuzdar',
+        'Hub',
+        'Chaman',
+        'Sibi',
+        'Zhob',
+        'Loralai',
+        'Pishin',
+        'Dera Murad Jamali',
+    ],
+    'Khyber Pakhtunkhwa': [
+        'Peshawar',
+        'Mardan',
+        'Abbottabad',
+        'Swat',
+        'Kohat',
+        'Dera Ismail Khan',
+        'Mansehra',
+        'Nowshera',
+        'Charsadda',
+        'Swabi',
+        'Haripur',
+        'Bannu',
+    ],
+    'Punjab': [
+        'Lahore',
+        'Faisalabad',
+        'Rawalpindi',
+        'Gujranwala',
+        'Multan',
+        'Sialkot',
+        'Bahawalpur',
+        'Sargodha',
+        'Sheikhupura',
+        'Gujrat',
+        'Jhang',
+        'Rahim Yar Khan',
+        'Kasur',
+        'Sahiwal',
+        'Okara',
+        'Wah Cantonment',
+        'Dera Ghazi Khan',
+    ],
+    'Sindh': [
+        'Karachi',
+        'Hyderabad',
+        'Sukkur',
+        'Larkana',
+        'Nawabshah',
+        'Mirpur Khas',
+        'Thatta',
+        'Jacobabad',
+        'Shikarpur',
+    ],
 };
 
 // ─── AddressForm ─────────────────────────────────────────────────────────────
@@ -261,6 +372,27 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass, headerActio
         return () => controller.abort();
     }, [currentCountryIso, currentStateIso]);
 
+    // Merge API cities with local regional districts / clean up bogus entries
+    const cityOptions = useMemo(() => {
+        let list = cities.map(c => c.name).filter(c => c.toLowerCase() !== 'barishal');
+        
+        if (currentCountryIso === 'PK' && value.state) {
+            const stateLower = value.state.toLowerCase();
+            const matchedKey = Object.keys(PAKISTAN_REGIONAL_CITIES).find(k => 
+                stateLower.includes(k.toLowerCase()) || k.toLowerCase().includes(stateLower)
+            );
+            if (matchedKey) {
+                const regional = PAKISTAN_REGIONAL_CITIES[matchedKey] || [];
+                for (const rc of regional) {
+                    if (!list.some(item => item.toLowerCase() === rc.toLowerCase())) {
+                        list.push(rc);
+                    }
+                }
+            }
+        }
+        return list;
+    }, [cities, currentCountryIso, value.state]);
+
     const baseInput = inputClass ||
         'w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 bg-white transition-all';
 
@@ -319,6 +451,7 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass, headerActio
                         onChange={handleCountryChange}
                         placeholder="Select Country"
                         disabled={disabled}
+                        allowCustom={false}
                         className={baseInput}
                     />
                 </div>
@@ -333,20 +466,22 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass, headerActio
                         placeholder={loadingStates ? "Loading Provinces..." : "Select Province / State"}
                         disabled={disabled || !value.country}
                         loading={loadingStates}
+                        allowCustom={true}
                         className={baseInput}
                     />
                 </div>
 
-                {/* City */}
+                {/* City / District */}
                 <div className="space-y-1">
-                    <label className="block text-xs font-medium text-gray-500">City</label>
+                    <label className="block text-xs font-medium text-gray-500">City / District</label>
                     <ScrollDropdown
-                        options={cities.map(c => c.name)}
+                        options={cityOptions}
                         value={value.city}
                         onChange={(val) => onChange('city', val)}
-                        placeholder={loadingCities ? "Loading Cities..." : "Select City"}
+                        placeholder={loadingCities ? "Loading Cities..." : "Select or type City / District"}
                         disabled={disabled || !value.state}
                         loading={loadingCities}
+                        allowCustom={true}
                         className={baseInput}
                     />
                 </div>
