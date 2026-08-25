@@ -306,7 +306,7 @@ const CreateRunModal = ({
 // ─────────────────────────────────────────────────────────────────────────────
 const PayrollDashboard = () => {
     const navigate = useNavigate();
-    const { role, hasSubAccess } = usePermissions();
+    const { hasSubAccess } = usePermissions();
     const canSeePayrollRuns = hasSubAccess('payroll', 'payroll-runs');
     const isAdmin = canSeePayrollRuns;
 
