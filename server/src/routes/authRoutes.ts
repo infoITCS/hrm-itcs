@@ -11,6 +11,7 @@ import RolePermission from "../models/RolePermission";
 import MasterSecurityPin from "../models/MasterSecurityPin";
 import rateLimit from "express-rate-limit";
 import logger from '../utils/logger';
+import { computeEffectivePermissionsAndScopes } from '../utils/permissionUtils';
 
 
 const router = Router();
@@ -90,6 +91,7 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
     }
 
     const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+    const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
 
     res.json({
       token,
@@ -102,7 +104,12 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
         lastName: user.lastName || employee?.lastName,
         avatar: avatarUrl,
         hasProfile: !!employee,
-        permissions: rolePerm?.permissions || {},
+        permissions: computed.permissions,
+        scopes: computed.scopes,
+        subPermissions: computed.subPermissions,
+        customPermissions: computed.customPermissions,
+        customScopes: computed.customScopes,
+        customSubPermissions: computed.customSubPermissions,
       },
     });
   } catch (error) {
@@ -445,12 +452,18 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
     }
 
     const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+    const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
     const userObj = user.toObject();
     res.json({
       ...userObj,
       id: userObj._id,
       hasProfile: !!employee,
-      permissions: rolePerm?.permissions || {}
+      permissions: computed.permissions,
+      scopes: computed.scopes,
+      subPermissions: computed.subPermissions,
+      customPermissions: computed.customPermissions,
+      customScopes: computed.customScopes,
+      customSubPermissions: computed.customSubPermissions,
     });
   } catch (error: any) {
     logger.error("🔥 Error in /auth/me:", error.message);

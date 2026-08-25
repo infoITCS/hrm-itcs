@@ -306,8 +306,9 @@ const CreateRunModal = ({
 // ─────────────────────────────────────────────────────────────────────────────
 const PayrollDashboard = () => {
     const navigate = useNavigate();
-    const { role } = usePermissions();
-    const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(role);
+    const { role, hasSubAccess } = usePermissions();
+    const canSeePayrollRuns = hasSubAccess('payroll', 'payroll-runs');
+    const isAdmin = canSeePayrollRuns;
 
     if (!isAdmin) {
         return <Navigate to="/my-payslips" replace />;

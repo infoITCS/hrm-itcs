@@ -45,7 +45,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         hasProfile: userData.hasProfile,
                         needsPasswordSetup: userData.needsPasswordSetup,
                         microsoftId: userData.microsoftId,
-                        permissions: userData.permissions || {}
+                        permissions: userData.permissions || {},
+                        scopes: userData.scopes || {},
+                        customPermissions: userData.customPermissions || {},
+                        customScopes: userData.customScopes || {}
                     };
                     setUser(user);
                     setIsImpersonated(!!localStorage.getItem('original_token'));

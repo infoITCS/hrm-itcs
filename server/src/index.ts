@@ -143,8 +143,8 @@ app.use(helmet({
 app.use(cors(corsOptions));
 // NoSQL Injection Defense: Strip MongoDB operators ($, .) from all user input globally
 app.use(mongoSanitize({ replaceWith: '_', allowDots: false }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Required for ZKTeco ADMS: machine POSTs attendance logs as text/plain
 app.use(express.text({ type: 'text/plain', limit: '2mb' }));
 

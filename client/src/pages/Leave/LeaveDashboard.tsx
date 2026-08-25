@@ -84,9 +84,13 @@ const LeaveDashboard = () => {
     });
     const [statusFilter, setStatusFilter] = useState('All');
     const [refreshCounter, setRefreshCounter] = useState(0);
-    const { role } = usePermissions();
-    const isManagement = ['super-admin', 'admin', 'manager', 'hr'].includes(role);
-    const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
+    const { role, hasSubAccess } = usePermissions();
+    const canMyLeaves = hasSubAccess('leave', 'my-leaves');
+    const canTeamRequests = ['super-admin', 'admin', 'manager', 'hr'].includes(role) && hasSubAccess('leave', 'team-requests');
+    const canSettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'all-leaves');
+    const canHolidaySettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'holidays');
+    const isManagement = canTeamRequests;
+    const isAdmin = canSettings || canHolidaySettings;
     const isAdminLike = ['super-admin', 'admin', 'hr'].includes(role);
 
     const filteredHistory = history.filter(item => 
@@ -289,15 +293,17 @@ const STATUS_COLORS: any = {
                 <div className="border-b border-slate-50 p-4 sm:p-6 flex flex-col gap-4">
                     {/* Scrollable Tab Bar */}
                     <div className="flex overflow-x-auto scrollbar-none gap-2 sm:gap-6 pb-1">
-                        <button 
-                            onClick={() => setActiveTab('my-leaves')}
-                            className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                        >
-                            My Leave Request
-                            {activeTab === 'my-leaves' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
-                        </button>
+                        {canMyLeaves && (
+                            <button 
+                                onClick={() => setActiveTab('my-leaves')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                My Leave Request
+                                {activeTab === 'my-leaves' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
                         
-                        {isAdmin && (
+                        {canSettings && (
                             <button 
                                 onClick={() => setActiveTab('settings')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -307,7 +313,7 @@ const STATUS_COLORS: any = {
                             </button>
                         )}
 
-                        {isAdmin && (
+                        {canHolidaySettings && (
                             <button 
                                 onClick={() => setActiveTab('holiday-settings')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'holiday-settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
@@ -317,7 +323,7 @@ const STATUS_COLORS: any = {
                             </button>
                         )}
 
-                        {isManagement && (
+                        {canTeamRequests && (
                             <button 
                                 onClick={() => setActiveTab('team-requests')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'team-requests' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}

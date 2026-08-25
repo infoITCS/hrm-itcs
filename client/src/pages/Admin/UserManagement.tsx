@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck, Sliders } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
 import { useAuth } from '../../contexts/AuthContext';
 import RoleManagement from './RoleManagement';
+import UserPermissionsModal from '../../components/Admin/UserPermissionsModal';
 
 interface UserData {
     _id: string;
@@ -52,6 +53,10 @@ const UserManagement = () => {
     const [resettingUser, setResettingUser] = useState<UserData | null>(null);
     const [newPassword, setNewPassword] = useState('');
     const [isResetting, setIsResetting] = useState(false);
+
+    // User Permissions Modal state
+    const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+    const [permissionsUser, setPermissionsUser] = useState<UserData | null>(null);
 
 
     const [alertConfig, setAlertConfig] = useState<{
@@ -528,13 +533,25 @@ const UserManagement = () => {
                                                         </button>
                                                     </div>
                                                     {currentUserRole === 'super-admin' && (
-                                                        <button
-                                                            onClick={() => handleImpersonate(user._id)}
-                                                            className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
-                                                            title="Impersonate User"
-                                                        >
-                                                            <Eye size={10} /> Impersonate
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setPermissionsUser(user);
+                                                                    setShowPermissionsModal(true);
+                                                                }}
+                                                                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors w-fit shadow-sm"
+                                                                title="Configure Granular Permissions & Scopes"
+                                                            >
+                                                                <Sliders size={10} /> Permissions
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleImpersonate(user._id)}
+                                                                className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors w-fit shadow-sm"
+                                                                title="Impersonate User"
+                                                            >
+                                                                <Eye size={10} /> Impersonate
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </td>
@@ -817,6 +834,21 @@ const UserManagement = () => {
                 onConfirm={alertConfig.onConfirm}
                 showCancel={alertConfig.type === 'confirm'}
             />
+            {/* Granular User Permissions Modal */}
+            {permissionsUser && (
+                <UserPermissionsModal
+                    isOpen={showPermissionsModal}
+                    userId={permissionsUser._id}
+                    userEmail={permissionsUser.email}
+                    userName={[permissionsUser.firstName, permissionsUser.lastName].filter(Boolean).join(' ') || permissionsUser.email}
+                    userRole={permissionsUser.role}
+                    onClose={() => {
+                        setShowPermissionsModal(false);
+                        setPermissionsUser(null);
+                    }}
+                    onSaved={() => fetchUsers()}
+                />
+            )}
         </div>
     );
 };

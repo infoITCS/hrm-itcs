@@ -67,19 +67,67 @@ function formatMoney(amount?: number, currency = 'PKR') {
     return `${currency} ${amount.toLocaleString('en-PK')}`;
 }
 
-function readFileAsBase64(file: File) {
-    return new Promise<{ fileName: string; contentType: string; base64: string }>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ fileName: file.name, contentType: file.type, base64: String(reader.result || '') });
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(file);
+function readFileAsBase64(file: File): Promise<{ fileName: string; contentType: string; base64: string }> {
+    return new Promise((resolve, reject) => {
+        // If it's a PDF or small file (< 500KB), read directly as Base64
+        if (file.type === 'application/pdf' || file.size < 500 * 1024 || !file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ fileName: file.name, contentType: file.type, base64: String(reader.result || '') });
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+            return;
+        }
+
+        // For large images, resize and compress using Canvas
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            const maxDim = 1920;
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                const reader = new FileReader();
+                reader.onload = () => resolve({ fileName: file.name, contentType: file.type, base64: String(reader.result || '') });
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsDataURL(file);
+                return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            resolve({
+                fileName: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+                contentType: 'image/jpeg',
+                base64: compressedBase64
+            });
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            const reader = new FileReader();
+            reader.onload = () => resolve({ fileName: file.name, contentType: file.type, base64: String(reader.result || '') });
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        };
+        img.src = url;
     });
 }
 
 const ExpenseClaimDashboard = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
-    const { role } = usePermissions();
+    const { role, hasSubAccess } = usePermissions();
     const [searchParams] = useSearchParams();
 
     const token = localStorage.getItem('token');
@@ -513,7 +561,7 @@ const ExpenseClaimDashboard = () => {
                     receipts,
                 };
                 const r = await fetch(api.claimPreviewReceipts, { method: 'POST', headers, body: JSON.stringify(payload) });
-                const d = await r.json();
+                const d = await r.json().catch(() => null);
                 if (r.ok && d?.success) {
                     setReceiptPreview(d.data);
                 } else {
@@ -580,8 +628,8 @@ const ExpenseClaimDashboard = () => {
             };
 
             const r = await fetch(api.claims, { method: 'POST', headers, body: JSON.stringify(payload) });
-            const d = await r.json();
-            if (!r.ok) throw new Error(d?.message || 'Failed to submit claim');
+            const d = await r.json().catch(() => null);
+            if (!r.ok) throw new Error(d?.message || `Server error (${r.status}): Failed to submit claim`);
 
             // Reset form
             setSelectedEmployeeId('');
@@ -957,13 +1005,25 @@ const ExpenseClaimDashboard = () => {
         }
     };
 
+    const canSubmitTab = hasSubAccess('claim', 'submit');
+    const canMineTab = hasSubAccess('claim', 'mine');
+    const canApprovalsTab = isApprover && hasSubAccess('claim', 'approvals');
+    const canHistoryTab = canSeeAllClaims && hasSubAccess('claim', 'history');
+    const canSettingsTab = isAdminLike && hasSubAccess('claim', 'settings');
+
     const tabs = [
-        { id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle },
-        { id: 'mine' as const, label: 'My Claims', icon: FileText },
-        ...(isApprover ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
-        ...(canSeeAllClaims ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
-        ...(isAdminLike ? [{ id: 'settings' as const, label: 'Category Settings', icon: Tag }] : []),
+        ...(canSubmitTab ? [{ id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle }] : []),
+        ...(canMineTab ? [{ id: 'mine' as const, label: 'My Claims', icon: FileText }] : []),
+        ...(canApprovalsTab ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
+        ...(canHistoryTab ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
+        ...(canSettingsTab ? [{ id: 'settings' as const, label: 'Category Settings', icon: Tag }] : []),
     ];
+
+    useEffect(() => {
+        if (tabs.length > 0 && !tabs.some(t => t.id === tab)) {
+            setTab(tabs[0].id);
+        }
+    }, [tabs, tab]);
 
     return (
         <div className="space-y-6 animate-fadeIn">

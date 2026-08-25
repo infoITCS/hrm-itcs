@@ -18,7 +18,8 @@ import {
     Rocket,
     Check,
     AlertCircle,
-    X
+    X,
+    Banknote
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -61,7 +62,7 @@ const Dashboard = () => {
     }, [user?.needsPasswordSetup]);
 
     const role: RoleType =
-        ['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')
+        ['super-admin', 'admin', 'hr'].includes(user?.role || '')
             ? 'admin'
             : user?.role === 'manager'
                 ? 'manager'
@@ -96,8 +97,8 @@ const Dashboard = () => {
         return { percent, steps };
     };
 
-    // Show onboarding for employees even if they don't have an employee record yet
-    const onboarding = user?.role === 'employee' ? calculateOnboardingProgress(onboardingData) : null;
+    // Show onboarding for employees & finance staff even if they don't have an employee record yet
+    const onboarding = ['employee', 'finance'].includes(user?.role || '') ? calculateOnboardingProgress(onboardingData) : null;
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -141,7 +142,37 @@ const Dashboard = () => {
                     if (empData) {
                         const empList = Array.isArray(empData) ? empData : (empData.employees || []);
                         const emp = empList[0] || null;
-                        if (emp) setOnboardingData(emp);
+                        if (emp) {
+                            setOnboardingData(emp);
+
+                            // Check for personal pending items (e.g. missing mandatory profile documents)
+                            const pendingSelfTasks: any[] = [];
+                            const hasCnicFront = emp.attachments?.some((a: any) => a.fileType === 'CNIC Front');
+                            const hasCnicBack = emp.attachments?.some((a: any) => a.fileType === 'CNIC Back');
+                            const hasDegree = emp.attachments?.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - '));
+                            const hasPhoto = emp.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture');
+                            
+                            if (!hasCnicFront || !hasCnicBack || !hasDegree || !hasPhoto) {
+                                pendingSelfTasks.push({
+                                    id: 'profile-docs-pending',
+                                    type: 'task',
+                                    title: 'Upload Profile Documents (CNIC / Degree / Photo)',
+                                    employeeName: 'Mandatory profile verification required',
+                                    date: 'Action Required',
+                                    path: '/my-info?step=8'
+                                });
+                            }
+
+                            if (pendingSelfTasks.length > 0) {
+                                setPendingTasks(prev => {
+                                    const combined = [...prev];
+                                    pendingSelfTasks.forEach(t => {
+                                        if (!combined.some(e => e.id === t.id)) combined.push(t);
+                                    });
+                                    return combined;
+                                });
+                            }
+                        }
                     }
                 }
 
@@ -411,31 +442,60 @@ const Dashboard = () => {
     const statsByRole: Record<string, any[]> = { admin: adminStats, manager: managerStats, employee: employeeStats };
     const statsToDisplay = statsByRole[role] || employeeStats;
 
-    const welcomeByRole: Record<string, any> = {
-        admin: {
-            title: `Welcome back, ${fullName}! 👋`,
-            subtitle: "Here's the current overview of your organization. Review pending requests and key metrics.",
-            gradient: 'from-violet-600 via-purple-600 to-indigo-700',
-            badge: 'Admin',
-            badgeIcon: Shield,
+    const rawRole = (user?.role || 'employee').toLowerCase().trim();
+
+    const roleBadgeConfig: Record<string, { badge: string; icon: any; subtitle: string }> = {
+        'super-admin': {
+            badge: 'Super Admin',
+            icon: Shield,
+            subtitle: "Here's the complete master overview of your organization. Full system control active.",
         },
-        manager: {
-            title: `Welcome back, ${fullName}! 👋`,
-            subtitle: "Here's your team overview. Approve leave requests and track your direct reports.",
-            gradient: 'from-indigo-600 via-purple-600 to-violet-600',
-            badge: 'Manager',
-            badgeIcon: Users,
-        },
-        employee: {
-            title: `Welcome back, ${fullName}! 👋`,
+        'finance': {
+            badge: 'Finance',
+            icon: Banknote,
             subtitle: "Here is your personal overview. Check your schedule, leaves, and requests.",
-            gradient: 'from-indigo-600 to-purple-600',
+        },
+        'hr': {
+            badge: 'HR',
+            icon: Users,
+            subtitle: "Here's the HR overview of your organization. Review personnel, leaves, and requests.",
+        },
+        'admin': {
+            badge: 'Admin',
+            icon: Shield,
+            subtitle: "Here's the current overview of your organization. Review pending requests and key metrics.",
+        },
+        'manager': {
+            badge: 'Manager',
+            icon: Users,
+            subtitle: "Here's your team overview. Approve leave requests and track your direct reports.",
+        },
+        'employee': {
             badge: 'Employee',
-            badgeIcon: User,
+            icon: User,
+            subtitle: "Here is your personal overview. Check your schedule, leaves, and requests.",
         },
     };
 
-    const welcome = welcomeByRole[role] || welcomeByRole.employee;
+    const currentRoleMeta = roleBadgeConfig[rawRole] || {
+        badge: rawRole.toUpperCase(),
+        icon: Shield,
+        subtitle: "Here's the current overview of your organization.",
+    };
+
+    const welcomeGradients: Record<RoleType, string> = {
+        admin: 'from-violet-600 via-purple-600 to-indigo-700',
+        manager: 'from-indigo-600 via-purple-600 to-violet-600',
+        employee: 'from-indigo-600 to-purple-600',
+    };
+
+    const welcome = {
+        title: `Welcome back, ${fullName}! 👋`,
+        subtitle: currentRoleMeta.subtitle,
+        gradient: welcomeGradients[role] || welcomeGradients.employee,
+        badge: currentRoleMeta.badge,
+        badgeIcon: currentRoleMeta.icon,
+    };
 
     const BadgeIcon = welcome.badgeIcon;
 
@@ -651,13 +711,11 @@ const Dashboard = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Main Content Area (Left/Center) */}
-                {(role === 'manager' || role === 'admin' || pendingTasks.length > 0) && (
-                    <div className="lg:col-span-2 flex flex-col gap-6">
-                    {(role === 'manager' || role === 'admin' || pendingTasks.length > 0) && (
-                        <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
-                                <FileCheck size={100} className="text-rose-500 -rotate-12" />
-                            </div>
+                <div className="lg:col-span-2 flex flex-col gap-6">
+                    <div className="bg-white rounded-2xl border border-rose-100 shadow-sm shadow-rose-100/50 p-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+                            <FileCheck size={100} className="text-rose-500 -rotate-12" />
+                        </div>
                             <div className="flex items-center justify-between mb-5 relative z-10">
                                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                     <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
@@ -699,7 +757,6 @@ const Dashboard = () => {
                                     </div>
                                 )}
                         </div>
-                    )}
 
                     {role === 'manager' && (
                         <>
@@ -811,12 +868,11 @@ const Dashboard = () => {
                         </>
                     )}
                 </div>
-                )}
 
                 {/* Sidebar Area (Right) */}
-                <div className={`flex flex-col gap-6 ${(role === 'manager' || role === 'admin' || pendingTasks.length > 0) ? 'lg:col-span-1' : 'lg:col-span-3 lg:flex-row'}`}>
+                <div className="flex flex-col gap-6 lg:col-span-1">
                     {/* Today's Leaves Widget */}
-                    <div className={`bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6 ${(role === 'manager' || role === 'admin' || pendingTasks.length > 0) ? '' : 'flex-1'}`}>
+                    <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
                                 <Calendar size={20} />

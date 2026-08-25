@@ -13,7 +13,8 @@ const ITEMS_PER_PAGE = 12;
 
 const EmployeeList = () => {
     const navigate = useNavigate();
-    const { canCreateUser, canEditSensitiveData } = usePermissions();
+    const { canCreateUser, canEditSensitiveData, hasSubAccess } = usePermissions();
+    const canAddEmployee = canCreateUser() && hasSubAccess('pim', 'add-employee');
     const [employees, setEmployees] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false);
@@ -357,7 +358,7 @@ const EmployeeList = () => {
 
                         <div className="h-8 w-[1px] bg-slate-200 hidden xl:block" />
 
-                        {canCreateUser() && (
+                        {canAddEmployee && (
                             <div className="flex items-center gap-2.5 w-full xl:w-auto">
                                 <button
                                     onClick={() => setShowQuickInviteModal(true)}

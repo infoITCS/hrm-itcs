@@ -7,6 +7,8 @@ import { AuthRequest } from '../middleware/auth';
 import { AuthUtils } from '../middleware/auth.utils';
 import crypto from 'crypto';
 import { sendWelcomeEmail, sendTestEmail } from '../utils/email';
+import RolePermission from '../models/RolePermission';
+import { SYSTEM_MODULES, computeEffectivePermissionsAndScopes, getDefaultScopeForRole, getDefaultSubTabAccess } from '../utils/permissionUtils';
 
 const router = Router();
 
@@ -450,6 +452,176 @@ router.post('/test-email', authenticate, requireAdmin, async (req: Request, res:
         }
     } catch (err) {
         next(err);
+    }
+});
+
+/**
+ * @route   GET /api/admin/users/:id/permissions
+ * @desc    Get detailed permissions, scopes, role baseline, and custom overrides for a user
+ * @access  Private (Super-Admin only)
+ */
+router.get('/users/:id/permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const user = await User.findById(req.params.id).select('-password');
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+        const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
+
+        // Build module breakdown with baseline and override status
+        const moduleBreakdown = SYSTEM_MODULES.map(mod => {
+            const roleAllowed = !!rolePerm?.permissions?.[mod.key];
+            const defaultScope = getDefaultScopeForRole(user.role, mod.key);
+            const hasCustomPerm = typeof computed.customPermissions[mod.key] === 'boolean';
+            const hasCustomScope = !!computed.customScopes[mod.key];
+
+            const subTabsBreakdown = mod.subTabs.map(sub => {
+                const fullKey = `${mod.key}:${sub.key}`;
+                const defaultAllowed = getDefaultSubTabAccess(user.role, mod.key, sub.key);
+                const hasCustomSubPerm = typeof computed.customSubPermissions[fullKey] === 'boolean';
+                const effectiveAllowed = computed.subPermissions[fullKey] ?? defaultAllowed;
+
+                return {
+                    key: sub.key,
+                    fullKey,
+                    name: sub.name,
+                    description: sub.description,
+                    defaultAllowed,
+                    effectiveAllowed,
+                    isCustom: hasCustomSubPerm,
+                    customValue: hasCustomSubPerm ? computed.customSubPermissions[fullKey] : null,
+                };
+            });
+
+            return {
+                key: mod.key,
+                name: mod.name,
+                roleAllowed,
+                defaultScope,
+                effectiveAllowed: computed.permissions[mod.key] ?? roleAllowed,
+                effectiveScope: computed.scopes[mod.key] || defaultScope,
+                isCustomPerm: hasCustomPerm,
+                isCustomScope: hasCustomScope,
+                customPermValue: hasCustomPerm ? computed.customPermissions[mod.key] : null,
+                customScopeValue: hasCustomScope ? computed.customScopes[mod.key] : null,
+                subTabs: subTabsBreakdown,
+            };
+        });
+
+        res.json({
+            user: {
+                id: user._id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                role: user.role,
+            },
+            modules: moduleBreakdown,
+            effectivePermissions: computed.permissions,
+            effectiveScopes: computed.scopes,
+            effectiveSubPermissions: computed.subPermissions,
+            customPermissions: computed.customPermissions,
+            customScopes: computed.customScopes,
+            customSubPermissions: computed.customSubPermissions,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   PUT /api/admin/users/:id/permissions
+ * @desc    Update granular custom permissions, scopes, and sub-tabs for a specific user
+ * @access  Private (Super-Admin only)
+ */
+router.put('/users/:id/permissions', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const { customPermissions, customScopes, customSubPermissions } = req.body;
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        if (customPermissions && typeof customPermissions === 'object') {
+            user.customPermissions = customPermissions;
+        }
+        if (customScopes && typeof customScopes === 'object') {
+            user.customScopes = customScopes;
+        }
+        if (customSubPermissions && typeof customSubPermissions === 'object') {
+            user.customSubPermissions = customSubPermissions;
+        }
+
+        await user.save();
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'User',
+            targetId: String(user._id),
+            performedBy: authReq.user?.userId || 'System',
+            details: {
+                action: 'UPDATE_USER_PERMISSIONS',
+                targetEmail: user.email,
+                customPermissions,
+                customScopes,
+                customSubPermissions,
+            }
+        });
+
+        const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+        const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
+
+        res.json({
+            success: true,
+            message: 'User permissions and sub-tabs updated successfully',
+            effectivePermissions: computed.permissions,
+            effectiveScopes: computed.scopes,
+            effectiveSubPermissions: computed.subPermissions,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   POST /api/admin/users/:id/permissions/reset
+ * @desc    Reset a user's permissions, scopes, and sub-tabs back to their base role defaults
+ * @access  Private (Super-Admin only)
+ */
+router.post('/users/:id/permissions/reset', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user.customPermissions = {} as any;
+        user.customScopes = {} as any;
+        user.customSubPermissions = {} as any;
+        await user.save();
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'User',
+            targetId: String(user._id),
+            performedBy: authReq.user?.userId || 'System',
+            details: {
+                action: 'RESET_USER_PERMISSIONS_TO_ROLE',
+                targetEmail: user.email,
+                role: user.role,
+            }
+        });
+
+        const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
+        const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
+
+        res.json({
+            success: true,
+            message: `User permissions reset to ${user.role} defaults`,
+            effectivePermissions: computed.permissions,
+            effectiveScopes: computed.scopes,
+            effectiveSubPermissions: computed.subPermissions,
+        });
+    } catch (error) {
+        next(error);
     }
 });
 

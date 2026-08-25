@@ -14,7 +14,6 @@ import {
     Receipt,
     FileText,
     PiggyBank,
-    Shield,
     X,
     ScanFace,
     Inbox,
@@ -31,7 +30,7 @@ interface SidebarProps {
 
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const location = useLocation();
-    const { role, hasAccess } = usePermissions();
+    const { role, hasAccess, hasSubAccess } = usePermissions();
     const { isImpersonated } = useAuth();
 
     const allMenuItems = [
@@ -39,7 +38,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin'], end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
-        { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim' },
+        { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim', subTab: 'employee-list' },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: null, module: 'leave' },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: null, module: 'attendance' },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'] },
@@ -47,12 +46,11 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'] },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },
-        { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
-        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'finance'], module: 'payroll' },
-        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', end: true },
-        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests' },
-        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
-        { name: 'Company Policy', icon: Shield, path: '/company-policy', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
+        { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'payroll', subTab: 'my-payslips', end: true },
+        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'finance'], module: 'payroll', subTab: 'payroll-runs' },
+        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', subTab: 'my-requests', end: true },
+        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests', subTab: 'manage-requests' },
+        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'provident-fund' },
     ];
 
     const menuItems = allMenuItems.filter(item => {
@@ -60,6 +58,8 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         if (item.roles && !item.roles.includes(role)) return false;
         // If module key is defined, user MUST have DB access to that module
         if (item.module && !hasAccess(item.module)) return false;
+        // If subTab key is defined, user MUST have permission to that subTab
+        if (item.module && (item as any).subTab && !hasSubAccess(item.module, (item as any).subTab)) return false;
         return true;
     });
 

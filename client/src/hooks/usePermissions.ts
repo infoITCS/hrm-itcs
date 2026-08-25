@@ -51,6 +51,44 @@ export const usePermissions = () => {
         return !!user.permissions?.[moduleName];
     }, [user, normalizedRole]);
 
+    const getModuleScope = useCallback((moduleName: string): 'none' | 'employee' | 'manager' | 'admin' => {
+        if (!user) return 'none';
+        if (normalizedRole === 'super-admin') return 'admin';
+        if (user.permissions && user.permissions[moduleName] === false) return 'none';
+        if (user.scopes && user.scopes[moduleName]) {
+            return user.scopes[moduleName] as any;
+        }
+        if (normalizedRole === 'admin') return 'admin';
+        if (normalizedRole === 'hr' && ['pim', 'leave', 'attendance', 'requests'].includes(moduleName)) return 'admin';
+        if (normalizedRole === 'finance' && ['payroll', 'claim', 'provident-fund'].includes(moduleName)) return 'admin';
+        if (normalizedRole === 'manager') return 'manager';
+        return 'employee';
+    }, [user, normalizedRole]);
+
+    const isModuleAdmin = useCallback((moduleName: string): boolean => {
+        return getModuleScope(moduleName) === 'admin';
+    }, [getModuleScope]);
+
+    const isModuleManagerOrAbove = useCallback((moduleName: string): boolean => {
+        const scope = getModuleScope(moduleName);
+        return scope === 'manager' || scope === 'admin';
+    }, [getModuleScope]);
+
+    const hasSubAccess = useCallback((moduleName: string, subTabKey: string): boolean => {
+        if (!user) return false;
+        if (normalizedRole === 'super-admin') return true;
+
+        // If whole module is disabled, no sub-tab is accessible
+        if (user.permissions && user.permissions[moduleName] === false) return false;
+
+        const fullKey = `${moduleName}:${subTabKey}`;
+        if (user.subPermissions && typeof user.subPermissions[fullKey] === 'boolean') {
+            return user.subPermissions[fullKey];
+        }
+
+        return true;
+    }, [user, normalizedRole]);
+
     return useMemo(() => ({
         canCreateUser,
         canEditSensitiveData,
@@ -61,7 +99,12 @@ export const usePermissions = () => {
         canViewDirectReports,
         canViewOwnProfile,
         hasAccess,
-        role: normalizedRole
+        hasSubAccess,
+        getModuleScope,
+        isModuleAdmin,
+        isModuleManagerOrAbove,
+        role: normalizedRole,
+        subPermissions: user?.subPermissions || {}
     }), [
         canCreateUser,
         canEditSensitiveData,
@@ -72,7 +115,12 @@ export const usePermissions = () => {
         canViewDirectReports,
         canViewOwnProfile,
         hasAccess,
-        normalizedRole
+        hasSubAccess,
+        getModuleScope,
+        isModuleAdmin,
+        isModuleManagerOrAbove,
+        normalizedRole,
+        user?.subPermissions
     ]);
 };
 

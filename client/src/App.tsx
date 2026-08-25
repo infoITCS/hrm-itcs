@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import MainLayout from './components/Layout/MainLayout';
@@ -29,6 +30,7 @@ import LeaveDashboard from './pages/Leave/LeaveDashboard';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import Terms from './pages/Terms';
 import CompanyPolicy from './pages/CompanyPolicy/CompanyPolicy';
+import NotFound from './pages/NotFound';
 //testing stash
 // NEW V2 Attendance Pages
 import AttendanceRouter from './modules/attendance/AttendanceRouter';
@@ -40,6 +42,53 @@ import PayrollDashboard from './pages/Payroll/PayrollDashboard';
 import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
 import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
 import MyPayslips from './pages/Payroll/MyPayslips';
+
+// Dynamic Page Titles Mapping
+const ROUTE_TITLES: Record<string, string> = {
+  '/dashboard': 'Dashboard',
+  '/my-info': 'My Profile',
+  '/pim': 'Personnel Information (PIM)',
+  '/pim/add': 'Add Employee',
+  '/directory': 'Employee Directory',
+  '/claim': 'Expense Claims',
+  '/attendance': 'Attendance',
+  '/leave': 'Leave Management',
+  '/my-payslips': 'My Payslips',
+  '/payroll': 'Payroll Management',
+  '/provident-fund': 'Provident Fund Report',
+  '/my-requests': 'My Requests',
+  '/my-requests/manage': 'Manage Requests',
+  '/company-policy': 'Company Policy Manual',
+  '/privacy-policy': 'Privacy Policy',
+  '/terms': 'Terms of Service',
+  '/admin': 'User Management',
+  '/admin/settings': 'System Settings',
+  '/login': 'Sign In',
+  '/reset-password': 'Reset Password',
+  '/onboarding': 'Welcome Onboarding',
+  '/zkt-monitor': 'Biometric Device Monitor',
+};
+
+const PageTitleHandler = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    const pathname = location.pathname;
+    let title = 'ITCS HRM';
+    
+    if (ROUTE_TITLES[pathname]) {
+      title = `${ROUTE_TITLES[pathname]} | ITCS HRM`;
+    } else {
+      const matched = Object.keys(ROUTE_TITLES).find(key => key !== '/' && pathname.startsWith(key));
+      if (matched) {
+        title = `${ROUTE_TITLES[matched]} | ITCS HRM`;
+      }
+    }
+    document.title = title;
+  }, [location.pathname]);
+
+  return null;
+};
 
 // Component to redirect if already logged in
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
@@ -66,6 +115,14 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 const ModuleProtectedRoute = ({ moduleName, children }: { moduleName: string; children: React.ReactNode }) => {
   const { hasAccess } = usePermissions();
   if (!hasAccess(moduleName)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
+const SubModuleProtectedRoute = ({ moduleName, subTabKey, children }: { moduleName: string; subTabKey: string; children: React.ReactNode }) => {
+  const { hasAccess, hasSubAccess } = usePermissions();
+  if (!hasAccess(moduleName) || !hasSubAccess(moduleName, subTabKey)) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -167,17 +224,18 @@ function AppRoutes() {
         <Route path="my-requests" element={<MyRequests />} />
         
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
-          <Route path="my-requests/manage" element={<ModuleProtectedRoute moduleName="requests"><AdminRequests /></ModuleProtectedRoute>} />
+          <Route path="my-requests/manage" element={<SubModuleProtectedRoute moduleName="requests" subTabKey="manage-requests"><AdminRequests /></SubModuleProtectedRoute>} />
         </Route>
         
         {/* Restricted to Admins only */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr', 'finance']} />}>
           <Route path="admin/settings" element={<ModuleProtectedRoute moduleName="settings"><AdminSettings /></ModuleProtectedRoute>} />
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
-          {/* <Route path="maintenance" element={<div className="p-4">Maintenance Module Placeholder</div>} /> */}
         </Route>
-        <Route path="*" element={<div className="p-4">Page Not Found</div>} />
+        <Route path="*" element={<NotFound />} />
       </Route>
+      {/* Catch-all for any other unmatched routes */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
@@ -186,6 +244,7 @@ function App() {
     <ErrorBoundary>
       <ToastProvider>
         <BrowserRouter>
+          <PageTitleHandler />
           <AuthProvider>
             <AppRoutes />
           </AuthProvider>

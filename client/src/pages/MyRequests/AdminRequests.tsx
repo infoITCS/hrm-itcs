@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { useToast } from '../../contexts/ToastContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
@@ -11,9 +12,12 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 
 const AdminRequests = () => {
     const { user } = useAuth();
+    const { role, hasSubAccess } = usePermissions();
     const { showToast } = useToast();
-    const canManageCategoriesAndDocs = ['admin', 'super-admin', 'hr'].includes(user?.role || '');
-    const isAdminOrSuper = ['admin', 'super-admin', 'hr', 'finance'].includes(user?.role || '');
+    const canManageRequests = hasSubAccess('requests', 'manage-requests');
+    const canRequestCategories = hasSubAccess('requests', 'request-categories');
+    const canManageCategoriesAndDocs = ['admin', 'super-admin', 'hr'].includes(role) && canRequestCategories;
+    const isAdminOrSuper = ['admin', 'super-admin', 'hr', 'finance'].includes(role) && canManageRequests;
 
     const [activeTab, setActiveTab] = useState<'Requests' | 'Categories' | 'Documents'>('Requests');
     const [requests, setRequests] = useState<any[]>([]);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { api } from '../../utils/api';
 import MyProvidentFund from './MyProvidentFund';
 import SalaryPinModal from '../../components/UI/SalaryPinModal';
@@ -396,9 +397,15 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
 
 export default function ProvidentFundReport() {
     const { user } = useAuth();
-    const isAdmin = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
+    const { hasSubAccess } = usePermissions();
+    const canSeeCompanyPF = hasSubAccess('provident-fund', 'company-pf');
+    const canSeeMyPF = hasSubAccess('provident-fund', 'my-pf');
+    const isAdmin = canSeeCompanyPF;
 
-    const [activeTab, setActiveTab] = useState<'my-pf' | 'company-pf'>('my-pf');
+    const [activeTab, setActiveTab] = useState<'my-pf' | 'company-pf'>(() => {
+        if (!canSeeMyPF && canSeeCompanyPF) return 'company-pf';
+        return 'my-pf';
+    });
     const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
     const [showMasterPinModal, setShowMasterPinModal] = useState(false);
     const [data, setData] = useState<EmpPFData[]>([]);
@@ -534,30 +541,32 @@ export default function ProvidentFundReport() {
         <div className="space-y-6 animate-fadeIn pb-20">
 
             {/* Role Tab Switcher for Admin/HR/Finance */}
-            <div className="flex items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl w-fit border border-slate-200 shadow-inner mb-2">
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('my-pf')}
-                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                        activeTab === 'my-pf'
-                            ? 'bg-white text-indigo-700 shadow-md'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
-                    }`}
-                >
-                    <User size={16} /> My PF Statement
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('company-pf')}
-                    className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                        activeTab === 'company-pf'
-                            ? 'bg-white text-indigo-700 shadow-md'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
-                    }`}
-                >
-                    <Building2 size={16} /> Company PF Management
-                </button>
-            </div>
+            {(canSeeCompanyPF && canSeeMyPF) && (
+                <div className="flex items-center gap-2 p-1.5 bg-slate-200/60 rounded-2xl w-fit border border-slate-200 shadow-inner mb-2">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('my-pf')}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                            activeTab === 'my-pf'
+                                ? 'bg-white text-indigo-700 shadow-md'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                        }`}
+                    >
+                        <User size={16} /> My PF Statement
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('company-pf')}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                            activeTab === 'company-pf'
+                                ? 'bg-white text-indigo-700 shadow-md'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                        }`}
+                    >
+                        <Building2 size={16} /> Company PF Management
+                    </button>
+                </div>
+            )}
 
             {activeTab === 'my-pf' ? (
                 <MyProvidentFund />

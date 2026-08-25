@@ -24,6 +24,9 @@ export interface IUser extends Document {
     needsPasswordSetup?: boolean;
     resetPasswordToken?: string;
     resetPasswordExpires?: Date;
+    customPermissions?: Record<string, boolean>;
+    customScopes?: Record<string, 'none' | 'employee' | 'manager' | 'admin'>;
+    customSubPermissions?: Record<string, boolean>;
     comparePassword(candidatePassword: string): Promise<boolean>;
     compareSalaryPin(candidatePin: string): Promise<boolean>;
 }
@@ -41,6 +44,9 @@ const UserSchema: Schema = new Schema({
     needsPasswordSetup: { type: Boolean, default: false },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
+    customPermissions: { type: Map, of: Boolean, default: {} },
+    customScopes: { type: Map, of: String, default: {} },
+    customSubPermissions: { type: Map, of: Boolean, default: {} },
 }, { timestamps: true });
 
 UserSchema.pre<IUser>('save', async function (next) {

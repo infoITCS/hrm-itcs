@@ -21,8 +21,11 @@ type ConfigItem = {
 };
 
 const AdminSettings = () => {
-    const { role } = usePermissions();
+    const { role, hasSubAccess } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
+    const canShifts = hasSubAccess('settings', 'work-shifts');
+    const canCompany = hasSubAccess('settings', 'organization');
+    const canTemplates = hasSubAccess('settings', 'holidays-config');
     
     const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts' | 'locations' | 'company' | 'templates'>('departments');
     const [items, setItems] = useState<ConfigItem[]>([]);
@@ -208,34 +211,42 @@ const AdminSettings = () => {
                         <Briefcase size={16} />
                         <span>Designations</span>
                     </button>
-                    <button 
-                        onClick={() => setActiveTab('shifts')}
-                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'shifts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Clock size={16} />
-                        <span>Work Shifts</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('locations')}
-                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'locations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <MapPin size={16} />
-                        <span>Locations</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('company')}
-                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'company' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <Building2 size={16} />
-                        <span>Company Branding</span>
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('templates')}
-                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'templates' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        <FileText size={16} />
-                        <span>Document Templates</span>
-                    </button>
+                    {canShifts && (
+                        <button 
+                            onClick={() => setActiveTab('shifts')}
+                            className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'shifts' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Clock size={16} />
+                            <span>Work Shifts</span>
+                        </button>
+                    )}
+                    {canCompany && (
+                        <button 
+                            onClick={() => setActiveTab('locations')}
+                            className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'locations' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <MapPin size={16} />
+                            <span>Locations</span>
+                        </button>
+                    )}
+                    {canCompany && (
+                        <button 
+                            onClick={() => setActiveTab('company')}
+                            className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'company' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Building2 size={16} />
+                            <span>Company Branding</span>
+                        </button>
+                    )}
+                    {canTemplates && (
+                        <button 
+                            onClick={() => setActiveTab('templates')}
+                            className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'templates' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <FileText size={16} />
+                            <span>Document Templates</span>
+                        </button>
+                    )}
                 </div>
 
                 {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && (

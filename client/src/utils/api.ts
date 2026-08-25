@@ -12,6 +12,8 @@ export const api = {
     audit: `${API_BASE_URL}/api/audit-logs`,
     auth: `${API_BASE_URL}/api/auth`,
     admin: `${API_BASE_URL}/api/admin`,
+    userPermissions: (id: string) => `${API_BASE_URL}/api/admin/users/${id}/permissions`,
+    userPermissionsReset: (id: string) => `${API_BASE_URL}/api/admin/users/${id}/permissions/reset`,
     config: `${API_BASE_URL}/api/config`,
     attendance: `${API_BASE_URL}/api/attendance`,
     attendanceToday: `${API_BASE_URL}/api/attendance/today`,
