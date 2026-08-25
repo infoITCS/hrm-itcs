@@ -15,6 +15,7 @@ import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
 import DeleteModal from '../../components/UI/DeleteModal';
 import SalaryPinModal from '../../components/UI/SalaryPinModal';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
@@ -118,9 +119,9 @@ const EmployeeProfile = () => {
         // Check if value looks like an employee ID (itcs-xxx format) or a name
         const found = allEmployees.find(
             e => e.employeeId === managerValue || 
-                 `${e.firstName} ${e.lastName}`.toLowerCase() === managerValue.toLowerCase()
+                 formatEmployeeFullName(e, '').toLowerCase() === managerValue.toLowerCase()
         );
-        if (found) return `${found.firstName} ${found.lastName} (${found.employeeId})`;
+        if (found) return `${formatEmployeeFullName(found, found.employeeId)} (${found.employeeId})`;
         return managerValue; // Return as-is if we can't resolve
     };
 
@@ -330,7 +331,7 @@ const EmployeeProfile = () => {
 
                 <div className="flex-1 min-w-0">
                     <h1 className="text-lg sm:text-2xl font-bold text-gray-800 truncate">
-                        {employee.firstName} {employee.middleName ? `${employee.middleName} ` : ''}{employee.lastName}
+                        {formatEmployeeFullName(employee, 'Employee')}
                     </h1>
                     <p className="text-gray-500 text-sm truncate">{employee.jobInfo?.designation} • {employee.jobInfo?.department}</p>
                     {/* Offboard status badge */}
@@ -391,7 +392,7 @@ const EmployeeProfile = () => {
                     <div className="space-y-8 animate-fadeIn">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
                             <Field label="Employee ID" value={employee.employeeId} />
-                            <Field label="Full Name" value={`${employee.firstName} ${employee.middleName || ''} ${employee.lastName}`} />
+                            <Field label="Full Name" value={formatEmployeeFullName(employee, '—')} />
                             <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />
                             <Field label="Gender" value={employee.gender} />
                             <Field label="Marital Status" value={employee.maritalStatus} />
@@ -1071,7 +1072,7 @@ const EmployeeProfile = () => {
                         <div className="my-6 p-4 bg-rose-50 rounded-xl border border-rose-100 flex items-center gap-3">
                             <AlertTriangle size={20} className="text-rose-500 flex-shrink-0" />
                             <p className="text-sm text-rose-700">
-                                You are about to offboard <strong>{employee.firstName} {employee.lastName}</strong>. This action is logged and reversible via the edit profile.
+                                You are about to offboard <strong>{formatEmployeeFullName(employee, 'Employee')}</strong>. This action is logged and reversible via the edit profile.
                             </p>
                         </div>
 
@@ -1208,7 +1209,7 @@ const EmployeeProfile = () => {
                         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800">
-                                    {employee.firstName} {employee.lastName || ''}
+                                    {formatEmployeeFullName(employee, 'Employee')}
                                 </h3>
                                 <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider mt-0.5">
                                     Profile Picture

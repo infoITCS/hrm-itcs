@@ -283,150 +283,152 @@ function isDateOrTimeLine(line: string): boolean {
     return /^\s*Date\s*:?/i.test(line) || /\d{1,2}-[A-Za-z]{3,9}-\d{4}/i.test(line) || /\d{1,2}:\d{2}/.test(line);
 }
 
-function extractAmountFromLine(line: string, requireDecimal = false): number | null {
-    if (isDateOrTimeLine(line)) return null;
+function isNoiseOrMetadataLine(line: string): boolean {
+    if (isDateOrTimeLine(line)) return true;
+
+    // Phone / Mobile / Fax / WhatsApp / Helpline numbers
+    if (/(?:ph(?:one)?|tel|mobile|cell|fax|whatsapp|contact|helpline)[:\s#-]*[\d\- ]+/i.test(line)) return true;
+    if (/\b0\d{2,4}[- ]?\d{6,8}\b/.test(line)) return true; // e.g. 051-2315147, 042-37426911, 0330-8553433
+
+    // Tax / Regulatory / License / NTN / CNIC lines
+    if (/(?:ntn|strn|tin|tax\s*id|reg(?:istration)?\s*no|cnic|nic|license|lic|dsl)[:\s#\-\/]*[\w\d\-\/]+/i.test(line)) return true;
+
+    // Software vendor / footer notices
+    if (/(?:software\s*developed|developed\s*by|powered\s*by|abuzar|consultancy|pos\s*solution|thank\s*you|visiting\s*us|cannot\s*be\s*refunded|fridge\s*item|strip\s*cannot)/i.test(line)) return true;
+
+    // Invoice / Bill / Order / Serial numbers
+    if (/^\s*(?:inv(?:oice)?|bill|receipt|token|slip|order|trans(?:action)?|sr|no)[\s.#:]*\d+/i.test(line)) return true;
+
+    // Address lines (without financial totals)
+    if (/(?:street|shop|road|avenue|floor|block|market|chistiaabad|hajj\s*camp|islamabad|karachi|lahore|rawalpindi|plaza|sector)/i.test(line) && !/(?:total|amount|net|gross|rs|pkr)/i.test(line)) return true;
+
+    // Header table labels
+    if (/^\s*(?:item\s*name|description|particulars|qty|quantity|unit\s*price|m\/s|remarks|ref)\b/i.test(line)) return true;
+
+    return false;
+}
+
+function extractAllAmountsFromLine(line: string): number[] {
+    if (isNoiseOrMetadataLine(line)) return [];
 
     const sanitized = sanitizeOcrNumberString(line);
-    // Remove commas before matching regex (e.g. 2,333.24 becomes 2333.24)
     const cleanForRegex = sanitized.replace(/,/g, '');
 
-    // Prefer amounts with 1 or 2 decimal places (508.2, 508.02) — exclude time-like values (10.25)
+    const results: number[] = [];
+
+    // Decimal numbers (e.g. 5255.00, 5531.12, 276.56)
     const decimalMatches = [...cleanForRegex.matchAll(/(\d{1,8}\.\d{1,2})/g)];
-    if (decimalMatches.length > 0) {
-        const amounts = decimalMatches
-            .map(m => parseFloat(m[1]))
-            .filter(n => n >= 1 && n < 1_000_000 && !(n < 24 && cleanForRegex.includes(':')));
-        if (amounts.length > 0) return Math.max(...amounts);
+    for (const m of decimalMatches) {
+        const val = parseFloat(m[1]);
+        if (Number.isFinite(val) && val >= 1 && val < 1_000_000 && !(val < 24 && cleanForRegex.includes(':'))) {
+            results.push(val);
+        }
     }
-    if (requireDecimal) return null;
 
+    // Integers >= 10 (e.g. 5255, 560, 1399)
     const intMatches = [...cleanForRegex.matchAll(/(\d{2,8})/g)];
-    const ints = intMatches.map(m => parseFloat(m[1])).filter(n => n >= 10 && n < 1_000_000);
-    return ints.length > 0 ? Math.max(...ints) : null;
-}
-
-function extractAllAmounts(text: string): number[] {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const found: number[] = [];
-    for (const line of lines) {
-        if (isDateOrTimeLine(line)) continue;
-        const sanitized = sanitizeOcrNumberString(line);
-        const cleanForRegex = sanitized.replace(/,/g, '');
-        
-        // Find decimal amounts (allow 1 or 2 decimal digits to handle OCR misreads like 333.4)
-        const decimalMatches = [...cleanForRegex.matchAll(/(\d{1,8}\.\d{1,2})/g)];
-        for (const m of decimalMatches) {
-            const val = parseFloat(m[1]);
-            if (Number.isFinite(val) && val >= 1 && val < 1_000_000) {
-                found.push(val);
-            }
-        }
-        
-        // Find integer amounts
-        const intMatches = [...cleanForRegex.matchAll(/(\d{2,8})/g)];
-        for (const m of intMatches) {
-            const val = parseFloat(m[1]);
-            if (Number.isFinite(val) && val >= 10 && val < 1_000_000) {
-                found.push(val);
+    for (const m of intMatches) {
+        const val = parseFloat(m[1]);
+        if (Number.isFinite(val) && val >= 10 && val < 1_000_000) {
+            if (!results.some(d => Math.floor(d) === val)) {
+                results.push(val);
             }
         }
     }
-    // Return unique values
-    return found.filter((val, i, arr) => arr.indexOf(val) === i);
-}
 
-function getCorrectedOcrAmount(priorityAmount: number, allCandidates: number[]): number {
-    let best = priorityAmount;
-    for (const cand of allCandidates) {
-        if (cand <= priorityAmount) continue;
-        
-        const priStr = priorityAmount.toFixed(2);
-        const candStr = cand.toFixed(2);
-        
-        // Suffix match (e.g. 333.24 matches 2333.24)
-        if (candStr.endsWith(priStr)) {
-            return cand;
-        }
-        
-        // Match if the difference is a round thousand
-        const diff = cand - priorityAmount;
-        if (diff > 0 && diff % 1000 === 0) {
-            return cand;
-        }
-        
-        // Match if integer part is a suffix (e.g. 333 matches 2333)
-        const priInt = Math.floor(priorityAmount).toString();
-        const candInt = Math.floor(cand).toString();
-        
-        // Require at least 3 digits to avoid accidental small match (e.g. 10 matching 1010)
-        if (priInt.length >= 3 && candInt.endsWith(priInt)) {
-            return cand;
-        }
-    }
-    return best;
+    return results;
 }
 
 function extractTotalAmount(text: string, amountHint?: number | null): { amount: number | null; confidence: 'high' | 'medium' | 'low' } {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const totalLinesCount = lines.length;
 
-    // Priority-ordered keywords — PK pharmacy receipts (tolerant of OCR typos like "valle")
-    const priorityPatterns: { pattern: RegExp; confidence: 'high' | 'medium' | 'low'; requireDecimal?: boolean }[] = [
-        { pattern: /net\s*val\w*\s*after\s*discount/i, confidence: 'high' },
-        { pattern: /net\s*total/i, confidence: 'high', requireDecimal: true },
-        { pattern: /grand\s*total|gross\s*total/i, confidence: 'high', requireDecimal: true },
-        { pattern: /invoice\s*val\w*/i, confidence: 'high' },
-        { pattern: /gross\s*r\w*\s*val\w*/i, confidence: 'medium' },
-        { pattern: /amount\s*due|payable|balance\s*due/i, confidence: 'medium' },
+    const priorityPatterns: { pattern: RegExp; confidence: 'high' | 'medium' | 'low'; baseScore: number }[] = [
+        { pattern: /net\s*(?:total|payable|amount|bill|val\w*|amt)/i, confidence: 'high', baseScore: 120 },
+        { pattern: /net\s*val\w*\s*after\s*discount/i, confidence: 'high', baseScore: 120 },
+        { pattern: /cash\s*(?:received|paid|tendered|amount)/i, confidence: 'high', baseScore: 115 },
+        { pattern: /paid\s*amount|amount\s*paid|\bpaid\b[\s:]*[\d,.]+/i, confidence: 'high', baseScore: 110 },
+        { pattern: /grand\s*total|gross\s*total|bill\s*total|total\s*bill/i, confidence: 'high', baseScore: 90 },
+        { pattern: /total\s*(?:amount|payable|due|rs\.?|pkr|₨)/i, confidence: 'high', baseScore: 85 },
+        { pattern: /\btotal\b\s*[:=]?\s*[\d,.]+/i, confidence: 'high', baseScore: 80 },
+        { pattern: /amount\s*due|balance\s*due|payable/i, confidence: 'medium', baseScore: 75 },
+        { pattern: /invoice\s*val\w*/i, confidence: 'medium', baseScore: 70 },
+        { pattern: /sub\s*total/i, confidence: 'medium', baseScore: 50 },
     ];
 
-    let bestAmount: number | null = null;
-    let bestConfidence: 'high' | 'medium' | 'low' = 'low';
+    interface Candidate {
+        amount: number;
+        score: number;
+        confidence: 'high' | 'medium' | 'low';
+        sourceLine: string;
+        lineIndex: number;
+    }
 
-    // Use first match by priority (Net Total before line-item numbers)
-    for (const { pattern, confidence, requireDecimal } of priorityPatterns) {
-        for (const line of lines) {
-            if (!pattern.test(line)) continue;
-            const amt = extractAmountFromLine(line, !!requireDecimal);
-            if (amt !== null && amt > 0) {
-                bestAmount = amt;
-                bestConfidence = confidence;
-                break;
+    const candidates: Candidate[] = [];
+
+    lines.forEach((line, lineIndex) => {
+        if (isNoiseOrMetadataLine(line)) return;
+
+        const isBottomHalf = lineIndex >= totalLinesCount * 0.4;
+        const lineAmounts = extractAllAmountsFromLine(line);
+        if (lineAmounts.length === 0) return;
+
+        const matchedPattern = priorityPatterns.find(p => p.pattern.test(line));
+
+        for (const amt of lineAmounts) {
+            let score = 0;
+            let confidence: 'high' | 'medium' | 'low' = 'low';
+
+            if (matchedPattern) {
+                score += matchedPattern.baseScore;
+                confidence = matchedPattern.confidence;
+            } else if (/(?:rs\.?|pkr|₨)/i.test(line)) {
+                score += 40;
+                confidence = 'medium';
+            } else {
+                score += 10;
             }
-        }
-        if (bestAmount !== null) break;
-    }
 
-    // Lines with currency symbol + number
-    if (bestAmount === null) {
-        const currencyLines = lines.filter(l => /(?:rs\.?|pkr|₨)/i.test(l));
-        for (const line of currencyLines) {
-            const amt = extractAmountFromLine(line);
-            if (amt !== null && amt > 0 && (bestAmount === null || amt > bestAmount)) {
-                bestAmount = amt;
-                bestConfidence = 'medium';
+            if (isBottomHalf) score += 20;
+
+            if (!Number.isInteger(amt) || line.includes('.00') || line.includes('.0')) {
+                score += 15;
             }
-        }
-    }
 
-    // Fallback: scan non-date lines for XX.XX amounts
-    if (bestAmount === null) {
-        const nonDateLines = lines.filter(l => !isDateOrTimeLine(l));
-        for (const line of nonDateLines) {
-            const amt = extractAmountFromLine(line);
-            if (amt !== null && amt > 0 && (bestAmount === null || amt > bestAmount)) {
-                bestAmount = amt;
-                bestConfidence = 'low';
+            if (amountHint && amountHint > 0) {
+                const diff = Math.abs(amt - amountHint);
+                if (diff === 0 || diff < 0.5) {
+                    score += 90;
+                    confidence = 'high';
+                } else if (diff <= amountHint * 0.05) {
+                    score += 40;
+                } else if (amt > amountHint * 2.5 && !matchedPattern) {
+                    score -= 80;
+                }
             }
+
+            if (amt <= 10 && /items?|qty|pcs/i.test(line)) {
+                score -= 60;
+            }
+
+            candidates.push({
+                amount: amt,
+                score,
+                confidence,
+                sourceLine: line,
+                lineIndex,
+            });
         }
+    });
+
+    if (candidates.length === 0) {
+        return { amount: null, confidence: 'low' };
     }
 
-    // Run suffix alignment/left-cutoff correction heuristics
-    if (bestAmount !== null) {
-        const allCandidates = extractAllAmounts(text);
-        bestAmount = getCorrectedOcrAmount(bestAmount, allCandidates);
-    }
+    candidates.sort((a, b) => b.score - a.score);
+    const top = candidates[0];
 
-    return { amount: bestAmount, confidence: bestConfidence };
+    return { amount: top.amount, confidence: top.confidence };
 }
 
 function extractMerchantName(text: string): string | null {

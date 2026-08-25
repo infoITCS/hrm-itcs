@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../utils/api';
 import { Plus, Edit2, Save, User, FileText, Check, AlertCircle, ChevronDown, Search } from 'lucide-react';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 interface LeaveType {
     _id: string;
@@ -17,6 +18,7 @@ interface Employee {
     employeeId: string;
     userId: string;
     firstName: string;
+    middleName?: string;
     lastName: string;
 }
 
@@ -45,7 +47,7 @@ const ManageLeaveTypes = () => {
     const token = localStorage.getItem('token');
 
     const filteredEmployees = employees.filter(e => {
-        const fullName = `${e.firstName} ${e.lastName}`.toLowerCase();
+        const fullName = formatEmployeeFullName(e, '').toLowerCase();
         const empId = (e.employeeId || '').toLowerCase();
         const query = searchQuery.toLowerCase();
         return fullName.includes(query) || empId.includes(query);
@@ -408,7 +410,7 @@ const ManageLeaveTypes = () => {
                         >
                             <span>
                                 {selectedEmp 
-                                    ? `${selectedEmp.firstName} ${selectedEmp.lastName} (${selectedEmp.employeeId || 'unlinked'})` 
+                                    ? `${formatEmployeeFullName(selectedEmp, selectedEmp.employeeId)} (${selectedEmp.employeeId || 'unlinked'})` 
                                     : '-- Search / Select Employee --'}
                             </span>
                             <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${dropdownOpen ? 'rotate-180 text-indigo-500' : ''}`} />
@@ -452,7 +454,7 @@ const ManageLeaveTypes = () => {
                                             }`}
                                         >
                                             <div className="flex flex-col">
-                                                <span>{e.firstName} {e.lastName}</span>
+                                                <span>{formatEmployeeFullName(e, e.employeeId)}</span>
                                                 <span className="text-[10px] text-slate-400 font-medium">ID: {e.employeeId || 'unlinked'}</span>
                                             </div>
                                             {selectedEmp?._id === e._id && (
@@ -476,7 +478,7 @@ const ManageLeaveTypes = () => {
                     ) : selectedEmp && empBalance ? (
                         <div className="space-y-4 animate-in fade-in duration-200">
                             <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-[10px] font-bold text-indigo-700">
-                                Overriding leave quotas for {selectedEmp.firstName} {selectedEmp.lastName} (Year: {empBalance.year})
+                                Overriding leave quotas for {formatEmployeeFullName(selectedEmp, selectedEmp.employeeId)} (Year: {empBalance.year})
                             </div>
                             
                             <div className="divide-y divide-slate-100">

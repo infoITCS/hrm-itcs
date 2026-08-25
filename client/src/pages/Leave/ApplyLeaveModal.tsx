@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle, Calendar, Send } from 'lucide-react';
 import { api } from '../../utils/api';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 interface ApplyLeaveModalProps {
     isOpen: boolean;
@@ -250,7 +251,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                                     <option value="">Myself</option>
                                     {allEmployees.map(emp => (
                                         <option key={emp.employeeId} value={emp.employeeId}>
-                                            {emp.firstName} {emp.lastName} ({emp.employeeId})
+                                            {formatEmployeeFullName(emp, emp.employeeId)} ({emp.employeeId})
                                         </option>
                                     ))}
                                 </select>

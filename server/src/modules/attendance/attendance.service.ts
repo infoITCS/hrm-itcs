@@ -11,6 +11,7 @@ import type {
     RecordFilter, AttendanceRecordDTO, WeeklyDay, AutoCloseResult
 } from './attendance.types';
 import { AttendanceStatus } from '../../models/AttendanceRecord';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 // ─── Shift Logic ──────────────────────────────────────────────────────────────
 
@@ -467,7 +468,7 @@ export async function getAttendanceRecords(
         return {
             ...r,
             _id: r._id.toString(),
-            employeeName: emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : r.employeeName || 'Unknown',
+            employeeName: emp ? formatEmployeeFullName(emp, r.employeeName || 'Unknown') : (r.employeeName || 'Unknown'),
         };
     });
 
@@ -730,7 +731,7 @@ function buildAttendanceExportCsv(employees: any[], records: any[], dates: strin
 
             rows.push([
                 escapeCsvField(emp.employeeId),
-                escapeCsvField(`${emp.firstName} ${emp.lastName || ''}`),
+                escapeCsvField(formatEmployeeFullName(emp, emp.employeeId)),
                 escapeCsvField(dateStr),
                 escapeCsvField(dayName),
                 escapeCsvField(status),

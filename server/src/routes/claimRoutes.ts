@@ -8,6 +8,7 @@ import { User } from '../models/User.model';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendHRNotificationEmail, sendExpenseClaimSubmittedEmail, sendExpenseClaimStatusEmail } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
+import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
@@ -410,7 +411,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         });
 
         // Notifications (best-effort)
-        const employeeName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.employeeId;
+        const employeeName = formatEmployeeFullName(employee, employee.employeeId);
         const notifyClaim = async (emails: string[]) => {
             for (const to of emails) {
                 try {
@@ -454,7 +455,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             })();
         }
 
-        await doc.populate('employeeDetails', 'firstName lastName employeeId');
+        await doc.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.status(201).json({ success: true, data: doc });
     } catch (err: any) {
         // Handle unique claimNo collisions (rare in concurrent submit)
@@ -473,7 +474,7 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
         const claims = await ExpenseClaim.find({ employeeUserId: userId })
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
-            .populate('employeeDetails', 'firstName lastName employeeId')
+            .populate('employeeDetails', 'firstName middleName lastName employeeId')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
@@ -500,7 +501,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
         })
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
-            .populate('employeeDetails', 'firstName lastName employeeId')
+            .populate('employeeDetails', 'firstName middleName lastName employeeId')
         res.json({ success: true, data: claims });
     } catch (err) {
         next(err);
@@ -516,7 +517,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
         const claims = await ExpenseClaim.find({})
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
-            .populate('employeeDetails', 'firstName lastName employeeId')
+            .populate('employeeDetails', 'firstName middleName lastName employeeId')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
@@ -653,7 +654,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                         if (employeeEmail) {
                             await sendExpenseClaimStatusEmail(
                                 employeeEmail,
-                                emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                                formatEmployeeFullName(emp, 'Employee'),
                                 claim.category,
                                 claim.amountRequested,
                                 claim.status,
@@ -671,12 +672,12 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 const financeEmailsList = await getFinanceEmails();
                 if (claim.status === 'Pending HR' && hrEmailsList.length) {
                     const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-                    const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+                    const employeeName = formatEmployeeFullName(employee, claim.employeeId);
                     for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
                 }
                 if (claim.status === 'Pending Finance' && financeEmailsList.length) {
                     const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-                    const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+                    const employeeName = formatEmployeeFullName(employee, claim.employeeId);
                     for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
                 }
 
@@ -847,16 +848,16 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         const financeEmailsList = await getFinanceEmails();
         if (claim.status === 'Pending HR' && hrEmailsList.length) {
             const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-            const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+            const employeeName = formatEmployeeFullName(employee, claim.employeeId);
             for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
         }
         if (claim.status === 'Pending Finance' && financeEmailsList.length) {
             const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-            const employeeName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : claim.employeeId;
+            const employeeName = formatEmployeeFullName(employee, claim.employeeId);
             for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
         }
 
-        await claim.populate('employeeDetails', 'firstName lastName employeeId');
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
@@ -906,7 +907,7 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                 if (employeeEmail) {
                     await sendExpenseClaimStatusEmail(
                         employeeEmail,
-                        emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                        formatEmployeeFullName(emp, 'Employee'),
                         claim.category,
                         claim.amountRequested,
                         claim.status,
@@ -920,7 +921,7 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
             }
         })();
 
-        await claim.populate('employeeDetails', 'firstName lastName employeeId');
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
@@ -950,7 +951,7 @@ router.patch('/:id/erp-reference', authenticate, async (req: Request, res: Respo
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
         await claim.save();
 
-        await claim.populate('employeeDetails', 'firstName lastName employeeId');
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
@@ -1008,6 +1009,76 @@ router.get('/:id/receipts/:receiptId', authenticate, async (req: Request, res: R
     }
 });
 
+// Re-scan receipts for an existing claim using updated OCR algorithm
+router.post('/:id/rescan', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        const userId = authReq.user?.userId;
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        const isOwner = String(claim.employeeUserId) === String(userId);
+        if (!isOwner && !isAdminLike(role) && role !== 'manager') return res.status(403).json({ message: 'Forbidden' });
+
+        const receipts = claim.receipts || [];
+        if (receipts.length === 0) {
+            return res.json({ success: true, data: sanitizeClaimForJson(claim) });
+        }
+
+        const parsedExpenseDate = claim.expenseDate ? new Date(claim.expenseDate) : null;
+        const analysis = await extractAndAnalyzeReceipts(
+            receipts.map((r: any) => ({
+                fileName: r.fileName,
+                contentType: r.contentType,
+                fileData: r.fileData,
+            })),
+            claim.amountRequested,
+            claim.amountAllowed,
+            parsedExpenseDate
+        );
+
+        // Update receipt extraction details
+        claim.receipts = receipts.map((r: any, i: number) => {
+            const extracted = analysis.receipts[i];
+            return {
+                ...r.toObject(),
+                extractedDate: extracted?.extractedDate,
+                extractedAmount: extracted?.extractedAmount,
+                extractedCurrency: extracted?.extractedCurrency,
+                merchantName: extracted?.merchantName,
+                receiptAgeDays: extracted?.receiptAgeDays,
+                extractionStatus: extracted?.extractionStatus,
+                extractionError: extracted?.extractionError,
+                extractionConfidence: extracted?.extractionConfidence,
+            };
+        });
+
+        claim.receiptAnalysis = analysis.receiptAnalysis as any;
+
+        // Clean out stale OCR error flags and re-apply valid ones
+        const ocrFlags = [
+            'ReceiptTotalExceedsQuota',
+            'ReceiptTotalExceedsRequested',
+            'ReceiptOlderThan45Days',
+            'ReceiptDateMismatch',
+            'ReceiptExtractionFailed',
+            'ReceiptDateUnreadable'
+        ];
+        const existingFlags = (claim.eligibility?.flags || []).filter((f: string) => !ocrFlags.includes(f));
+        for (const f of analysis.flags) {
+            if (!existingFlags.includes(f)) existingFlags.push(f);
+        }
+        if (!claim.eligibility) claim.eligibility = { passed: true, flags: [] } as any;
+        claim.eligibility.flags = existingFlags;
+
+        await claim.save();
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+        res.json({ success: true, data: sanitizeClaimForJson(claim), message: 'Receipts re-scanned successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
 
 export default router;
 

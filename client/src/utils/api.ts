@@ -35,6 +35,7 @@ export const api = {
     claimPreviewReceipts: `${API_BASE_URL}/api/claims/preview-receipts`,
     claimDecision: (id: string) => `${API_BASE_URL}/api/claims/${id}/decision`,
     claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
+    claimRescan: (id: string) => `${API_BASE_URL}/api/claims/${id}/rescan`,
     claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,
 
     // Payroll

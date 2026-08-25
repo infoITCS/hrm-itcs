@@ -5,6 +5,7 @@ import { api } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 import {
     FileText,
     Inbox,
@@ -368,7 +369,7 @@ const ExpenseClaimDashboard = () => {
             
             let matchesEmployee = true;
             if (filterEmployeeName) {
-                const name = `${c.employeeDetails?.firstName || ''} ${c.employeeDetails?.lastName || ''}`.toLowerCase();
+                const name = formatEmployeeFullName(c.employeeDetails).toLowerCase();
                 const empId = (c.employeeId || '').toLowerCase();
                 matchesEmployee = name.includes(filterEmployeeName.toLowerCase()) || empId.includes(filterEmployeeName.toLowerCase());
             }
@@ -633,6 +634,35 @@ const ExpenseClaimDashboard = () => {
     const [decisionAuthorizationBy, setDecisionAuthorizationBy] = useState('');
     const [decisionErpId, setDecisionErpId] = useState('');
     const [deciding, setDeciding] = useState(false);
+    const [rescanning, setRescanning] = useState(false);
+
+    const handleRescanClaim = async (claimId: string) => {
+        if (!claimId) return;
+        setRescanning(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(api.claimRescan(claimId), {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to re-scan receipts');
+            if (data.data) {
+                setDecisionClaim(data.data);
+                showToast('Receipts re-scanned successfully with updated OCR engine', 'success');
+                fetchApprovals();
+                fetchMine();
+                fetchHistory();
+            }
+        } catch (err: any) {
+            showToast(err.message || 'Failed to re-scan receipts', 'error');
+        } finally {
+            setRescanning(false);
+        }
+    };
 
     const decisionClaimRemainingLimit = useMemo(() => {
         if (!decisionClaim || !decisionClaim.employeeId) return null;
@@ -1654,7 +1684,7 @@ const ExpenseClaimDashboard = () => {
                                                      {c.employeeDetails ? (
                                                          <div>
                                                              <div className="font-semibold text-slate-800">
-                                                                 {`${c.employeeDetails.firstName || ''} ${c.employeeDetails.lastName || ''}`.trim()}
+                                                                 {formatEmployeeFullName(c.employeeDetails, c.employeeId)}
                                                              </div>
                                                              <div className="text-[11px] text-slate-400">{c.employeeId}</div>
                                                          </div>
@@ -1822,7 +1852,7 @@ const ExpenseClaimDashboard = () => {
                                                      {c.employeeDetails ? (
                                                          <div>
                                                              <div className="font-semibold text-slate-800">
-                                                                 {`${c.employeeDetails.firstName || ''} ${c.employeeDetails.lastName || ''}`.trim()}
+                                                                 {formatEmployeeFullName(c.employeeDetails, c.employeeId)}
                                                              </div>
                                                              <div className="text-[11px] text-slate-400">{c.employeeId}</div>
                                                          </div>
@@ -2099,9 +2129,7 @@ const ExpenseClaimDashboard = () => {
                                     Claim Review — {decisionClaim.claimNo}
                                 </div>
                                 <div className="text-xs text-white/75 mt-0.5">
-                                    {decisionClaim.employeeDetails
-                                        ? `${decisionClaim.employeeDetails.firstName || ''} ${decisionClaim.employeeDetails.lastName || ''}`.trim()
-                                        : 'Employee'}
+                                    {formatEmployeeFullName(decisionClaim.employeeDetails, 'Employee')}
                                     {' '}({decisionClaim.employeeId})
                                 </div>
                             </div>
@@ -2214,8 +2242,20 @@ const ExpenseClaimDashboard = () => {
                                     {/* OCR receipt analysis */}
                                     {decisionClaim.receiptAnalysis && (decisionClaim.receipts || []).length > 0 && (
                                         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-                                            <div className="text-[11px] font-bold text-indigo-700 mb-2 flex items-center gap-1.5">
-                                                <Receipt size={11} />RECEIPT SCAN ANALYSIS
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1.5">
+                                                    <Receipt size={11} />RECEIPT SCAN ANALYSIS
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRescanClaim(decisionClaim._id)}
+                                                    disabled={rescanning}
+                                                    className="flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 px-2 py-0.5 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+                                                    title="Re-run OCR extraction on this receipt"
+                                                >
+                                                    <RefreshCw size={10} className={rescanning ? 'animate-spin' : ''} />
+                                                    {rescanning ? 'Re-scanning...' : 'Re-scan'}
+                                                </button>
                                             </div>
                                             <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                                                 <div>
@@ -2768,9 +2808,7 @@ const ExpenseClaimDashboard = () => {
                             <div>
                                 <div className="text-sm font-extrabold text-slate-800">Admin Correction</div>
                                 <div className="text-xs text-slate-500">
-                                    {correctClaim?.claimNo} • {correctClaim?.employeeDetails 
-                                        ? `${correctClaim.employeeDetails.firstName || ''} ${correctClaim.employeeDetails.lastName || ''}`.trim() 
-                                        : 'Employee'} ({correctClaim?.employeeId})
+                                    {correctClaim?.claimNo} • {formatEmployeeFullName(correctClaim?.employeeDetails, 'Employee')} ({correctClaim?.employeeId})
                                 </div>
                             </div>
                             <button onClick={() => setCorrectOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">

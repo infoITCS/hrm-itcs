@@ -2713,30 +2713,16 @@ const AddEmployeeWizard = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                                 <div className="space-y-1">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-xs font-medium text-gray-500">Provident Fund Opening Balance (Rs.)</label>
-                                        {Boolean(isEditMode && formData.providentFundBalance && formData.providentFundBalance > 0) && (
-                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                                                🔒 Locked (Set Once)
-                                            </span>
-                                        )}
+                                        <label className="text-xs font-medium text-gray-500">Provident Fund Balance (Rs.)</label>
                                     </div>
                                     <input
                                         type="number"
                                         placeholder="e.g. 150000"
-                                        disabled={Boolean(isEditMode && formData.providentFundBalance && formData.providentFundBalance > 0)}
                                         value={formData.providentFundBalance || ''}
                                         onChange={(e) => setFormData(p => ({ ...p, providentFundBalance: Number(e.target.value) }))}
-                                        className={`w-full border rounded-lg px-4 py-2 text-sm outline-none transition-all ${
-                                            Boolean(isEditMode && formData.providentFundBalance && formData.providentFundBalance > 0)
-                                                ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-semibold'
-                                                : 'border-gray-300 focus:ring-2 focus:ring-indigo-200'
-                                        }`}
+                                        className="w-full border rounded-lg px-4 py-2 text-sm outline-none transition-all border-gray-300 focus:ring-2 focus:ring-indigo-200"
                                     />
-                                    {Boolean(isEditMode && formData.providentFundBalance && formData.providentFundBalance > 0) ? (
-                                        <p className="text-[11px] text-slate-400 mt-1">Opening PF balance is locked after initial setup. All updates are tracked automatically via Monthly Payroll.</p>
-                                    ) : (
-                                        <p className="text-[11px] text-slate-400 mt-1">Enter opening PF balance once. Once saved, it will be locked and updated via Payroll.</p>
-                                    )}
+                                    <p className="text-[11px] text-slate-400 mt-1">Enter or update the employee's PF balance. Manual changes will be recorded in their PF history log.</p>
                                 </div>
                             </div>
                         </div>

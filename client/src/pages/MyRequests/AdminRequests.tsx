@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
@@ -88,7 +89,7 @@ const AdminRequests = () => {
             if (!isFinanceRelated) return false;
         }
 
-        const employeeName = `${req.employee?.firstName || ''} ${req.employee?.lastName || ''}`.toLowerCase();
+        const employeeName = formatEmployeeFullName(req.employee, '').toLowerCase();
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
                               req.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               employeeName.includes(searchTerm.toLowerCase()) ||
@@ -204,7 +205,7 @@ const AdminRequests = () => {
                                                         </div>
                                                     )}
                                                     <div>
-                                                        <p className="font-medium text-gray-900">{req.employee?.firstName} {req.employee?.lastName}</p>
+                                                        <p className="font-medium text-gray-900">{formatEmployeeFullName(req.employee, 'Employee')}</p>
                                                         <p className="text-xs text-gray-500">{req.employee?.employeeId}</p>
                                                     </div>
                                                 </div>
@@ -368,7 +369,7 @@ const AdminRequests = () => {
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div>
                                         <p className="text-gray-500 text-xs">Employee</p>
-                                        <p className="font-semibold text-gray-900">{actionModal.employee?.firstName} {actionModal.employee?.lastName}</p>
+                                        <p className="font-semibold text-gray-900">{formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
                                     </div>
                                     <div>
                                         <p className="text-gray-500 text-xs">Employee ID</p>

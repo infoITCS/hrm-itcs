@@ -7,6 +7,7 @@ import LeaveType from '../models/LeaveType';
 import Employee from '../models/Employee';
 import { processEmployeePunches } from '../services/attendanceProcessor';
 import { sendLeaveSubmittedEmail, sendLeaveStatusEmail } from '../utils/email';
+import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
@@ -219,7 +220,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
             return {
                 employeeId: emp.employeeId,
                 userId: emp.userId,
-                name: `${emp.firstName} ${emp.lastName}`,
+                name: formatEmployeeFullName(emp, emp.employeeId),
                 email: emp.email,
                 designation: emp.jobInfo?.designation || 'N/A',
                 department: emp.jobInfo?.department || 'N/A',
@@ -665,7 +666,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                             { _id: employeeId.length === 24 ? employeeId : new mongoose.Types.ObjectId() }
                         ]
                     });
-                    const employeeName = emp ? `${emp.firstName} ${emp.lastName}`.trim() : 'Employee';
+                    const employeeName = formatEmployeeFullName(emp, 'Employee');
                     const hrEmail = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
 
                     let managerEmail: string | undefined = undefined;
@@ -830,7 +831,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                     if (employeeEmail) {
                         await sendLeaveStatusEmail(
                             employeeEmail,
-                            emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                            formatEmployeeFullName(emp, 'Employee'),
                             leave.type,
                             new Date(leave.startDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
                             new Date(leave.endDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -1124,7 +1125,7 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
                     if (employeeEmail) {
                         await sendLeaveStatusEmail(
                             employeeEmail,
-                            emp ? `${emp.firstName} ${emp.lastName}` : 'Employee',
+                            formatEmployeeFullName(emp, 'Employee'),
                             leave.type,
                             new Date(leave.startDate).toLocaleDateString(),
                             new Date(leave.endDate).toLocaleDateString(),

@@ -16,6 +16,7 @@ import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 import ExpenseClaim from '../models/ExpenseClaim';
 import { sendPayslipDisbursedEmail } from '../utils/email';
 import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
+import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
@@ -24,7 +25,8 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────────────────────
 
 function isAdmin(role: string): boolean {
-    return ['super-admin', 'finance'].includes(role);
+    const normalized = (role || '').toLowerCase().trim();
+    return ['super-admin', 'admin', 'finance'].includes(normalized);
 }
 
 const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
@@ -87,26 +89,7 @@ async function generatePayslipNo(year: number, month: number): Promise<string> {
     return `PS-${year}-${String(month).padStart(2, '0')}-${String(counter.seq).padStart(4, '0')}`;
 }
 
-// Temporary endpoint to clean up orphaned payslips from deleted payroll runs
-router.get('/cleanup-orphans', authenticate, async (req: Request, res: Response, next: NextFunction) => {
-    const authReq = req as AuthRequest;
-    if (!isAdmin(authReq.user!.role)) {
-        return res.status(403).json({ message: 'Forbidden. Admin access required.' });
-    }
-    try {
-        const runs = await PayrollRun.find().select('_id').lean();
-        const validRunIds = runs.map((r: any) => r._id);
-        const result = await Payslip.deleteMany({
-            payrollRunId: { $nin: validRunIds }
-        });
-        return res.json({
-            message: `Successfully deleted ${result.deletedCount} orphaned payslips.`,
-            validRunIds
-        });
-    } catch (err) {
-        next(err);
-    }
-});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN: Payroll Run CRUD
@@ -492,7 +475,7 @@ async function generatePayslipPdfBuffer(payslipId: string): Promise<Buffer> {
         y += 15;
 
         doc.fontSize(9).font('Helvetica').fillColor('#1E293B');
-        const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'N/A';
+        const empName = formatEmployeeFullName(emp, 'N/A');
 
         doc.text(`Employee Name: ${empName}`, 60, y);
         doc.text(`Payslip No: ${payslip.payslipNo}`, 310, y);
@@ -689,7 +672,7 @@ router.get('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
     try {
         const authReq = req as AuthRequest;
         const payslip = await Payslip.findById(req.params.payslipId)
-            .populate('employeeDetails', 'firstName lastName jobInfo bankDetails avatar')
+            .populate('employeeDetails', 'firstName middleName lastName jobInfo bankDetails avatar')
             .populate('payrollRunId')
             .lean() as any;
 
@@ -783,7 +766,7 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
         const payslips = await Payslip.find({ payrollRunId: runId })
             .populate({
                 path: 'employeeDetails',
-                select: 'firstName lastName employeeId bankDetails jobInfo'
+                select: 'firstName middleName lastName employeeId bankDetails jobInfo'
             })
             .lean() as any[];
 
@@ -864,8 +847,9 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
 
         // Company Full Name & Subtitle on Left (White background area, X=140 to 430)
         const companyFullName = company?.name ? company.name.toUpperCase() : 'IT CONSULTING AND SERVICES (PVT) LTD';
+        const defaultBankTitle = (company?.payrollSettings?.defaultBankName || 'MEEZAN BANK').toUpperCase();
         doc.fontSize(11).font('Helvetica-Bold').fillColor('#1E293B').text(companyFullName, 140, 28, { width: 290 });
-        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text('SALARY DISBURSEMENT ADVICE / MEEZAN BANK TRANSFER LETTER', 140, 48, { width: 290 });
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#64748B').text(`SALARY DISBURSEMENT ADVICE / ${defaultBankTitle} TRANSFER LETTER`, 140, 48, { width: 290 });
 
         // Title & Subtitle inside Dark Purple Slant Ribbon (Right side, white & #E9D5FF text)
         doc.fontSize(15).font('Helvetica-Bold').fillColor('#FFFFFF').text('SALARY DISBURSEMENT ADVICE', 460, 26, { align: 'right', width: doc.page.width - 496 });
@@ -904,10 +888,11 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
             doc.rect(36, y, doc.page.width - 72, 22).fill(bg).stroke('#E2E8F0');
 
             const empName = p.employeeDetails 
-                ? `${p.employeeDetails.firstName || ''} ${p.employeeDetails.lastName || ''}`.trim()
-                : 'Employee';
-            const bankName = p.employeeDetails?.bankDetails?.bankName || 'Meezan Bank';
-            const acctNo = p.employeeDetails?.bankDetails?.accountNumber || 'Pending Account Info';
+                ? formatEmployeeFullName(p.employeeDetails, p.employeeId || 'Employee')
+                : (p.employeeId || 'Employee');
+            const defaultBank = company?.payrollSettings?.defaultBankName || 'Meezan Bank';
+            const bankName = p.employeeDetails?.bankDetails?.bankName || p.beneficiaryBank || defaultBank;
+            const acctNo = p.employeeDetails?.bankDetails?.accountNumber || p.beneficiaryAccount || 'Pending Account Info';
 
             doc.fontSize(8.5).font('Helvetica').fillColor('#334155');
             doc.text(`${idx + 1}`, 45, y + 6, { width: 35 });
@@ -976,7 +961,7 @@ router.get('/:runId', authenticate, async (req: Request, res: Response, next: Ne
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
         const payslips = await Payslip.find({ payrollRunId: runId })
-            .populate('employeeDetails', 'firstName lastName jobInfo bankDetails avatar')
+            .populate('employeeDetails', 'firstName middleName lastName jobInfo bankDetails avatar')
             .lean();
 
         return res.json({ run, payslips });
@@ -1020,7 +1005,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
                 // Legacy records where employmentStatus was stored as a plain string
                 { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
             ],
-        }).select('employeeId firstName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo');
+        }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo');
 
         if (!employees.length) {
             return res.status(400).json({ message: 'No active employees found to generate payslips.' });
@@ -1058,7 +1043,8 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
         for (const r of mealRecords) {
             mealDaysMap[r.employeeId] = (mealDaysMap[r.employeeId] ?? 0) + 1;
         }
-        const MEAL_RATE = 500; // PKR per full working day
+        const companyDoc = await Company.findOne().lean() as any;
+        const MEAL_RATE = companyDoc?.payrollSettings?.mealRatePerDay ?? 500;
 
         // Holidays in this period — never penalize these dates
         const holidayDates = await getHolidayDatesInPeriod(periodStart, periodEnd);
@@ -1242,7 +1228,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             // Map salaryComponents (with financeInfo fallback) → Payslip.earnings[]
             const earnings = resolveEmployeeEarnings(emp);
             if (earnings.length === 0) {
-                missingSalary.push(`${emp.firstName} ${emp.lastName} (${emp.employeeId})`);
+                missingSalary.push(`${formatEmployeeFullName(emp, emp.employeeId)} (${emp.employeeId})`);
             }
 
             // Expense Reimbursements from approved claims
@@ -1369,8 +1355,8 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
 
             // Default bank details from employee, or leave empty for finance/boss to fill
             const beneficiaryAccount = emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
-            const beneficiaryName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
-            const beneficiaryBank = emp.bankDetails?.bankName || 'Meezan Bank';
+            const beneficiaryName = formatEmployeeFullName(emp, emp.employeeId);
+            const beneficiaryBank = emp.bankDetails?.bankName || companyDoc?.payrollSettings?.defaultBankName || 'Meezan Bank';
 
             const empAttSummary = employeeAttendanceMap[emp.employeeId] || {
                 workingDays: monthlyWorkingDays,
@@ -1478,7 +1464,9 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                     (c: any) => c.component === 'Basic Salary' || c.component === 'Basic'
                 );
                 const baseAmount = basicSalaryComponent ? basicSalaryComponent.amount : payslip.grossPay;
-                const pfContribution = Math.round(baseAmount * 0.15);
+                const companyDoc = await Company.findOne().lean() as any;
+                const pfRate = (companyDoc?.payrollSettings?.pfContributionRate ?? 15) / 100;
+                const pfContribution = Math.round(baseAmount * pfRate);
 
                 if (pfContribution > 0) {
                     const historyEntry = {
@@ -1633,7 +1621,7 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
                         continue;
                     }
 
-                    const empName = emp ? `${emp.firstName} ${emp.lastName}` : slip.employeeId;
+                    const empName = formatEmployeeFullName(emp, slip.employeeId);
                     const pdfBuf = await generatePayslipPdfBuffer(slip._id.toString());
                     const monthYear = `${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`;
                     const netPayFormatted = new Intl.NumberFormat('en-PK', { style: 'currency', currency: run.currency || 'PKR', maximumFractionDigits: 0 }).format(slip.netPay || 0);
@@ -1680,8 +1668,47 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
             });
         }
 
+        // If the run was Approved, rollback any credited Provident Fund contributions and restored loans
+        if (run.status === 'Approved') {
+            const payslips = await Payslip.find({ payrollRunId: run._id }).lean() as any[];
+            for (const slip of payslips) {
+                const emp = await Employee.findOne({ employeeId: slip.employeeId });
+                if (!emp) continue;
+
+                // Rollback PF contribution credited during approve
+                if (emp.providentFundHistory && emp.providentFundHistory.length > 0) {
+                    const runPfEntries = emp.providentFundHistory.filter(
+                        (pf: any) => pf.payrollRunId === run._id.toString() || (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear)
+                    );
+                    const totalCredited = runPfEntries.reduce((sum: number, pf: any) => sum + (pf.type === 'credit' ? Number(pf.amount) || 0 : -(Number(pf.amount) || 0)), 0);
+                    if (totalCredited > 0) {
+                        emp.providentFundBalance = Math.max(0, (Number(emp.providentFundBalance) || 0) - totalCredited);
+                        emp.providentFundHistory = emp.providentFundHistory.filter(
+                            (pf: any) => !(pf.payrollRunId === run._id.toString() || (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear))
+                        );
+                    }
+                }
+
+                // Rollback Loan deduction if any was deducted
+                const loanDed = (slip.deductions || []).find((d: any) => d.component === 'Loan Deduction');
+                if (loanDed && loanDed.amount > 0 && emp.loans && emp.loans.length > 0) {
+                    const lastLoan = emp.loans.slice().reverse().find((l: any) => l.status === 'Paid' || l.status === 'Active');
+                    if (lastLoan) {
+                        lastLoan.remainingAmount = (lastLoan.remainingAmount || 0) + loanDed.amount;
+                        lastLoan.status = 'Active';
+                    }
+                }
+
+                await emp.save();
+            }
+        }
+
         await Payslip.deleteMany({ payrollRunId: run._id });
         await ExpenseClaim.updateMany(
+            { payrollRunId: run._id },
+            { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
+        );
+        await EmployeeRequest.updateMany(
             { payrollRunId: run._id },
             { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
         );
@@ -1711,7 +1738,7 @@ router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: 
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
         const payslips = await Payslip.find({ payrollRunId: runId })
-            .populate('employeeDetails', 'firstName lastName bankDetails')
+            .populate('employeeDetails', 'firstName middleName lastName bankDetails')
             .lean() as any[];
 
         if (!payslips.length) {
@@ -1723,7 +1750,7 @@ router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: 
         const rows = payslips.map((p, idx) => {
             const rawAcc = p.beneficiaryAccount || p.employeeDetails?.bankDetails?.accountNumber || p.employeeDetails?.bankDetails?.iban || '';
             const accNo = String(rawAcc).trim();
-            const name = p.beneficiaryName || `${p.employeeDetails?.firstName || ''} ${p.employeeDetails?.lastName || ''}`.trim() || p.employeeId;
+            const name = p.beneficiaryName || formatEmployeeFullName(p.employeeDetails, p.employeeId);
             const ref = p.customerReference || generateCustomerReference(run.periodYear, run.periodMonth, idx + 1);
             const amount = p.netPay || 0;
 

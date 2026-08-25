@@ -7,6 +7,7 @@ import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 const ITEMS_PER_PAGE = 12;
 
@@ -146,7 +147,7 @@ const EmployeeList = () => {
             if (statusFilter === 'active' && isPast) return false;
             if (statusFilter === 'past' && !isPast) return false;
 
-            const fullName = `${emp.firstName} ${emp.middleName ? emp.middleName + ' ' : ''}${emp.lastName}`.toLowerCase();
+            const fullName = formatEmployeeFullName(emp, '').toLowerCase();
             const designation = (emp.jobInfo?.designation || '').toLowerCase();
             const matchesName = fullName.includes(filters.name.toLowerCase()) || designation.includes(filters.name.toLowerCase());
             const matchesId = emp.employeeId.toLowerCase().includes(filters.id.toLowerCase());
@@ -405,7 +406,7 @@ const EmployeeList = () => {
                                 {/* Info */}
                                 <div className="space-y-1 mb-6">
                                     <h5 className="font-bold text-slate-800 text-lg group-hover:text-indigo-600 transition-colors">
-                                        {emp.firstName} {emp.middleName ? `${emp.middleName} ` : ''}{emp.lastName}
+                                        {formatEmployeeFullName(emp, emp.employeeId)}
                                     </h5>
                                     <p className="text-indigo-600 text-sm font-semibold tracking-tight">{emp.jobInfo?.designation || 'Software Engineer'}</p>
                                     <div className="flex items-center justify-center gap-1.5 text-slate-400 text-xs">
@@ -486,7 +487,7 @@ const EmployeeList = () => {
                                                         />
                                                     </div>
                                                     <div>
-                                                        <p className="font-bold text-slate-800">{emp.firstName} {emp.middleName ? `${emp.middleName} ` : ''}{emp.lastName}</p>
+                                                        <p className="font-bold text-slate-800">{formatEmployeeFullName(emp, emp.employeeId)}</p>
                                                         <p className="text-[11px] text-slate-400 font-medium">#{emp.employeeId}</p>
                                                     </div>
                                                 </div>

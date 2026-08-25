@@ -13,6 +13,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { sendEmployeeRequestSubmittedEmail, sendEmployeeRequestStatusEmail } from '../utils/email';
 import logger from '../utils/logger';
+import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
@@ -124,7 +125,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
 
             for (const reqObj of pendingRequests) {
                 const emp = empMap[reqObj.employeeId];
-                const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Employee';
+                const empName = formatEmployeeFullName(emp, 'Employee');
                 const itemLabel = reqObj.requestType || reqObj.category;
                 let msg = `Awaiting review for ${itemLabel}.`;
                 let title = `Pending: ${itemLabel}`;
@@ -163,7 +164,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         if (leaveQuery) {
             const pendingLeaves = (await LeaveRequest.find(leaveQuery).sort({ createdAt: -1 }).limit(10).lean()) as any[];
             const employeeIds = [...new Set(pendingLeaves.map(l => l.employeeId))];
-            const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName lastName').lean();
+            const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName').lean();
             const empMap = employees.reduce((acc: any, emp: any) => {
                 acc[emp.employeeId] = emp;
                 return acc;
@@ -171,7 +172,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
 
             for (const leave of pendingLeaves) {
                 const emp = empMap[leave.employeeId];
-                const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Employee';
+                const empName = formatEmployeeFullName(emp, 'Employee');
                 notifications.push({
                     id: leave._id.toString(),
                     title: `Pending Leave: ${leave.type}`,
@@ -211,7 +212,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             if (claimQuery) {
                 const pendingClaims = await ExpenseClaim.find(claimQuery).sort({ updatedAt: -1 }).limit(10).lean();
                 const claimEmpIds = [...new Set(pendingClaims.map(c => c.employeeId))];
-                const claimEmployees = await Employee.find({ employeeId: { $in: claimEmpIds } }).select('employeeId firstName lastName').lean();
+                const claimEmployees = await Employee.find({ employeeId: { $in: claimEmpIds } }).select('employeeId firstName middleName lastName').lean();
                 const claimEmpMap = claimEmployees.reduce((acc: any, emp: any) => {
                     acc[emp.employeeId] = emp;
                     return acc;
@@ -219,7 +220,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
 
                 for (const claim of pendingClaims) {
                     const emp = claimEmpMap[claim.employeeId];
-                    const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Employee';
+                    const empName = formatEmployeeFullName(emp, 'Employee');
                     let msg = '';
                     let title = '';
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { FileText, CheckCircle, XCircle } from 'lucide-react';
 
 const GeneratedDocuments = () => {
@@ -77,7 +78,7 @@ const GeneratedDocuments = () => {
                                     <tr key={doc._id} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4">
                                             <div>
-                                                <p className="font-medium text-gray-900">{doc.details?.firstName} {doc.details?.lastName}</p>
+                                                <p className="font-medium text-gray-900">{formatEmployeeFullName(doc.details, 'Employee')}</p>
                                                 <p className="text-xs text-gray-500">{doc.employeeId}</p>
                                             </div>
                                         </td>
@@ -136,7 +137,7 @@ const GeneratedDocuments = () => {
                         
                         <div className="p-6 space-y-4 text-center">
                             <p className="text-sm text-gray-600">
-                                Are you sure you want to revoke the <strong>{actionModal.documentType}</strong> for <strong>{actionModal.details?.firstName} {actionModal.details?.lastName}</strong>?
+                                Are you sure you want to revoke the <strong>{actionModal.documentType}</strong> for <strong>{formatEmployeeFullName(actionModal.details, 'Employee')}</strong>?
                             </p>
                             <p className="text-xs text-rose-600 bg-rose-50 p-2 rounded border border-rose-200">
                                 This action is permanent and will cause the document verification link to show as revoked.

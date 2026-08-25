@@ -11,6 +11,7 @@ import axios from 'axios';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -40,6 +41,7 @@ interface Payslip {
     notes?: string;
     employeeDetails?: {
         firstName: string;
+        middleName?: string;
         lastName: string;
         jobInfo?: { designation?: string; department?: string };
         bankDetails?: { accountNumber?: string; bankName?: string; iban?: string };
@@ -106,7 +108,7 @@ const PayslipEditPanel = ({
     const empBank = payslip.employeeDetails?.bankDetails;
     const empOwnAccount = empBank?.accountNumber || empBank?.iban || '';
     const empOwnBank = empBank?.bankName || 'Meezan Bank';
-    const empOwnName = `${payslip.employeeDetails?.firstName || ''} ${payslip.employeeDetails?.lastName || ''}`.trim();
+    const empOwnName = formatEmployeeFullName(payslip.employeeDetails, payslip.employeeId);
     const hasEmployeeBank = Boolean(empOwnAccount);
 
     const [earnings, setEarnings] = useState<Earning[]>(payslip.earnings.map(e => ({ ...e })));
@@ -140,7 +142,7 @@ const PayslipEditPanel = ({
         const target = allPayslips.find(p => p.employeeId === selectedEmpId);
         if (target) {
             const acc = target.beneficiaryAccount || target.employeeDetails?.bankDetails?.accountNumber || target.employeeDetails?.bankDetails?.iban || '';
-            const name = target.beneficiaryName || `${target.employeeDetails?.firstName || ''} ${target.employeeDetails?.lastName || ''}`.trim();
+            const name = target.beneficiaryName || formatEmployeeFullName(target.employeeDetails, target.employeeId);
             const bank = target.beneficiaryBank || target.employeeDetails?.bankDetails?.bankName || 'Meezan Bank';
             setBeneficiaryAccount(acc);
             setBeneficiaryName(name);
@@ -189,7 +191,7 @@ const PayslipEditPanel = ({
                             <span>Edit Payslip & Beneficiary Details</span>
                         </h2>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                            <span className="font-semibold text-slate-700">{payslip.employeeDetails?.firstName} {payslip.employeeDetails?.lastName}</span>
+                            <span className="font-semibold text-slate-700">{formatEmployeeFullName(payslip.employeeDetails, payslip.employeeId)}</span>
                             <span className="text-slate-400 font-mono ml-1">({payslip.employeeId})</span>
                             <span className="text-slate-300 mx-1.5">•</span>
                             <span className="font-mono text-indigo-600 font-medium">{payslip.payslipNo}</span>
@@ -283,7 +285,7 @@ const PayslipEditPanel = ({
                                                 .filter(p => p.employeeId !== payslip.employeeId)
                                                 .map(p => (
                                                     <option key={p.employeeId} value={p.employeeId}>
-                                                        {p.employeeDetails?.firstName} {p.employeeDetails?.lastName} ({p.employeeId})
+                                                        {formatEmployeeFullName(p.employeeDetails, p.employeeId)} ({p.employeeId})
                                                     </option>
                                                 ))
                                             }
@@ -1059,13 +1061,13 @@ const PayrollRunDetail = () => {
                             <tbody className="divide-y divide-slate-50">
                                 {payslips.map(ps => {
                                     const accNo = ps.beneficiaryAccount || ps.employeeDetails?.bankDetails?.accountNumber || ps.employeeDetails?.bankDetails?.iban;
-                                    const benName = ps.beneficiaryName || `${ps.employeeDetails?.firstName || ''} ${ps.employeeDetails?.lastName || ''}`.trim();
+                                    const benName = ps.beneficiaryName || formatEmployeeFullName(ps.employeeDetails, ps.employeeId);
                                     
                                     return (
                                         <tr key={ps._id} className="hover:bg-slate-50/50 transition-colors">
                                             <td className="px-5 py-3.5">
                                                 <p className="font-semibold text-slate-800">
-                                                    {ps.employeeDetails?.firstName} {ps.employeeDetails?.lastName}
+                                                    {formatEmployeeFullName(ps.employeeDetails, ps.employeeId)}
                                                 </p>
                                                 <p className="text-xs text-slate-400">
                                                     {ps.employeeDetails?.jobInfo?.designation} • {ps.employeeId}

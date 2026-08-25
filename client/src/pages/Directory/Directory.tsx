@@ -5,6 +5,7 @@ import Avatar from '../../components/UI/Avatar';
 import { getAvatarUrl } from '../../utils/avatar';
 import AlertModal from '../../components/UI/AlertModal';
 import CompanyProfileModal from '../../components/CompanyProfileModal';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 interface Employee {
     employeeId: string;
@@ -70,7 +71,7 @@ const Directory = () => {
 
     const filteredEmployees = useMemo(() => {
         return employees.filter(emp => {
-            const fullName = `${emp.firstName} ${emp.middleName ? emp.middleName + ' ' : ''}${emp.lastName}`.toLowerCase();
+            const fullName = formatEmployeeFullName(emp, '').toLowerCase();
             const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || 
                                  (emp.jobInfo?.designation || '').toLowerCase().includes(searchTerm.toLowerCase());
             const matchesDept = selectedDept === 'All' || emp.jobInfo?.department === selectedDept;
@@ -82,12 +83,12 @@ const Directory = () => {
         setAlertConfig({
             isOpen: true,
             title: `Contact ${emp.firstName}`,
-            message: `Choose how you'd like to reach ${emp.firstName} ${emp.lastName}.`,
+            message: `Choose how you'd like to reach ${formatEmployeeFullName(emp, 'Employee')}.`,
             type: 'contact',
             contactInfo: {
                 phone: emp.phone,
                 email: emp.workEmail,
-                name: `${emp.firstName} ${emp.lastName}`
+                name: formatEmployeeFullName(emp, 'Employee')
             },
             onConfirm: () => {
                 window.location.href = `tel:${emp.phone}`;
@@ -221,7 +222,7 @@ const Directory = () => {
                                     </div>
                                     
                                     <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                                        {emp.firstName} {emp.lastName}
+                                        {formatEmployeeFullName(emp, emp.employeeId)}
                                     </h3>
                                     <p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-1">
                                         {emp.jobInfo?.designation || 'Staff Member'}
@@ -293,7 +294,7 @@ const Directory = () => {
                                                     className="w-10 h-10 group-hover:scale-110 transition-transform"
                                                 />
                                                 <div>
-                                                    <p className="text-sm font-bold text-slate-900">{emp.firstName} {emp.lastName}</p>
+                                                    <p className="text-sm font-bold text-slate-900">{formatEmployeeFullName(emp, emp.employeeId)}</p>
                                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{emp.employeeId}</p>
                                                 </div>
                                             </div>

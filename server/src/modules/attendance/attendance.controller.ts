@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 import * as svc from './attendance.service';
 import * as repo from './attendance.repository';
@@ -264,7 +265,7 @@ export async function selfPunch(req: AuthRequest, res: Response) {
 
         await repo.upsertPunch('WEB-PORTAL', emp.employeeId, now, {
             employeeId: emp.employeeId,
-            employeeName: `${emp.firstName} ${emp.lastName || ''}`.trim(),
+            employeeName: formatEmployeeFullName(emp, emp.employeeId),
             location: 'Web Portal',
             verifyType: 5,
         });
@@ -317,7 +318,7 @@ export async function getLiveFeed(req: AuthRequest, res: Response) {
             return {
                 ...p,
                 location: punchLoc,
-                employeeName: p.employeeName || (emp ? `${emp.firstName} ${emp.lastName}` : `User ${p.machineUserId}`),
+                employeeName: p.employeeName || (emp ? formatEmployeeFullName(emp, `User ${p.machineUserId}`) : `User ${p.machineUserId}`),
                 avatar: emp?.avatar,
                 employeeId: empId,
                 attendanceStatus: rec?.status,

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import MyProvidentFund from './MyProvidentFund';
 import SalaryPinModal from '../../components/UI/SalaryPinModal';
+import { formatEmployeeFullName } from '../../utils/nameHelper';
 import {
     Banknote, Search, ChevronDown, ChevronRight, CheckCircle2,
     Clock, XCircle, TrendingUp, Users, BadgeCheck,
@@ -25,6 +26,7 @@ interface PFEntry {
 interface EmpPFData {
     employeeId: string;
     firstName: string;
+    middleName?: string;
     lastName: string;
     designation?: string;
     department?: string;
@@ -161,7 +163,7 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <p className="text-xs font-bold uppercase tracking-widest text-indigo-200 mb-1">PF Statement</p>
-                            <h2 className="text-xl font-black">{emp.firstName} {emp.lastName}</h2>
+                            <h2 className="text-xl font-black">{formatEmployeeFullName(emp, emp.employeeId)}</h2>
                             <p className="text-indigo-200 text-sm">{emp.designation} • #{emp.employeeId}</p>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-xl transition-colors">
@@ -501,7 +503,7 @@ export default function ProvidentFundReport() {
     };
 
     const filtered = data.filter(emp => {
-        const name = `${emp.firstName} ${emp.lastName} ${emp.employeeId}`.toLowerCase();
+        const name = `${formatEmployeeFullName(emp, '')} ${emp.employeeId}`.toLowerCase();
         const matchSearch = name.includes(search.toLowerCase());
         const matchFilter =
             filter === 'all' ? true :
@@ -714,7 +716,7 @@ export default function ProvidentFundReport() {
 
                                     <div className="flex-1 min-w-0">
                                         <p className="font-bold text-slate-800 truncate">
-                                            {emp.firstName} {emp.lastName}
+                                            {formatEmployeeFullName(emp, emp.employeeId)}
                                             <span className="ml-2 text-xs font-medium text-slate-400">#{emp.employeeId}</span>
                                         </p>
                                         <p className="text-xs text-slate-500 truncate">{emp.designation} • {emp.department}</p>

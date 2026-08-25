@@ -13,6 +13,7 @@ import DocumentTemplate from '../models/DocumentTemplate';
 import LeaveType from '../models/LeaveType';
 import LeaveBalance from '../models/LeaveBalance';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
@@ -869,13 +870,13 @@ router.get('/public/verify/:documentId', async (req: Request, res: Response, nex
         }).lean() as any;
 
         if (payslip) {
-            const emp = await Employee.findOne({ employeeId: payslip.employeeId }).select('firstName lastName jobInfo').lean() as any;
+            const emp = await Employee.findOne({ employeeId: payslip.employeeId }).select('firstName middleName lastName jobInfo').lean() as any;
             const isRevokedOrCancelled = payslip.status === 'Revoked' || payslip.status === 'Cancelled' || payslip.status === 'Draft';
             return res.json({
                 isValid: !isRevokedOrCancelled,
                 documentType: `Salary Payslip (${payslip.periodMonth} ${payslip.periodYear})`,
                 issueDate: payslip.generatedAt || payslip.createdAt,
-                employeeName: emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : payslip.employeeId,
+                employeeName: formatEmployeeFullName(emp, payslip.employeeId),
                 designation: emp?.jobInfo?.designation || 'Employee',
                 department: emp?.jobInfo?.department || 'Staff',
                 status: payslip.status || 'Valid'

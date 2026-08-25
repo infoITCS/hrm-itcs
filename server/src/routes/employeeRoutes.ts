@@ -77,10 +77,11 @@ const router = express.Router();
 function sanitizeEmployeeForRole(employee: any, requesterRole: string, requesterUserId?: string): any {
     if (!employee) return employee;
     
+    const role = (requesterRole || '').toLowerCase().trim();
     // Check if requester is viewing their own profile
     const empUserId = employee.userId ? (employee.userId._id || employee.userId).toString() : null;
     const isSelf = empUserId && requesterUserId && empUserId === requesterUserId.toString();
-    const isPrivilegedFinancialViewer = ['super-admin', 'finance'].includes(requesterRole) || isSelf;
+    const isPrivilegedFinancialViewer = ['super-admin', 'admin', 'hr', 'finance'].includes(role) || isSelf;
 
     if (!isPrivilegedFinancialViewer) {
         const sanitized = typeof employee.toObject === 'function' ? employee.toObject() : { ...employee };
