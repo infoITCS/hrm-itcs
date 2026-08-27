@@ -99,6 +99,11 @@ export interface IEmployee extends Document {
         eligibleDate?: Date;
         status: 'Active' | 'Pending' | 'Expired';
     }[];
+    medicalBenefit?: {
+        customAnnualLimit?: number;
+        openingBalanceUtilized?: number;
+        notes?: string;
+    };
     loans?: {
         loanId?: string;
         totalAmount: number;
@@ -278,6 +283,11 @@ const EmployeeSchema: Schema = new Schema({
         eligibleDate: { type: Date },
         status: { type: String, enum: ['Active', 'Pending', 'Expired'], default: 'Active' }
     }],
+    medicalBenefit: {
+        customAnnualLimit: { type: Number },
+        openingBalanceUtilized: { type: Number, default: 0 },
+        notes: { type: String }
+    },
     loans: [{
         loanId: { type: String },
         totalAmount: { type: Number, required: true },

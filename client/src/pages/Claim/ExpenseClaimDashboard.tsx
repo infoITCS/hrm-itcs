@@ -42,6 +42,7 @@ const STATUS_COLORS: Record<string, string> = {
     'Pending Line Manager': 'bg-amber-50 text-amber-700 border-amber-200',
     'Pending HR': 'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Pending Finance': 'bg-violet-50 text-violet-700 border-violet-200',
+    'Action Required': 'bg-amber-100 text-amber-800 border-amber-300 font-bold',
     Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     Declined: 'bg-rose-50 text-rose-700 border-rose-200',
 };
@@ -133,10 +134,10 @@ const ExpenseClaimDashboard = () => {
     const token = localStorage.getItem('token');
     const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
 
-    type Tab = 'submit' | 'mine' | 'approvals' | 'history' | 'settings';
+    type Tab = 'submit' | 'mine' | 'approvals' | 'history' | 'medical-records' | 'settings';
     const [tab, setTab] = useState<Tab>(() => {
         const initialTab = searchParams.get('tab');
-        if (initialTab && ['submit', 'mine', 'approvals', 'history', 'settings'].includes(initialTab)) {
+        if (initialTab && ['submit', 'mine', 'approvals', 'history', 'medical-records', 'settings'].includes(initialTab)) {
             return initialTab as Tab;
         }
         return 'mine';
@@ -144,7 +145,7 @@ const ExpenseClaimDashboard = () => {
 
     useEffect(() => {
         const urlTab = searchParams.get('tab');
-        if (urlTab && ['submit', 'mine', 'approvals', 'history', 'settings'].includes(urlTab)) {
+        if (urlTab && ['submit', 'mine', 'approvals', 'history', 'medical-records', 'settings'].includes(urlTab)) {
             setTab(urlTab as Tab);
         }
     }, [searchParams]);
@@ -247,6 +248,38 @@ const ExpenseClaimDashboard = () => {
     const [catFormReceipt, setCatFormReceipt] = useState(false);
     const [catFormSubCats, setCatFormSubCats] = useState('');
     const [catSubmitting, setCatSubmitting] = useState(false);
+
+    // Medical Records state
+    const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
+    const [medicalSummary, setMedicalSummary] = useState<any>(null);
+    const [loadingMedical, setLoadingMedical] = useState(false);
+    const [medicalSearch, setMedicalSearch] = useState('');
+
+    // Selected employee medical ledger drawer
+    const [selectedEmpMedical, setSelectedEmpMedical] = useState<any>(null);
+    const [loadingEmpMedical, setLoadingEmpMedical] = useState(false);
+    const [medicalDrawerOpen, setMedicalDrawerOpen] = useState(false);
+
+    // Adjust limit modal
+    const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+    const [adjustEmp, setAdjustEmp] = useState<any>(null);
+    const [adjustAnnualLimit, setAdjustAnnualLimit] = useState<number | ''>('');
+    const [adjustOpeningBalance, setAdjustOpeningBalance] = useState<number | ''>('');
+    const [adjustNotes, setAdjustNotes] = useState('');
+    const [adjusting, setAdjusting] = useState(false);
+
+    // Amend & Resubmit Modal state
+    const [amendOpen, setAmendOpen] = useState(false);
+    const [amendClaim, setAmendClaim] = useState<any>(null);
+    const [amendAmount, setAmendAmount] = useState<number | ''>('');
+    const [amendNotes, setAmendNotes] = useState('');
+    const [amendReplyComment, setAmendReplyComment] = useState('');
+    const [amendReceiptFiles, setAmendReceiptFiles] = useState<File[]>([]);
+    const [amending, setAmending] = useState(false);
+
+    // Modal quick comment
+    const [modalQuickComment, setModalQuickComment] = useState('');
+    const [postingComment, setPostingComment] = useState(false);
 
     const isApprover = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
     const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
@@ -409,6 +442,158 @@ const ExpenseClaimDashboard = () => {
         }
     }, [headers, isAdminLike, category]);
 
+    const fetchMedicalRecords = useCallback(async () => {
+        if (!isAdminLike && role !== 'finance') return;
+        setLoadingMedical(true);
+        try {
+            const r = await fetch(api.medicalRecords, { headers });
+            const d = await r.json();
+            if (d?.success && d?.data) {
+                setMedicalRecords(d.data.records || []);
+                setMedicalSummary(d.data.summary || null);
+            }
+        } catch (err) {
+            console.error('Failed to fetch medical records:', err);
+        } finally {
+            setLoadingMedical(false);
+        }
+    }, [headers, isAdminLike, role]);
+
+    const openEmpMedicalDrawer = async (empId: string) => {
+        setLoadingEmpMedical(true);
+        setMedicalDrawerOpen(true);
+        try {
+            const r = await fetch(api.medicalRecordEmployee(empId), { headers });
+            const d = await r.json();
+            if (d?.success && d?.data) {
+                setSelectedEmpMedical(d.data);
+            }
+        } catch {
+            showToast('Failed to load employee medical history', 'error');
+        } finally {
+            setLoadingEmpMedical(false);
+        }
+    };
+
+    const openAdjustModal = (empRecord: any) => {
+        setAdjustEmp(empRecord);
+        setAdjustAnnualLimit(empRecord.customLimitSet ? empRecord.annualLimit : '');
+        setAdjustOpeningBalance(empRecord.openingBalanceUtilized || '');
+        setAdjustNotes(empRecord.notes || '');
+        setAdjustModalOpen(true);
+    };
+
+    const handleSaveMedicalAdjustment = async () => {
+        if (!adjustEmp?.employeeId) return;
+        setAdjusting(true);
+        try {
+            const payload: any = {};
+            if (adjustAnnualLimit !== '') payload.customAnnualLimit = Number(adjustAnnualLimit);
+            else payload.customAnnualLimit = null;
+            if (adjustOpeningBalance !== '') payload.openingBalanceUtilized = Number(adjustOpeningBalance);
+            else payload.openingBalanceUtilized = 0;
+            payload.notes = adjustNotes;
+
+            const r = await fetch(api.medicalRecordAdjust(adjustEmp.employeeId), {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify(payload)
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to adjust medical record');
+            showToast('Medical record limits updated successfully', 'success');
+            setAdjustModalOpen(false);
+            await fetchMedicalRecords();
+            if (selectedEmpMedical?.employee?.employeeId === adjustEmp.employeeId) {
+                await openEmpMedicalDrawer(adjustEmp.employeeId);
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to update medical record', 'error');
+        } finally {
+            setAdjusting(false);
+        }
+    };
+
+    const openAmendModal = (c: any) => {
+        setAmendClaim(c);
+        setAmendAmount(c.amountRequested || '');
+        setAmendNotes(c.notes || '');
+        setAmendReplyComment('');
+        setAmendReceiptFiles([]);
+        setAmendOpen(true);
+    };
+
+    const handleAmendSubmit = async () => {
+        if (!amendClaim?._id) return;
+        setAmending(true);
+        try {
+            const encodedNewReceipts: any[] = [];
+            for (const f of amendReceiptFiles) {
+                const b64 = await readFileAsBase64(f);
+                encodedNewReceipts.push({
+                    fileName: b64.fileName,
+                    contentType: b64.contentType,
+                    base64: b64.base64
+                });
+            }
+
+            const payload: any = {
+                amountRequested: amendAmount !== '' ? Number(amendAmount) : undefined,
+                notes: amendNotes,
+                replyComment: amendReplyComment.trim() || undefined
+            };
+
+            if (encodedNewReceipts.length > 0) {
+                payload.receipts = encodedNewReceipts;
+            }
+
+            const r = await fetch(api.claimAmend(amendClaim._id), {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify(payload)
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to amend and resubmit claim');
+
+            showToast('Claim amended and resubmitted for approval!', 'success');
+            setAmendOpen(false);
+            setAmendClaim(null);
+            setAmendReceiptFiles([]);
+            setAmendReplyComment('');
+            await fetchMine();
+            await fetchApprovals();
+            await fetchHistory();
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to amend claim', 'error');
+        } finally {
+            setAmending(false);
+        }
+    };
+
+    const postModalComment = async () => {
+        if (!decisionClaim?._id || !modalQuickComment.trim()) return;
+        setPostingComment(true);
+        try {
+            const r = await fetch(api.claimComments(decisionClaim._id), {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ message: modalQuickComment.trim() })
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to post comment');
+            setDecisionClaim(d.data);
+            setModalQuickComment('');
+            showToast('Comment posted', 'success');
+            await fetchMine();
+            await fetchApprovals();
+            await fetchHistory();
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to post comment', 'error');
+        } finally {
+            setPostingComment(false);
+        }
+    };
+
     const filterList = useCallback((list: any[]) => {
         return list.filter(c => {
             const matchesClaimNo = !filterClaimNo || (c.claimNo || '').toLowerCase().includes(filterClaimNo.toLowerCase());
@@ -532,7 +717,8 @@ const ExpenseClaimDashboard = () => {
         fetchHistory();
         fetchAllEmployees();
         fetchCategories();
-    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees, fetchCategories]);
+        fetchMedicalRecords();
+    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees, fetchCategories, fetchMedicalRecords]);
 
     useEffect(() => {
         if (forWhom === 'Self') setDependentId('');
@@ -814,6 +1000,36 @@ const ExpenseClaimDashboard = () => {
 
     const submitDecision = async () => {
         if (!decisionClaim?._id) return;
+
+        if (decision === 'Action Required') {
+            if (!decisionComments.trim()) {
+                showToast('Please provide amendment instructions/comments for the employee.', 'warning');
+                return;
+            }
+            setDeciding(true);
+            try {
+                const r = await fetch(api.claimRequestAmendment(decisionClaim._id), {
+                    method: 'PATCH',
+                    headers,
+                    body: JSON.stringify({ comments: decisionComments.trim() })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d?.message || 'Failed to send amendment request');
+                setDecisionOpen(false);
+                setDecisionClaim(null);
+                setDecisionErpId('');
+                showToast('Claim sent back to employee for review and amendment', 'success');
+                await fetchApprovals();
+                await fetchMine();
+                await fetchHistory();
+            } catch (e: any) {
+                showToast(e?.message || 'Failed to submit amendment request', 'error');
+            } finally {
+                setDeciding(false);
+            }
+            return;
+        }
+
         if (decision === 'Approved' && currentRequiresAuthorization && !decisionAuthorizationBy) {
             showToast('Authorization is required for this out-of-policy claim (e.g. HR / Senior Management).', 'warning');
             return;
@@ -1009,6 +1225,7 @@ const ExpenseClaimDashboard = () => {
     const canMineTab = hasSubAccess('claim', 'mine');
     const canApprovalsTab = isApprover && hasSubAccess('claim', 'approvals');
     const canHistoryTab = canSeeAllClaims && hasSubAccess('claim', 'history');
+    const canMedicalRecordsTab = isAdminLike || role === 'finance';
     const canSettingsTab = isAdminLike && hasSubAccess('claim', 'settings');
 
     const tabs = [
@@ -1016,6 +1233,7 @@ const ExpenseClaimDashboard = () => {
         ...(canMineTab ? [{ id: 'mine' as const, label: 'My Claims', icon: FileText }] : []),
         ...(canApprovalsTab ? [{ id: 'approvals' as const, label: 'Approvals', icon: Inbox }] : []),
         ...(canHistoryTab ? [{ id: 'history' as const, label: 'Claims History', icon: History }] : []),
+        ...(canMedicalRecordsTab ? [{ id: 'medical-records' as const, label: 'Medical Records', icon: ShieldCheck }] : []),
         ...(canSettingsTab ? [{ id: 'settings' as const, label: 'Category Settings', icon: Tag }] : []),
     ];
 
@@ -1596,9 +1814,7 @@ const ExpenseClaimDashboard = () => {
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
                                             <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
-                                            {isAdminLike && (
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Admin</th>
-                                            )}
+                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1663,16 +1879,39 @@ const ExpenseClaimDashboard = () => {
                                                         <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
-                                                {isAdminLike && (
-                                                    <td className="px-4 py-3 align-middle">
+                                                <td className="px-4 py-3 align-middle whitespace-nowrap">
+                                                    <div className="flex items-center gap-1.5">
+                                                        {c.status === 'Action Required' && (
+                                                            <button
+                                                                onClick={() => openAmendModal(c)}
+                                                                className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm transition-colors"
+                                                                title="Review feedback & amend claim"
+                                                            >
+                                                                <Edit2 size={13} />
+                                                                Amend & Resubmit
+                                                            </button>
+                                                        )}
                                                         <button
-                                                            onClick={() => openCorrect(c)}
-                                                            className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                                                            onClick={() => {
+                                                                setDecisionClaim(c);
+                                                                setDecision('Approved');
+                                                                setDecisionOpen(true);
+                                                            }}
+                                                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
+                                                            title="View claim details and remarks"
                                                         >
-                                                            Correct
+                                                            <Eye size={15} />
                                                         </button>
-                                                    </td>
-                                                )}
+                                                        {isAdminLike && (
+                                                            <button
+                                                                onClick={() => openCorrect(c)}
+                                                                className="px-2 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50"
+                                                            >
+                                                                Correct
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -2039,6 +2278,227 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         )}
                         {renderPagination(filteredHistory.length)}
+                    </div>
+                )}
+
+                {tab === 'medical-records' && (isAdminLike || role === 'finance') && (
+                    <div className="p-6 space-y-6">
+                        {/* Header & Controls */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <ShieldCheck size={20} className="text-emerald-600" />
+                                    Medical Benefits & Records Ledger
+                                </h3>
+                                <p className="text-sm text-slate-500">
+                                    Accurate tracking of OPD limits, pro-rated joining entitlements, and YTD medical claim utilization.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="relative">
+                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search employee or ID..."
+                                        value={medicalSearch}
+                                        onChange={e => setMedicalSearch(e.target.value)}
+                                        className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                                    />
+                                </div>
+                                <button
+                                    onClick={fetchMedicalRecords}
+                                    className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors"
+                                    title="Refresh Medical Records"
+                                >
+                                    <RefreshCw size={16} className={loadingMedical ? 'animate-spin' : ''} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Top KPI Cards */}
+                        {medicalSummary && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
+                                        <span>TOTAL ALLOCATED POOL</span>
+                                        <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full text-[10px] font-extrabold">{medicalSummary.totalEmployees} STAFF</span>
+                                    </div>
+                                    <div className="text-2xl font-black text-slate-800 tracking-tight">
+                                        {formatMoney(medicalSummary.totalAllocated)}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-1">Annual entitlements (pro-rated)</p>
+                                </div>
+
+                                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
+                                        <span>TOTAL UTILIZED (YTD)</span>
+                                        <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-extrabold">APPROVED</span>
+                                    </div>
+                                    <div className="text-2xl font-black text-emerald-700 tracking-tight">
+                                        {formatMoney(medicalSummary.totalUtilized)}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-1">
+                                        {medicalSummary.totalAllocated > 0 ? Math.round((medicalSummary.totalUtilized / medicalSummary.totalAllocated) * 100) : 0}% of company pool utilized
+                                    </p>
+                                </div>
+
+                                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
+                                        <span>REMAINING AVAILABLE POOL</span>
+                                        <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full text-[10px] font-extrabold">AVAILABLE</span>
+                                    </div>
+                                    <div className="text-2xl font-black text-blue-700 tracking-tight">
+                                        {formatMoney(medicalSummary.totalRemaining)}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-1">Remaining claimable balance</p>
+                                </div>
+
+                                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-1">
+                                        <span>MAXED OUT EMPLOYEES</span>
+                                        {medicalSummary.totalMaxedOut > 0 ? (
+                                            <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full text-[10px] font-extrabold">LIMIT REACHED</span>
+                                        ) : (
+                                            <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full text-[10px] font-extrabold">ALL OK</span>
+                                        )}
+                                    </div>
+                                    <div className="text-2xl font-black text-rose-600 tracking-tight">
+                                        {medicalSummary.totalMaxedOut}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 mt-1">Employees with zero remaining balance</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Medical Records Table */}
+                        {loadingMedical ? (
+                            <div className="text-slate-400 text-sm py-8 text-center">Loading medical benefit records…</div>
+                        ) : (
+                            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                <table className="w-full text-sm min-w-[1000px]">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                            <th className="text-left px-4 py-3 font-semibold">Employee</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Dept / Designation</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Annual Limit</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Total Utilized</th>
+                                            <th className="text-left px-4 py-3 font-semibold min-w-[180px]">Utilization Bar</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Remaining</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Status</th>
+                                            <th className="text-right px-4 py-3 font-semibold">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {medicalRecords
+                                            .filter(r => {
+                                                if (!medicalSearch.trim()) return true;
+                                                const q = medicalSearch.toLowerCase();
+                                                return r.name.toLowerCase().includes(q) || r.employeeId.toLowerCase().includes(q) || r.department.toLowerCase().includes(q);
+                                            })
+                                            .map((rec) => (
+                                                <tr key={rec.employeeId} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
+                                                    <td className="px-4 py-3 align-middle">
+                                                        <div className="font-bold text-slate-800">{rec.name}</div>
+                                                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                                            <span className="font-mono">{rec.employeeId}</span>
+                                                            {rec.isMidYearJoiner && (
+                                                                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold" title={`Joined in ${rec.joiningDate ? new Date(rec.joiningDate).toLocaleDateString() : ''} (${rec.activeMonths} active months)`}>
+                                                                    Joined Mid-Year ({rec.activeMonths}m)
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle text-slate-600 text-xs">
+                                                        <div className="font-medium text-slate-700">{rec.designation}</div>
+                                                        <div className="text-slate-400">{rec.department}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap font-bold text-slate-700">
+                                                        <div>{formatMoney(rec.annualLimit)}</div>
+                                                        {rec.customLimitSet && (
+                                                            <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded font-bold">Custom Limit</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                                                        <div className="font-bold text-slate-800">{formatMoney(rec.totalUtilized)}</div>
+                                                        {rec.openingBalanceUtilized > 0 && (
+                                                            <div className="text-[10px] text-slate-400">
+                                                                (Opening: {formatMoney(rec.openingBalanceUtilized)})
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle min-w-[180px]">
+                                                        <div className="space-y-1">
+                                                            <div className="flex justify-between text-[11px] font-bold">
+                                                                <span className={rec.utilizationPct >= 100 ? 'text-rose-600' : rec.utilizationPct >= 75 ? 'text-amber-600' : 'text-emerald-600'}>
+                                                                    {rec.utilizationPct}%
+                                                                </span>
+                                                                <span className="text-slate-400 font-normal">{rec.claimCount} claims</span>
+                                                            </div>
+                                                            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className={`h-full rounded-full transition-all ${
+                                                                        rec.utilizationPct >= 100
+                                                                            ? 'bg-rose-500'
+                                                                            : rec.utilizationPct >= 75
+                                                                            ? 'bg-amber-500'
+                                                                            : 'bg-emerald-500'
+                                                                    }`}
+                                                                    style={{ width: `${Math.min(100, rec.utilizationPct)}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                                                        <span className={`font-black text-sm ${rec.remainingBalance > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                            {formatMoney(rec.remainingBalance)}
+                                                        </span>
+                                                        {rec.ytdPending > 0 && (
+                                                            <div className="text-[10px] text-amber-600 font-bold">
+                                                                Pending: {formatMoney(rec.ytdPending)}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                                                        {rec.isMaxedOut ? (
+                                                            <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
+                                                                Maxed Out
+                                                            </span>
+                                                        ) : rec.utilizationPct >= 80 ? (
+                                                            <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold">
+                                                                Near Limit
+                                                            </span>
+                                                        ) : (
+                                                            <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold">
+                                                                Active
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                                                        <div className="flex items-center justify-end gap-1.5">
+                                                            <button
+                                                                onClick={() => openEmpMedicalDrawer(rec.employeeId)}
+                                                                className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                                                title="View full medical history and subcategory breakdown"
+                                                            >
+                                                                <FileText size={13} /> Ledger
+                                                            </button>
+                                                            {isAdminLike && (
+                                                                <button
+                                                                    onClick={() => openAdjustModal(rec)}
+                                                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                                                    title="Adjust custom annual limit or opening balance"
+                                                                >
+                                                                    <Edit2 size={13} /> Adjust
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -2415,6 +2875,60 @@ const ExpenseClaimDashboard = () => {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Localized Comments Thread */}
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                                        <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                            <span className="flex items-center gap-1.5"><MessageSquare size={13} className="text-indigo-600" /> Localized Comments & Remarks</span>
+                                            <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-full font-bold">{(decisionClaim.comments || []).length}</span>
+                                        </div>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                            {(!decisionClaim.comments || decisionClaim.comments.length === 0) ? (
+                                                <p className="text-xs text-slate-400 italic">No comments yet on this claim.</p>
+                                            ) : (
+                                                decisionClaim.comments.map((cm: any, idx: number) => (
+                                                    <div key={cm._id || idx} className={`p-2.5 rounded-lg text-xs border ${cm.isActionRequest ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
+                                                        <div className="flex items-center justify-between gap-1 mb-1">
+                                                            <span className="font-bold text-slate-800 flex items-center gap-1">
+                                                                {cm.authorName}
+                                                                <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-semibold uppercase">{cm.authorRole}</span>
+                                                                {cm.isActionRequest && (
+                                                                    <span className="text-[9px] px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded font-extrabold uppercase">Amendment Requested</span>
+                                                                )}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400">
+                                                                {cm.createdAt ? new Date(cm.createdAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">{cm.message}</p>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                                            <input
+                                                type="text"
+                                                placeholder="Post a remark on this claim..."
+                                                value={modalQuickComment}
+                                                onChange={e => setModalQuickComment(e.target.value)}
+                                                onKeyDown={async (e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        await postModalComment();
+                                                    }
+                                                }}
+                                                className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={postModalComment}
+                                                disabled={postingComment || !modalQuickComment.trim()}
+                                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg disabled:opacity-50 transition-colors shrink-0"
+                                            >
+                                                {postingComment ? '...' : 'Post'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* ── RIGHT: Receipt / Document Viewer ──────────── */}
@@ -2588,7 +3102,7 @@ const ExpenseClaimDashboard = () => {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
-                                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                                    <div className="grid grid-cols-3 gap-2 mt-1">
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -2600,14 +3114,29 @@ const ExpenseClaimDashboard = () => {
                                                                     setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
                                                                 }
                                                             }}
-                                                            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
                                                                 decision === 'Approved'
                                                                     ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
                                                                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                                                             }`}
                                                         >
-                                                            <CheckCircle2 size={16} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
+                                                            <CheckCircle2 size={15} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
                                                             Approve
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setDecision('Action Required');
+                                                                setDecisionApprovedAmount(0);
+                                                            }}
+                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                                                decision === 'Action Required'
+                                                                    ? 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/20'
+                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                            }`}
+                                                        >
+                                                            <Edit2 size={15} className={decision === 'Action Required' ? 'text-amber-600' : 'text-slate-400'} />
+                                                            Amend
                                                         </button>
                                                         <button
                                                             type="button"
@@ -2615,13 +3144,13 @@ const ExpenseClaimDashboard = () => {
                                                                 setDecision('Declined');
                                                                 setDecisionApprovedAmount(0);
                                                             }}
-                                                            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-bold transition-all ${
+                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
                                                                 decision === 'Declined'
                                                                     ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
                                                                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                                                             }`}
                                                         >
-                                                            <XCircle size={16} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
+                                                            <XCircle size={15} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
                                                             Decline
                                                         </button>
                                                     </div>
@@ -2715,6 +3244,8 @@ const ExpenseClaimDashboard = () => {
                                         className={`px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-colors disabled:opacity-50 flex items-center gap-2 ${
                                             decision === 'Declined'
                                                 ? 'bg-rose-600 hover:bg-rose-700'
+                                                : decision === 'Action Required'
+                                                ? 'bg-amber-600 hover:bg-amber-700'
                                                 : 'bg-emerald-600 hover:bg-emerald-700'
                                         }`}
                                     >
@@ -2724,6 +3255,11 @@ const ExpenseClaimDashboard = () => {
                                             <>
                                                 <CheckCircle2 size={16} />
                                                 Approve Claim
+                                            </>
+                                        ) : decision === 'Action Required' ? (
+                                            <>
+                                                <Edit2 size={16} />
+                                                Send for Amendment
                                             </>
                                         ) : (
                                             <>
@@ -2931,13 +3467,345 @@ const ExpenseClaimDashboard = () => {
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={submitCorrection}
+                                     onClick={submitCorrection}
                                     disabled={correcting}
                                     className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50"
                                 >
                                     {correcting ? 'Saving…' : 'Update'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* ── Employee Amend & Resubmit Modal ────────────────────────────── */}
+            {amendOpen && amendClaim && createPortal(
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white flex-shrink-0">
+                            <div>
+                                <h3 className="font-extrabold text-base flex items-center gap-2">
+                                    <Edit2 size={18} />
+                                    Review & Amend Claim — {amendClaim.claimNo}
+                                </h3>
+                                <p className="text-xs text-amber-100 mt-0.5">
+                                    Update claim details, upload revised receipts, or respond to reviewer feedback
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setAmendOpen(false)}
+                                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                            {/* Latest Reviewer Feedback Alert */}
+                            {(() => {
+                                const actionComments = (amendClaim.comments || []).filter((cm: any) => cm.isActionRequest);
+                                const latestReq = actionComments[actionComments.length - 1];
+                                if (!latestReq) return null;
+                                return (
+                                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-1">
+                                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 uppercase tracking-wide">
+                                            <AlertTriangle size={14} className="text-amber-600" />
+                                            Reviewer Feedback / Action Requested:
+                                        </div>
+                                        <p className="text-sm font-semibold text-amber-950 italic">
+                                            "{latestReq.message}"
+                                        </p>
+                                        <div className="text-[10px] text-amber-700">
+                                            Requested by {latestReq.authorName} ({latestReq.authorRole}) on {new Date(latestReq.createdAt).toLocaleString()}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-600">Category</label>
+                                    <input
+                                        type="text"
+                                        disabled
+                                        value={amendClaim.category || ''}
+                                        className="mt-1 w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 cursor-not-allowed"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-600">Requested Amount (PKR)</label>
+                                    <input
+                                        type="number"
+                                        value={amendAmount}
+                                        onChange={e => setAmendAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                        className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-600">Employee Explanation / General Notes</label>
+                                <textarea
+                                    rows={2}
+                                    value={amendNotes}
+                                    onChange={e => setAmendNotes(e.target.value)}
+                                    placeholder="Explanation of expenses..."
+                                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white resize-none"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Upload Revised / Additional Receipts (Max 5)</label>
+                                <input
+                                    type="file"
+                                    multiple
+                                    accept="image/*,application/pdf"
+                                    onChange={e => {
+                                        const incoming = Array.from(e.target.files || []);
+                                        setAmendReceiptFiles(prev => [...prev, ...incoming].slice(0, 5));
+                                    }}
+                                    className="mt-1 block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
+                                />
+                                {amendReceiptFiles.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                        {amendReceiptFiles.map((f, i) => (
+                                            <div key={i} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                                <span className="font-semibold text-slate-700 truncate">{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAmendReceiptFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                                    className="text-rose-500 hover:text-rose-700 font-bold ml-2"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Your Reply / Amendment Note to Reviewer</label>
+                                <textarea
+                                    rows={2}
+                                    value={amendReplyComment}
+                                    onChange={e => setAmendReplyComment(e.target.value)}
+                                    placeholder="Explain changes made or answer reviewer's query..."
+                                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 flex-shrink-0">
+                            <button
+                                onClick={() => setAmendOpen(false)}
+                                className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAmendSubmit}
+                                disabled={amending}
+                                className="px-5 py-2 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50 transition-colors"
+                            >
+                                {amending ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                Resubmit Claim
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* ── Employee Medical Ledger Drawer ──────────────────────────────── */}
+            {medicalDrawerOpen && createPortal(
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-2xl h-full shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden">
+                        <div className="p-5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between flex-shrink-0">
+                            <div>
+                                <h3 className="font-extrabold text-base flex items-center gap-2">
+                                    <ShieldCheck size={18} />
+                                    Medical Ledger — {selectedEmpMedical?.employee?.name || 'Employee'}
+                                </h3>
+                                <p className="text-xs text-emerald-100 mt-0.5">
+                                    {selectedEmpMedical?.employee?.designation} • {selectedEmpMedical?.employee?.department} ({selectedEmpMedical?.employee?.employeeId})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setMedicalDrawerOpen(false)}
+                                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                            {loadingEmpMedical ? (
+                                <div className="py-12 text-center text-slate-400 text-sm">Loading employee medical record ledger…</div>
+                            ) : !selectedEmpMedical ? (
+                                <div className="py-12 text-center text-slate-400 text-sm">No record found.</div>
+                            ) : (
+                                <>
+                                    {/* Summary Stats Grid */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase">ANNUAL LIMIT</div>
+                                            <div className="text-base font-extrabold text-slate-800 mt-0.5">{formatMoney(selectedEmpMedical.summary?.annualLimit)}</div>
+                                            {selectedEmpMedical.employee?.isMidYearJoiner && (
+                                                <div className="text-[9px] text-amber-600 font-bold mt-0.5">Pro-rated ({selectedEmpMedical.employee.activeMonths}m)</div>
+                                            )}
+                                        </div>
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                            <div className="text-[10px] font-bold text-emerald-600 uppercase">YTD APPROVED</div>
+                                            <div className="text-base font-extrabold text-emerald-800 mt-0.5">{formatMoney(selectedEmpMedical.summary?.ytdApproved)}</div>
+                                            {selectedEmpMedical.summary?.openingBalanceUtilized > 0 && (
+                                                <div className="text-[9px] text-slate-500 font-semibold mt-0.5">+ Op: {formatMoney(selectedEmpMedical.summary.openingBalanceUtilized)}</div>
+                                            )}
+                                        </div>
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                                            <div className="text-[10px] font-bold text-blue-600 uppercase">REMAINING POOL</div>
+                                            <div className={`text-base font-extrabold mt-0.5 ${selectedEmpMedical.summary?.remainingBalance > 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                                                {formatMoney(selectedEmpMedical.summary?.remainingBalance)}
+                                            </div>
+                                            <div className="text-[9px] text-slate-500 font-semibold mt-0.5">{selectedEmpMedical.summary?.utilizationPct}% used</div>
+                                        </div>
+                                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                            <div className="text-[10px] font-bold text-amber-600 uppercase">PENDING REVIEW</div>
+                                            <div className="text-base font-extrabold text-amber-800 mt-0.5">{formatMoney(selectedEmpMedical.summary?.ytdPending)}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Subcategory Breakdown */}
+                                    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                                            <Tag size={13} className="text-indigo-600" />
+                                            Subcategory Expense Breakdown (Approved YTD)
+                                        </h4>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                            {Object.entries(selectedEmpMedical.subcategoryBreakdown || {}).map(([sub, amt]: [string, any]) => (
+                                                <div key={sub} className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                                                    <div className="text-[11px] font-semibold text-slate-600 truncate" title={sub}>{sub}</div>
+                                                    <div className="text-xs font-extrabold text-slate-800 mt-0.5">{formatMoney(amt)}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Claims History */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wide flex items-center gap-1.5">
+                                                <History size={13} className="text-indigo-600" />
+                                                Medical Claims History ({selectedEmpMedical.claims?.length || 0})
+                                            </h4>
+                                        </div>
+
+                                        {(!selectedEmpMedical.claims || selectedEmpMedical.claims.length === 0) ? (
+                                            <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl">
+                                                No medical claims submitted this year.
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {selectedEmpMedical.claims.map((c: any) => (
+                                                    <div key={c._id} className="p-3.5 bg-white border border-slate-200 rounded-xl hover:shadow-sm transition-all space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-slate-800 text-xs font-mono">{c.claimNo}</span>
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${STATUS_COLORS[c.status] || 'bg-slate-100'}`}>
+                                                                    {c.status}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-xs font-bold text-slate-800">{formatMoney(c.amountRequested)}</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between text-xs text-slate-500">
+                                                            <span>For: <strong className="text-slate-700">{c.forWhom === 'Dependent' && c.dependentName ? `${c.dependentName} (Dep)` : 'Self'}</strong></span>
+                                                            <span>Approved: <strong className="text-emerald-600">{formatMoney(c.approvedTotal)}</strong></span>
+                                                            <span>{c.expenseDate ? new Date(c.expenseDate).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}</span>
+                                                        </div>
+                                                        {c.notes && (
+                                                            <p className="text-[11px] text-slate-600 italic bg-slate-50 p-2 rounded-lg border border-slate-100">"{c.notes}"</p>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* ── Adjust Medical Record Limits Modal ─────────────────────────── */}
+            {adjustModalOpen && adjustEmp && createPortal(
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white">
+                            <div>
+                                <h3 className="font-extrabold text-base flex items-center gap-2">
+                                    <ShieldCheck size={18} />
+                                    Adjust Medical Benefit
+                                </h3>
+                                <p className="text-xs text-indigo-100 mt-0.5">{adjustEmp.name} ({adjustEmp.employeeId})</p>
+                            </div>
+                            <button onClick={() => setAdjustModalOpen(false)} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Custom Annual Medical Limit (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustAnnualLimit}
+                                    onChange={e => setAdjustAnnualLimit(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="Leave empty to use policy default (PKR 60,000)"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">If blank, policy limit or joining pro-ration is used.</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Opening Balance Utilized (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustOpeningBalance}
+                                    onChange={e => setAdjustOpeningBalance(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="0"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Claims already reimbursed offline/outside system this year.</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Internal HR Notes / Justification</label>
+                                <textarea
+                                    rows={2}
+                                    value={adjustNotes}
+                                    onChange={e => setAdjustNotes(e.target.value)}
+                                    placeholder="Special executive package / mid-year entitlement adjustment..."
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button
+                                onClick={() => setAdjustModalOpen(false)}
+                                className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveMedicalAdjustment}
+                                disabled={adjusting}
+                                className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {adjusting ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                Save Adjustments
+                            </button>
                         </div>
                     </div>
                 </div>

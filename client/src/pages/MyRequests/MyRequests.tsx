@@ -4,7 +4,7 @@ import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
-    ChevronDown, ChevronUp, AlertTriangle, PauseCircle
+    ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
@@ -21,6 +21,8 @@ const MyRequests = () => {
     const [showModal, setShowModal] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<any>(null);
+    const [generatingDoc, setGeneratingDoc] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     
     // Alert configurations
     const [alertConfig, setAlertConfig] = useState<{
@@ -203,6 +205,7 @@ const MyRequests = () => {
             }
         }
 
+        setGeneratingDoc(true);
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/documents/generate`, {
@@ -234,9 +237,12 @@ const MyRequests = () => {
                 a.download = `${selectedOption.replace(/\s+/g, '_')}.pdf`;
                 document.body.appendChild(a);
                 a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
+                setTimeout(() => {
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                }, 1000);
                 setShowModal(false);
+                triggerAlert('Success', `'${selectedOption}' document generated and downloaded successfully!`, 'success');
             } else {
                 const data = await res.json().catch(() => ({}));
                 const errMsg = data.message || `Failed to generate '${selectedOption}' document.`;
@@ -244,12 +250,14 @@ const MyRequests = () => {
                 if (isHrAdmin) {
                     triggerAlert('HR Configuration Required', errMsg, 'warning');
                 } else {
-                    triggerAlert('Template Not Available', errMsg, 'info');
+                    triggerAlert('Template Notice', errMsg, 'info');
                 }
             }
         } catch (err) {
             console.error(err);
             triggerAlert('Generation Error', 'An unexpected error occurred while requesting document generation.', 'error');
+        } finally {
+            setGeneratingDoc(false);
         }
     };
 
@@ -310,6 +318,7 @@ const MyRequests = () => {
             }
 
             const token = localStorage.getItem('token');
+            setIsSubmitting(true);
             const res = await fetch(`${api.baseURL}/api/my-requests`, {
                 method: 'POST',
                 headers: {
@@ -331,6 +340,8 @@ const MyRequests = () => {
             }
         } catch (err) {
             console.error(err);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -375,10 +386,14 @@ const MyRequests = () => {
 
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">My Requests</h1>
                     <p className="text-sm text-gray-500 mt-1">Manage your document, asset, and loan requests.</p>
+                </div>
+                <div className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50/80 border border-indigo-100 rounded-xl text-xs text-indigo-900 shadow-2xs">
+                    <Headphones size={15} className="text-indigo-600 shrink-0" />
+                    <span>Portal bug or technical issue? Email <a href="mailto:hrmsupport@itcs.com.pk?subject=HRM%20Technical%20Support" className="font-bold text-indigo-600 hover:underline">hrmsupport@itcs.com.pk</a></span>
                 </div>
             </div>
 
@@ -930,16 +945,32 @@ const MyRequests = () => {
 
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
                             <button 
+                                type="button"
                                 onClick={() => setShowModal(false)}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors font-medium text-sm"
+                                disabled={generatingDoc || isSubmitting}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
                             >
                                 Cancel
                             </button>
                             <button 
+                                type="button"
+                                disabled={generatingDoc || isSubmitting}
                                 onClick={activeCategory.systemType === 'document' ? handleGenerateDocument : handleSubmitRequest}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                className="flex items-center justify-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm disabled:opacity-60 disabled:cursor-not-allowed min-w-[150px]"
                             >
-                                {activeCategory.systemType === 'document' ? 'Generate Document' : 'Submit Request'}
+                                {generatingDoc ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        <span>Generating PDF...</span>
+                                    </>
+                                ) : isSubmitting ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        <span>Submitting...</span>
+                                    </>
+                                ) : (
+                                    activeCategory.systemType === 'document' ? 'Generate Document' : 'Submit Request'
+                                )}
                             </button>
                         </div>
                     </div>

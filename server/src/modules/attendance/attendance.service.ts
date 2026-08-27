@@ -665,25 +665,51 @@ export async function getEmployeeMonthlyAttendance(
         totalWorkMins: 0,
     };
 
-    const days: import('./attendance.types').MonthlyDayEntry[] = (records as any[]).map(r => {
-        if (['Present', 'Late', 'Half-Day'].includes(r.status)) {
-            summary.presentDays++;
-            if (r.lateMinutes > 0) summary.lateDays++;
-        } else if (r.status === 'Absent') {
-            summary.absentDays++;
-        }
-        summary.totalWorkMins += r.workDurationMinutes || 0;
+    const recordMap = new Map<string, any>();
+    (records as any[]).forEach(r => recordMap.set(r.date, r));
 
-        return {
-            date: r.date,
-            checkIn: r.checkIn?.toISOString(),
-            checkOut: r.checkOut?.toISOString(),
-            workDurationMinutes: r.workDurationMinutes,
-            lateMinutes: r.lateMinutes,
-            status: r.status,
-            note: r.note
-        };
-    });
+    const days: import('./attendance.types').MonthlyDayEntry[] = [];
+
+    // Construct entries for every single day of the month
+    for (let d = 1; d <= lastDay; d++) {
+        const dateStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+        const r = recordMap.get(dateStr);
+
+        if (r) {
+            if (['Present', 'Late', 'Half-Day'].includes(r.status)) {
+                summary.presentDays++;
+                if (r.lateMinutes > 0) summary.lateDays++;
+            } else if (r.status === 'Absent') {
+                summary.absentDays++;
+            }
+            summary.totalWorkMins += r.workDurationMinutes || 0;
+
+            days.push({
+                date: r.date,
+                checkIn: r.checkIn ? (typeof r.checkIn === 'string' ? r.checkIn : r.checkIn.toISOString()) : undefined,
+                checkOut: r.checkOut ? (typeof r.checkOut === 'string' ? r.checkOut : r.checkOut.toISOString()) : undefined,
+                workDurationMinutes: r.workDurationMinutes || 0,
+                lateMinutes: r.lateMinutes || 0,
+                status: r.status,
+                note: r.note
+            });
+        } else {
+            const weekend = isWeekend(dateStr);
+            const defaultStatus = weekend ? 'Weekend' : 'Absent';
+            if (defaultStatus === 'Absent') {
+                summary.absentDays++;
+            }
+            days.push({
+                date: dateStr,
+                checkIn: undefined,
+                checkOut: undefined,
+                workDurationMinutes: 0,
+                lateMinutes: 0,
+                status: defaultStatus as any,
+                note: undefined
+            });
+        }
+    }
 
     const hours = Math.floor(summary.totalWorkMins / 60);
     const mins = summary.totalWorkMins % 60;

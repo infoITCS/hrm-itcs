@@ -466,6 +466,85 @@ export const sendExpenseClaimStatusEmail = async (to: string, employeeName: stri
     }
 };
 
+export const sendExpenseClaimActionRequiredEmail = async (to: string, employeeName: string, claimNo: string, category: string, amount: number, reviewerComments: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const mailOptions = {
+        from: `"${getSenderName('Alerts')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Action Required: Expense Claim ${claimNo} - ${category}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #fef3c7; border-radius: 10px; background-color: #fffdfa;">
+                <h2 style="color: #d97706; margin-top: 0;">⚠️ Action Required on Your Claim</h2>
+                <p style="color: #4b5563; font-size: 15px;">Hello ${employeeName},</p>
+                <p style="color: #4b5563; font-size: 15px;">Your claim <strong>${claimNo}</strong> (${category}, PKR ${amount.toLocaleString()}) has been sent back for your review and amendment.</p>
+                <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #fde68a;">
+                    <p style="margin: 0; font-size: 14px; color: #92400e; font-weight: bold;">Reviewer Feedback / Requested Action:</p>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; color: #78350f; font-style: italic;">"${reviewerComments}"</p>
+                </div>
+                <p style="color: #4b5563; font-size: 14px;">Please open the claim in your portal, update the necessary receipts or notes, and resubmit.</p>
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="${clientUrl}/claim?tab=mine" style="background-color: #d97706; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">Review & Amend Claim</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= EXPENSE CLAIM ACTION REQUIRED EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Claim: ${claimNo}, Employee: ${employeeName}, Feedback: ${reviewerComments}`);
+        logger.info(`===============================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending action required email:', error);
+        return false;
+    }
+};
+
+export const sendExpenseClaimAmendedEmail = async (to: string, employeeName: string, claimNo: string, category: string, amount: number, employeeNote?: string, baseUrl?: string) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const mailOptions = {
+        from: `"${getSenderName('Alerts')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `Claim Resubmitted: ${claimNo} - ${employeeName}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
+                <h2 style="color: #4f46e5; margin-top: 0;">Claim Resubmitted by Employee</h2>
+                <p style="color: #4b5563; font-size: 15px;"><strong>${employeeName}</strong> has amended and resubmitted expense claim <strong>${claimNo}</strong> (${category}, PKR ${amount.toLocaleString()}).</p>
+                ${employeeNote ? `
+                <div style="background-color: #f9fafb; padding: 12px 15px; border-radius: 8px; margin: 15px 0; border: 1px dashed #e5e7eb; font-style: italic;">
+                    <p style="margin: 0; font-size: 13px; color: #4b5563;"><strong>Employee Response:</strong> "${employeeNote}"</p>
+                </div>
+                ` : ''}
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="${clientUrl}/claim?tab=approvals" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">Review in Approvals Queue</a>
+                </div>
+            </div>
+        `,
+    };
+
+    if (!process.env.SMTP_USER) {
+        logger.info(`\n================= EXPENSE CLAIM AMENDED & RESUBMITTED EMAIL (MOCK) ===================`);
+        logger.info(`To: ${to}`);
+        logger.info(`Claim: ${claimNo}, Employee: ${employeeName}, Note: ${employeeNote}`);
+        logger.info(`====================================================================================\n`);
+        return true;
+    }
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        logger.error('Error sending claim resubmitted email:', error);
+        return false;
+    }
+};
+
 export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dateStr: string, autoCheckOutTime: string) => {
     const mailOptions = {
         from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,

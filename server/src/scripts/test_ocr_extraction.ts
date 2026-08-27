@@ -18,24 +18,29 @@ function isDateOrTimeLine(line: string): boolean {
 function isNoiseOrMetadataLine(line: string): boolean {
     if (isDateOrTimeLine(line)) return true;
 
-    // Phone / Mobile / Fax / WhatsApp / Helpline lines
+    // Standalone time (e.g. 11:37:12, 09:45 AM)
+    if (/^\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\s*$/i.test(line)) return true;
+
+    // Phone / Mobile / Fax / WhatsApp / Helpline numbers
     if (/(?:ph(?:one)?|tel|mobile|cell|fax|whatsapp|contact|helpline)[:\s#-]*[\d\- ]+/i.test(line)) return true;
-    if (/\b0\d{2,4}[- ]?\d{6,8}\b/.test(line)) return true; // e.g. 051-2315147, 042-37426911, 0330-8553433
+    if (/\b(?:03\d{2}[- ]?\d{7}|0[245]\d{1,2}[- ]?\d{6,8}|\+92\d{10})\b/.test(line)) return true;
+    if (/\b0\d{2,4}[- ]?\d{6,8}\b/.test(line)) return true;
 
-    // Tax / Regulatory / License / NTN / CNIC lines
+    // Tax / Regulatory / License / NTN / CNIC / STRN lines
     if (/(?:ntn|strn|tin|tax\s*id|reg(?:istration)?\s*no|cnic|nic|license|lic|dsl)[:\s#\-\/]*[\w\d\-\/]+/i.test(line)) return true;
+    if (/\b\d{5}-\d{7}-\d\b/.test(line)) return true;
 
-    // Software vendor / footer notices
-    if (/(?:software\s*developed|developed\s*by|powered\s*by|abuzar|consultancy|pos\s*solution|thank\s*you|visiting\s*us|cannot\s*be\s*refunded|fridge\s*item|strip\s*cannot)/i.test(line)) return true;
+    // Software vendor / footer notices / disclaimers
+    if (/(?:software\s*developed|developed\s*by|powered\s*by|abuzar|consultancy|pos\s*solution|thank\s*you|visiting\s*us|cannot\s*be\s*refunded|fridge\s*item|strip\s*cannot|terms\s*&\s*conditions|no\s*refund|customer\s*copy|merchant\s*copy)/i.test(line)) return true;
 
-    // Invoice / Bill / Order / Serial numbers
-    if (/^\s*(?:inv(?:oice)?|bill|receipt|token|slip|order|trans(?:action)?|sr|no)[\s.#:]*\d+/i.test(line)) return true;
+    // Invoice / Bill / Order / Serial numbers / Barcode / Tokens / Table numbers
+    if (/^\s*(?:inv(?:oice)?|bill|receipt|token|slip|order|trans(?:action)?|sr|s\.?no|serial|batch|lane|counter|terminal|shift|table|tbl|chk|check|ref)[\s.#:]*\w*\d+/i.test(line) && !/(?:total|payable|net|due|paid|amount)/i.test(line)) return true;
 
     // Address lines (without financial totals)
-    if (/(?:street|shop|road|avenue|floor|block|market|chistiaabad|hajj\s*camp|islamabad|karachi|lahore|rawalpindi|plaza|sector)/i.test(line) && !/(?:total|amount|net|gross|rs|pkr)/i.test(line)) return true;
+    if (/(?:street|shop|road|avenue|floor|block|market|chistiaabad|hajj\s*camp|islamabad|karachi|lahore|rawalpindi|peshawar|multan|plaza|sector|building)/i.test(line) && !/(?:total|amount|net|gross|rs|pkr|₨)/i.test(line)) return true;
 
     // Header table labels
-    if (/^\s*(?:item\s*name|description|particulars|qty|quantity|unit\s*price|m\/s|remarks|ref)\b/i.test(line)) return true;
+    if (/^\s*(?:item\s*name|description|particulars|qty|quantity|unit\s*price|rate|m\/s|remarks|ref|dr|cr|sr|sno)\b/i.test(line)) return true;
 
     return false;
 }
@@ -62,7 +67,8 @@ function extractAllAmountsFromLine(line: string): number[] {
     for (const m of intMatches) {
         const val = parseFloat(m[1]);
         if (Number.isFinite(val) && val >= 10 && val < 1_000_000) {
-            if (!results.some(d => Math.floor(d) === val)) {
+            const isStandaloneYear = val >= 1990 && val <= 2099 && !/(?:total|net|gross|paid|cash|rs|pkr|₨|amount|bill)/i.test(line);
+            if (!isStandaloneYear && !results.some(d => Math.floor(d) === val)) {
                 results.push(val);
             }
         }
@@ -114,14 +120,14 @@ function extractTotalAmount(text: string, amountHint?: number | null): { amount:
             if (matchedPattern) {
                 score += matchedPattern.baseScore;
                 confidence = matchedPattern.confidence;
-            } else if (/(?:rs\.?|pkr|₨)/i.test(line)) {
+            } else if (/(?:rs\.?|pkr|₨|\$)/i.test(line)) {
                 score += 40;
                 confidence = 'medium';
             } else {
-                score += 10;
+                score += 5;
             }
 
-            if (isBottomHalf) score += 20;
+            if (isBottomHalf) score += 10;
 
             if (!Number.isInteger(amt) || line.includes('.00') || line.includes('.0')) {
                 score += 15;
@@ -159,6 +165,10 @@ function extractTotalAmount(text: string, amountHint?: number | null): { amount:
 
     candidates.sort((a, b) => b.score - a.score);
     const top = candidates[0];
+
+    if (top.score < 35) {
+        return { amount: null, confidence: 'low' };
+    }
 
     return { amount: top.amount, confidence: top.confidence };
 }
@@ -228,5 +238,20 @@ assert.strictEqual(res2.amount, 5255, 'Should extract 5255 from Cash Received or
 const res3 = extractTotalAmount(cleanReceiptText, null);
 console.log('Result 3 (no hint):', res3);
 assert.strictEqual(res3.amount, 5255, 'Should extract 5255 based on Net Total keyword priority even without hint');
+
+// ── Test 4: Non-Financial Image with No Money (Should return null) ──
+const nonFinancialText = `
+Welcome to Company Portal
+Employee ID: 1042
+Office Room 304, Building 2
+Phone: 0300-1234567
+Date: 2026-08-25 14:30:00
+Please wear your ID badge at all times.
+For assistance contact HR.
+`;
+
+const res4 = extractTotalAmount(nonFinancialText, null);
+console.log('Result 4 (non-financial text):', res4);
+assert.strictEqual(res4.amount, null, 'Must return null when there is no financial context or money');
 
 console.log('All OCR extraction tests passed successfully!');

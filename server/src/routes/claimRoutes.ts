@@ -6,7 +6,13 @@ import Employee from '../models/Employee';
 import Counter from '../models/Counter';
 import { User } from '../models/User.model';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { sendHRNotificationEmail, sendExpenseClaimSubmittedEmail, sendExpenseClaimStatusEmail } from '../utils/email';
+import {
+    sendHRNotificationEmail,
+    sendExpenseClaimSubmittedEmail,
+    sendExpenseClaimStatusEmail,
+    sendExpenseClaimActionRequiredEmail,
+    sendExpenseClaimAmendedEmail
+} from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 
@@ -111,23 +117,70 @@ function isFinalStatus(status?: string) {
 async function resolveClaimLimits(
     category: string,
     submitterUserId: string,
-    amountRequested: number
+    amountRequested: number,
+    excludeClaimId?: string
 ): Promise<{ catDoc: any; amountAllowed: number; limit: number; outOfPolicy: boolean }> {
     const catDoc = await ExpenseCategory.findOne({ name: category });
     if (!catDoc) throw Object.assign(new Error('Invalid category'), { status: 400 });
 
     let limit = catDoc.policyLimit && catDoc.policyLimit > 0 ? catDoc.policyLimit : 9999999;
 
-    if (catDoc.policyLimit && catDoc.policyLimit > 0) {
+    const empDoc = await Employee.findOne({ userId: submitterUserId }).lean() as any;
+
+    if (category === 'Medical') {
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(currentYear, 0, 1);
         const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
-        const existingClaims = await ExpenseClaim.find({
+
+        let baseLimit = catDoc.policyLimit || 60000;
+        if (empDoc?.medicalBenefit?.customAnnualLimit && empDoc.medicalBenefit.customAnnualLimit > 0) {
+            baseLimit = empDoc.medicalBenefit.customAnnualLimit;
+        }
+
+        // Pro-rate if joined in current year
+        if (empDoc?.jobInfo?.joiningDate) {
+            const joiningDate = new Date(empDoc.jobInfo.joiningDate);
+            if (joiningDate.getFullYear() === currentYear) {
+                const joiningMonth = joiningDate.getMonth(); // 0 to 11
+                const activeMonths = 12 - joiningMonth;
+                baseLimit = Math.round((activeMonths / 12) * baseLimit);
+            }
+        }
+
+        const openingUtilized = empDoc?.medicalBenefit?.openingBalanceUtilized || 0;
+
+        const query: any = {
+            employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
+            category: 'Medical',
+            status: { $nin: ['Draft', 'Declined', 'Action Required'] },
+            createdAt: { $gte: startOfYear, $lte: endOfYear },
+        };
+        if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
+            query._id = { $ne: new mongoose.Types.ObjectId(excludeClaimId) };
+        }
+
+        const existingClaims = await ExpenseClaim.find(query).lean() as any[];
+
+        const claimedSoFar = existingClaims.reduce((sum, c) => {
+            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            return sum + amount;
+        }, 0);
+
+        limit = Math.max(0, baseLimit - openingUtilized - claimedSoFar);
+    } else if (catDoc.policyLimit && catDoc.policyLimit > 0) {
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1);
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+        const query: any = {
             employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
             category,
-            status: { $nin: ['Draft', 'Declined'] },
+            status: { $nin: ['Draft', 'Declined', 'Action Required'] },
             createdAt: { $gte: startOfYear, $lte: endOfYear },
-        }).lean() as any[];
+        };
+        if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
+            query._id = { $ne: new mongoose.Types.ObjectId(excludeClaimId) };
+        }
+        const existingClaims = await ExpenseClaim.find(query).lean() as any[];
 
         const claimedSoFar = existingClaims.reduce((sum, c) => {
             const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
@@ -489,7 +542,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
         const role = authReq.user?.role || 'employee';
         if (!role || role === 'employee' || role === 'manager') return res.json({ success: true, data: [] });
 
-        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined'] };
+        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined', 'Action Required'] };
         if (role === 'finance') {
             statusQuery = 'Pending Finance';
         } else if (role === 'hr') {
@@ -1082,6 +1135,584 @@ router.post('/:id/rescan', authenticate, async (req: Request, res: Response, nex
         await claim.save();
         await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim), message: 'Receipts re-scanned successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Localized Commenting on Claim ──────────────────────────────────────────
+router.post('/:id/comments', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const { message } = req.body || {};
+        if (!message || !String(message).trim()) {
+            return res.status(400).json({ message: 'Comment message is required' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        const isOwner = String(claim.employeeUserId) === String(userId);
+        if (!isOwner && !isAdminLike(role) && role !== 'manager') {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+
+        const userDoc = await User.findById(userId).select('firstName lastName role').lean() as any;
+        const authorName = userDoc ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || userDoc.role || 'User' : 'User';
+
+        claim.comments = claim.comments || [];
+        claim.comments.push({
+            authorUserId: new mongoose.Types.ObjectId(String(userId)),
+            authorName,
+            authorRole: role,
+            message: String(message).trim(),
+            createdAt: new Date(),
+            isActionRequest: false
+        } as any);
+
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        await claim.save();
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+        res.json({ success: true, data: sanitizeClaimForJson(claim) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Request Amendment / Send Back to Employee ─────────────────────────────
+router.patch('/:id/request-amendment', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+        if (!isAdminLike(role) && role !== 'manager') return res.status(403).json({ message: 'Forbidden' });
+
+        const { comments } = req.body || {};
+        if (!comments || !String(comments).trim()) {
+            return res.status(400).json({ message: 'Please provide instructions / remarks for the employee amendment' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+        if (isFinalStatus(claim.status)) return res.status(400).json({ message: 'Cannot amend a finalized claim' });
+
+        const userDoc = await User.findById(userId).select('firstName lastName role').lean() as any;
+        const authorName = userDoc ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || userDoc.role || 'Reviewer' : 'Reviewer';
+
+        claim.status = 'Action Required';
+
+        // Update pending approval status
+        if (Array.isArray(claim.approvals)) {
+            const pendingAppr = claim.approvals.find((a: any) => a.status === 'Pending');
+            if (pendingAppr) {
+                pendingAppr.status = 'Action Required' as any;
+                pendingAppr.comments = String(comments).trim();
+                pendingAppr.decidedAt = new Date();
+                pendingAppr.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+            }
+        }
+
+        claim.comments = claim.comments || [];
+        claim.comments.push({
+            authorUserId: new mongoose.Types.ObjectId(String(userId)),
+            authorName,
+            authorRole: role,
+            message: String(comments).trim(),
+            createdAt: new Date(),
+            isActionRequest: true
+        } as any);
+
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        await claim.save();
+
+        // Send email alert to employee
+        (async () => {
+            try {
+                const emp = await Employee.findOne({
+                    $or: [
+                        { userId: claim.employeeUserId },
+                        { employeeId: claim.employeeId }
+                    ]
+                }).select('workEmail personalEmail firstName lastName');
+                
+                let employeeEmail = emp?.workEmail || emp?.personalEmail;
+                if (!employeeEmail && claim.employeeUserId) {
+                    const u = await User.findById(claim.employeeUserId).select('email').lean() as any;
+                    employeeEmail = u?.email;
+                }
+
+                if (employeeEmail) {
+                    await sendExpenseClaimActionRequiredEmail(
+                        employeeEmail,
+                        emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : 'Employee',
+                        claim.claimNo || 'Expense Claim',
+                        claim.category,
+                        claim.amountRequested,
+                        String(comments).trim(),
+                        req.headers.origin as string
+                    );
+                }
+            } catch (emailErr) {
+                console.error('[Expense Email] Failed to send action required email to employee:', emailErr);
+            }
+        })();
+
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+        res.json({ success: true, data: sanitizeClaimForJson(claim), message: 'Claim sent back for amendment' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Employee Amend & Resubmit ─────────────────────────────────────────────
+router.patch('/:id/amend', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        const isOwner = String(claim.employeeUserId) === String(userId);
+        if (!isOwner) return res.status(403).json({ message: 'Forbidden' });
+
+        if (claim.status !== 'Action Required' && claim.status !== 'Draft') {
+            return res.status(400).json({ message: 'Only claims with status "Action Required" or "Draft" can be amended' });
+        }
+
+        const { amountRequested, notes, receipts, replyComment, expenseDate, forWhom, dependentId } = req.body || {};
+
+        if (typeof amountRequested === 'number' && amountRequested > 0) {
+            claim.amountRequested = amountRequested;
+        }
+
+        if (typeof notes === 'string') {
+            claim.notes = notes;
+        }
+
+        if (expenseDate) {
+            claim.expenseDate = new Date(expenseDate);
+        }
+
+        if (forWhom && ['Self', 'Dependent'].includes(forWhom)) {
+            claim.forWhom = forWhom;
+            if (forWhom === 'Dependent' && dependentId) {
+                const emp = await Employee.findOne({ userId }).lean() as any;
+                const deps = Array.isArray(emp?.dependents) ? emp.dependents : [];
+                const match = deps.find((d: any) => String(d._id) === String(dependentId));
+                if (match) {
+                    claim.dependentId = String(dependentId);
+                    claim.dependentName = match.name;
+                }
+            } else if (forWhom === 'Self') {
+                claim.dependentId = undefined;
+                claim.dependentName = undefined;
+            }
+        }
+
+        // Decode & process receipts if provided
+        let finalReceipts: any[] = ((claim.receipts as any) || []);
+        if (receipts && Array.isArray(receipts)) {
+            const decodedReceipts = decodeReceipts(receipts as ReceiptInput[]);
+            if (decodedReceipts.length > 0) {
+                const analysis = await extractAndAnalyzeReceipts(
+                    decodedReceipts.map((r: any) => ({
+                        fileName: r.fileName,
+                        contentType: r.contentType,
+                        fileData: r.fileData,
+                    })),
+                    claim.amountRequested,
+                    claim.amountAllowed,
+                    claim.expenseDate ? new Date(claim.expenseDate) : null
+                );
+
+                finalReceipts = analysis.receipts.map((r, i) => ({
+                    ...decodedReceipts[i],
+                    extractedDate: r.extractedDate,
+                    extractedAmount: r.extractedAmount,
+                    extractedCurrency: r.extractedCurrency,
+                    merchantName: r.merchantName,
+                    receiptAgeDays: r.receiptAgeDays,
+                    extractionStatus: r.extractionStatus,
+                    extractionError: r.extractionError,
+                    extractionConfidence: r.extractionConfidence,
+                }));
+                claim.receiptAnalysis = analysis.receiptAnalysis as any;
+
+                const ocrFlags = [
+                    'ReceiptTotalExceedsQuota',
+                    'ReceiptTotalExceedsRequested',
+                    'ReceiptOlderThan45Days',
+                    'ReceiptDateMismatch',
+                    'ReceiptExtractionFailed',
+                    'ReceiptDateUnreadable'
+                ];
+                const currentFlags = (claim.eligibility && Array.isArray((claim.eligibility as any).flags))
+                    ? (claim.eligibility as any).flags
+                    : [];
+                const existingFlags = currentFlags.filter((f: string) => !ocrFlags.includes(f));
+                for (const f of analysis.flags) {
+                    if (!existingFlags.includes(f)) existingFlags.push(f);
+                }
+                (claim as any).eligibility = {
+                    ...((claim as any).eligibility || {}),
+                    eligible: existingFlags.length === 0,
+                    flags: existingFlags,
+                };
+            }
+        }
+        claim.receipts = finalReceipts as any;
+
+        // Recalculate limits & policy flags
+        const { amountAllowed, outOfPolicy } = await resolveClaimLimits(claim.category, String(userId), claim.amountRequested, String(claim._id));
+        claim.amountAllowed = amountAllowed;
+        if (!claim.eligibility) {
+            (claim as any).eligibility = { eligible: true, flags: [] };
+        }
+        const claimEligibility = claim.eligibility as any;
+        if (outOfPolicy && !claimEligibility.flags.includes('OutOfPolicy')) {
+            claimEligibility.flags.push('OutOfPolicy');
+        } else if (!outOfPolicy) {
+            claimEligibility.flags = claimEligibility.flags.filter((f: string) => f !== 'OutOfPolicy');
+        }
+        claimEligibility.eligible = claimEligibility.flags.length === 0;
+
+        // Add reply comment
+        const userDoc = await User.findById(userId).select('firstName lastName role').lean() as any;
+        const authorName = userDoc ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || 'Employee' : 'Employee';
+
+        if (replyComment && String(replyComment).trim()) {
+            claim.comments = claim.comments || [];
+            claim.comments.push({
+                authorUserId: new mongoose.Types.ObjectId(String(userId)),
+                authorName,
+                authorRole: 'employee',
+                message: String(replyComment).trim(),
+                createdAt: new Date(),
+                isActionRequest: false
+            } as any);
+        }
+
+        // Reset approval workflow back to Pending HR
+        const workflow = buildWorkflow(claim.category);
+        claim.approvals = workflow.map(stage => ({
+            stage,
+            status: 'Pending' as any,
+            amountAllowed: claim.amountAllowed,
+            requiresAuthorization: stage === 'hr' && outOfPolicy,
+        })) as any;
+
+        claim.status = stageToStatus(workflow[0]) as any;
+
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        await claim.save();
+
+        // Notify HR of resubmission
+        (async () => {
+            try {
+                const hrEmailsList = await getHrEmails();
+                const emp = await Employee.findOne({ userId }).select('firstName lastName employeeId').lean() as any;
+                const empName = emp ? formatEmployeeFullName(emp, emp.employeeId) : authorName;
+                for (const to of hrEmailsList) {
+                    await sendExpenseClaimAmendedEmail(
+                        to,
+                        empName,
+                        claim.claimNo || 'Expense Claim',
+                        claim.category,
+                        claim.amountRequested,
+                        replyComment ? String(replyComment).trim() : undefined,
+                        req.headers.origin as string
+                    );
+                }
+            } catch (emailErr) {
+                console.error('[Expense Email] Failed to send resubmitted email to HR:', emailErr);
+            }
+        })();
+
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+        res.json({ success: true, data: sanitizeClaimForJson(claim), message: 'Claim amended and resubmitted successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Company-wide Medical Records Roster (HR / Admin / Finance) ────────────
+router.get('/medical-records', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        if (!isAdminLike(role) && role !== 'finance') return res.status(403).json({ message: 'Forbidden' });
+
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1);
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+
+        const employees = await Employee.find({ 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } })
+            .select('employeeId firstName middleName lastName jobInfo medicalBenefit userId email phone')
+            .lean() as any[];
+
+        const medicalCat = await ExpenseCategory.findOne({ name: 'Medical' }).lean() as any;
+        const defaultAnnualLimit = medicalCat?.policyLimit || 60000;
+
+        // Fetch all Medical claims in current year
+        const allMedicalClaims = await ExpenseClaim.find({
+            category: 'Medical',
+            status: { $nin: ['Draft', 'Declined'] },
+            createdAt: { $gte: startOfYear, $lte: endOfYear }
+        }).select('employeeId employeeUserId amountRequested amountAllowed approvedTotal status createdAt subCategories forWhom dependentName')
+        .lean() as any[];
+
+        const records = employees.map(emp => {
+            const empUserIdStr = emp.userId ? String(emp.userId) : '';
+            const empIdStr = emp.employeeId ? String(emp.employeeId) : '';
+
+            const empClaims = allMedicalClaims.filter(c =>
+                (empUserIdStr && String(c.employeeUserId) === empUserIdStr) ||
+                (empIdStr && String(c.employeeId) === empIdStr)
+            );
+
+            let baseLimit = emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0
+                ? emp.medicalBenefit.customAnnualLimit
+                : defaultAnnualLimit;
+
+            let isMidYearJoiner = false;
+            let activeMonths = 12;
+            if (emp.jobInfo?.joiningDate) {
+                const jd = new Date(emp.jobInfo.joiningDate);
+                if (jd.getFullYear() === currentYear) {
+                    isMidYearJoiner = true;
+                    activeMonths = 12 - jd.getMonth();
+                    baseLimit = Math.round((activeMonths / 12) * baseLimit);
+                }
+            }
+
+            const openingUtilized = emp.medicalBenefit?.openingBalanceUtilized || 0;
+
+            const approvedClaims = empClaims.filter(c => c.status === 'Approved');
+            const pendingClaims = empClaims.filter(c => c.status !== 'Approved');
+
+            const ytdApproved = approvedClaims.reduce((sum, c) => {
+                const amt = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+                return sum + amt;
+            }, 0);
+
+            const ytdPending = pendingClaims.reduce((sum, c) => sum + (c.amountRequested || 0), 0);
+
+            const totalUtilized = openingUtilized + ytdApproved;
+            const remainingBalance = Math.max(0, baseLimit - totalUtilized);
+            const utilizationPct = baseLimit > 0 ? Math.min(100, Math.round((totalUtilized / baseLimit) * 100)) : 0;
+
+            return {
+                employeeId: emp.employeeId,
+                name: formatEmployeeFullName(emp, emp.employeeId),
+                department: emp.jobInfo?.department || '—',
+                designation: emp.jobInfo?.designation || '—',
+                joiningDate: emp.jobInfo?.joiningDate || null,
+                isMidYearJoiner,
+                activeMonths,
+                annualLimit: baseLimit,
+                customLimitSet: !!(emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0),
+                openingBalanceUtilized: openingUtilized,
+                ytdApproved,
+                ytdPending,
+                totalUtilized,
+                remainingBalance,
+                utilizationPct,
+                isMaxedOut: remainingBalance <= 0,
+                claimCount: empClaims.length,
+                notes: emp.medicalBenefit?.notes || ''
+            };
+        });
+
+        const totalAllocated = records.reduce((s, r) => s + r.annualLimit, 0);
+        const totalUtilized = records.reduce((s, r) => s + r.totalUtilized, 0);
+        const totalMaxedOut = records.filter(r => r.isMaxedOut).length;
+
+        res.json({
+            success: true,
+            data: {
+                records,
+                summary: {
+                    totalEmployees: records.length,
+                    totalAllocated,
+                    totalUtilized,
+                    totalRemaining: Math.max(0, totalAllocated - totalUtilized),
+                    totalMaxedOut
+                }
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Individual Employee Medical Ledger & History ──────────────────────────
+router.get('/medical-records/:employeeId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const emp = await Employee.findOne({
+            $or: [
+                { employeeId: req.params.employeeId },
+                { _id: mongoose.isValidObjectId(req.params.employeeId) ? req.params.employeeId : undefined }
+            ]
+        }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+
+        if (!emp) return res.status(404).json({ message: 'Employee not found' });
+
+        const isSelf = String(emp.userId) === String(userId);
+        if (!isSelf && !isAdminLike(role) && role !== 'finance') {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+
+        const currentYear = new Date().getFullYear();
+        const startOfYear = new Date(currentYear, 0, 1);
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+
+        const medicalCat = await ExpenseCategory.findOne({ name: 'Medical' }).lean() as any;
+        const defaultAnnualLimit = medicalCat?.policyLimit || 60000;
+
+        let baseLimit = emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0
+            ? emp.medicalBenefit.customAnnualLimit
+            : defaultAnnualLimit;
+
+        let isMidYearJoiner = false;
+        let activeMonths = 12;
+        if (emp.jobInfo?.joiningDate) {
+            const jd = new Date(emp.jobInfo.joiningDate);
+            if (jd.getFullYear() === currentYear) {
+                isMidYearJoiner = true;
+                activeMonths = 12 - jd.getMonth();
+                baseLimit = Math.round((activeMonths / 12) * baseLimit);
+            }
+        }
+
+        const claims = await ExpenseClaim.find({
+            $or: [
+                { employeeId: emp.employeeId },
+                { employeeUserId: emp.userId }
+            ],
+            category: 'Medical',
+            createdAt: { $gte: startOfYear, $lte: endOfYear }
+        })
+        .select('-receipts.fileData')
+        .sort({ createdAt: -1 })
+        .lean() as any[];
+
+        const openingUtilized = emp.medicalBenefit?.openingBalanceUtilized || 0;
+        const approvedClaims = claims.filter(c => c.status === 'Approved');
+        const pendingClaims = claims.filter(c => c.status !== 'Approved' && c.status !== 'Declined' && c.status !== 'Draft');
+
+        const ytdApproved = approvedClaims.reduce((sum, c) => {
+            const amt = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            return sum + amt;
+        }, 0);
+
+        const ytdPending = pendingClaims.reduce((sum, c) => sum + (c.amountRequested || 0), 0);
+        const totalUtilized = openingUtilized + ytdApproved;
+        const remainingBalance = Math.max(0, baseLimit - totalUtilized);
+
+        // Group by subcategory
+        const subcategoryBreakdown: Record<string, number> = {
+            'Consultation': 0,
+            'Pharmacy / Medicines': 0,
+            'Lab Test / Diagnostics': 0,
+            'Hospitalization': 0,
+            'Dental Treatment': 0,
+            'Optical / Glasses': 0,
+            'Other Medical': 0
+        };
+
+        for (const c of approvedClaims) {
+            const amt = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
+            const sub = (c.subCategories && c.subCategories[0]) || 'Other Medical';
+            subcategoryBreakdown[sub] = (subcategoryBreakdown[sub] || 0) + amt;
+        }
+
+        res.json({
+            success: true,
+            data: {
+                employee: {
+                    employeeId: emp.employeeId,
+                    name: formatEmployeeFullName(emp, emp.employeeId),
+                    department: emp.jobInfo?.department,
+                    designation: emp.jobInfo?.designation,
+                    joiningDate: emp.jobInfo?.joiningDate,
+                    isMidYearJoiner,
+                    activeMonths,
+                    medicalBenefit: emp.medicalBenefit || {},
+                    dependents: emp.dependents || []
+                },
+                summary: {
+                    annualLimit: baseLimit,
+                    openingBalanceUtilized: openingUtilized,
+                    ytdApproved,
+                    ytdPending,
+                    totalUtilized,
+                    remainingBalance,
+                    isMaxedOut: remainingBalance <= 0,
+                    utilizationPct: baseLimit > 0 ? Math.min(100, Math.round((totalUtilized / baseLimit) * 100)) : 0
+                },
+                subcategoryBreakdown,
+                claims
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Adjust Custom Annual Limit or Opening Balance (HR / Admin) ───────────
+router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        const userId = authReq.user?.userId;
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+        if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
+
+        const { customAnnualLimit, openingBalanceUtilized, notes } = req.body || {};
+
+        const emp = await Employee.findOne({
+            $or: [
+                { employeeId: req.params.employeeId },
+                { _id: mongoose.isValidObjectId(req.params.employeeId) ? req.params.employeeId : undefined }
+            ]
+        });
+
+        if (!emp) return res.status(404).json({ message: 'Employee not found' });
+
+        emp.medicalBenefit = emp.medicalBenefit || {};
+        if (customAnnualLimit !== undefined) {
+            emp.medicalBenefit.customAnnualLimit = customAnnualLimit === '' || customAnnualLimit === null ? undefined : Number(customAnnualLimit);
+        }
+        if (openingBalanceUtilized !== undefined) {
+            emp.medicalBenefit.openingBalanceUtilized = openingBalanceUtilized === '' || openingBalanceUtilized === null ? 0 : Number(openingBalanceUtilized);
+        }
+        if (typeof notes === 'string') {
+            emp.medicalBenefit.notes = notes.trim();
+        }
+
+        await emp.save();
+        res.json({ success: true, data: emp.medicalBenefit, message: 'Medical benefit adjusted successfully' });
     } catch (err) {
         next(err);
     }

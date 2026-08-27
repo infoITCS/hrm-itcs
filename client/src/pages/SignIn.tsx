@@ -5,7 +5,7 @@ import APIService from '../services/api';
 import { api } from '../utils/api';
 import itcsLogo from '../assets/logo.png';
 import { ForgotPasswordModal } from '../components/ForgotPasswordModal';
-import { Mail, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Mail, AlertCircle, ArrowLeft, Headphones } from 'lucide-react';
 interface SignInProps {
     onLogin: (user: User) => void;
 }
@@ -265,7 +265,11 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                         </div>
                     )}
 
-                    <div className="pt-6 text-center">
+                    <div className="pt-6 text-center space-y-3">
+                        <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-600 flex items-center justify-center gap-2">
+                            <Headphones size={15} className="text-primary shrink-0" />
+                            <span>Having trouble signing in? Email <a href="mailto:hrmsupport@itcs.com.pk?subject=HRM%20Login%20Support" className="font-semibold text-primary hover:underline">hrmsupport@itcs.com.pk</a></span>
+                        </div>
                         <p className="text-xs text-gray-400">
                             Protected by Enterprise Grade Security. <br />
                             By signing in, you agree to our <Link to="/terms" className="underline hover:text-gray-600">Terms</Link>, <Link to="/privacy-policy" className="underline hover:text-gray-600">Privacy Policy</Link>, and <Link to="/company-policy" className="underline hover:text-gray-600">Company Policy</Link>.

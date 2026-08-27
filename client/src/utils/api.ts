@@ -39,6 +39,12 @@ export const api = {
     claimAdminCorrect: (id: string) => `${API_BASE_URL}/api/claims/${id}/admin-correct`,
     claimRescan: (id: string) => `${API_BASE_URL}/api/claims/${id}/rescan`,
     claimReceipt: (id: string, receiptId: string) => `${API_BASE_URL}/api/claims/${id}/receipts/${receiptId}`,
+    claimComments: (id: string) => `${API_BASE_URL}/api/claims/${id}/comments`,
+    claimRequestAmendment: (id: string) => `${API_BASE_URL}/api/claims/${id}/request-amendment`,
+    claimAmend: (id: string) => `${API_BASE_URL}/api/claims/${id}/amend`,
+    medicalRecords: `${API_BASE_URL}/api/claims/medical-records`,
+    medicalRecordEmployee: (employeeId: string) => `${API_BASE_URL}/api/claims/medical-records/${employeeId}`,
+    medicalRecordAdjust: (employeeId: string) => `${API_BASE_URL}/api/claims/medical-records/${employeeId}/adjust`,
 
     // Payroll
     payrollRuns: `${API_BASE_URL}/api/payroll`,

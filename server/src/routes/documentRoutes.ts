@@ -640,98 +640,82 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             ...(req.body.variables || {})
         };
 
+        // Essential tags that cannot be generated without identifying the employee
+        const STRICT_CRITICAL_TAGS = new Set([
+            'employeeName', 'employeeId', 'internName'
+        ]);
+
+        // Default fallbacks for non-critical tags so document generation does not fail
+        const FALLBACK_DEFAULTS: Record<string, string> = {
+            fatherName: '—',
+            address: '—',
+            phone: '—',
+            cnic: '—',
+            personalEmail: '—',
+            workEmail: '—',
+            workLocation: 'Islamabad Office',
+            officeLocation: 'Islamabad Office',
+            city: 'Islamabad',
+            personalCity: 'Islamabad',
+            reportingManager: 'Head of Department',
+            department: 'Operations',
+            designation: 'Staff',
+            joiningDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            lastWorkingDay: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            bankName: '—',
+            bankAccountNumber: '—',
+            bankIban: '—',
+            basicSalary: '0',
+            grossSalary: '0',
+            netPay: '0',
+            allowances: '0',
+            taxAmount: '0',
+            otherDeductions: '0',
+            totalDeductions: '0',
+            purpose: purposeText || 'Official Verification',
+            purposeDetail: purposeText || 'Official Verification',
+            probationSalary: '0',
+            confirmedSalary: '0'
+        };
+
         // Scan template.content to find ALL tags used in this template
         const templateContent = template.content || '';
         const tagMatches = templateContent.matchAll(/{{\s*([a-zA-Z0-9_]+)\s*}}/g);
         const usedTags = Array.from(new Set(Array.from(tagMatches).map((m: any) => m[1])));
 
-        // Filter out any tag used in template that is missing or empty in vars
-        const missingTags = usedTags.filter(tag => {
+        // Apply fallbacks for non-critical tags that are empty
+        usedTags.forEach(tag => {
+            if (vars[tag] === undefined || vars[tag] === null || vars[tag] === '') {
+                if (FALLBACK_DEFAULTS[tag]) {
+                    vars[tag] = FALLBACK_DEFAULTS[tag];
+                } else {
+                    vars[tag] = '—';
+                }
+            }
+        });
+
+        // Filter out only STRICT critical tags that are missing
+        const missingCriticalTags = usedTags.filter(tag => {
+            if (!STRICT_CRITICAL_TAGS.has(tag)) return false;
             const val = vars[tag];
             return val === undefined || val === null || val === '';
         });
 
-        if (missingTags.length > 0) {
+        if (missingCriticalTags.length > 0) {
             const TAG_LABELS: Record<string, string> = {
                 employeeId: 'Employee ID',
-                purpose: 'Purpose / Reason',
-                purposeDetail: 'Purpose Detail',
                 employeeName: 'Employee Name',
-                firstName: 'First Name',
-                lastName: 'Last Name',
-                designation: 'Designation / Job Title',
-                department: 'Department',
-                reportingManager: 'Reporting Manager',
-                joiningDate: 'Date of Joining',
-                basicSalary: 'Basic Salary',
-                grossSalary: 'Gross Salary',
-                probationSalary: 'Probation Salary',
-                confirmedSalary: 'Confirmed Salary (Post-Probation)',
-                probationDays: 'Probation Days',
-                probationMonths: 'Probation Months',
-                cnic: 'CNIC / National ID',
-                fatherName: "Father's Name",
-                gender: 'Gender',
-                maritalStatus: 'Marital Status',
-                nationality: 'Nationality',
-                personalEmail: 'Personal Email',
-                workEmail: 'Work Email',
-                phone: 'Phone Number',
-                address: 'Physical Address',
-                bankName: 'Bank Name',
-                bankAccountNumber: 'Bank Account Number',
-                bankIban: 'Bank IBAN',
-                salutation: 'Salutation (Mr./Ms.)',
-                workLocation: 'Appointed Work / Office Location',
-                officeLocation: 'Appointed Work / Office Location',
-                city: 'City (Personal / Residence)',
-                personalCity: 'City (Personal / Residence)',
-                internshipDuration: 'Internship Duration',
-                duration: 'Duration',
-                startDate: 'Internship Start Date',
-                endDate: 'Internship End Date',
-                internshipStartDate: 'Internship Start Date',
-                internshipEndDate: 'Internship End Date',
-                noticePeriod: 'Notice Period',
-                probationNoticePeriod: 'Probation Notice Period',
-                confirmedNoticePeriod: 'Confirmed Notice Period',
-                earnedLeaveDays: 'Earned Leave Days',
-                casualSickLeaveDays: 'Casual/Sick Leave Days',
-                acceptanceValidityDays: 'Acceptance Validity Days',
-                probationDaysWords: 'Probation Days in Words',
-                payPeriod: 'Pay Period / Month Year',
-                allowances: 'Allowances',
-                taxAmount: 'Tax Amount',
-                otherDeductions: 'Other Deductions',
-                totalDeductions: 'Total Deductions',
-                netPay: 'Net Pay',
-                startMonth: 'Start Month',
-                endMonth: 'End Month',
-                year: 'Year',
-                month1Name: 'Month 1 Name',
-                month1Gross: 'Month 1 Gross Amount',
-                month1Deductions: 'Month 1 Deductions Amount',
-                month1NetPay: 'Month 1 Net Pay Amount',
-                month2Name: 'Month 2 Name',
-                month2Gross: 'Month 2 Gross Amount',
-                month2Deductions: 'Month 2 Deductions Amount',
-                month2NetPay: 'Month 2 Net Pay Amount',
-                month3Name: 'Month 3 Name',
-                month3Gross: 'Month 3 Gross Amount',
-                month3Deductions: 'Month 3 Deductions Amount',
-                month3NetPay: 'Month 3 Net Pay Amount',
-                totalNetPay3Months: 'Total Net Pay (3 Months)',
-                totalNetPay: 'Total Net Pay (3 Months)'
+                internName: 'Intern Name'
             };
 
-            const missingLabels = missingTags.map(t => TAG_LABELS[t] || t);
+            const missingLabels = missingCriticalTags.map(t => TAG_LABELS[t] || t);
 
             if (isHrOrAdmin) {
                 return res.status(400).json({
                     code: 'MISSING_TEMPLATE_DETAILS',
                     userRole: 'admin',
                     message: `The following required employee details are missing to generate '${template.subject || documentType}': ${missingLabels.join(', ')}. Please update the employee profile to proceed.`,
-                    missingFields: missingTags,
+                    missingFields: missingCriticalTags,
                     missingLabels
                 });
             } else {
@@ -739,7 +723,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                     code: 'MISSING_TEMPLATE_DETAILS',
                     userRole: 'employee',
                     message: `Your profile is missing details required for this document (${missingLabels.join(', ')}). Please contact HR to update your profile before generating this document.`,
-                    missingFields: missingTags,
+                    missingFields: missingCriticalTags,
                     missingLabels
                 });
             }

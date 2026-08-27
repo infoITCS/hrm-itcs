@@ -11,15 +11,28 @@ export type ExpenseClaimStatus =
     | 'Pending Line Manager'
     | 'Pending HR'
     | 'Pending Finance'
+    | 'Action Required'
     | 'Approved'
     | 'Declined';
 
 export type ExpenseClaimApprovalStage = 'teamLead' | 'lineManager' | 'hr' | 'finance';
 
+const ClaimCommentSchema = new Schema(
+    {
+        authorUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+        authorName: { type: String, required: true },
+        authorRole: { type: String, required: true },
+        message: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+        isActionRequest: { type: Boolean, default: false },
+    },
+    { _id: true }
+);
+
 const ApprovalSchema = new Schema(
     {
         stage: { type: String, enum: ['teamLead', 'lineManager', 'hr', 'finance'], required: true },
-        status: { type: String, enum: ['Pending', 'Approved', 'Declined'], required: true, default: 'Pending' },
+        status: { type: String, enum: ['Pending', 'Approved', 'Declined', 'Action Required'], required: true, default: 'Pending' },
         // For manager/team-lead stages we pin the approver via PIM hierarchy
         assignedToEmployeeId: { type: String },
         assignedToUserId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -96,7 +109,7 @@ const ExpenseClaimSchema = new Schema(
 
         status: {
             type: String,
-            enum: ['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'],
+            enum: ['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined'],
             default: 'Submitted',
             index: true,
         },
@@ -118,6 +131,7 @@ const ExpenseClaimSchema = new Schema(
         receiptAnalysis: { type: ReceiptAnalysisSchema },
 
         approvals: { type: [ApprovalSchema], default: [] },
+        comments: { type: [ClaimCommentSchema], default: [] },
 
         audit: {
             submittedAt: { type: Date }, // Explicitly set when transitioning from Draft to Submitted

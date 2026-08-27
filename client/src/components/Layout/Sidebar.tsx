@@ -18,6 +18,8 @@ import {
     ScanFace,
     Inbox,
     ClipboardList,
+    Headphones,
+    Mail,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -134,6 +136,26 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                         );
                     })}
                 </nav>
+
+                {/* Support Widget */}
+                <div className="p-3 border-t border-slate-100 bg-slate-50/70 shrink-0">
+                    <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-xs">
+                        <div className="flex items-center gap-2 mb-1">
+                            <div className="w-5 h-5 rounded-md bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                                <Headphones size={12} />
+                            </div>
+                            <span className="text-xs font-bold text-slate-800">HRM Support</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-1.5 leading-snug">Need help with the portal?</p>
+                        <a
+                            href="mailto:hrmsupport@itcs.com.pk?subject=HRM%20Portal%20Support%20Request"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors group break-all"
+                        >
+                            <Mail size={12} className="shrink-0 text-indigo-500 group-hover:text-indigo-700" />
+                            <span>hrmsupport@itcs.com.pk</span>
+                        </a>
+                    </div>
+                </div>
             </aside>
         </>
     );

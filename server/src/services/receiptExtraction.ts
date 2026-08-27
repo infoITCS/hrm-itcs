@@ -286,24 +286,29 @@ function isDateOrTimeLine(line: string): boolean {
 function isNoiseOrMetadataLine(line: string): boolean {
     if (isDateOrTimeLine(line)) return true;
 
+    // Standalone time (e.g. 11:37:12, 09:45 AM)
+    if (/^\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\s*$/i.test(line)) return true;
+
     // Phone / Mobile / Fax / WhatsApp / Helpline numbers
     if (/(?:ph(?:one)?|tel|mobile|cell|fax|whatsapp|contact|helpline)[:\s#-]*[\d\- ]+/i.test(line)) return true;
+    if (/\b(?:03\d{2}[- ]?\d{7}|0[245]\d{1,2}[- ]?\d{6,8}|\+92\d{10})\b/.test(line)) return true;
     if (/\b0\d{2,4}[- ]?\d{6,8}\b/.test(line)) return true; // e.g. 051-2315147, 042-37426911, 0330-8553433
 
-    // Tax / Regulatory / License / NTN / CNIC lines
+    // Tax / Regulatory / License / NTN / CNIC / STRN lines
     if (/(?:ntn|strn|tin|tax\s*id|reg(?:istration)?\s*no|cnic|nic|license|lic|dsl)[:\s#\-\/]*[\w\d\-\/]+/i.test(line)) return true;
+    if (/\b\d{5}-\d{7}-\d\b/.test(line)) return true; // CNIC format
 
-    // Software vendor / footer notices
-    if (/(?:software\s*developed|developed\s*by|powered\s*by|abuzar|consultancy|pos\s*solution|thank\s*you|visiting\s*us|cannot\s*be\s*refunded|fridge\s*item|strip\s*cannot)/i.test(line)) return true;
+    // Software vendor / footer notices / disclaimers
+    if (/(?:software\s*developed|developed\s*by|powered\s*by|abuzar|consultancy|pos\s*solution|thank\s*you|visiting\s*us|cannot\s*be\s*refunded|fridge\s*item|strip\s*cannot|terms\s*&\s*conditions|no\s*refund|customer\s*copy|merchant\s*copy)/i.test(line)) return true;
 
-    // Invoice / Bill / Order / Serial numbers
-    if (/^\s*(?:inv(?:oice)?|bill|receipt|token|slip|order|trans(?:action)?|sr|no)[\s.#:]*\d+/i.test(line)) return true;
+    // Invoice / Bill / Order / Serial numbers / Barcode / Tokens / Table numbers
+    if (/^\s*(?:inv(?:oice)?|bill|receipt|token|slip|order|trans(?:action)?|sr|s\.?no|serial|batch|lane|counter|terminal|shift|table|tbl|chk|check|ref)[\s.#:]*\w*\d+/i.test(line) && !/(?:total|payable|net|due|paid|amount)/i.test(line)) return true;
 
     // Address lines (without financial totals)
-    if (/(?:street|shop|road|avenue|floor|block|market|chistiaabad|hajj\s*camp|islamabad|karachi|lahore|rawalpindi|plaza|sector)/i.test(line) && !/(?:total|amount|net|gross|rs|pkr)/i.test(line)) return true;
+    if (/(?:street|shop|road|avenue|floor|block|market|chistiaabad|hajj\s*camp|islamabad|karachi|lahore|rawalpindi|peshawar|multan|plaza|sector|building)/i.test(line) && !/(?:total|amount|net|gross|rs|pkr|₨)/i.test(line)) return true;
 
     // Header table labels
-    if (/^\s*(?:item\s*name|description|particulars|qty|quantity|unit\s*price|m\/s|remarks|ref)\b/i.test(line)) return true;
+    if (/^\s*(?:item\s*name|description|particulars|qty|quantity|unit\s*price|rate|m\/s|remarks|ref|dr|cr|sr|sno)\b/i.test(line)) return true;
 
     return false;
 }
@@ -330,7 +335,9 @@ function extractAllAmountsFromLine(line: string): number[] {
     for (const m of intMatches) {
         const val = parseFloat(m[1]);
         if (Number.isFinite(val) && val >= 10 && val < 1_000_000) {
-            if (!results.some(d => Math.floor(d) === val)) {
+            // Exclude standalone calendar years (1990-2099) when no financial currency or total keywords are on the line
+            const isStandaloneYear = val >= 1990 && val <= 2099 && !/(?:total|net|gross|paid|cash|rs|pkr|₨|amount|bill)/i.test(line);
+            if (!isStandaloneYear && !results.some(d => Math.floor(d) === val)) {
                 results.push(val);
             }
         }
@@ -382,14 +389,14 @@ function extractTotalAmount(text: string, amountHint?: number | null): { amount:
             if (matchedPattern) {
                 score += matchedPattern.baseScore;
                 confidence = matchedPattern.confidence;
-            } else if (/(?:rs\.?|pkr|₨)/i.test(line)) {
+            } else if (/(?:rs\.?|pkr|₨|\$)/i.test(line)) {
                 score += 40;
                 confidence = 'medium';
             } else {
-                score += 10;
+                score += 5;
             }
 
-            if (isBottomHalf) score += 20;
+            if (isBottomHalf) score += 10;
 
             if (!Number.isInteger(amt) || line.includes('.00') || line.includes('.0')) {
                 score += 15;
@@ -427,6 +434,12 @@ function extractTotalAmount(text: string, amountHint?: number | null): { amount:
 
     candidates.sort((a, b) => b.score - a.score);
     const top = candidates[0];
+
+    // Enforce financial relevance threshold:
+    // If top candidate has low score and no matching financial pattern, return null
+    if (top.score < 35) {
+        return { amount: null, confidence: 'low' };
+    }
 
     return { amount: top.amount, confidence: top.confidence };
 }
@@ -483,6 +496,158 @@ function daysBetween(older: Date, newer: Date): number {
     return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
+async function extractWithGeminiVision(
+    buffer: Buffer,
+    fileName: string,
+    mimeType: string,
+    expenseDateHint?: Date | null,
+    amountHint?: number | null
+): Promise<ReceiptExtractionResult | null> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+
+    try {
+        const base64Data = buffer.toString('base64');
+        let effectiveMime = mimeType || 'image/jpeg';
+        const lowerName = (fileName || '').toLowerCase();
+        if (lowerName.endsWith('.png')) effectiveMime = 'image/png';
+        else if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) effectiveMime = 'image/jpeg';
+        else if (lowerName.endsWith('.webp')) effectiveMime = 'image/webp';
+        else if (lowerName.endsWith('.pdf')) effectiveMime = 'application/pdf';
+
+        const currentYear = new Date().getFullYear();
+        const prompt = `You are an expert accountant auditing medical, travel, and business expense receipts.
+Analyze this document (which may contain one or multiple pages/slips, such as a doctor consultation slip + pharmacy medicines bill) and extract a JSON object with:
+- "merchantName": Name of the primary clinic, pharmacy, hospital, restaurant, vendor, or store. If multiple, combine them (e.g. "Elaaj Hospital / Khan Pharmacy").
+- "receiptDate": Date of transaction in YYYY-MM-DD format. IMPORTANT: The current year is ${currentYear}. Handwritten 2-digit years like '/26' represent 2026 (never future years like 2028). The date must be on or before today.
+- "totalAmount": Numeric total of ALL bills/payments in this document. If there are multiple slips (e.g. Doctor consultation fee RS 2,000 on slip 1 + Pharmacy bill RS 11,247 on slip 2), SUM THEM TOGETHER (2000 + 11247 = 13247).
+- "currency": Currency code (e.g. "PKR", "USD", "EUR" - default "PKR").
+- "isReceipt": boolean (true if contains genuine financial receipt/bill/prescription payment, false if completely non-financial).
+- "confidence": "high" | "medium" | "low".
+
+Return ONLY a valid JSON object matching this structure:
+{"merchantName": "...", "receiptDate": "YYYY-MM-DD", "totalAmount": 13247.00, "currency": "PKR", "isReceipt": true, "confidence": "high"}`;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        parts: [
+                            {
+                                inlineData: {
+                                    mimeType: effectiveMime,
+                                    data: base64Data
+                                }
+                            },
+                            {
+                                text: prompt
+                            }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    response_mime_type: 'application/json',
+                    temperature: 0.1
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            logger.warn(`[ReceiptOCR] Gemini Vision API error (${response.status}): ${errText}`);
+            return null;
+        }
+
+        const data: any = await response.json();
+        const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!jsonText) return null;
+
+        logger.info(`[ReceiptOCR] Gemini Vision response for ${fileName}: ${jsonText.trim()}`);
+
+        const parsed = JSON.parse(jsonText);
+        if (!parsed || parsed.isReceipt === false) {
+            return {
+                extractedDate: null,
+                extractedAmount: null,
+                extractedCurrency: 'PKR',
+                merchantName: null,
+                extractionStatus: 'failed',
+                extractionError: 'Image is not a financial receipt or contains no payment data',
+                confidence: 'none'
+            };
+        }
+
+        // Support various date key aliases
+        const rawDate = parsed.receiptDate ?? parsed.date ?? parsed.invoiceDate ?? parsed.billDate ?? parsed.transactionDate;
+        let parsedDate: Date | null = null;
+        if (rawDate && typeof rawDate === 'string') {
+            const dt = new Date(rawDate);
+            if (!isNaN(dt.getTime())) {
+                const today = new Date();
+                // If OCR misread handwritten year (e.g. 26 as 28 -> 2028), clamp back to current year
+                if (dt.getFullYear() > currentYear) {
+                    dt.setFullYear(currentYear);
+                }
+                // If date is still in the future (e.g. 28th vs 18th), use expenseDateHint or today
+                if (dt > today) {
+                    if (expenseDateHint && expenseDateHint <= today) {
+                        parsedDate = new Date(expenseDateHint);
+                    } else {
+                        parsedDate = new Date(today);
+                    }
+                } else {
+                    parsedDate = dt;
+                }
+            }
+        }
+
+        // Support various amount key aliases and parse string numbers (e.g. "5,255.00", "PKR 5255")
+        const rawAmount = parsed.totalAmount ?? parsed.total ?? parsed.amount ?? parsed.grandTotal ?? parsed.netTotal ?? parsed.netAmount ?? parsed.paidAmount ?? parsed.billAmount;
+        let numAmount: number | null = null;
+        if (typeof rawAmount === 'number' && Number.isFinite(rawAmount) && rawAmount > 0) {
+            numAmount = rawAmount;
+        } else if (typeof rawAmount === 'string') {
+            const cleaned = rawAmount.replace(/,/g, '').replace(/[^0-9.]/g, '');
+            const val = parseFloat(cleaned);
+            if (Number.isFinite(val) && val > 0) {
+                numAmount = val;
+            }
+        }
+
+        // If totalAmount was missed but an array of slips/items was returned, sum them
+        if ((numAmount === null || numAmount <= 0) && Array.isArray(parsed.slips || parsed.bills || parsed.items)) {
+            const list = parsed.slips || parsed.bills || parsed.items;
+            const sum = list.reduce((acc: number, item: any) => {
+                const itemAmt = typeof item.amount === 'number' ? item.amount : parseFloat(String(item.amount || item.total || '0').replace(/[^0-9.]/g, ''));
+                return acc + (Number.isFinite(itemAmt) ? itemAmt : 0);
+            }, 0);
+            if (sum > 0) numAmount = sum;
+        }
+
+        const hasDate = parsedDate !== null;
+        const hasAmount = numAmount !== null;
+
+        return {
+            extractedDate: parsedDate,
+            extractedAmount: numAmount,
+            extractedCurrency: parsed.currency || 'PKR',
+            merchantName: parsed.merchantName || null,
+            extractionStatus: hasDate && hasAmount ? 'success' : hasDate || hasAmount ? 'partial' : 'failed',
+            confidence: (parsed.confidence as any) || (hasDate && hasAmount ? 'high' : 'medium')
+        };
+    } catch (err: any) {
+        logger.warn(`[ReceiptOCR] Gemini Vision extraction exception: ${err?.message || err}`);
+        return null;
+    }
+}
+
 export async function extractReceiptData(
     buffer: Buffer,
     fileName: string,
@@ -490,6 +655,39 @@ export async function extractReceiptData(
     expenseDateHint?: Date | null,
     amountHint?: number | null
 ): Promise<ReceiptExtractionResult> {
+    const mimeType = contentType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+
+    // 1. Primary Engine: Gemini AI Vision (when GEMINI_API_KEY is configured)
+    if (process.env.GEMINI_API_KEY && (mimeType.startsWith('image/') || mimeType === 'application/pdf')) {
+        try {
+            const aiResult = await extractWithGeminiVision(buffer, fileName, mimeType, expenseDateHint, amountHint);
+            if (aiResult && aiResult.confidence !== 'none' && aiResult.extractionStatus !== 'failed') {
+                // If AI got both amount and date, return immediately
+                if (aiResult.extractedAmount !== null) {
+                    logger.info(`[ReceiptOCR] Gemini AI successfully extracted from ${fileName}: PKR ${aiResult.extractedAmount}, Date: ${aiResult.extractedDate?.toISOString().slice(0, 10)}, Merchant: ${aiResult.merchantName}`);
+                    return aiResult;
+                }
+                
+                // If AI found date/merchant but missed amount, try local OCR as supplementary
+                try {
+                    const text = await extractTextFromBuffer(buffer, contentType);
+                    const parsed = parseReceiptText(text, new Date(), expenseDateHint, amountHint);
+                    if (parsed.extractedAmount !== null) {
+                        aiResult.extractedAmount = parsed.extractedAmount;
+                        aiResult.extractionStatus = 'success';
+                        aiResult.confidence = 'medium';
+                        logger.info(`[ReceiptOCR] Merged Gemini AI date/merchant with local OCR amount: PKR ${aiResult.extractedAmount}`);
+                    }
+                } catch {}
+
+                return aiResult;
+            }
+        } catch (err: any) {
+            logger.warn(`[ReceiptOCR] AI Vision fallback to local engine for ${fileName}: ${err?.message || err}`);
+        }
+    }
+
+    // 2. Secondary Fallback: Local Tesseract.js OCR
     try {
         const text = await extractTextFromBuffer(buffer, contentType);
         const parsed = parseReceiptText(text, new Date(), expenseDateHint, amountHint);
@@ -508,7 +706,7 @@ export async function extractReceiptData(
         return {
             extractedDate: null,
             extractedAmount: null,
-            extractedCurrency: null,
+            extractedCurrency: 'PKR',
             merchantName: null,
             extractionStatus: 'failed',
             extractionError: err?.message || 'OCR extraction failed',
@@ -549,6 +747,9 @@ export function analyzeReceipts(
     let hasExtractionFailure = false;
     let hasUnreadableDate = false;
 
+    // Track unique receipt signatures to avoid duplicate summation across multi-angle uploads
+    const seenSignatures = new Set<string>();
+
     const enriched = receipts.map(r => {
         const copy = { ...r };
         if (r.extractionStatus === 'success' || r.extractionStatus === 'partial') {
@@ -573,9 +774,18 @@ export function analyzeReceipts(
             hasUnreadableDate = true;
         }
 
-        if (typeof r.extractedAmount === 'number') {
-            totalExtractedAmount += r.extractedAmount;
-            hasAnyAmount = true;
+        if (typeof r.extractedAmount === 'number' && r.extractedAmount > 0) {
+            const dateKey = r.extractedDate ? r.extractedDate.toISOString().slice(0, 10) : 'nodate';
+            const merchantKey = (r.merchantName || 'nomerchant').toLowerCase().trim();
+            const signature = `${r.extractedAmount}_${dateKey}_${merchantKey}`;
+
+            if (seenSignatures.has(signature) && receipts.length > 1) {
+                issues.push(`Duplicate or multi-angle photo detected for "${r.fileName}" — counted once in total`);
+            } else {
+                seenSignatures.add(signature);
+                totalExtractedAmount += r.extractedAmount;
+                hasAnyAmount = true;
+            }
         }
 
         return copy;

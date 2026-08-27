@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     X, Calendar, Clock, AlertCircle, CheckCircle2, 
-    Briefcase, ChevronRight, Download
+    Briefcase, ChevronRight, Download, Edit2
 } from 'lucide-react';
 import { attendanceApi } from '../api/attendanceApi';
 import { STATUS_LABELS } from '../types';
@@ -313,52 +313,64 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
 
                                 {/* Table */}
                                 <div className="space-y-4">
-                                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                        Attendance Log
-                                        <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                                            {data.days.length} entries
-                                        </span>
-                                    </h3>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                            Attendance Log
+                                            <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                {data.days.length} days
+                                            </span>
+                                        </h3>
+                                        {canEditAttendance && (
+                                            <span className="text-xs text-indigo-600 font-semibold flex items-center gap-1">
+                                                <Edit2 size={12} /> Click any day to edit / mark
+                                            </span>
+                                        )}
+                                    </div>
                                     
-                                    <div className="space-y-3">
+                                    <div className="space-y-2.5">
                                         {data.days.map((day) => (
                                             <div 
                                                 key={day.date}
                                                 onClick={canEditAttendance ? () => setEditingDay(day) : undefined}
-                                                className={`group flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 hover:shadow-md transition-all ${
-                                                    canEditAttendance ? 'cursor-pointer' : 'cursor-default'
+                                                className={`group flex items-center justify-between p-3.5 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all ${
+                                                    canEditAttendance ? 'cursor-pointer hover:bg-slate-50/70' : 'cursor-default'
                                                 }`}
+                                                title={canEditAttendance ? `Click to edit attendance for ${day.date}` : undefined}
                                             >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-sm font-bold text-slate-700">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex flex-col min-w-[70px]">
+                                                        <span className="text-sm font-bold text-slate-800">
                                                             {formatDate(day.date, { month: 'short', day: '2-digit' })}
                                                         </span>
                                                         <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                                                            {formatDate(day.date, { weekday: 'long' })}
+                                                            {formatDate(day.date, { weekday: 'short' })}
                                                         </span>
                                                     </div>
-                                                    <div className="h-8 w-[1px] bg-slate-100" />
-                                                    <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight border ${STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                                    <div className="h-7 w-[1px] bg-slate-100" />
+                                                    <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'}`}>
                                                         {STATUS_LABELS[day.status]}
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-6">
+                                                <div className="flex items-center gap-4">
                                                     <div className="hidden sm:flex flex-col items-end">
-                                                        <span className="text-xs text-slate-400 font-medium">Work Time</span>
-                                                        <span className="text-sm font-semibold text-slate-700">
-                                                            {day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '--'}
+                                                        <span className="text-[10px] text-slate-400 font-medium">Work Time</span>
+                                                        <span className="text-xs font-semibold text-slate-700">
+                                                            {day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '—'}
                                                         </span>
                                                     </div>
-                                                    <div className="flex flex-col items-end min-w-[80px]">
-                                                        <span className="text-xs text-slate-400 font-medium">Punches</span>
+                                                    <div className="flex flex-col items-end min-w-[90px]">
+                                                        <span className="text-[10px] text-slate-400 font-medium">Punches</span>
                                                         <span className="text-xs font-bold text-slate-600">
-                                                            {day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'n/a'}
-                                                            {day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}` : ''}
+                                                            {day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '—'}
+                                                            {day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' })}` : ''}
                                                         </span>
                                                     </div>
-                                                    <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" />
+                                                    {canEditAttendance && (
+                                                        <div className="p-1 rounded-lg text-slate-300 group-hover:text-indigo-600 group-hover:bg-indigo-50 transition-colors">
+                                                            <Edit2 size={13} />
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
