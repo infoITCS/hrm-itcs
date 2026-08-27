@@ -1015,6 +1015,23 @@ const ExpenseClaimDashboard = () => {
         return decisionClaim.approvals.find((a: any) => a.status === 'Pending')?.stage;
     }, [decisionClaim]);
 
+    const canUserDecide = useMemo(() => {
+        if (!decisionClaim) return false;
+        if (['Draft', 'Approved', 'Declined', 'Action Required'].includes(decisionClaim.status)) return false;
+
+        const currentPending = decisionClaim.approvals?.find((a: any) => a.status === 'Pending');
+        if (!currentPending) return false;
+
+        const currentStage = currentPending.stage;
+
+        if (role === 'super-admin' || role === 'admin') return true;
+        if (role === 'hr' && currentStage === 'hr') return true;
+        if (role === 'finance' && currentStage === 'finance') return true;
+        if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) return true;
+
+        return false;
+    }, [decisionClaim, role]);
+
     const submitDecision = async () => {
         if (!decisionClaim?._id) return;
 
@@ -2663,7 +2680,7 @@ const ExpenseClaimDashboard = () => {
                             <div>
                                 <div className="text-base font-extrabold text-white flex items-center gap-2">
                                     <Receipt size={18} />
-                                    Claim Review — {decisionClaim.claimNo}
+                                    {canUserDecide ? 'Claim Review' : 'Claim Details'} — {decisionClaim.claimNo}
                                 </div>
                                 <div className="text-xs text-white/75 mt-0.5">
                                     {formatEmployeeFullName(decisionClaim.employeeDetails, 'Employee')}
@@ -3094,201 +3111,218 @@ const ExpenseClaimDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* ── Decision Form — full-width bottom strip ───────── */}
-                            <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-5 space-y-4">
-                                <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Your Decision</div>
-                                
-                                {(() => {
-                                    const hrApproval = decisionClaim?.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
-                                    return (
-                                        <>
-                                            {currentPendingStage === 'finance' && hrApproval && (
-                                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 space-y-1.5 text-xs mb-3">
-                                                    <div className="font-bold text-indigo-900 flex items-center justify-between">
-                                                        <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-indigo-600" /> HR Approved Amount:</span>
-                                                        <span className="text-emerald-700 font-extrabold text-sm">{formatMoney(hrApproval.approvedAmount ?? decisionClaim.amountAllowed, decisionClaim.currency)}</span>
-                                                    </div>
-                                                    {hrApproval.comments && (
-                                                        <div className="text-indigo-800 text-[11px] font-medium italic pt-1 border-t border-indigo-100/80">
-                                                            HR Remarks: "{hrApproval.comments}"
+                            {/* ── Decision Form OR Read-only Close Bar ───────── */}
+                            {canUserDecide ? (
+                                    <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-5 space-y-4">
+                                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">Your Decision</div>
+                                        
+                                        {(() => {
+                                            const hrApproval = decisionClaim?.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
+                                            return (
+                                                <>
+                                                    {currentPendingStage === 'finance' && hrApproval && (
+                                                        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 space-y-1.5 text-xs mb-3">
+                                                            <div className="font-bold text-indigo-900 flex items-center justify-between">
+                                                                <span className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-indigo-600" /> HR Approved Amount:</span>
+                                                                <span className="text-emerald-700 font-extrabold text-sm">{formatMoney(hrApproval.approvedAmount ?? decisionClaim.amountAllowed, decisionClaim.currency)}</span>
+                                                            </div>
+                                                            {hrApproval.comments && (
+                                                                <div className="text-indigo-800 text-[11px] font-medium italic pt-1 border-t border-indigo-100/80">
+                                                                    HR Remarks: "{hrApproval.comments}"
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
-                                                </div>
-                                            )}
 
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
-                                                    <div className="grid grid-cols-3 gap-2 mt-1">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setDecision('Approved');
-                                                                if (decisionApprovedAmount === 0 || decisionApprovedAmount === '') {
-                                                                    const initial = currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number'
-                                                                        ? hrApproval.approvedAmount
-                                                                        : decisionClaim.amountAllowed;
-                                                                    setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
-                                                                }
-                                                            }}
-                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
-                                                                decision === 'Approved'
-                                                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
-                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                            }`}
-                                                        >
-                                                            <CheckCircle2 size={15} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
-                                                            Approve
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setDecision('Action Required');
-                                                                setDecisionApprovedAmount(0);
-                                                            }}
-                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
-                                                                decision === 'Action Required'
-                                                                    ? 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/20'
-                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                            }`}
-                                                        >
-                                                            <Edit2 size={15} className={decision === 'Action Required' ? 'text-amber-600' : 'text-slate-400'} />
-                                                            Amend
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setDecision('Declined');
-                                                                setDecisionApprovedAmount(0);
-                                                            }}
-                                                            className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
-                                                                decision === 'Declined'
-                                                                    ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
-                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                            }`}
-                                                        >
-                                                            <XCircle size={15} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
-                                                            Decline
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-600">Approved Amount</label>
-                                                    <input
-                                                        type="number"
-                                                        value={decisionApprovedAmount}
-                                                        onChange={e => {
-                                                            const val = e.target.value === '' ? '' : Number(e.target.value);
-                                                            if (currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' && typeof val === 'number' && val > hrApproval.approvedAmount) {
-                                                                setDecisionApprovedAmount(hrApproval.approvedAmount);
-                                                            } else {
-                                                                setDecisionApprovedAmount(val);
-                                                            }
-                                                        }}
-                                                        disabled={decision === 'Declined' || (currentPendingStage === 'finance' && !!hrApproval && typeof hrApproval.approvedAmount === 'number')}
-                                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-100 bg-white font-bold text-slate-800"
-                                                    />
-                                                    {currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' ? (
-                                                        <p className="text-[11px] text-indigo-600 font-bold mt-1 flex items-center gap-1">
-                                                            🔒 Pre-filled & locked to HR Approved Amount ({formatMoney(hrApproval.approvedAmount, decisionClaim.currency)}).
-                                                        </p>
-                                                    ) : (
-                                                        <p className="text-[11px] text-slate-400 mt-1">
-                                                            Requested: <strong>{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</strong>
-                                                            {' '}• Allowed: <strong className="text-emerald-600">{formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}</strong>
-                                                            {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
-                                                                <span className="text-rose-500 font-bold ml-1.5">
-                                                                    (Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
-                                                                </span>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="text-xs font-bold text-slate-600 block mb-1">Decision</label>
+                                                            <div className="grid grid-cols-3 gap-2 mt-1">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setDecision('Approved');
+                                                                        if (decisionApprovedAmount === 0 || decisionApprovedAmount === '') {
+                                                                            const initial = currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number'
+                                                                                ? hrApproval.approvedAmount
+                                                                                : decisionClaim.amountAllowed;
+                                                                            setDecisionApprovedAmount(Number.isFinite(initial) ? initial : '');
+                                                                        }
+                                                                    }}
+                                                                    className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                                                        decision === 'Approved'
+                                                                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-2 ring-emerald-500/20'
+                                                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    <CheckCircle2 size={15} className={decision === 'Approved' ? 'text-emerald-600' : 'text-slate-400'} />
+                                                                    Approve
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setDecision('Action Required');
+                                                                        setDecisionApprovedAmount(0);
+                                                                    }}
+                                                                    className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                                                        decision === 'Action Required'
+                                                                            ? 'bg-amber-50 border-amber-300 text-amber-700 ring-2 ring-amber-500/20'
+                                                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    <Edit2 size={15} className={decision === 'Action Required' ? 'text-amber-600' : 'text-slate-400'} />
+                                                                    Amend
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setDecision('Declined');
+                                                                        setDecisionApprovedAmount(0);
+                                                                    }}
+                                                                    className={`flex items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all ${
+                                                                        decision === 'Declined'
+                                                                            ? 'bg-rose-50 border-rose-300 text-rose-700 ring-2 ring-rose-500/20'
+                                                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    <XCircle size={15} className={decision === 'Declined' ? 'text-rose-600' : 'text-slate-400'} />
+                                                                    Decline
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-bold text-slate-600">Approved Amount</label>
+                                                            <input
+                                                                type="number"
+                                                                value={decisionApprovedAmount}
+                                                                onChange={e => {
+                                                                    const val = e.target.value === '' ? '' : Number(e.target.value);
+                                                                    if (currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' && typeof val === 'number' && val > hrApproval.approvedAmount) {
+                                                                        setDecisionApprovedAmount(hrApproval.approvedAmount);
+                                                                    } else {
+                                                                        setDecisionApprovedAmount(val);
+                                                                    }
+                                                                }}
+                                                                disabled={decision === 'Declined' || (currentPendingStage === 'finance' && !!hrApproval && typeof hrApproval.approvedAmount === 'number')}
+                                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-100 bg-white font-bold text-slate-800"
+                                                            />
+                                                            {currentPendingStage === 'finance' && hrApproval && typeof hrApproval.approvedAmount === 'number' ? (
+                                                                <p className="text-[11px] text-indigo-600 font-bold mt-1 flex items-center gap-1">
+                                                                    🔒 Pre-filled & locked to HR Approved Amount ({formatMoney(hrApproval.approvedAmount, decisionClaim.currency)}).
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-[11px] text-slate-400 mt-1">
+                                                                    Requested: <strong>{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</strong>
+                                                                    {' '}• Allowed: <strong className="text-emerald-600">{formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}</strong>
+                                                                    {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
+                                                                        <span className="text-rose-500 font-bold ml-1.5">
+                                                                            (Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)})
+                                                                        </span>
+                                                                    )}
+                                                                </p>
                                                             )}
-                                                        </p>
-                                                    )}
-                                                </div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
+
+                                        {decision === 'Approved' && currentRequiresAuthorization && (
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-600">Authorization (out-of-policy)</label>
+                                                <select
+                                                    value={decisionAuthorizationBy}
+                                                    onChange={e => setDecisionAuthorizationBy(e.target.value)}
+                                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                                >
+                                                    <option value="">Select authorization level</option>
+                                                    <option value="HR">HR</option>
+                                                    <option value="Senior Management">Senior Management</option>
+                                                </select>
                                             </div>
-                                        </>
-                                    );
-                                })()}
-
-                                {decision === 'Approved' && currentRequiresAuthorization && (
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-600">Authorization (out-of-policy)</label>
-                                        <select
-                                            value={decisionAuthorizationBy}
-                                            onChange={e => setDecisionAuthorizationBy(e.target.value)}
-                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                                        >
-                                            <option value="">Select authorization level</option>
-                                            <option value="HR">HR</option>
-                                            <option value="Senior Management">Senior Management</option>
-                                        </select>
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="text-xs font-bold text-slate-600">Review Comments</label>
-                                    <textarea
-                                        value={decisionComments}
-                                        onChange={e => setDecisionComments(e.target.value)}
-                                        rows={3}
-                                        placeholder={decision === 'Declined' ? 'State the reason for declining…' : 'Optional note for the employee…'}
-                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white resize-none"
-                                    />
-                                </div>
-
-                                {decision === 'Approved' && (
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-600">ERP Transaction Reference ID</label>
-                                        <input
-                                            type="text"
-                                            value={decisionErpId}
-                                            onChange={e => setDecisionErpId(e.target.value)}
-                                            placeholder="e.g. ERP-TXN-654321"
-                                            className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                                        />
-                                    </div>
-                                )}
-
-                                <div className="flex items-center justify-end gap-3">
-                                    <button
-                                        onClick={closeDecision}
-                                        className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-100 transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={submitDecision}
-                                        disabled={deciding}
-                                        className={`px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-colors disabled:opacity-50 flex items-center gap-2 ${
-                                            decision === 'Declined'
-                                                ? 'bg-rose-600 hover:bg-rose-700'
-                                                : decision === 'Action Required'
-                                                ? 'bg-amber-600 hover:bg-amber-700'
-                                                : 'bg-emerald-600 hover:bg-emerald-700'
-                                        }`}
-                                    >
-                                        {deciding ? (
-                                            'Saving…'
-                                        ) : decision === 'Approved' ? (
-                                            <>
-                                                <CheckCircle2 size={16} />
-                                                Approve Claim
-                                            </>
-                                        ) : decision === 'Action Required' ? (
-                                            <>
-                                                <Edit2 size={16} />
-                                                Send for Amendment
-                                            </>
-                                        ) : (
-                                            <>
-                                                <XCircle size={16} />
-                                                Decline Claim
-                                            </>
                                         )}
-                                    </button>
-                                </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Review Comments</label>
+                                            <textarea
+                                                value={decisionComments}
+                                                onChange={e => setDecisionComments(e.target.value)}
+                                                rows={3}
+                                                placeholder={decision === 'Declined' ? 'State the reason for declining…' : 'Optional note for the employee…'}
+                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white resize-none"
+                                            />
+                                        </div>
+
+                                        {decision === 'Approved' && (
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-600">ERP Transaction Reference ID</label>
+                                                <input
+                                                    type="text"
+                                                    value={decisionErpId}
+                                                    onChange={e => setDecisionErpId(e.target.value)}
+                                                    placeholder="e.g. ERP-TXN-654321"
+                                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-end gap-3">
+                                            <button
+                                                onClick={closeDecision}
+                                                className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-100 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={submitDecision}
+                                                disabled={deciding}
+                                                className={`px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-colors disabled:opacity-50 flex items-center gap-2 ${
+                                                    decision === 'Declined'
+                                                        ? 'bg-rose-600 hover:bg-rose-700'
+                                                        : decision === 'Action Required'
+                                                        ? 'bg-amber-600 hover:bg-amber-700'
+                                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                                }`}
+                                            >
+                                                {deciding ? (
+                                                    'Saving…'
+                                                ) : decision === 'Approved' ? (
+                                                    <>
+                                                        <CheckCircle2 size={16} />
+                                                        Approve Claim
+                                                    </>
+                                                ) : decision === 'Action Required' ? (
+                                                    <>
+                                                        <Edit2 size={16} />
+                                                        Send for Amendment
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <XCircle size={16} />
+                                                        Decline Claim
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-4 flex items-center justify-between">
+                                        <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                                            Claim Status: <span className={`font-bold px-2 py-0.5 rounded text-xs border ${STATUS_COLORS[decisionClaim.status] || 'bg-slate-100 text-slate-700'}`}>{decisionClaim.status}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={closeDecision}
+                                            className="px-6 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900 transition-colors shadow-sm"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
+                , document.body)}
 
                     {/* ── Full-screen image lightbox ──────────────────────────── */}
                     {lightboxIndex !== null && (() => {
@@ -3337,8 +3371,6 @@ const ExpenseClaimDashboard = () => {
                             </div>
                         ) : null;
                     })()}
-                </div>
-            , document.body)}
 
             {/* Submit form — receipt preview lightbox */}
             {submitPreviewIndex !== null && receiptFiles[submitPreviewIndex] && (() => {
