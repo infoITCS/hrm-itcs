@@ -70,23 +70,23 @@ function formatMoney(amount?: number, currency = 'PKR') {
 
 function readFileAsBase64(file: File): Promise<{ fileName: string; contentType: string; base64: string }> {
     return new Promise((resolve, reject) => {
-        // If it's a PDF or small file (< 500KB), read directly as Base64
-        if (file.type === 'application/pdf' || file.size < 500 * 1024 || !file.type.startsWith('image/')) {
+        // If it's a PDF, read directly
+        if (file.type === 'application/pdf' || !file.type.startsWith('image/')) {
             const reader = new FileReader();
-            reader.onload = () => resolve({ fileName: file.name, contentType: file.type, base64: String(reader.result || '') });
+            reader.onload = () => resolve({ fileName: file.name, contentType: file.type || 'application/octet-stream', base64: String(reader.result || '') });
             reader.onerror = () => reject(new Error('Failed to read file'));
             reader.readAsDataURL(file);
             return;
         }
 
-        // For large images, resize and compress using Canvas
+        // For all images, optimize and compress using Canvas to keep payload lightweight for Vercel
         const img = new Image();
         const url = URL.createObjectURL(file);
         img.onload = () => {
             URL.revokeObjectURL(url);
             const canvas = document.createElement('canvas');
             let { width, height } = img;
-            const maxDim = 1920;
+            const maxDim = 1200;
             if (width > maxDim || height > maxDim) {
                 if (width > height) {
                     height = Math.round((height * maxDim) / width);
@@ -107,7 +107,7 @@ function readFileAsBase64(file: File): Promise<{ fileName: string; contentType: 
                 return;
             }
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.75);
             resolve({
                 fileName: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
                 contentType: 'image/jpeg',
@@ -199,8 +199,25 @@ const ExpenseClaimDashboard = () => {
     const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const incoming = Array.from(e.target.files || []);
         if (incoming.length === 0) return;
+
+        const MAX_PDF_BYTES = 3.5 * 1024 * 1024; // 3.5 MB
+        const validFiles: File[] = [];
+
+        for (const file of incoming) {
+            if (file.type === 'application/pdf' && file.size > MAX_PDF_BYTES) {
+                showToast(`PDF "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Max allowed size is 3.5MB per PDF.`, 'warning');
+                continue;
+            }
+            validFiles.push(file);
+        }
+
+        if (validFiles.length === 0) {
+            if (uploadInputRef.current) uploadInputRef.current.value = '';
+            return;
+        }
+
         setReceiptFiles(prev => {
-            const combined = [...prev, ...incoming];
+            const combined = [...prev, ...validFiles];
             return combined.slice(0, 5);
         });
         if (uploadInputRef.current) uploadInputRef.current.value = '';
@@ -862,7 +879,7 @@ const ExpenseClaimDashboard = () => {
     // Decision modal
     const [decisionOpen, setDecisionOpen] = useState(false);
     const [decisionClaim, setDecisionClaim] = useState<any>(null);
-    const [decision, setDecision] = useState<'Approved' | 'Declined'>('Approved');
+    const [decision, setDecision] = useState<'Approved' | 'Declined' | 'Action Required'>('Approved');
     const [decisionComments, setDecisionComments] = useState('');
     const [decisionApprovedAmount, setDecisionApprovedAmount] = useState<number | ''>('');
     const [decisionAuthorizationBy, setDecisionAuthorizationBy] = useState('');

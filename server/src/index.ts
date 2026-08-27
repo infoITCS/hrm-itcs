@@ -88,17 +88,12 @@ const corsOptions: cors.CorsOptions = {
         ].filter(Boolean) as string[];
 
         // Allow if no origin (like mobile apps or curl) or if it matches our list
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        }
-        // Dynamic check for Vercel Preview/Branch URLs
-        else if (origin.endsWith('.vercel.app')) {
-            logger.info(`[CORS] Allowing Vercel Preview Origin: ${origin}`);
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
             callback(null, true);
         }
         else {
             logger.warn(`[CORS] Blocked Origin: ${origin}`);
-            callback(new Error('Not allowed by CORS'));
+            callback(null, false);
         }
     },
     credentials: true,
