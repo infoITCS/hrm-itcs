@@ -111,6 +111,36 @@ const PayslipEditPanel = ({
     const empOwnName = formatEmployeeFullName(payslip.employeeDetails, payslip.employeeId);
     const hasEmployeeBank = Boolean(empOwnAccount);
 
+    const [presetEarnings, setPresetEarnings] = useState<string[]>(PRESET_EARNINGS);
+    const [presetDeductions, setPresetDeductions] = useState<string[]>(PRESET_DEDUCTIONS);
+
+    useEffect(() => {
+        const fetchComponents = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get(`${api.config}/salary-components?activeOnly=true`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (Array.isArray(res.data) && res.data.length > 0) {
+                    const earningsList = res.data.filter((c: any) => c.type === 'earning').map((c: any) => c.name);
+                    const deductionsList = res.data.filter((c: any) => c.type === 'deduction').map((c: any) => c.name);
+                    
+                    if (earningsList.length > 0) {
+                        if (!earningsList.includes('Custom / Other')) earningsList.push('Custom / Other');
+                        setPresetEarnings(earningsList);
+                    }
+                    if (deductionsList.length > 0) {
+                        if (!deductionsList.includes('Custom / Other')) deductionsList.push('Custom / Other');
+                        setPresetDeductions(deductionsList);
+                    }
+                }
+            } catch (err) {
+                // fall back to PRESET_EARNINGS and PRESET_DEDUCTIONS
+            }
+        };
+        fetchComponents();
+    }, []);
+
     const [earnings, setEarnings] = useState<Earning[]>(payslip.earnings.map(e => ({ ...e })));
     const [deductions, setDeductions] = useState<Deduction[]>(payslip.deductions.map(d => ({ ...d })));
     const [paymentMethod, setPaymentMethod] = useState(payslip.paymentMethod || 'Bank Transfer');
@@ -346,7 +376,7 @@ const PayslipEditPanel = ({
 
                         <div className="space-y-1.5">
                             {earnings.map((e, i) => {
-                                const isPreset = PRESET_EARNINGS.includes(e.component) && e.component !== 'Custom / Other';
+                                const isPreset = presetEarnings.includes(e.component) && e.component !== 'Custom / Other';
                                 return (
                                     <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
                                         <select
@@ -357,7 +387,7 @@ const PayslipEditPanel = ({
                                             }}
                                             className="w-48 shrink-0 h-8 border border-slate-200 rounded-lg px-2 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                                         >
-                                            {PRESET_EARNINGS.map(cat => (
+                                            {presetEarnings.map(cat => (
                                                 <option key={cat} value={cat}>{cat}</option>
                                             ))}
                                         </select>
@@ -417,7 +447,7 @@ const PayslipEditPanel = ({
                                 <p className="text-xs text-slate-400 italic py-1">No deductions added.</p>
                             )}
                             {deductions.map((d, i) => {
-                                const isPreset = PRESET_DEDUCTIONS.includes(d.component) && d.component !== 'Custom / Other';
+                                const isPreset = presetDeductions.includes(d.component) && d.component !== 'Custom / Other';
                                 return (
                                     <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
                                         <select
@@ -428,7 +458,7 @@ const PayslipEditPanel = ({
                                             }}
                                             className="w-48 shrink-0 h-8 border border-slate-200 rounded-lg px-2 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                                         >
-                                            {PRESET_DEDUCTIONS.map(cat => (
+                                            {presetDeductions.map(cat => (
                                                 <option key={cat} value={cat}>{cat}</option>
                                             ))}
                                         </select>

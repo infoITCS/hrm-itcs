@@ -152,6 +152,9 @@ const AddEmployeeWizard = () => {
     const [limitModalOpen, setLimitModalOpen] = useState(false);
     const [departments, setDepartments] = useState<{ value: string; label: string }[]>([]);
     const [designations, setDesignations] = useState<{ value: string; label: string }[]>([]);
+    const [salaryComponentOptions, setSalaryComponentOptions] = useState<string[]>([
+        "Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"
+    ]);
     const [availableShifts, setAvailableShifts] = useState<{ value: string; label: string }[]>([]);
     const [locations, setLocations] = useState<{ value: string; label: string }[]>([]);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -163,9 +166,10 @@ const AddEmployeeWizard = () => {
         const fetchConfig = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const [deptRes, desigRes, locs] = await Promise.all([
+                const [deptRes, desigRes, salaryCompRes, locs] = await Promise.all([
                     fetch(`${api.config}/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${api.config}/designations`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.config}/salary-components?activeOnly=true&type=earning`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     attendanceApi.getLocations()
                 ]);
                 
@@ -176,6 +180,12 @@ const AddEmployeeWizard = () => {
                 if (desigRes.ok) {
                     const data = await desigRes.json();
                     setDesignations(data.filter((d: any) => d.isActive).map((d: any) => ({ value: d.name, label: d.name })));
+                }
+                if (salaryCompRes.ok) {
+                    const data = await salaryCompRes.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        setSalaryComponentOptions(data.map((c: any) => c.name));
+                    }
                 }
                 if (locs) {
                     setLocations(locs.map((l: string) => ({ value: l, label: l })));
@@ -2446,7 +2456,7 @@ const AddEmployeeWizard = () => {
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                                         {formData.salaryComponents.map((comp, idx) => {
-                                            const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
+                                            const commonOptions = salaryComponentOptions;
                                             const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
                                             
                                             return (

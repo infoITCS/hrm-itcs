@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
-    Info, Clock, MapPin, FileText
+    Info, Clock, MapPin, FileText, Banknote, TrendingUp, TrendingDown
 } from 'lucide-react';
 import api from '../../utils/api'; // Fix import to use default or named correctly
 import { usePermissions } from '../../hooks/usePermissions';
@@ -16,6 +16,7 @@ import TemplateManagement from './TemplateManagement';
 type ConfigItem = {
     _id: string;
     name: string;
+    type?: 'earning' | 'deduction';
     description?: string;
     isActive: boolean;
 };
@@ -27,7 +28,8 @@ const AdminSettings = () => {
     const canCompany = hasSubAccess('settings', 'organization');
     const canTemplates = hasSubAccess('settings', 'holidays-config');
     
-    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'shifts' | 'locations' | 'company' | 'templates'>('departments');
+    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'salary-components' | 'shifts' | 'locations' | 'company' | 'templates'>('departments');
+    const [componentTypeFilter, setComponentTypeFilter] = useState<'all' | 'earning' | 'deduction'>('all');
     const [items, setItems] = useState<ConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +37,12 @@ const AdminSettings = () => {
     // Modal/Form state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<ConfigItem | null>(null);
-    const [formData, setFormData] = useState({ name: '', description: '', isActive: true });
+    const [formData, setFormData] = useState<{ name: string; type: 'earning' | 'deduction'; description: string; isActive: boolean }>({ 
+        name: '', 
+        type: 'earning', 
+        description: '', 
+        isActive: true 
+    });
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [alertConfig, setAlertConfig] = useState<{
@@ -51,11 +58,18 @@ const AdminSettings = () => {
         type: 'info'
     });
 
+    const getEndpoint = React.useCallback(() => {
+        if (activeTab === 'departments') return '/departments';
+        if (activeTab === 'designations') return '/designations';
+        if (activeTab === 'salary-components') return '/salary-components';
+        return '/departments';
+    }, [activeTab]);
+
     const fetchData = React.useCallback(async () => {
         setLoading(true);
         const token = localStorage.getItem('token');
         try {
-            const endpoint = activeTab === 'departments' ? '/departments' : '/designations';
+            const endpoint = getEndpoint();
             const res = await fetch(`${api.config}${endpoint}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -67,7 +81,7 @@ const AdminSettings = () => {
         } finally {
             setLoading(false);
         }
-    }, [activeTab]);
+    }, [getEndpoint]);
 
     useEffect(() => {
         fetchData();
@@ -76,10 +90,20 @@ const AdminSettings = () => {
     const handleOpenModal = (item?: ConfigItem) => {
         if (item) {
             setEditingItem(item);
-            setFormData({ name: item.name, description: item.description || '', isActive: item.isActive });
+            setFormData({ 
+                name: item.name, 
+                type: item.type || 'earning',
+                description: item.description || '', 
+                isActive: item.isActive 
+            });
         } else {
             setEditingItem(null);
-            setFormData({ name: '', description: '', isActive: true });
+            setFormData({ 
+                name: '', 
+                type: (componentTypeFilter === 'deduction' ? 'deduction' : 'earning'),
+                description: '', 
+                isActive: true 
+            });
         }
         setError(null);
         setIsModalOpen(true);
@@ -92,7 +116,7 @@ const AdminSettings = () => {
         setSubmitting(true);
         setError(null);
         const token = localStorage.getItem('token');
-        const endpoint = activeTab === 'departments' ? '/departments' : '/designations';
+        const endpoint = getEndpoint();
         const url = editingItem 
             ? `${api.config}${endpoint}/${editingItem._id}` 
             : `${api.config}${endpoint}`;
@@ -125,11 +149,13 @@ const AdminSettings = () => {
         setAlertConfig({
             isOpen: true,
             title: 'Delete Confirmation',
-            message: 'Are you sure you want to delete this item? This may affect existing employees.',
+            message: activeTab === 'salary-components' 
+                ? 'Are you sure you want to delete this salary component? It will no longer appear in new payroll dropdowns.'
+                : 'Are you sure you want to delete this item? This may affect existing employees.',
             type: 'confirm',
             onConfirm: async () => {
                 const token = localStorage.getItem('token');
-                const endpoint = activeTab === 'departments' ? '/departments' : '/designations';
+                const endpoint = getEndpoint();
                 
                 try {
                     const res = await fetch(`${api.config}${endpoint}/${id}`, {
@@ -156,10 +182,14 @@ const AdminSettings = () => {
         });
     };
 
-    const filteredItems = items.filter(item => 
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredItems = items.filter(item => {
+        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.description?.toLowerCase().includes(searchTerm.toLowerCase());
+        if (activeTab === 'salary-components' && componentTypeFilter !== 'all') {
+            return matchesSearch && item.type === componentTypeFilter;
+        }
+        return matchesSearch;
+    });
 
     if (!isAdmin) {
         return (
@@ -181,15 +211,15 @@ const AdminSettings = () => {
                         Organization Admin
                     </div>
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Configuration</h1>
-                    <p className="text-slate-500 mt-1">Manage departments, designations, and work shifts to maintain system-wide data consistency.</p>
+                    <p className="text-slate-500 mt-1">Manage departments, designations, salary components, and work shifts to maintain system-wide data consistency.</p>
                 </div>
-                {(activeTab === 'departments' || activeTab === 'designations') && (
+                {(activeTab === 'departments' || activeTab === 'designations' || activeTab === 'salary-components') && (
                     <button 
                         onClick={() => handleOpenModal()}
                         className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 shrink-0"
                     >
                         <Plus size={20} />
-                        Add New {activeTab === 'departments' ? 'Department' : 'Designation'}
+                        Add New {activeTab === 'departments' ? 'Department' : activeTab === 'designations' ? 'Designation' : 'Salary Component'}
                     </button>
                 )}
             </div>
@@ -210,6 +240,13 @@ const AdminSettings = () => {
                     >
                         <Briefcase size={16} />
                         <span>Designations</span>
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('salary-components')}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'salary-components' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Banknote size={16} />
+                        <span>Salary Components</span>
                     </button>
                     {canShifts && (
                         <button 
@@ -250,15 +287,44 @@ const AdminSettings = () => {
                 </div>
 
                 {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && (
-                    <div className="relative w-full lg:w-80 group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
-                        <input 
-                            type="text" 
-                            placeholder={`Search ${activeTab}...`}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm"
-                        />
+                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+                        {activeTab === 'salary-components' && (
+                            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 w-full sm:w-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setComponentTypeFilter('all')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex-1 sm:flex-none ${componentTypeFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    All Types
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setComponentTypeFilter('earning')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 flex-1 sm:flex-none ${componentTypeFilter === 'earning' ? 'bg-emerald-50 text-emerald-700 shadow-sm font-black' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <TrendingUp size={12} className="text-emerald-600" />
+                                    Earnings (+Add)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setComponentTypeFilter('deduction')}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 flex-1 sm:flex-none ${componentTypeFilter === 'deduction' ? 'bg-rose-50 text-rose-700 shadow-sm font-black' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <TrendingDown size={12} className="text-rose-600" />
+                                    Deductions (-Deduct)
+                                </button>
+                            </div>
+                        )}
+                        <div className="relative w-full lg:w-72 group">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                            <input 
+                                type="text" 
+                                placeholder={`Search ${activeTab === 'salary-components' ? 'components' : activeTab}...`}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all shadow-sm"
+                            />
+                        </div>
                     </div>
                 )}
             </div>
@@ -275,10 +341,12 @@ const AdminSettings = () => {
                 <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
                     <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                        {/* Existing Table Content */}
                     <thead className="bg-slate-50/80 border-b border-slate-100">
                         <tr>
                             <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Name</th>
+                            {activeTab === 'salary-components' && (
+                                <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Type</th>
+                            )}
                             <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Description</th>
                             <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
                             <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
@@ -289,6 +357,9 @@ const AdminSettings = () => {
                             Array.from({ length: 5 }).map((_, i) => (
                                 <tr key={i} className="animate-pulse">
                                     <td className="px-8 py-6"><div className="h-4 bg-slate-100 rounded w-32"></div></td>
+                                    {activeTab === 'salary-components' && (
+                                        <td className="px-8 py-6"><div className="h-4 bg-slate-100 rounded w-24"></div></td>
+                                    )}
                                     <td className="px-8 py-6"><div className="h-4 bg-slate-100 rounded w-48"></div></td>
                                     <td className="px-8 py-6"><div className="h-4 bg-slate-100 rounded w-16"></div></td>
                                     <td className="px-8 py-6 text-right"><div className="h-8 bg-slate-100 rounded w-20 ml-auto"></div></td>
@@ -299,12 +370,43 @@ const AdminSettings = () => {
                                 <tr key={item._id} className="hover:bg-slate-50/50 transition-colors group">
                                     <td className="px-8 py-5">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 transition-all group-hover:scale-110">
-                                                {activeTab === 'departments' ? <Building2 size={16} /> : <Briefcase size={16} />}
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all group-hover:scale-110 ${
+                                                activeTab === 'salary-components'
+                                                    ? item.type === 'deduction'
+                                                        ? 'bg-rose-50 text-rose-600'
+                                                        : 'bg-emerald-50 text-emerald-600'
+                                                    : activeTab === 'departments'
+                                                        ? 'bg-indigo-50 text-indigo-600'
+                                                        : 'bg-indigo-50 text-indigo-600'
+                                            }`}>
+                                                {activeTab === 'departments' ? (
+                                                    <Building2 size={16} />
+                                                ) : activeTab === 'designations' ? (
+                                                    <Briefcase size={16} />
+                                                ) : item.type === 'deduction' ? (
+                                                    <TrendingDown size={16} />
+                                                ) : (
+                                                    <TrendingUp size={16} />
+                                                )}
                                             </div>
                                             <span className="font-bold text-slate-700">{item.name}</span>
                                         </div>
                                     </td>
+                                    {activeTab === 'salary-components' && (
+                                        <td className="px-8 py-5">
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                item.type === 'deduction'
+                                                    ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                                    : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                            }`}>
+                                                {item.type === 'deduction' ? (
+                                                    <><TrendingDown size={11} /> Deduction (Deduct)</>
+                                                ) : (
+                                                    <><TrendingUp size={11} /> Earning (Add)</>
+                                                )}
+                                            </span>
+                                        </td>
+                                    )}
                                     <td className="px-8 py-5">
                                         <span className="text-sm text-slate-500">{item.description || '—'}</span>
                                     </td>
@@ -339,14 +441,16 @@ const AdminSettings = () => {
                             ))
                         ) : (
                             <tr>
-                                <td colSpan={4} className="px-8 py-20 text-center">
+                                <td colSpan={activeTab === 'salary-components' ? 5 : 4} className="px-8 py-20 text-center">
                                     <div className="max-w-xs mx-auto space-y-3">
                                         <div className="p-4 bg-slate-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-slate-300">
                                             <Info size={32} />
                                         </div>
                                         <div>
                                             <h3 className="font-bold text-slate-800">No items found</h3>
-                                            <p className="text-sm text-slate-500">Add your first {activeTab === 'departments' ? 'department' : 'designation'} to get started.</p>
+                                            <p className="text-sm text-slate-500">
+                                                Add your first {activeTab === 'departments' ? 'department' : activeTab === 'designations' ? 'designation' : 'salary component'} to get started.
+                                            </p>
                                         </div>
                                         <button 
                                             onClick={() => handleOpenModal()}
@@ -372,7 +476,7 @@ const AdminSettings = () => {
                 <div>
                     <h4 className="font-black text-amber-900 text-sm uppercase tracking-tight">Important Note on Data Integrity</h4>
                     <p className="text-sm text-amber-700 mt-1 leading-relaxed">
-                        Updating or deleting a master list item will NOT automatically update existing employee records. Employees already assigned to a modified item will retain their original text designations until manually updated in their profiles.
+                        Updating or deleting a master list item will NOT automatically modify existing historical records or already generated payslips. It will update the selectable options for newly configured profiles and future payroll runs.
                     </p>
                 </div>
             </div>
@@ -386,7 +490,7 @@ const AdminSettings = () => {
                                 <div>
                                     <h2 className="text-2xl font-black text-slate-900 tracking-tight">
                                         {editingItem ? 'Edit ' : 'Add New '}
-                                        {activeTab === 'departments' ? 'Department' : 'Designation'}
+                                        {activeTab === 'departments' ? 'Department' : activeTab === 'designations' ? 'Designation' : 'Salary Component'}
                                     </h2>
                                     <p className="text-sm text-slate-500">Provide the details below to save changes.</p>
                                 </div>
@@ -398,11 +502,43 @@ const AdminSettings = () => {
                                 </button>
                             </div>
 
-                            <form onSubmit={handleSubmit} className="space-y-6">
+                            <form onSubmit={handleSubmit} className="space-y-5">
                                 {error && (
                                     <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600 text-sm font-medium animate-shake">
                                         <AlertCircle size={18} />
                                         {error}
+                                    </div>
+                                )}
+
+                                {activeTab === 'salary-components' && (
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Component Type</label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(p => ({ ...p, type: 'earning' }))}
+                                                className={`py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${
+                                                    formData.type === 'earning'
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-100 shadow-sm'
+                                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                <TrendingUp size={15} className="text-emerald-600" />
+                                                <span>Earning (+Add)</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(p => ({ ...p, type: 'deduction' }))}
+                                                className={`py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${
+                                                    formData.type === 'deduction'
+                                                        ? 'bg-rose-50 text-rose-700 border-rose-300 ring-2 ring-rose-100 shadow-sm'
+                                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                <TrendingDown size={15} className="text-rose-600" />
+                                                <span>Deduction (-Deduct)</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
 
@@ -413,7 +549,15 @@ const AdminSettings = () => {
                                         value={formData.name}
                                         onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))}
                                         className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all"
-                                        placeholder={`e.g. ${activeTab === 'departments' ? 'Engineering' : 'Software Architect'}`}
+                                        placeholder={
+                                            activeTab === 'departments' 
+                                                ? 'e.g. Engineering' 
+                                                : activeTab === 'designations' 
+                                                    ? 'e.g. Software Architect' 
+                                                    : formData.type === 'earning' 
+                                                        ? 'e.g. Reward, Sales Commission, Bonus' 
+                                                        : 'e.g. Loan Recovery, Advance Salary'
+                                        }
                                         autoFocus
                                     />
                                 </div>
@@ -423,15 +567,15 @@ const AdminSettings = () => {
                                     <textarea 
                                         value={formData.description}
                                         onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
-                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all min-h-[100px] resize-none"
-                                        placeholder="Briefly describe the purpose of this item..."
+                                        className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all min-h-[90px] resize-none"
+                                        placeholder="Briefly describe the purpose of this component..."
                                     />
                                 </div>
 
                                 <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
                                     <div className="flex-1">
                                         <h4 className="text-sm font-bold text-slate-800">Status</h4>
-                                        <p className="text-[10px] text-slate-500">Toggle whether this item is selectable in forms</p>
+                                        <p className="text-[10px] text-slate-500">Toggle whether this item appears in dropdowns</p>
                                     </div>
                                     <button 
                                         type="button"

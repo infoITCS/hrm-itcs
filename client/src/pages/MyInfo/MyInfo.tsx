@@ -176,15 +176,19 @@ const MyInfo = () => {
     } | null>(null);
     const [departments, setDepartments] = useState<string[]>([]);
     const [designations, setDesignations] = useState<string[]>([]);
+    const [salaryComponentOptions, setSalaryComponentOptions] = useState<string[]>([
+        "Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"
+    ]);
     const [employeesList, setEmployeesList] = useState<{ value: string; label: string }[]>([]);
 
     useEffect(() => {
         const fetchConfig = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const [deptRes, desigRes, empRes] = await Promise.all([
+                const [deptRes, desigRes, salaryCompRes, empRes] = await Promise.all([
                     fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${api.baseURL}/api/config/designations`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(`${api.baseURL}/api/config/salary-components?activeOnly=true&type=earning`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${api.baseURL}/api/employees`, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
                 
@@ -195,6 +199,12 @@ const MyInfo = () => {
                 if (desigRes.ok) {
                     const data = await desigRes.json();
                     setDesignations(data.filter((d: any) => d.isActive).map((d: any) => d.name));
+                }
+                if (salaryCompRes.ok) {
+                    const data = await salaryCompRes.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        setSalaryComponentOptions(data.map((c: any) => c.name));
+                    }
                 }
                 if (empRes.ok) {
                     const data = await empRes.json();
@@ -3449,7 +3459,7 @@ const MyInfo = () => {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                                             {formData.salaryComponents.map((comp, idx) => {
-                                                const commonOptions = ["Basic Salary", "Medical Allowance", "HRA", "Conveyance Allowance", "Fuel Allowance", "Bonus", "Special Allowance", "Utilities"];
+                                                const commonOptions = salaryComponentOptions;
                                                 const showCustomInput = !commonOptions.includes(comp.component) && comp.component !== '';
                                                 
                                                 return (

@@ -802,6 +802,102 @@ async function fetchEmployeesAndRecords(
     return { employees, records };
 }
 
+function buildAttendanceMonthlyMatrixCsv(employees: any[], records: any[], dates: string[]): string {
+    const dayHeaders = dates.map(d => d.slice(8)); // '01', '02', ... '31'
+    const headers = [
+        'Employee ID',
+        'Name',
+        'Department',
+        'Location',
+        ...dayHeaders,
+        'Total Present',
+        'Total Late',
+        'Total Absent',
+        'Total Half-Day',
+        'Total Leave',
+        'Total Work Hours',
+        'Late Penalties'
+    ];
+    const rows = [headers.join(',')];
+
+    const recordMap = new Map<string, any>();
+    records.forEach(r => recordMap.set(`${r.employeeId}_${r.date}`, r));
+
+    for (const emp of employees) {
+        let presentCount = 0;
+        let lateCount = 0;
+        let absentCount = 0;
+        let halfDayCount = 0;
+        let leaveCount = 0;
+        let totalWorkMinutes = 0;
+
+        const dayCells: string[] = [];
+
+        for (const dateStr of dates) {
+            const record = recordMap.get(`${emp.employeeId}_${dateStr}`);
+            const weekend = isWeekend(dateStr);
+            const status = record?.status || (weekend ? 'Weekend' : 'Absent');
+
+            let code = '—';
+            if (status === 'Present') {
+                code = 'P';
+                presentCount++;
+            } else if (status === 'Late') {
+                code = 'L';
+                presentCount++;
+                lateCount++;
+            } else if (status === 'Absent') {
+                code = 'A';
+                absentCount++;
+            } else if (status === 'Half-Day') {
+                code = 'HD';
+                halfDayCount++;
+                presentCount += 0.5;
+            } else if (status === 'Early Leave') {
+                code = 'EL';
+                presentCount++;
+            } else if (status === 'On Leave') {
+                code = 'LV';
+                leaveCount++;
+            } else if (status === 'Holiday') {
+                code = 'H';
+            } else if (status === 'Weekend') {
+                code = 'OFF';
+            } else if (status === 'Incomplete') {
+                code = 'INC';
+                presentCount++;
+            }
+
+            if (record && record.lateMinutes > 0 && status !== 'Late') {
+                lateCount++;
+            }
+
+            totalWorkMinutes += record?.workDurationMinutes || 0;
+            dayCells.push(escapeCsvField(code));
+        }
+
+        const penalties = Math.floor(lateCount / 3);
+        const workHours = (totalWorkMinutes / 60).toFixed(1);
+
+        rows.push([
+            escapeCsvField(emp.employeeId),
+            escapeCsvField(formatEmployeeFullName(emp, emp.employeeId)),
+            escapeCsvField(emp.jobInfo?.department || '—'),
+            escapeCsvField(emp.jobInfo?.workLocation || 'ISB-Office'),
+            ...dayCells,
+            escapeCsvField(presentCount),
+            escapeCsvField(lateCount),
+            escapeCsvField(absentCount),
+            escapeCsvField(halfDayCount),
+            escapeCsvField(leaveCount),
+            escapeCsvField(workHours),
+            escapeCsvField(penalties)
+        ].join(','));
+    }
+
+    return rows.join('\n');
+}
+
 export async function generateDailyCSV(dateStr: string, employeeId?: string): Promise<string> {
     const { employees, records } = await fetchEmployeesAndRecords(dateStr, dateStr, employeeId);
     return buildAttendanceExportCsv(employees, records, [dateStr]);
@@ -818,5 +914,5 @@ export async function generateMonthlyCSV(monthStr: string, employeeId?: string):
         `${monthStr}-${String(i + 1).padStart(2, '0')}`
     );
 
-    return buildAttendanceExportCsv(employees, records, dates);
+    return buildAttendanceMonthlyMatrixCsv(employees, records, dates);
 }
