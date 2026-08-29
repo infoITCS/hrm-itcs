@@ -33,6 +33,8 @@ export interface IAttendanceRecord extends Document {
     allPunches: Date[];
     // Manual override note (e.g., "approved remote work")
     note?: string;
+    // Work from home — excludes this day from meal allowance in payroll
+    isWfh?: boolean;
     // Was manually corrected by admin/manager?
     manuallyAdjusted: boolean;
     adjustedBy?: string;
@@ -69,6 +71,7 @@ const AttendanceRecordSchema: Schema = new Schema(
         
         allPunches:          [{ type: Date }],
         note:                { type: String },
+        isWfh:               { type: Boolean, default: false },
         manuallyAdjusted:    { type: Boolean, default: false },
         adjustedBy:          { type: String },
         isAutoClosed:        { type: Boolean, default: false },

@@ -38,6 +38,7 @@ export interface AttendanceRecordDTO {
     overtimeMinutes: number;
     leaveType?: string;
     note?: string;
+    isWfh?: boolean;
     manuallyAdjusted: boolean;
     isVirtual?: boolean;
 }
@@ -101,6 +102,8 @@ export interface TodayRosterEntry {
     lateMinutes: number;
     status: AttendanceStatus;
     verifyType?: string;        // "Fingerprint", "Face", etc.
+    note?: string;
+    isWfh?: boolean;
 }
 
 export interface AutoCloseResult {
@@ -117,6 +120,8 @@ export interface MonthlyDayEntry {
     lateMinutes: number;
     status: AttendanceStatus;
     note?: string;
+    isWfh?: boolean;
+    isAutoClosed?: boolean;
 }
 
 export interface EmployeeMonthlyDetail {

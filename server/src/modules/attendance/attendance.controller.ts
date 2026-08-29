@@ -127,13 +127,13 @@ export async function getPunches(req: AuthRequest, res: Response) {
 
 export async function updateRecord(req: AuthRequest, res: Response) {
     try {
-        const { checkIn, checkOut, status, note } = req.body;
+        const { checkIn, checkOut, status, note, isWfh } = req.body;
         const record = await repo.findRecordById(req.params.id);
         if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
 
-        // Authorization: only super-admin/admin/manager can modify records
-        if (!['super-admin', 'admin', 'manager'].includes(req.user?.role || '')) {
-            return res.status(403).json({ success: false, message: 'Access denied: only Admin, Super Admin, or Manager can update records.' });
+        // Authorization: only super-admin/admin/manager/hr can modify records
+        if (!['super-admin', 'admin', 'manager', 'hr'].includes(req.user?.role || '')) {
+            return res.status(403).json({ success: false, message: 'Access denied: only Admin, HR, Super Admin, or Manager can update records.' });
         }
 
         if (status && !VALID_STATUSES.includes(status)) {
@@ -159,6 +159,7 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         if (checkOut) (record as any).checkOut = new Date(checkOut);
         if (status) (record as any).status = status;
         if (note !== undefined) (record as any).note = note;
+        if (typeof isWfh === 'boolean') (record as any).isWfh = isWfh;
 
         if (finalIn) {
             const employee = await repo.findEmployeeWithShift((record as any).employeeId);
@@ -193,7 +194,7 @@ export async function updateRecord(req: AuthRequest, res: Response) {
 
 export async function createManualRecord(req: AuthRequest, res: Response) {
     try {
-        const { employeeId, date, checkIn, checkOut, status, note, location } = req.body;
+        const { employeeId, date, checkIn, checkOut, status, note, location, isWfh } = req.body;
         if (!employeeId || !date) return res.status(400).json({ success: false, message: 'employeeId and date required' });
 
         if (status && !VALID_STATUSES.includes(status)) {
@@ -245,6 +246,7 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             allPunches,
             status: status ?? 'Present',
             note,
+            isWfh: Boolean(isWfh),
             manuallyAdjusted: true,
             adjustedBy: req.user?.userId,
         });

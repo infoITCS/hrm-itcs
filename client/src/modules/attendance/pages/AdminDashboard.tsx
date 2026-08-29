@@ -77,7 +77,11 @@ function RosterRow({
     entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void 
 }) {
     const isMissing = entry.status === 'Incomplete' && isPast;
-    const statusLabel = isMissing ? 'Missing Checkout' : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
+    const statusLabel = entry.isWfh && entry.status === 'Present'
+        ? 'Present (WFH)'
+        : isMissing
+            ? 'Missing Checkout'
+            : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
     const statusClass = STATUS_BADGE[statusLabel] || 'bg-slate-100 text-slate-500';
     const showLateFlag = entry.status !== 'Incomplete' && entry.lateMinutes > 0;
     const showEarlyFlag = entry.status === 'Early Leave';
@@ -162,8 +166,13 @@ function RosterRow({
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${statusClass}`}>
                         {statusLabel}
                     </span>
-                    {(showLateFlag || showEarlyFlag) && (
-                        <div className="flex items-center gap-1.5">
+                    {(showLateFlag || showEarlyFlag || (entry.isWfh && entry.status !== 'Present')) && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            {entry.isWfh && entry.status !== 'Present' && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
+                                    WFH
+                                </span>
+                            )}
                             {showLateFlag && (
                                 <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                                     Late Arrival

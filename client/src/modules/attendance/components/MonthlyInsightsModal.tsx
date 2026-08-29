@@ -156,6 +156,8 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
         lateMinutes: day.lateMinutes || 0,
         status: day.status,
         verifyType: 'Manual',
+        note: day.note,
+        isWfh: day.isWfh,
     });
 
     return (
@@ -347,9 +349,18 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                                                         </span>
                                                     </div>
                                                     <div className="h-7 w-[1px] bg-slate-100" />
-                                                    <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                                        {STATUS_LABELS[day.status]}
+                                                    <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${
+                                                        day.isWfh && day.status === 'Present'
+                                                            ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                                            : STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'
+                                                    }`}>
+                                                        {day.isWfh && day.status === 'Present' ? 'Present (WFH)' : STATUS_LABELS[day.status]}
                                                     </div>
+                                                    {day.isWfh && day.status !== 'Present' && (
+                                                        <div className="px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-sky-50 text-sky-700 border-sky-200">
+                                                            WFH
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="flex items-center gap-4">

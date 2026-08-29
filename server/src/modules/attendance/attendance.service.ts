@@ -309,6 +309,8 @@ export async function getTodayRoster(
             lateMinutes,
             status,
             verifyType: firstPunch.deviceSN === 'WEB-PORTAL' ? 'Dashboard' : (VERIFY_LABELS[firstPunch.verifyType] || 'Biometric'),
+            note: rec?.note,
+            isWfh: Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || ''),
         });
     }
 
@@ -332,6 +334,8 @@ export async function getTodayRoster(
             workDurationMinutes: rec?.workDurationMinutes || 0,
             lateMinutes: rec?.lateMinutes || 0,
             status: rec?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent'),
+            note: rec?.note,
+            isWfh: Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || ''),
         });
     }
 
@@ -691,7 +695,8 @@ export async function getEmployeeMonthlyAttendance(
                 workDurationMinutes: r.workDurationMinutes || 0,
                 lateMinutes: r.lateMinutes || 0,
                 status: r.status,
-                note: r.note
+                note: r.note,
+                isWfh: Boolean(r.isWfh) || /wfh|work from home/i.test(r.note || ''),
             });
         } else {
             const weekend = isWeekend(dateStr);

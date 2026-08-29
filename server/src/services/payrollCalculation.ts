@@ -143,6 +143,7 @@ export async function buildPayrollPayslips(
     const mealRecords = await AttendanceRecord.find({
         date: { $gte: periodStart, $lte: periodEnd },
         status: 'Present',
+        isWfh: { $ne: true },
         note: { $not: /wfh|work from home/i },
     }).select('employeeId').lean() as any[];
 
