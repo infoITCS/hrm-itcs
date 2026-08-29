@@ -154,7 +154,7 @@ export async function updateEmployeeLoan(
         (employee as any).loans = [];
     }
 
-    let activeLoan = employee.loans!.find((l) => l.status === 'Active');
+    let activeLoan = employee.loans!.find((l: { status?: string }) => l.status === 'Active');
     const computedMap = await buildComputedLoanMap();
     const computed = computedMap[employeeId];
     const totalDisbursed = activeLoan?.totalAmount

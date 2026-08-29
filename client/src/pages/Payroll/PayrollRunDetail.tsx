@@ -638,7 +638,7 @@ const PayrollRunDetail = () => {
     const [erpNotesInput, setErpNotesInput] = useState('');
 
     const [amountPreview, setAmountPreview] = useState<AmountPreview | null>(null);
-    const [loadingPreview, setLoadingPreview] = useState(false);
+    const [, setLoadingPreview] = useState(false);
 
     // Attendance Period Editing State
     const [showEditPeriodModal, setShowEditPeriodModal] = useState(false);
@@ -926,7 +926,6 @@ const PayrollRunDetail = () => {
     };
 
     const totalGross = payslips.reduce((s, p) => s + p.grossPay, 0);
-    const totalDeductions = payslips.reduce((s, p) => s + p.totalDeductions, 0);
     const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
     const totalExpenseClaims = payslips.reduce((s, p) => {
         const claimAmt = (p.earnings || [])

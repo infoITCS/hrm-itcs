@@ -29,7 +29,7 @@ function getEmploymentStatus(emp: any): string {
     return emp.employmentStatus.status || '';
 }
 
-function resolveEmployeeEarnings(emp: any): { component: string; amount: number; type: 'fixed' | 'variable' }[] {
+function resolveEmployeeEarnings(emp: any): { component: string; amount: number; type: 'fixed' | 'variable'; expenseClaim?: boolean }[] {
     const fromComponents = (emp.salaryComponents || [])
         .filter((sc: any) => sc && sc.component && (Number(sc.amount) || 0) > 0)
         .map((sc: any) => ({
