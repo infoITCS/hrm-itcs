@@ -9,7 +9,7 @@ interface AuthContextType {
     login: (userData: User | ((prev: User | null) => User)) => void;
     logout: () => void;
     isAuthenticated: boolean;
-    impersonate: (token: string, userData: User) => void;
+    impersonate: (token: string, userData?: User) => Promise<void>;
     stopImpersonating: () => Promise<void>;
     isImpersonated: boolean;
 }
@@ -111,41 +111,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         navigate('/login');
     };
 
-    const impersonate = (token: string, userData: User) => {
+    const buildUserFromApiData = (userData: any): User => ({
+        id: userData.id || userData._id || '',
+        name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
+        email: userData.email,
+        role: userData.role,
+        avatar: (userData.avatar &&
+                 userData.avatar.trim() !== '' &&
+                 userData.avatar !== 'null' &&
+                 userData.avatar !== 'undefined')
+            ? userData.avatar
+            : '',
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        hasProfile: userData.hasProfile,
+        needsPasswordSetup: userData.needsPasswordSetup,
+        microsoftId: userData.microsoftId,
+        permissions: userData.permissions || {},
+        scopes: userData.scopes || {},
+        subPermissions: userData.subPermissions || {},
+        customPermissions: userData.customPermissions || {},
+        customScopes: userData.customScopes || {},
+        customSubPermissions: userData.customSubPermissions || {}
+    });
+
+    const impersonate = async (token: string, userData?: User) => {
         const currentToken = localStorage.getItem('token');
         if (currentToken) {
             localStorage.setItem('original_token', currentToken);
         }
         localStorage.setItem('token', token);
-        
-        const userObj: User = {
-            id: userData.id || userData._id || '',
-            name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
-            email: userData.email,
-            role: userData.role,
-            avatar: (userData.avatar && 
-                     userData.avatar.trim() !== '' && 
-                     userData.avatar !== 'null' && 
-                     userData.avatar !== 'undefined')
-                ? userData.avatar
-                : '',
-            firstName: userData.firstName,
-            lastName: userData.lastName,
-            hasProfile: userData.hasProfile,
-            needsPasswordSetup: userData.needsPasswordSetup,
-            microsoftId: userData.microsoftId,
-            permissions: userData.permissions || {},
-            scopes: userData.scopes || {},
-            subPermissions: userData.subPermissions || {},
-            customPermissions: userData.customPermissions || {},
-            customScopes: userData.customScopes || {},
-            customSubPermissions: userData.customSubPermissions || {}
-        };
-        
-        setUser(userObj);
-        sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
-        sessionStorage.setItem('itcs_auth', 'true');
         setIsImpersonated(true);
+
+        try {
+            const freshUserData = await APIService.getMe(token);
+            const userObj = buildUserFromApiData(freshUserData);
+            setUser(userObj);
+            sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
+            sessionStorage.setItem('itcs_auth', 'true');
+        } catch (error) {
+            console.error('Failed to load impersonated user profile:', error);
+            if (userData) {
+                const userObj = buildUserFromApiData(userData);
+                setUser(userObj);
+                sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
+                sessionStorage.setItem('itcs_auth', 'true');
+            } else {
+                logout();
+            }
+        }
     };
 
     const stopImpersonating = async () => {

@@ -17,6 +17,7 @@ import ExpenseClaim from '../models/ExpenseClaim';
 import { sendPayslipDisbursedEmail } from '../utils/email';
 import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { buildPayrollPayslips, computePayrollAmountTotals } from '../services/payrollCalculation';
 
 const router = express.Router();
 
@@ -956,6 +957,66 @@ router.get('/:runId/bank-advice-pdf', authenticate, async (req: Request, res: Re
     }
 });
 
+router.get('/:runId/preview-amounts', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const { runId } = req.params;
+        if (!mongoose.isValidObjectId(runId)) {
+            return res.status(400).json({ message: 'Invalid run ID.' });
+        }
+
+        const run = await PayrollRun.findById(runId);
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        const existingPayslips = await Payslip.find({ payrollRunId: runId }).lean();
+
+        if (existingPayslips.length > 0) {
+            const totals = computePayrollAmountTotals(existingPayslips);
+            const linkedClaims = await ExpenseClaim.find({
+                payrollRunId: run._id,
+                status: 'Approved',
+            }).select('claimNo employeeId approvedTotal amountAllowed amountRequested erpReferenceId category').lean();
+
+            const expenseClaimsIncluded = linkedClaims.map((c: any) => ({
+                _id: String(c._id),
+                claimNo: c.claimNo,
+                employeeId: c.employeeId,
+                amount: Number(c.approvedTotal ?? c.amountAllowed ?? c.amountRequested ?? 0),
+                erpReferenceId: c.erpReferenceId,
+                category: c.category,
+            }));
+
+            return res.json({
+                source: 'payslips',
+                ...totals,
+                claimCount: expenseClaimsIncluded.length,
+                expenseClaimsIncluded,
+                hasErpReferenceId: Boolean(run.erpReferenceId?.trim()),
+            });
+        }
+
+        const preview = await buildPayrollPayslips(run, { persist: false });
+        return res.json({
+            source: 'preview',
+            ...preview.totals,
+            claimCount: preview.expenseClaimsIncluded.length,
+            expenseClaimsIncluded: preview.expenseClaimsIncluded,
+            employeeCount: preview.payslips.length,
+            missingSalary: preview.missingSalary.length ? preview.missingSalary : undefined,
+            hasErpReferenceId: Boolean(run.erpReferenceId?.trim()),
+        });
+    } catch (err: any) {
+        if (err?.status === 400) {
+            return res.status(400).json({ message: err.message });
+        }
+        next(err);
+    }
+});
+
 router.get('/:runId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authReq = req as AuthRequest;
@@ -1007,427 +1068,26 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             });
         }
 
-        // Fetch all active, non-deleted employees (exclude Terminated/Resigned only)
-        const employees = await Employee.find({
-            $or: [
-                { 'employmentStatus.status': { $exists: false } },
-                { 'employmentStatus.status': { $in: [null, ''] } },
-                { 'employmentStatus.status': { $nin: PAYROLL_EXCLUDED_STATUSES } },
-                // Legacy records where employmentStatus was stored as a plain string
-                { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
-            ],
-        }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo');
-
-        if (!employees.length) {
-            return res.status(400).json({ message: 'No active employees found to generate payslips.' });
-        }
-
-        // Delete any previously generated payslips for this run
-        await Payslip.deleteMany({ payrollRunId: runId });
-
-        // ── Attendance Period & Working Days Calculation ──
-        const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
-        const periodStart = run.startDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
-        const periodEnd   = run.endDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
-
-        // Calculate actual working days (Monday - Friday) across the selected period [periodStart, periodEnd]
-        let workingDaysCount = 0;
-        const curDate = new Date(periodStart + 'T12:00:00.000Z');
-        const stopDate = new Date(periodEnd + 'T12:00:00.000Z');
-        while (curDate <= stopDate) {
-            const dayOfWeek = curDate.getUTCDay();
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) { // 0 = Sunday, 6 = Saturday
-                workingDaysCount++;
-            }
-            curDate.setUTCDate(curDate.getUTCDate() + 1);
-        }
-        const monthlyWorkingDays = workingDaysCount > 0 ? workingDaysCount : 22;
-        
-        // HR Policy: Meal Allowance only on full working days ('Present'), not on Lates, Half-Days, or WFH
-        const mealRecords = await AttendanceRecord.find({
-            date:   { $gte: periodStart, $lte: periodEnd },
-            status: 'Present',
-            note:   { $not: /wfh|work from home/i }
-        }).select('employeeId').lean() as any[];
-
-        const mealDaysMap: Record<string, number> = {};
-        for (const r of mealRecords) {
-            mealDaysMap[r.employeeId] = (mealDaysMap[r.employeeId] ?? 0) + 1;
-        }
-        const companyDoc = await Company.findOne().lean() as any;
-        const MEAL_RATE = companyDoc?.payrollSettings?.mealRatePerDay ?? 500;
-
-        // Holidays in this period — never penalize these dates
-        const holidayDates = await getHolidayDatesInPeriod(periodStart, periodEnd);
-        if (holidayDates.size > 0) {
-            for (const [holidayDate, holidayName] of holidayDates) {
-                await AttendanceRecord.updateMany(
-                    {
-                        date: holidayDate,
-                        status: { $in: ['Absent', 'Late', 'Half-Day'] },
-                    },
-                    {
-                        $set: {
-                            status: 'Holiday',
-                            note: holidayName,
-                            workDurationMinutes: 0,
-                            lateMinutes: 0,
-                        },
-                    }
-                );
-            }
-        }
-
-        // ── Pre-calculate full attendance summary & penalty deductions for this period ──
-        const periodRecords = await AttendanceRecord.find({
-            date:   { $gte: periodStart, $lte: periodEnd },
-        }).select('employeeId status date').lean() as any[];
-
-        const employeeAttendanceMap: Record<string, {
-            workingDays: number;
-            presentDays: number;
-            lateDays: number;
-            halfDays: number;
-            absentDays: number;
-            leaveDays: number;
-        }> = {};
-
-        const attendanceDeductionsMap: Record<string, { halfDays: number; absents: number }> = {};
-        for (const r of periodRecords) {
-            if (!employeeAttendanceMap[r.employeeId]) {
-                employeeAttendanceMap[r.employeeId] = {
-                    workingDays: monthlyWorkingDays,
-                    presentDays: 0,
-                    lateDays: 0,
-                    halfDays: 0,
-                    absentDays: 0,
-                    leaveDays: 0,
-                };
-            }
-            if (r.status === 'Present') employeeAttendanceMap[r.employeeId].presentDays++;
-            else if (r.status === 'Late') employeeAttendanceMap[r.employeeId].lateDays++;
-            else if (r.status === 'Half-Day') employeeAttendanceMap[r.employeeId].halfDays++;
-            else if (r.status === 'Absent') employeeAttendanceMap[r.employeeId].absentDays++;
-            else if (r.status === 'On Leave') employeeAttendanceMap[r.employeeId].leaveDays++;
-
-            if (holidayDates.has(r.date)) continue;
-            if (!attendanceDeductionsMap[r.employeeId]) {
-                attendanceDeductionsMap[r.employeeId] = { halfDays: 0, absents: 0 };
-            }
-            if (r.status === 'Late') {
-                // Check-in 9:30 AM - 10:00 AM -> 0.5 day cut
-                attendanceDeductionsMap[r.employeeId].halfDays += 1;
-            } else if (r.status === 'Half-Day' || r.status === 'Absent') {
-                // Check-in after 10:00 AM or No punch -> 1.0 day cut
-                attendanceDeductionsMap[r.employeeId].absents += 1;
-            }
-        }
-        // ─────────────────────────────────────────────────────────────────────
-
-        // Calculate current loan balances for all employees
-        const allCompletedLoans = await EmployeeRequest.find({
-            status: 'Completed',
-            category: { $in: ['Loan', 'Request Loan'] }
-        }).lean();
-
-        const allFinalizedPayslips = await Payslip.find({ status: 'Finalized' }).lean();
-
-        const loanBalanceMap: Record<string, { balance: number, monthlyDeduction: number }> = {};
-        for (const loan of allCompletedLoans) {
-            const empId = loan.employeeId;
-            if (!loanBalanceMap[empId]) {
-                loanBalanceMap[empId] = { balance: 0, monthlyDeduction: 0 };
-            }
-            loanBalanceMap[empId].balance += Number((loan as any).details?.requestedAmount || 0);
-            loanBalanceMap[empId].monthlyDeduction += Number((loan as any).details?.recommendedMonthlyDeduction || 0);
-        }
-
-        for (const slip of allFinalizedPayslips) {
-            const empId = slip.employeeId;
-            if (loanBalanceMap[empId]) {
-                const loanDeds = (slip.deductions || []).filter((d: any) => d.component === 'Loan Deduction');
-                for (const d of loanDeds) {
-                    loanBalanceMap[empId].balance -= (d.amount || 0);
-                }
-            }
-        }
-
-        // Check for approved Loan Pause Requests for this period
-        const approvedLoanPauses = await EmployeeRequest.find({
-            status: { $in: ['Approved', 'Completed'] },
-            $or: [
-                { category: { $regex: /loan.*pause|pause.*loan/i } },
-                { requestType: { $regex: /loan.*pause|pause.*loan/i } }
-            ]
-        }).lean();
-
-        const pausedEmployeesMap: Record<string, string> = {};
-        for (const pauseReq of approvedLoanPauses) {
-            const reqMonth = Number(pauseReq.details?.periodMonth || (pauseReq.details?.month ? new Date(pauseReq.details.month).getMonth() + 1 : null));
-            const reqYear = Number(pauseReq.details?.periodYear || (pauseReq.details?.year ? new Date(pauseReq.details.year).getFullYear() : null));
-            
-            if ((!reqMonth || reqMonth === run.periodMonth) && (!reqYear || reqYear === run.periodYear)) {
-                pausedEmployeesMap[pauseReq.employeeId] = pauseReq.details?.reason || 'Approved HR Loan Waiver / Pause';
-            }
-        }
-
-        // ── Approved Expense Claims Reimbursements ──
-        // Unlink previous claims linked to this run before re-generating
-        await ExpenseClaim.updateMany(
-            { payrollRunId: run._id, payoutStatus: 'Included in Payroll' },
-            { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
-        );
-
-        const approvedClaims = await ExpenseClaim.find({
-            status: 'Approved',
-            $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }]
-        }).lean() as any[];
-
-        const expenseClaimMap: Record<string, { total: number; claimIds: any[] }> = {};
-        for (const claim of approvedClaims) {
-            const empId = claim.employeeId;
-            if (!expenseClaimMap[empId]) {
-                expenseClaimMap[empId] = { total: 0, claimIds: [] };
-            }
-            const claimAmt = claim.approvedTotal ?? claim.amountAllowed ?? claim.amountRequested ?? 0;
-            expenseClaimMap[empId].total += Number(claimAmt) || 0;
-            expenseClaimMap[empId].claimIds.push(claim._id);
-        }
-
-        // Ensure ERP Task ID exists for this run
         if (!run.erpTaskId) {
             run.erpTaskId = `BATCH-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
             run.erpStatus = run.erpStatus || 'Pending';
             await run.save();
         }
 
-        // ── Approved Provident Fund (PF) Withdrawal Claims ──
-        const approvedPfRequests = await EmployeeRequest.find({
-            status: { $in: ['Approved', 'Completed'] },
-            category: { $in: ['Provident Fund', 'PF Withdrawal', 'Request Provident Fund'] },
-            $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }]
-        }).lean() as any[];
-
-        const pfRequestMap: Record<string, { total: number; requestIds: any[] }> = {};
-        for (const pfr of approvedPfRequests) {
-            const empId = pfr.employeeId;
-            if (!pfRequestMap[empId]) {
-                pfRequestMap[empId] = { total: 0, requestIds: [] };
-            }
-            const pfAmt = Number((pfr as any).details?.requestedAmount || (pfr as any).amount || 0);
-            pfRequestMap[empId].total += pfAmt;
-            pfRequestMap[empId].requestIds.push(pfr._id);
-        }
-
-        const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
-        const counter = await Counter.findOneAndUpdate(
-            { key: counterKey },
-            { $inc: { seq: employees.length } },
-            { upsert: true, new: true }
-        );
-        let nextSeq = counter.seq - employees.length + 1;
-        const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
-
-        const payslips = [];
-        const missingSalary: string[] = [];
-        const usedClaimIds: any[] = [];
-        const usedPfRequestIds: any[] = [];
-
-        let empIndex = 0;
-        for (const emp of employees) {
-            empIndex++;
-            // Map salaryComponents (with financeInfo fallback) → Payslip.earnings[]
-            const earnings = resolveEmployeeEarnings(emp);
-            if (earnings.length === 0) {
-                missingSalary.push(`${formatEmployeeFullName(emp, emp.employeeId)} (${emp.employeeId})`);
-            }
-
-            // Expense Reimbursements from approved claims
-            const empClaimInfo = expenseClaimMap[emp.employeeId];
-            if (empClaimInfo && empClaimInfo.total > 0) {
-                earnings.push({
-                    component: 'Expense Reimbursements',
-                    amount: empClaimInfo.total,
-                    type: 'variable',
-                });
-                usedClaimIds.push(...empClaimInfo.claimIds);
-            }
-
-            // Non-taxable PF Withdrawal payout
-            let pfPayoutAmount = 0;
-            const empPfInfo = pfRequestMap[emp.employeeId];
-            if (empPfInfo && empPfInfo.total > 0) {
-                pfPayoutAmount = empPfInfo.total;
-                earnings.push({
-                    component: 'PF Withdrawal (Non-Taxable)',
-                    amount: pfPayoutAmount,
-                    type: 'variable',
-                });
-                usedPfRequestIds.push(...empPfInfo.requestIds);
-            }
-
-            // Check if employee's work anniversary falls in the run period month
-            let hasAnniversaryInMonth = false;
-            let yearsCompleted = 0;
-            if (emp.jobInfo?.joiningDate) {
-                const joiningDate = new Date(emp.jobInfo.joiningDate);
-                const joiningMonth = joiningDate.getMonth() + 1; // 1-12
-                const joiningYear = joiningDate.getFullYear();
-
-                if (joiningMonth === run.periodMonth && joiningYear < run.periodYear) {
-                    hasAnniversaryInMonth = true;
-                    yearsCompleted = run.periodYear - joiningYear;
-                }
-            }
-
-            let notes = '';
-            if (hasAnniversaryInMonth) {
-                earnings.push({
-                    component: 'Anniversary Bonus',
-                    amount: 0, // Placeholder to be filled manually
-                    type: 'fixed'
-                });
-                notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
-            }
-
-            // Meal Allowance — always present in payslip; 0 if no qualifying days
-            const mealDays = mealDaysMap[emp.employeeId] ?? 0;
-            earnings.push({
-                component: 'Meal Allowance',
-                amount: mealDays * MEAL_RATE,
-                type: 'variable',
-            });
-
-            const grossPay = earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
-            
-            const deductions = [];
-            let totalDeductions = 0;
-
-            // Attendance Penalty: 0.5 day cut for Half-Day, 1.0 day cut for Unpaid Absent
-            const attInfo = attendanceDeductionsMap[emp.employeeId];
-            if (attInfo) {
-                const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
-                const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
-                const dailyRate = basicSal / monthlyWorkingDays;
-
-                if (attInfo.halfDays > 0) {
-                    const halfDayAmount = Math.round(attInfo.halfDays * 0.5 * dailyRate);
-                    if (halfDayAmount > 0) {
-                        const unitStr = attInfo.halfDays === 1 ? 'half-day' : 'half-days';
-                        deductions.push({
-                            component: `Half-Day Penalty (${attInfo.halfDays} ${unitStr})`,
-                            amount: halfDayAmount
-                        });
-                        totalDeductions += halfDayAmount;
-                    }
-                }
-
-                if (attInfo.absents > 0) {
-                    const absentAmount = Math.round(attInfo.absents * 1.0 * dailyRate);
-                    if (absentAmount > 0) {
-                        const unitStr = attInfo.absents === 1 ? 'day' : 'days';
-                        deductions.push({
-                            component: `Absence Penalty (${attInfo.absents} ${unitStr})`,
-                            amount: absentAmount
-                        });
-                        totalDeductions += absentAmount;
-                    }
-                }
-            }
-            
-            let loanDeductAmount = 0;
-            let loanPauseNote = '';
-            const loanInfo = loanBalanceMap[emp.employeeId];
-            if (loanInfo && loanInfo.balance > 0) {
-                if (pausedEmployeesMap[emp.employeeId]) {
-                    loanDeductAmount = 0;
-                    loanPauseNote = `Loan deduction paused for ${MONTH_NAMES[run.periodMonth] || 'month'} ${run.periodYear} (Approved Request)`;
-                } else {
-                    // If they still owe money, calculate deduction
-                    const amountToDeduct = Math.min(loanInfo.balance, loanInfo.monthlyDeduction);
-                    if (amountToDeduct > 0) {
-                        loanDeductAmount = amountToDeduct;
-                        deductions.push({
-                            component: 'Loan Deduction',
-                            amount: amountToDeduct
-                        });
-                        totalDeductions += amountToDeduct;
-                    }
-                }
-            }
-            
-            const netPay = grossPay - totalDeductions;
-            
-            const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
-            nextSeq++;
-
-            // Guaranteed non-duplicating unique customer reference
-            const customerReference = generateCustomerReference(run.periodYear, run.periodMonth, empIndex);
-
-            // Default bank details from employee, or leave empty for finance/boss to fill
-            const beneficiaryAccount = emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
-            const beneficiaryName = formatEmployeeFullName(emp, emp.employeeId);
-            const beneficiaryBank = emp.bankDetails?.bankName || companyDoc?.payrollSettings?.defaultBankName || 'Meezan Bank';
-
-            const empAttSummary = employeeAttendanceMap[emp.employeeId] || {
-                workingDays: monthlyWorkingDays,
-                presentDays: 0,
-                lateDays: 0,
-                halfDays: 0,
-                absentDays: 0,
-                leaveDays: 0,
-            };
-
-            const payslipNotes = [notes, loanPauseNote].filter(Boolean).join(' • ');
-
-            payslips.push({
-                payslipNo,
-                employeeId: emp.employeeId,
-                payrollRunId: run._id,
-                periodMonth: run.periodMonth,
-                periodYear: run.periodYear,
-                currency: run.currency,
-                beneficiaryAccount,
-                beneficiaryName,
-                beneficiaryBank,
-                customerReference,
-                taxDeduction: 0,
-                loanDeduction: loanDeductAmount,
-                pfPayout: pfPayoutAmount,
-                earnings,
-                deductions,
-                grossPay,
-                totalDeductions,
-                netPay,
-                status: 'Draft',
-                paymentMethod: 'Bank Transfer',
-                notes: payslipNotes || undefined,
-                attendanceSummary: empAttSummary,
-            });
-        }
-
-        await Payslip.insertMany(payslips, { ordered: false });
-
-        if (usedClaimIds.length > 0) {
-            await ExpenseClaim.updateMany(
-                { _id: { $in: usedClaimIds } },
-                { payoutStatus: 'Included in Payroll', payrollRunId: run._id }
-            );
-        }
-
-        if (usedPfRequestIds.length > 0) {
-            await EmployeeRequest.updateMany(
-                { _id: { $in: usedPfRequestIds } },
-                { payoutStatus: 'Included in Payroll', payrollRunId: run._id }
-            );
-        }
+        const result = await buildPayrollPayslips(run, { persist: true });
 
         return res.json({
-            message: `Generated ${payslips.length} payslips for ${run.title}.`,
-            count: payslips.length,
-            missingSalary: missingSalary.length ? missingSalary : undefined,
+            message: `Generated ${result.payslips.length} payslips for ${run.title}.`,
+            count: result.payslips.length,
+            missingSalary: result.missingSalary.length ? result.missingSalary : undefined,
+            totalPayableAmount: result.totals.totalPayableAmount,
+            totalExpenseClaimsAmount: result.totals.totalExpenseClaimsAmount,
+            erpPayableAmount: result.totals.erpPayableAmount,
         });
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.status === 400) {
+            return res.status(400).json({ message: err.message });
+        }
         next(err);
     }
 });
@@ -1452,6 +1112,27 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                 message: `Run is already "${run.status}". Only Draft runs can be approved.`,
             });
         }
+
+        const payslipCount = await Payslip.countDocuments({ payrollRunId: run._id });
+        if (payslipCount === 0) {
+            return res.status(400).json({ message: 'Generate payslips before approving this payroll run.' });
+        }
+
+        const { erpReferenceId } = req.body || {};
+        if (!erpReferenceId || !String(erpReferenceId).trim()) {
+            return res.status(400).json({
+                message: 'Payroll ERP Reference ID is required to approve. Enter the ERP ID for the payroll amount excluding expense claims.',
+            });
+        }
+
+        const payslipsForTotals = await Payslip.find({ payrollRunId: run._id }).lean();
+        const totals = computePayrollAmountTotals(payslipsForTotals);
+        run.erpReferenceId = String(erpReferenceId).trim();
+        run.erpStatus = 'Posted';
+        run.erpPostedAt = new Date();
+        run.totalPayableAmount = totals.totalPayableAmount;
+        run.totalExpenseClaimsAmount = totals.totalExpenseClaimsAmount;
+        run.erpPayableAmount = totals.erpPayableAmount;
 
         await Payslip.updateMany(
             { payrollRunId: run._id, status: 'Draft' },
@@ -1527,9 +1208,6 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
         if (!run.erpTaskId) {
             run.erpTaskId = `ERP-BATCH-${run.periodYear}${String(run.periodMonth).padStart(2, '0')}-${String(run._id).slice(-4).toUpperCase()}`;
         }
-        if (!run.erpStatus) {
-            run.erpStatus = 'Pending';
-        }
 
         await run.save();
 
@@ -1582,7 +1260,7 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
 
         await ExpenseClaim.updateMany(
             { payrollRunId: run._id },
-            { payoutStatus: 'Paid', paidAt: new Date(), erpReferenceId: erpReferenceId.trim() }
+            { $set: { payoutStatus: 'Paid', paidAt: new Date() } }
         );
 
         // Process PF withdrawal debits from employee balances upon disbursement

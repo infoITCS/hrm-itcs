@@ -48,7 +48,20 @@ export const usePermissions = () => {
     const hasAccess = useCallback((moduleName: string): boolean => {
         if (!user) return false;
         if (normalizedRole === 'super-admin') return true;
-        return !!user.permissions?.[moduleName];
+        if (user.permissions && user.permissions[moduleName] === false) return false;
+        if (user.permissions && user.permissions[moduleName] === true) return true;
+        // Role defaults when permissions are not yet loaded (e.g. during impersonation)
+        if (normalizedRole === 'admin') return true;
+        if (normalizedRole === 'finance') {
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'payroll', 'requests', 'settings', 'provident-fund'].includes(moduleName);
+        }
+        if (normalizedRole === 'hr') {
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests'].includes(moduleName);
+        }
+        if (normalizedRole === 'manager') {
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests'].includes(moduleName);
+        }
+        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'payroll'].includes(moduleName);
     }, [user, normalizedRole]);
 
     const getModuleScope = useCallback((moduleName: string): 'none' | 'employee' | 'manager' | 'admin' => {

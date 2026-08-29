@@ -13,6 +13,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
+import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
 
 const DocumentPreview = ({
     typeKey,
@@ -420,10 +421,7 @@ const AddEmployeeWizard = () => {
             { platform: 'GitHub', link: '' },
             { platform: 'Portfolio', link: '' }
         ],
-        salaryComponents: [
-            { component: 'Basic Salary', amount: 0, type: 'fixed' },
-            { component: 'Medical Allowance', amount: 0, type: 'fixed' }
-        ] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
+        salaryComponents: DEFAULT_EMPLOYEE_SALARY_COMPONENTS.map(c => ({ ...c })),
         bankDetails: {
             bankName: '',
             accountName: '',
@@ -595,10 +593,7 @@ const AddEmployeeWizard = () => {
                                 { platform: 'GitHub', link: '' },
                                 { platform: 'Portfolio', link: '' }
                             ],
-                            salaryComponents: (found.salaryComponents && found.salaryComponents.length > 0) ? found.salaryComponents : [
-                                { component: 'Basic Salary', amount: 0, type: 'fixed' },
-                                { component: 'Medical Allowance', amount: 0, type: 'fixed' }
-                            ],
+                            salaryComponents: (found.salaryComponents && found.salaryComponents.length > 0) ? found.salaryComponents : DEFAULT_EMPLOYEE_SALARY_COMPONENTS.map(c => ({ ...c })),
                             bankDetails: found.bankDetails || {
                                 bankName: '',
                                 accountName: '',

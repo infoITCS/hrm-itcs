@@ -50,6 +50,7 @@ export const api = {
     payrollRuns: `${API_BASE_URL}/api/payroll`,
     payrollRun: (id: string) => `${API_BASE_URL}/api/payroll/${id}`,
     payrollGenerate: (id: string) => `${API_BASE_URL}/api/payroll/${id}/generate`,
+    payrollPreviewAmounts: (id: string) => `${API_BASE_URL}/api/payroll/${id}/preview-amounts`,
     payrollApprove: (id: string) => `${API_BASE_URL}/api/payroll/${id}/approve`,
     payrollDisburse: (id: string) => `${API_BASE_URL}/api/payroll/${id}/disburse`,
     payrollBankAdvicePdf: (id: string) => `${API_BASE_URL}/api/payroll/${id}/bank-advice-pdf`,

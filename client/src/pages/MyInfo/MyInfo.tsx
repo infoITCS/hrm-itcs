@@ -13,6 +13,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import type { User as UserType } from '../../types';
+import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 const DocumentPreview = ({
@@ -422,10 +423,7 @@ const MyInfo = () => {
             { platform: 'GitHub', link: '' },
             { platform: 'Portfolio', link: '' }
         ],
-        salaryComponents: [
-            { component: 'Basic Salary', amount: 0, type: 'fixed' },
-            { component: 'Medical Allowance', amount: 0, type: 'fixed' }
-        ] as { component: string; amount: number; type: 'fixed' | 'variable' }[],
+        salaryComponents: DEFAULT_EMPLOYEE_SALARY_COMPONENTS.map(c => ({ ...c })),
         bankDetails: {
             bankName: '',
             accountName: '',
@@ -619,17 +617,14 @@ const MyInfo = () => {
                                 { platform: 'Portfolio', link: '' }
                             ],
                             salaryComponents: (() => {
-                                const standard = [
-                                    { component: 'Basic Salary', amount: 0, type: 'fixed' },
-                                    { component: 'Medical Allowance', amount: 0, type: 'fixed' }
-                                ];
+                                const standard = DEFAULT_EMPLOYEE_SALARY_COMPONENTS.map(c => ({ ...c }));
                                 if (!employee.salaryComponents || employee.salaryComponents.length === 0) return standard;
                                 
                                 // Ensure standard components exist in the loaded list
                                 const merged = [...employee.salaryComponents];
                                 standard.forEach(s => {
                                     if (!merged.find(m => m.component === s.component)) {
-                                        merged.unshift(s);
+                                        merged.push({ ...s });
                                     }
                                 });
                                 return merged;

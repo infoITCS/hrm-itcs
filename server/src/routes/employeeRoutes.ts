@@ -24,6 +24,7 @@ import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
 // removed getDiff import
 import logger from '../utils/logger';
+import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../utils/defaultSalaryComponents';
 
 
 
@@ -364,6 +365,12 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         // to avoid BSONError/CastError when converting to ObjectId
         if (employeeData.jobInfo && employeeData.jobInfo.shift === '') {
             employeeData.jobInfo.shift = null;
+        }
+
+        if (!employeeData.salaryComponents?.length) {
+            employeeData.salaryComponents = DEFAULT_EMPLOYEE_SALARY_COMPONENTS.map(c => ({ ...c }));
+        } else {
+            employeeData.salaryComponents = ensureFuelAllowance(employeeData.salaryComponents);
         }
 
         const employee = new Employee({

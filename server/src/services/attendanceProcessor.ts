@@ -165,6 +165,9 @@ export async function processEmployeePunches(
         }
 
         const shiftStartTime = buildShiftTime(dateStr, shiftStart);
+        const lateThreshold = new Date(shiftStartTime.getTime() + graceMins * 60 * 1000);
+        const fullDayCutoff = buildShiftTime(dateStr, '14:00');
+
         let lateMinutes = 0;
         const diffMins = Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000);
         if (diffMins > 0) lateMinutes = diffMins;
@@ -201,20 +204,24 @@ export async function processEmployeePunches(
             note = leaveType;
         } else if (!checkOut) {
             status = 'Incomplete';
-        } else if (diffMins > 60) {
-            // Check-in past 10:00 AM = Half-Day status (Whole day salary cut & meal cut per HR Policy)
-            status = 'Half-Day';
-            note = isAutoClosed ? 'Auto Clocked-Out (Arrived after 10:00 AM)' : 'Arrived after 10:00 AM (Whole day salary cut per HR Policy)';
-        } else if (diffMins > 30) {
-            // Check-in between 9:30 AM and 10:00 AM = Late status (0.5 day salary cut & meal cut per HR Policy)
+        } else if (checkIn.getTime() >= fullDayCutoff.getTime()) {
+            // Arrival at or after 2:00 PM → full day salary cut
+            status = 'Absent';
+            note = isAutoClosed
+                ? 'Auto Clocked-Out (Arrived at or after 2:00 PM)'
+                : 'Arrived at or after 2:00 PM (Full day salary cut per HR Policy)';
+        } else if (checkIn.getTime() > lateThreshold.getTime()) {
+            // Late but before 2:00 PM → half day salary cut
             status = 'Late';
-            note = isAutoClosed ? 'Auto Clocked-Out (Arrived past 9:30 AM)' : 'Arrived past 9:30 AM (Half day salary cut per HR Policy)';
+            note = isAutoClosed
+                ? 'Auto Clocked-Out (Arrived late before 2:00 PM)'
+                : 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
         } else if (workDurationMinutes < halfDayHrs * 60 && checkOut) {
             status = 'Half-Day';
         } else if (isEarlyLeave) {
             status = 'Early Leave';
         } else {
-            // Check-in up to 9:30 AM = Grace time (Present, no penalty, full meal allowance)
+            // On time (within grace after shift start)
             status = 'Present';
         }
 

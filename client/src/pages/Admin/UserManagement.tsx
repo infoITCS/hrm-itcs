@@ -299,7 +299,7 @@ const UserManagement = () => {
                     }
 
                     const data = await res.json();
-                    impersonate(data.token, data.user);
+                    await impersonate(data.token, data.user);
                     window.location.href = '/dashboard';
                 } catch (err: any) {
                     setAlertConfig({

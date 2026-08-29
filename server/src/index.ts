@@ -307,6 +307,8 @@ async function connectDB(): Promise<void> {
             await seedExpenseCategories();
             const { seedRequestCategories } = require('./utils/seedCategories');
             await seedRequestCategories();
+            const { seedFuelAllowanceForAllEmployees } = require('./utils/seedFuelAllowance');
+            await seedFuelAllowanceForAllEmployees();
         } catch (seedErr) {
             logger.error('Failed to seed defaults:', seedErr);
         }

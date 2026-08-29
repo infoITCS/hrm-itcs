@@ -20,6 +20,12 @@ export interface IPayrollRun extends Document {
     erpStatus?: 'Pending' | 'Posted' | 'Reconciled';
     erpNotes?: string;
     erpPostedAt?: Date;
+    /** Sum of all employee net pays (includes expense reimbursements) */
+    totalPayableAmount?: number;
+    /** Sum of expense claim reimbursements included in this run */
+    totalExpenseClaimsAmount?: number;
+    /** Amount to post to ERP (totalPayable minus expense claims — claims have their own ERP IDs) */
+    erpPayableAmount?: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -52,6 +58,9 @@ const PayrollRunSchema: Schema = new Schema(
         },
         erpNotes: { type: String },
         erpPostedAt: { type: Date },
+        totalPayableAmount: { type: Number, min: 0 },
+        totalExpenseClaimsAmount: { type: Number, min: 0 },
+        erpPayableAmount: { type: Number, min: 0 },
     },
     { timestamps: true }
 );

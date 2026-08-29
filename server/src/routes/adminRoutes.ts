@@ -409,12 +409,15 @@ router.post('/users/:id/impersonate', authenticate, requireAdmin, async (req: Re
             targetResource: 'User',
             targetId: targetUserId,
             performedBy: authReq.user?.userId || 'System',
-            details: { 
-                action: 'IMPERSONATE_USER', 
+            details: {
+                action: 'IMPERSONATE_USER',
                 impersonatorId: authReq.user?.userId,
-                impersonatedUserEmail: targetUser.email 
+                impersonatedUserEmail: targetUser.email
             }
         });
+
+        const rolePerm = (await RolePermission.findOne({ role: targetUser.role }).lean()) as any;
+        const computed = computeEffectivePermissionsAndScopes(targetUser, rolePerm);
 
         res.json({
             token,
@@ -426,7 +429,13 @@ router.post('/users/:id/impersonate', authenticate, requireAdmin, async (req: Re
                 firstName: targetUser.firstName || employee?.firstName,
                 lastName: targetUser.lastName || employee?.lastName,
                 avatar: avatarUrl,
-                hasProfile: !!employee
+                hasProfile: !!employee,
+                permissions: computed.permissions,
+                scopes: computed.scopes,
+                subPermissions: computed.subPermissions,
+                customPermissions: computed.customPermissions,
+                customScopes: computed.customScopes,
+                customSubPermissions: computed.customSubPermissions,
             }
         });
     } catch (error) {

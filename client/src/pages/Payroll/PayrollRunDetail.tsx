@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    Eye, EyeOff, FileSpreadsheet, Building2, Calendar
+    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -67,6 +67,28 @@ interface PayrollRun {
     erpStatus?: 'Pending' | 'Posted' | 'Reconciled';
     erpNotes?: string;
     erpPostedAt?: string;
+    totalPayableAmount?: number;
+    totalExpenseClaimsAmount?: number;
+    erpPayableAmount?: number;
+}
+
+interface ExpenseClaimPreview {
+    _id: string;
+    claimNo: string;
+    employeeId: string;
+    amount: number;
+    erpReferenceId?: string;
+    category: string;
+}
+
+interface AmountPreview {
+    totalPayableAmount: number;
+    totalExpenseClaimsAmount: number;
+    erpPayableAmount: number;
+    claimCount: number;
+    expenseClaimsIncluded: ExpenseClaimPreview[];
+    source?: string;
+    loading?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -608,8 +630,13 @@ const PayrollRunDetail = () => {
 
     // ERP Task Modal State
     const [showErpTaskModal, setShowErpTaskModal] = useState(false);
+    const [showApproveModal, setShowApproveModal] = useState(false);
+    const [approveErpInput, setApproveErpInput] = useState('');
     const [erpRefInput, setErpRefInput] = useState('');
     const [erpNotesInput, setErpNotesInput] = useState('');
+
+    const [amountPreview, setAmountPreview] = useState<AmountPreview | null>(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
 
     // Attendance Period Editing State
     const [showEditPeriodModal, setShowEditPeriodModal] = useState(false);
@@ -737,7 +764,35 @@ const PayrollRunDetail = () => {
         }
     }, [id]);
 
+    const fetchPreviewAmounts = useCallback(async () => {
+        if (!id) return;
+        setLoadingPreview(true);
+        try {
+            const res = await axios.get(api.payrollPreviewAmounts(id), {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+            });
+            setAmountPreview({
+                totalPayableAmount: res.data.totalPayableAmount ?? 0,
+                totalExpenseClaimsAmount: res.data.totalExpenseClaimsAmount ?? 0,
+                erpPayableAmount: res.data.erpPayableAmount ?? 0,
+                claimCount: res.data.claimCount ?? 0,
+                expenseClaimsIncluded: res.data.expenseClaimsIncluded ?? [],
+                source: res.data.source,
+            });
+        } catch {
+            setAmountPreview(null);
+        } finally {
+            setLoadingPreview(false);
+        }
+    }, [id]);
+
     useEffect(() => { fetchData(); }, [fetchData, refreshCounter]);
+
+    useEffect(() => {
+        if (run?.status === 'Draft') {
+            fetchPreviewAmounts();
+        }
+    }, [run?.status, run?.startDate, run?.endDate, fetchPreviewAmounts, refreshCounter, payslips.length]);
 
     const authHeader = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
 
@@ -770,25 +825,40 @@ const PayrollRunDetail = () => {
         );
     };
 
-    const handleApprove = async () => {
-        triggerConfirm(
-            'Approve Payroll Run?',
-            `Approve "${run?.title}"? All draft payslips will be finalized and PF monthly contributions recorded.`,
-            async () => {
-                setActionLoading('approve');
-                try {
-                    await axios.put(api.payrollApprove(id!), {}, authHeader);
-                    setRefreshCounter(c => c + 1);
-                } catch (err: any) {
-                    triggerError('Failed to Approve', err.response?.data?.message || 'Failed to approve.');
-                } finally {
-                    setActionLoading(null);
-                }
-            }
-        );
+    const handleApprove = () => {
+        if (payslips.length === 0) {
+            triggerError('Generate Payslips First', 'Generate payslips before approving this payroll run.');
+            return;
+        }
+        setApproveErpInput(run?.erpReferenceId || '');
+        setShowApproveModal(true);
+    };
+
+    const handleConfirmApprove = async () => {
+        if (!approveErpInput.trim()) {
+            triggerError('ERP ID Required', 'Enter the Payroll ERP Reference ID for the amount excluding expense claims.');
+            return;
+        }
+        setActionLoading('approve');
+        try {
+            await axios.put(api.payrollApprove(id!), {
+                erpReferenceId: approveErpInput.trim(),
+            }, authHeader);
+            setShowApproveModal(false);
+            setRefreshCounter(c => c + 1);
+            triggerSuccess('Payroll Approved', 'Run approved and Payroll ERP ID recorded.');
+        } catch (err: any) {
+            triggerError('Failed to Approve', err.response?.data?.message || 'Failed to approve.');
+        } finally {
+            setActionLoading(null);
+        }
     };
 
     const handleSaveErpTask = async () => {
+        if (!erpRefInput.trim()) {
+            triggerError('ERP ID Required', 'Please enter the Payroll ERP Reference ID for the amount excluding expense claims.');
+            return;
+        }
         setActionLoading('erp-task');
         try {
             await axios.put(api.payrollErpTask(id!), {
@@ -798,7 +868,7 @@ const PayrollRunDetail = () => {
             }, authHeader);
             setShowErpTaskModal(false);
             setRefreshCounter(c => c + 1);
-            triggerSuccess('ERP ID Saved', 'ERP Voucher ID updated successfully.');
+            triggerSuccess('ERP ID Saved', 'Payroll ERP Reference ID updated.');
         } catch (err: any) {
             triggerError('Failed to Save ERP ID', err.response?.data?.message || 'Failed to update ERP ID.');
         } finally {
@@ -856,6 +926,39 @@ const PayrollRunDetail = () => {
     const totalGross = payslips.reduce((s, p) => s + p.grossPay, 0);
     const totalDeductions = payslips.reduce((s, p) => s + p.totalDeductions, 0);
     const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
+    const totalExpenseClaims = payslips.reduce((s, p) => {
+        const claimAmt = (p.earnings || [])
+            .filter(e => e.component === 'Expense Reimbursements')
+            .reduce((sum, e) => sum + (e.amount || 0), 0);
+        return s + claimAmt;
+    }, 0);
+
+    const displayAmounts = useMemo(() => {
+        if (amountPreview) {
+            return {
+                totalPayableAmount: amountPreview.totalPayableAmount,
+                totalExpenseClaimsAmount: amountPreview.totalExpenseClaimsAmount,
+                erpPayableAmount: amountPreview.erpPayableAmount,
+                claimCount: amountPreview.claimCount,
+            };
+        }
+        if (payslips.length > 0) {
+            const totalPayable = payslips.reduce((s, p) => s + p.netPay, 0);
+            const claims = payslips.reduce((s, p) => {
+                const claimAmt = (p.earnings || [])
+                    .filter(e => e.component === 'Expense Reimbursements')
+                    .reduce((sum, e) => sum + (e.amount || 0), 0);
+                return s + claimAmt;
+            }, 0);
+            return {
+                totalPayableAmount: totalPayable,
+                totalExpenseClaimsAmount: claims,
+                erpPayableAmount: totalPayable - claims,
+                claimCount: 0,
+            };
+        }
+        return null;
+    }, [amountPreview, payslips]);
 
     if (!isAdminRole) return <div className="p-6 text-rose-600">Access denied.</div>;
 
@@ -984,7 +1087,7 @@ const PayrollRunDetail = () => {
                             title="Click to enter or update ERP Voucher ID"
                         >
                             <Building2 size={13} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                            <span className="font-semibold text-slate-700">ERP Voucher:</span>
+                            <span className="font-semibold text-slate-700">Payroll ERP (excl. claims):</span>
                             <span className="font-mono text-slate-900 font-bold">{run.erpReferenceId || 'Not Entered'}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                 run.erpStatus === 'Reconciled' ? 'bg-emerald-100 text-emerald-700' :
@@ -1044,6 +1147,68 @@ const PayrollRunDetail = () => {
                 </div>
             </div>
 
+            {/* ERP split: payable vs claims vs payroll ERP amount (after generate) */}
+            {run.status === 'Draft' && payslips.length > 0 && displayAmounts && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-100">
+                        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <Building2 size={16} className="text-indigo-600" />
+                            Payroll & ERP Amount Split
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                            Expense claims are on payslips but already in ERP with their own IDs.
+                            When you approve, you will enter a Payroll ERP ID for the salary portion only.
+                        </p>
+                    </div>
+
+                    <div className="p-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-xl p-4 bg-indigo-50 border border-indigo-100">
+                                <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Total Payable (Payslips)</p>
+                                <p className="text-xl font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
+                                <p className="text-[10px] text-indigo-600/80 mt-1">Full net pay incl. expense reimbursements</p>
+                            </div>
+                            <div className="rounded-xl p-4 bg-amber-50 border border-amber-100">
+                                <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                    <Receipt size={11} /> Expense Claims
+                                </p>
+                                <p className="text-xl font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
+                                <p className="text-[10px] text-amber-700/80 mt-1">Already in ERP — do not double-post</p>
+                            </div>
+                            <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 ring-1 ring-emerald-100">
+                                <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Payroll ERP Amount</p>
+                                <p className="text-xl font-black text-emerald-900">{fmt(displayAmounts.erpPayableAmount)}</p>
+                                <p className="text-[10px] text-emerald-700/80 mt-1">Post this amount when approving</p>
+                            </div>
+                        </div>
+
+                        {amountPreview?.expenseClaimsIncluded && amountPreview.expenseClaimsIncluded.length > 0 && (
+                            <div className="rounded-xl border border-slate-100 overflow-hidden mt-4">
+                                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                                    Included Expense Claims (separate ERP IDs)
+                                </div>
+                                <div className="max-h-48 overflow-y-auto divide-y divide-slate-50">
+                                    {amountPreview.expenseClaimsIncluded.map(c => (
+                                        <div key={c._id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
+                                            <div>
+                                                <span className="font-bold text-slate-800">{c.claimNo}</span>
+                                                <span className="text-slate-400 mx-2">•</span>
+                                                <span className="text-slate-600">{c.employeeId}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className="font-bold text-amber-800">{fmt(c.amount)}</span>
+                                                <span className={`font-mono text-[10px] px-2 py-0.5 rounded ${c.erpReferenceId ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>
+                                                    {c.erpReferenceId || 'No ERP ID'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Summary cards */}
             {payslips.length > 0 && (
@@ -1056,13 +1221,14 @@ const PayrollRunDetail = () => {
                         <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><Banknote size={12} /> Total Gross Pay</p>
                         <p className="text-xl font-bold text-emerald-600">{fmt(totalGross)}</p>
                     </div>
-                    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-                        <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><TrendingDown size={12} /> Total Deductions</p>
-                        <p className="text-xl font-bold text-rose-500">{fmt(totalDeductions)}</p>
+                    <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 shadow-sm">
+                        <p className="text-xs text-amber-700 mb-1 flex items-center gap-1"><Receipt size={12} /> Expense Claims (ERP separate)</p>
+                        <p className="text-xl font-bold text-amber-800">{fmt(totalExpenseClaims)}</p>
                     </div>
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                         <p className="text-xs text-indigo-600 mb-1 flex items-center gap-1"><CreditCard size={12} /> Total Net Pay</p>
                         <p className="text-xl font-bold text-indigo-700">{fmt(totalNet)}</p>
+                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(totalNet - totalExpenseClaims)}</p>
                     </div>
                 </div>
             )}
@@ -1223,28 +1389,106 @@ const PayrollRunDetail = () => {
                 document.body
             )}
 
-            {/* Finance ERP Task Modal */}
+            {/* Approve Payroll — ERP ID + amount split */}
+            {showApproveModal && displayAmounts && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2 text-slate-900">
+                                <CheckCircle2 size={22} className="text-indigo-600" />
+                                <h3 className="font-bold text-base">Approve Payroll Run</h3>
+                            </div>
+                            <button onClick={() => setShowApproveModal(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                            Finalize payslips and record the Payroll ERP voucher. Post only the <strong>Payroll ERP Amount</strong> to ERP — expense claims already have separate ERP IDs.
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="rounded-xl p-3 bg-indigo-50 border border-indigo-100">
+                                <p className="text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Total Payable</p>
+                                <p className="text-sm font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
+                            </div>
+                            <div className="rounded-xl p-3 bg-amber-50 border border-amber-100">
+                                <p className="text-[10px] font-bold text-amber-700 uppercase mb-0.5">Expense Claims</p>
+                                <p className="text-sm font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
+                            </div>
+                            <div className="rounded-xl p-3 bg-emerald-50 border border-emerald-200">
+                                <p className="text-[10px] font-bold text-emerald-700 uppercase mb-0.5">Post to ERP</p>
+                                <p className="text-sm font-black text-emerald-900">{fmt(displayAmounts.erpPayableAmount)}</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                Payroll ERP ID / Voucher <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. ERP-PAY-JUL-2026-001"
+                                value={approveErpInput}
+                                onChange={e => setApproveErpInput(e.target.value)}
+                                autoFocus
+                                className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono font-semibold text-sm"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1.5">
+                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims).
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <button
+                                onClick={() => setShowApproveModal(false)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmApprove}
+                                disabled={actionLoading === 'approve' || !approveErpInput.trim()}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                                {actionLoading === 'approve' ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                                Approve Run
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Finance ERP Task Modal (edit after approval) */}
             {showErpTaskModal && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2 text-slate-900">
                                 <Building2 size={20} className="text-indigo-600" />
-                                <h3 className="font-bold text-base">Enter ERP ID</h3>
+                                <h3 className="font-bold text-base">Payroll ERP Reference ID</h3>
                             </div>
                             <button onClick={() => setShowErpTaskModal(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
                                 <X size={18} />
                             </button>
                         </div>
 
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                            Enter the ERP voucher for the <strong>payroll amount excluding expense claims</strong>.
+                            {amountPreview && (
+                                <> Post <strong>{fmt(amountPreview.erpPayableAmount)}</strong> to ERP — claims ({fmt(amountPreview.totalExpenseClaimsAmount)}) already have separate ERP IDs.</>
+                            )}
+                        </p>
+
                         <div className="space-y-3 text-xs">
                             <div>
                                 <label className="block font-bold text-slate-700 mb-1">
-                                    ERP ID / Voucher Number <span className="text-rose-500">*</span>
+                                    Payroll ERP ID / Voucher Number <span className="text-rose-500">*</span>
                                 </label>
                                 <input
                                     type="text"
-                                    placeholder="e.g. ERP-TXN-2026-0899"
+                                    placeholder="e.g. ERP-PAY-JUL-2026-001"
                                     value={erpRefInput}
                                     onChange={e => setErpRefInput(e.target.value)}
                                     autoFocus
