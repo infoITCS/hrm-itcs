@@ -30,8 +30,6 @@ function isAdmin(role: string): boolean {
     return ['super-admin', 'admin', 'finance'].includes(normalized);
 }
 
-const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
-
 function getEmploymentStatus(emp: any): string {
     if (!emp?.employmentStatus) return '';
     if (typeof emp.employmentStatus === 'string') return emp.employmentStatus;

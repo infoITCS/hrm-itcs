@@ -16,8 +16,7 @@ import {
     payrollComponentForClaimCategory,
 } from '../utils/expenseClaimPayroll';
 import { buildComputedLoanMap, getLoanInfoForPayroll, loanInfoFromEmployeeRecord } from './loanManagementService';
-
-const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
+import { PAYROLL_EXCLUDED_STATUSES } from '../utils/employmentStatus';
 
 const MONTH_NAMES = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',

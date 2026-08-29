@@ -212,7 +212,7 @@ const EmployeeSchema: Schema = new Schema({
         country: { type: String }
     },
     employmentStatus: {
-        status: { type: String, enum: ['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned', ''] },
+        status: { type: String, enum: ['Probation', 'Permanent', 'Internship', 'Contract', 'Part-time', 'On Hold', 'Terminated', 'Resigned', ''] },
         offboardingDate: { type: Date },
         probationEndDate: { type: Date },
         autoUpdated: { type: Boolean, default: false }

@@ -635,6 +635,11 @@ const EmployeeProfile = () => {
                                     />
                                 )}
                             </div>
+                            {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.status === 'On Hold' && (
+                                <p className="text-xs text-amber-700 mt-2">
+                                    This employee is on hold and is excluded from payroll processing.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}

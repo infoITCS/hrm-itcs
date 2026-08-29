@@ -15,6 +15,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
 import EntryAttachmentsEditor from '../../components/PIM/EntryAttachmentsEditor';
+import { EMPLOYMENT_STATUS_OPTIONS } from '../../utils/employmentStatus';
 
 const DocumentPreview = ({
     typeKey,
@@ -1599,7 +1600,7 @@ const AddEmployeeWizard = () => {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={['Internship', 'Probation', 'Permanent', 'Contract', 'Part-time', 'Resigned', 'Terminated']} />
+                                <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={[...EMPLOYMENT_STATUS_OPTIONS]} />
                             </div>
                             {formData.employmentStatus.status === 'Probation' && (
                                 <div className="space-y-2">

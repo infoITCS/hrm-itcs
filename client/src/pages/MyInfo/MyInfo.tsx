@@ -17,6 +17,7 @@ import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryCom
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import EntryAttachmentsEditor from '../../components/PIM/EntryAttachmentsEditor';
 import { buildPimLinkOptions } from '../../utils/pimAttachmentKeys';
+import { EMPLOYMENT_STATUS_OPTIONS } from '../../utils/employmentStatus';
 
 const DocumentPreview = ({
     typeKey,
@@ -2889,9 +2890,14 @@ const MyInfo = () => {
                                         label="Status"
                                         value={formData.employmentStatus.status}
                                         onChange={(val) => setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, status: val } }))}
-                                        options={['Probation', 'Permanent', 'Internship', 'Contract', 'Terminated', 'Resigned']}
+                                        options={[...EMPLOYMENT_STATUS_OPTIONS]}
                                         disabled={!canEditJob}
                                     />
+                                    {formData.employmentStatus.status === 'On Hold' && canEditJob && (
+                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-1">
+                                            Employees on hold are excluded from payroll until their status is changed back to an active status.
+                                        </p>
+                                    )}
                                     {!canEditJob && (
                                         <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
                                             <Shield size={10} /> Locked for employees
