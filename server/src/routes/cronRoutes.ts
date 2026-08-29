@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { runZktSync } from '../services/zktCloudService';
 import * as attendanceProcessor from '../services/attendanceProcessor';
+import { upgradeCompletedProbations } from '../services/probationUpgradeService';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -84,11 +85,18 @@ router.get('/machine-report', async (req: Request, res: Response) => {
  */
 router.get('/maintenance', async (req: Request, res: Response) => {
     if (!isAuthorized(req)) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    
-    // Note: Since maintenance tasks are currently inside initScheduler as anonymous functions,
-    // we should ideally move them to services for clean calling.
-    // For now, we'll just acknowledge the endpoint.
-    res.json({ success: true, message: 'Maintenance endpoint reached. Logic pending migration to service.' });
+
+    try {
+        const probation = await upgradeCompletedProbations();
+        res.json({
+            success: true,
+            probationUpgrades: probation.upgradedCount,
+            upgradedEmployeeIds: probation.employeeIds,
+        });
+    } catch (err: any) {
+        logger.error('[CRON] Maintenance failed:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 export default router;

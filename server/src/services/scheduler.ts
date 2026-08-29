@@ -5,6 +5,7 @@ import AuditLog from '../models/AuditLog';
 import { sendProfileReminderEmail, sendBirthdayEmail, sendWorkAnniversaryEmail } from '../utils/email';
 import { runZktSync } from './zktCloudService';
 import { syncFromMachineReport, autoCloseIncompleteRecords, processDailyAbsenteeism } from './attendanceProcessor';
+import { upgradeCompletedProbations } from './probationUpgradeService';
 import logger from '../utils/logger';
 
 
@@ -20,45 +21,7 @@ export const initScheduler = () => {
     cron.schedule('0 0 * * *', async () => {
         logger.info('Running daily probation check...');
         try {
-            const today = new Date();
-            const eligibleEmployees = await Employee.find({
-                'employmentStatus.probationEndDate': { $lte: today },
-                'employmentStatus.status': 'Probation',
-                'employmentStatus.autoUpdated': { $ne: true }
-            }).select('_id employeeId').lean();
-
-            if (eligibleEmployees.length === 0) return;
-
-            const bulkOps = eligibleEmployees.map(emp => ({
-                updateOne: {
-                    filter: { _id: emp._id },
-                    update: {
-                        $set: {
-                            'employmentStatus.status': 'Permanent',
-                            'employmentStatus.autoUpdated': true
-                        }
-                    }
-                }
-            }));
-            await Employee.bulkWrite(bulkOps);
-
-            const auditEntries = eligibleEmployees.map(emp => ({
-                action: 'UPDATE',
-                targetResource: 'Employee',
-                targetId: emp.employeeId,
-                performedBy: 'System',
-                timestamp: new Date(),
-                details: {
-                    diff: {
-                        'employmentStatus.status': { old: 'Probation', new: 'Permanent' },
-                        'employmentStatus.autoUpdated': { old: false, new: true }
-                    },
-                    reason: 'Automatic probation period completion'
-                }
-            }));
-            await AuditLog.insertMany(auditEntries);
-
-            logger.info(`Auto-upgraded ${eligibleEmployees.length} employees from Probation to Permanent.`);
+            await upgradeCompletedProbations();
         } catch (error) {
             logger.error('Error in probation scheduler:', error);
         }

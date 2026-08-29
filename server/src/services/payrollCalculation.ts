@@ -17,6 +17,7 @@ import {
 } from '../utils/expenseClaimPayroll';
 import { buildComputedLoanMap, getLoanInfoForPayroll, loanInfoFromEmployeeRecord } from './loanManagementService';
 import { PAYROLL_EXCLUDED_STATUSES } from '../utils/employmentStatus';
+import { upgradeCompletedProbations } from './probationUpgradeService';
 
 const MONTH_NAMES = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -108,6 +109,8 @@ export async function buildPayrollPayslips(
 ): Promise<PayrollBuildResult> {
     const persist = options.persist === true;
     const runId = run._id.toString();
+
+    await upgradeCompletedProbations();
 
     const employees = await Employee.find({
         $or: [

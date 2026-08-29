@@ -45,6 +45,10 @@
     {
       "path": "/api/cron/absenteeism",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "0 3 * * *"
     }
   ]
 }

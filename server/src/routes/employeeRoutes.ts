@@ -25,6 +25,7 @@ import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocumen
 // removed getDiff import
 import logger from '../utils/logger';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../utils/defaultSalaryComponents';
+import { ensureProbationUpgraded, upgradeCompletedProbations } from '../services/probationUpgradeService';
 
 
 
@@ -234,13 +235,15 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
 
         if (queryUserId) {
             if (queryUserId === userId || ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role)) {
-                const employee = await Employee.findOne({ userId: queryUserId, ...baseFilter }).select('-attachments.fileData').lean();
+                let employee = await Employee.findOne({ userId: queryUserId, ...baseFilter }).select('-attachments.fileData').lean();
+                if (employee) employee = await ensureProbationUpgraded(employee);
                 employees = employee ? [employee] : [];
                 total = employees.length;
             } else {
                 return res.status(403).json({ message: 'You do not have permission to view this employee' });
             }
         } else if (['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
+            await upgradeCompletedProbations();
             // Admins see all non-deleted employees
             [employees, total] = await Promise.all([
                 Employee.find(baseFilter).select('-attachments.fileData').skip(skip).limit(limit).lean(),
@@ -258,7 +261,8 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
                 Employee.countDocuments(query)
             ]);
         } else {
-            const employee = await Employee.findOne({ userId, ...baseFilter }).select('-attachments.fileData').lean();
+            let employee = await Employee.findOne({ userId, ...baseFilter }).select('-attachments.fileData').lean();
+            if (employee) employee = await ensureProbationUpgraded(employee);
             employees = employee ? [employee] : [];
             total = employees.length;
         }
@@ -1254,7 +1258,7 @@ router.post('/:id/pf-claim', authenticate, async (req: Request, res: Response, n
 router.get('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
-        const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData').lean();
+        let employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData').lean();
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         const canView = await canViewEmployee(
@@ -1266,6 +1270,9 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: Funct
         if (!canView) {
             return res.status(403).json({ message: 'You do not have permission to view this employee' });
         }
+
+        employee = await ensureProbationUpgraded(employee);
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
         res.json(sanitizeEmployeeForRole(employee, authReq.user?.role || '', authReq.user?.userId));
     } catch (err: any) {
