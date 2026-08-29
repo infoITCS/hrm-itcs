@@ -14,6 +14,7 @@ const MainLayout = () => {
     let title = 'Dashboard';
     if (location.pathname.includes('attendance')) title = 'Attendance Dashboard';
     else if (location.pathname.includes('pim')) title = 'PIM';
+    else if (location.pathname.includes('admin/loans')) title = 'Loan Management';
     else if (location.pathname.includes('admin/settings')) title = 'Admin Settings';
     else if (location.pathname.includes('admin')) title = 'Users & Roles';
     else if (location.pathname.includes('leave')) title = 'Leave';

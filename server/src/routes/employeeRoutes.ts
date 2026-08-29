@@ -75,6 +75,12 @@ const router = express.Router();
  * Strips confidential salary, bank details, and financial fields
  * unless the requester is Super-Admin, Finance, or the Employee viewing their own record.
  */
+const BANK_DETAILS_EDIT_ROLES = ['super-admin', 'admin', 'finance', 'hr'] as const;
+
+function canEditBankDetails(role: string): boolean {
+    return BANK_DETAILS_EDIT_ROLES.includes((role || '').toLowerCase() as typeof BANK_DETAILS_EDIT_ROLES[number]);
+}
+
 function sanitizeEmployeeForRole(employee: any, requesterRole: string, requesterUserId?: string): any {
     if (!employee) return employee;
     
@@ -306,6 +312,10 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             : EMPLOYEE_EDITABLE_FIELDS;
 
         const employeeData = pick(req.body, allowedFields) as any;
+
+        if (!canEditBankDetails(role)) {
+            delete employeeData.bankDetails;
+        }
 
         // Basic validation
         if (!employeeData.firstName || !employeeData.lastName) {
@@ -1468,6 +1478,56 @@ router.patch('/:id/attachments/:attachmentId', authenticate, async (req: Request
     }
 });
 
+// Link an existing attachment to a PIM category (education, experience, etc.)
+router.patch('/:id/attachments/:attachmentId/link', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const { fileType } = req.body || {};
+        if (!fileType || typeof fileType !== 'string' || !fileType.trim()) {
+            return res.status(400).json({ message: 'fileType is required' });
+        }
+
+        const employeeId = req.params.id;
+        const attachmentId = req.params.attachmentId;
+        const targetFileType = fileType.trim();
+
+        const employee = await Employee.findOne({ employeeId }).select('-attachments.fileData');
+        if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        const canView = await canViewEmployee(
+            authReq.user?.role || '',
+            authReq.user?.userId || '',
+            employeeId,
+            employee
+        );
+        if (!canView) {
+            return res.status(403).json({ message: 'You do not have permission to update documents for this employee' });
+        }
+
+        const attachment = (employee.attachments || []).find(
+            (a: any) => String(a._id) === String(attachmentId)
+        );
+        if (!attachment) return res.status(404).json({ message: 'Attachment not found' });
+
+        // Remove any other attachment already using this slot (one file per link target)
+        employee.attachments = (employee.attachments || []).filter(
+            (a: any) => String(a._id) === String(attachmentId) || a.fileType !== targetFileType
+        ) as any;
+
+        const linked = (employee.attachments || []).find(
+            (a: any) => String(a._id) === String(attachmentId)
+        ) as any;
+        if (!linked) return res.status(404).json({ message: 'Attachment not found after update' });
+
+        linked.fileType = targetFileType;
+        await employee.save();
+
+        res.json(linked);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Delete attachment
 router.delete('/:id/attachments/:attachmentId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
@@ -1569,9 +1629,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             delete updates.financeInfo;
             delete updates.providentFundBalance;
             delete updates.loans;
-            if (role === 'hr' || role === 'manager') {
-                delete updates.bankDetails;
-            }
+        }
+
+        // Bank account details may only be updated by HR / Finance / Admin — not by employees themselves
+        if (!canEditBankDetails(role)) {
+            delete updates.bankDetails;
         }
 
         // Check for manual Provident Fund Balance adjustment

@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
-import SalaryPinModal from '../../components/UI/SalaryPinModal';
 import {
     PiggyBank, Search, Download,
     BadgeCheck, Clock, CheckCircle2, FileText,
     ArrowUpRight, ArrowDownLeft, Wallet, AlertCircle,
-    Lock, EyeOff
+    Eye, EyeOff
 } from 'lucide-react';
 
 interface PFEntry {
@@ -63,37 +62,7 @@ export default function MyProvidentFund() {
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 10;
 
-    // 4-Digit Salary Security PIN protection
-    const [hideFigures, setHideFigures] = useState<boolean>(true);
-    const [showPinModal, setShowPinModal] = useState<boolean>(false);
-    const lockTimerRef = useRef<any>(null);
-
-    const startAutoLockTimer = () => {
-        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-        lockTimerRef.current = setTimeout(() => {
-            setHideFigures(true);
-        }, 5 * 60 * 1000); // 5 minutes auto-lock
-    };
-
-    useEffect(() => {
-        return () => {
-            if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-        };
-    }, []);
-
-    const handleToggleFigures = () => {
-        if (hideFigures) {
-            setShowPinModal(true);
-        } else {
-            if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-            setHideFigures(true);
-        }
-    };
-
-    const handlePinSuccess = () => {
-        setHideFigures(false);
-        startAutoLockTimer();
-    };
+    const [hideFigures, setHideFigures] = useState(true);
 
     const fmtPKR = (n: number) => {
         if (hideFigures) return '••••••••';
@@ -214,12 +183,12 @@ export default function MyProvidentFund() {
                             </div>
                             <button
                                 type="button"
-                                onClick={handleToggleFigures}
+                                onClick={() => setHideFigures(v => !v)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md border border-white/20 transition-all shadow-sm active:scale-95 cursor-pointer"
-                                title={hideFigures ? "Click to unlock PF figures with 4-digit PIN" : "Click to mask PF figures"}
+                                title={hideFigures ? 'Show PF figures' : 'Hide PF figures'}
                             >
-                                {hideFigures ? <Lock size={12} className="text-white/90" /> : <EyeOff size={12} className="text-white/90" />}
-                                <span>{hideFigures ? 'Unlock with PIN' : 'Hide Figures'}</span>
+                                {hideFigures ? <Eye size={12} className="text-white/90" /> : <EyeOff size={12} className="text-white/90" />}
+                                <span>{hideFigures ? 'Show Figures' : 'Hide Figures'}</span>
                             </button>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">My Provident Fund Statement</h1>
@@ -536,15 +505,6 @@ export default function MyProvidentFund() {
                 </div>
 
             </div>
-
-            {/* 4-Digit Salary Security PIN Modal */}
-            <SalaryPinModal
-                isOpen={showPinModal}
-                onClose={() => setShowPinModal(false)}
-                onSuccess={handlePinSuccess}
-                title="Provident Fund Security Lock"
-                description="Enter your 4-digit Financial Security PIN to view your Provident Fund balances, contributions, and statement details."
-            />
 
         </div>
     );

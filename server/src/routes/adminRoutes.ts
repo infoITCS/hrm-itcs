@@ -640,4 +640,63 @@ router.post('/users/:id/permissions/reset', authenticate, requireAdmin, async (r
     }
 });
 
+const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    if (authReq.user?.role !== 'super-admin') {
+        return res.status(403).json({ message: 'Forbidden. Super Admin access required.' });
+    }
+    next();
+};
+
+/**
+ * @route   GET /api/admin/loans
+ * @desc    Company-wide employee loan balances (Super Admin)
+ */
+router.get('/loans', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const activeOnly = req.query.activeOnly === 'true';
+        const { buildAllEmployeeLoanSummaries } = await import('../services/loanManagementService');
+        const data = await buildAllEmployeeLoanSummaries({ activeOnly });
+        res.json(data);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   PATCH /api/admin/loans/:employeeId
+ * @desc    Update employee loan balance & monthly installment (Super Admin)
+ */
+router.patch('/loans/:employeeId', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const { remainingBalance, monthlyInstallment } = req.body;
+        if (remainingBalance === undefined || monthlyInstallment === undefined) {
+            return res.status(400).json({ message: 'remainingBalance and monthlyInstallment are required.' });
+        }
+        const { updateEmployeeLoan } = await import('../services/loanManagementService');
+        const updated = await updateEmployeeLoan(
+            req.params.employeeId,
+            { remainingBalance, monthlyInstallment },
+            authReq.user?.userId || 'super-admin'
+        );
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'EmployeeLoan',
+            targetId: req.params.employeeId,
+            performedBy: authReq.user?.userId || 'System',
+            details: {
+                remainingBalance,
+                monthlyInstallment,
+            },
+        });
+
+        res.json(updated);
+    } catch (error: any) {
+        if (error.status === 404) return res.status(404).json({ message: error.message });
+        next(error);
+    }
+});
+
 export default router;

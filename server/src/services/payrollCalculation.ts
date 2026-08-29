@@ -11,6 +11,11 @@ import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 import { generateCustomerReference } from '../utils/encryption';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { applyFirstPenaltyExemption, statusToPenaltyType } from '../utils/attendancePenaltyPolicy';
+import {
+    isExpenseClaimPayrollEarning,
+    payrollComponentForClaimCategory,
+} from '../utils/expenseClaimPayroll';
+import { buildComputedLoanMap, getLoanInfoForPayroll, loanInfoFromEmployeeRecord } from './loanManagementService';
 
 const PAYROLL_EXCLUDED_STATUSES = ['Terminated', 'Resigned'];
 
@@ -67,7 +72,7 @@ export function computePayrollAmountTotals(payslips: any[]) {
     for (const ps of payslips) {
         totalPayableAmount += Number(ps.netPay) || 0;
         for (const e of ps.earnings || []) {
-            if (e.component === 'Expense Reimbursements') {
+            if (isExpenseClaimPayrollEarning(e)) {
                 totalExpenseClaimsAmount += Number(e.amount) || 0;
             }
         }
@@ -112,7 +117,7 @@ export async function buildPayrollPayslips(
             { 'employmentStatus.status': { $nin: PAYROLL_EXCLUDED_STATUSES } },
             { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
         ],
-    }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo');
+    }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo loans');
 
     if (!employees.length) {
         throw Object.assign(new Error('No active employees found to generate payslips.'), { status: 400 });
@@ -209,32 +214,7 @@ export async function buildPayrollPayslips(
         attendanceDeductionsMap[r.employeeId].penalties.push({ date: r.date, type: penaltyType });
     }
 
-    const allCompletedLoans = await EmployeeRequest.find({
-        status: 'Completed',
-        category: { $in: ['Loan', 'Request Loan'] },
-    }).lean();
-
-    const allFinalizedPayslips = await Payslip.find({ status: 'Finalized' }).lean();
-
-    const loanBalanceMap: Record<string, { balance: number; monthlyDeduction: number }> = {};
-    for (const loan of allCompletedLoans) {
-        const empId = loan.employeeId;
-        if (!loanBalanceMap[empId]) {
-            loanBalanceMap[empId] = { balance: 0, monthlyDeduction: 0 };
-        }
-        loanBalanceMap[empId].balance += Number((loan as any).details?.requestedAmount || 0);
-        loanBalanceMap[empId].monthlyDeduction += Number((loan as any).details?.recommendedMonthlyDeduction || 0);
-    }
-
-    for (const slip of allFinalizedPayslips) {
-        const empId = slip.employeeId;
-        if (loanBalanceMap[empId]) {
-            const loanDeds = (slip.deductions || []).filter((d: any) => d.component === 'Loan Deduction');
-            for (const d of loanDeds) {
-                loanBalanceMap[empId].balance -= (d.amount || 0);
-            }
-        }
-    }
+    const loanBalanceMap = await buildComputedLoanMap();
 
     const approvedLoanPauses = await EmployeeRequest.find({
         status: { $in: ['Approved', 'Completed'] },
@@ -318,11 +298,21 @@ export async function buildPayrollPayslips(
 
         const empClaimInfo = expenseClaimMap[emp.employeeId];
         if (empClaimInfo && empClaimInfo.total > 0) {
-            earnings.push({
-                component: 'Expense Reimbursements',
-                amount: empClaimInfo.total,
-                type: 'variable',
-            });
+            const byCategory: Record<string, number> = {};
+            for (const claim of empClaimInfo.claims) {
+                const label = payrollComponentForClaimCategory(claim.category);
+                const claimAmt = Number(claim.approvedTotal ?? claim.amountAllowed ?? claim.amountRequested ?? 0) || 0;
+                byCategory[label] = (byCategory[label] || 0) + claimAmt;
+            }
+            for (const [component, amount] of Object.entries(byCategory)) {
+                if (amount <= 0) continue;
+                earnings.push({
+                    component,
+                    amount,
+                    type: 'variable',
+                    expenseClaim: true,
+                });
+            }
             usedClaimIds.push(...empClaimInfo.claimIds);
             for (const claim of empClaimInfo.claims) {
                 const idStr = String(claim._id);
@@ -425,7 +415,7 @@ export async function buildPayrollPayslips(
 
         let loanDeductAmount = 0;
         let loanPauseNote = '';
-        const loanInfo = loanBalanceMap[emp.employeeId];
+        const loanInfo = getLoanInfoForPayroll(emp.employeeId, emp, loanBalanceMap);
         if (loanInfo && loanInfo.balance > 0) {
             if (pausedEmployeesMap[emp.employeeId]) {
                 loanDeductAmount = 0;

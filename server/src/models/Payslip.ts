@@ -5,6 +5,7 @@ export interface IPayslipEarning {
     component: string;              // mirrors Employee.salaryComponents[].component
     amount: number;
     type: 'fixed' | 'variable';    // mirrors Employee.salaryComponents[].type enum
+    expenseClaim?: boolean;         // true when amount comes from approved expense claims
 }
 
 export interface IPayslipDeduction {
@@ -55,6 +56,7 @@ const EarningSchema = new Schema(
         component: { type: String, required: true },
         amount: { type: Schema.Types.Mixed, required: true, get: decryptNumber, set: encryptNumber },
         type: { type: String, enum: ['fixed', 'variable'], default: 'fixed' },
+        expenseClaim: { type: Boolean, default: false },
     },
     { _id: false }
 );

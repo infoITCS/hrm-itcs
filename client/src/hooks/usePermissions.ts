@@ -56,12 +56,12 @@ export const usePermissions = () => {
             return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'payroll', 'requests', 'settings', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'hr') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests'].includes(moduleName);
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'manager') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests'].includes(moduleName);
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
         }
-        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'payroll'].includes(moduleName);
+        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'payroll', 'provident-fund'].includes(moduleName);
     }, [user, normalizedRole]);
 
     const getModuleScope = useCallback((moduleName: string): 'none' | 'employee' | 'manager' | 'admin' => {

@@ -81,6 +81,8 @@ export const api = {
 
     employee: (id: string) => `${API_BASE_URL}/api/employees/${id}`,
     employeeAttachments: (id: string) => `${API_BASE_URL}/api/employees/${id}/attachments`,
+    linkEmployeeAttachment: (employeeId: string, attachmentId: string) =>
+        `${API_BASE_URL}/api/employees/${employeeId}/attachments/${attachmentId}/link`,
     // Appends ?token= so browser <img> tags can authenticate (they can't send headers)
     attachmentRaw: (id: string) => {
         const token = localStorage.getItem('token');

@@ -12,6 +12,7 @@ export interface IRolePermission extends Document {
         payroll: boolean;
         requests: boolean;
         settings: boolean;
+        'provident-fund'?: boolean;
     };
 }
 
@@ -25,7 +26,8 @@ const RolePermissionSchema = new Schema({
         claim: { type: Boolean, default: false },
         payroll: { type: Boolean, default: false },
         requests: { type: Boolean, default: false },
-        settings: { type: Boolean, default: false }
+        settings: { type: Boolean, default: false },
+        'provident-fund': { type: Boolean, default: false }
     }
 }, { timestamps: true });
 
@@ -47,11 +49,11 @@ export async function bootstrapPermissions() {
         },
         {
             role: 'manager',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
         },
         {
             role: 'employee',
-            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false }
+            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
         }
     ];
 

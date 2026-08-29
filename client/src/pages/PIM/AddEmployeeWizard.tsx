@@ -14,6 +14,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { attendanceApi } from '../../modules/attendance/api/attendanceApi';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
+import EntryAttachmentsEditor from '../../components/PIM/EntryAttachmentsEditor';
 
 const DocumentPreview = ({
     typeKey,
@@ -307,8 +308,16 @@ const AddEmployeeWizard = () => {
                 break;
             case 5:
                 if (!isAdmin) {
-                    if (formData.employmentHistory.some((h, idx) => !h.companyName || !h.jobTitle || !h.startDate || (!formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)))) missing.push('Complete Employment History (with Experience Letter)');
-                    if (formData.education.some((e, idx) => !e.level || !e.institute || !e.year || (!formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)))) missing.push('Complete Education Info (with Degree/Transcript)');
+                    if (formData.employmentHistory.some((h) => h.companyName || h.jobTitle || h.startDate)) {
+                        if (formData.employmentHistory.some((h) => (h.companyName || h.jobTitle || h.startDate) && (!h.companyName || !h.jobTitle || !h.startDate))) {
+                            missing.push('Complete Employment History fields');
+                        }
+                    }
+                    if (formData.education.some((e) => e.level || e.institute || e.year)) {
+                        if (formData.education.some((e) => (e.level || e.institute || e.year) && (!e.level || !e.institute || !e.year))) {
+                            missing.push('Complete Education fields');
+                        }
+                    }
                 }
                 break;
             case 6:
@@ -873,33 +882,6 @@ const AddEmployeeWizard = () => {
             setStepErrors([]);
         }
 
-
-        if (step === 5 && !isAdmin) {
-            const missingExp = formData.employmentHistory.some((h, idx) => 
-                (h.companyName || h.jobTitle || h.startDate) && 
-                !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
-                !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)
-            );
-            
-            if (missingExp) {
-                setError('Experience Letter is mandatory for your employment history. Please upload it.');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                return;
-            }
-
-            const missingEdu = formData.education.some((e, idx) => 
-                (e.level || e.institute || e.year) && 
-                !formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && 
-                !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)
-            );
-
-            if (missingEdu) {
-                setError('Degree/Transcript is mandatory for your education entries. Please upload it.');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                return;
-            }
-        }
-
         // Determine if we need to await the save (Creation on Step 1 needs the Returned ID)
         const isCreationOnStep1 = !isEditMode && step === 1;
 
@@ -980,32 +962,6 @@ const AddEmployeeWizard = () => {
         }
 
 
-
-        if (step === 5 && targetStepId > 5 && !isAdmin) {
-            const missingExp = formData.employmentHistory.some((h, idx) => 
-                (h.companyName || h.jobTitle || h.startDate) && 
-                !formData.files.some(f => f.type === `Experience Letter - ${h.companyName || idx}`) && 
-                !formData.existingAttachments.some(a => a.fileType === `Experience Letter - ${h.companyName || idx}`)
-            );
-            
-            if (missingExp) {
-                setError('Experience Letter is mandatory for your employment history. Please upload it.');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                return;
-            }
-
-            const missingEdu = formData.education.some((e, idx) => 
-                (e.level || e.institute || e.year) && 
-                !formData.files.some(f => f.type === `Degree - ${e.level || idx}`) && 
-                !formData.existingAttachments.some(a => a.fileType === `Degree - ${e.level || idx}`)
-            );
-
-            if (missingEdu) {
-                setError('Degree/Transcript is mandatory for your education entries. Please upload it.');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                return;
-            }
-        }
 
         const missing = getMissingFields(step);
         if (missing.length > 0 && targetStepId > step) {
@@ -1844,57 +1800,27 @@ const AddEmployeeWizard = () => {
                                                 setFormData({ ...formData, employmentHistory: newHistory });
                                             }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                         </div>
-                                        <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                            <div className="flex items-center gap-2">
-                                                        {(() => {
-                                                            const typeKey = `Experience Letter - ${history.companyName || idx}`;
-                                                            const newFile = formData.files.find(f => f.type === typeKey);
-                                                            const savedFile = formData.existingAttachments?.find(a => a.fileType === typeKey);
-                                                            const hasFile = !!newFile || !!savedFile;
-                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-                                                            return (
-                                                                <div className="flex flex-col gap-2 w-full">
-                                                                    <input
-                                                                        type="file"
-                                                                        id={inputId}
-                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                                setFormData(prev => ({
-                                                                                    ...prev,
-                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                                }));
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                    {hasFile ? (
-                                                                        <DocumentPreview
-                                                                            typeKey={typeKey}
-                                                                            existingFile={savedFile}
-                                                                            localFile={newFile?.file}
-                                                                            inputId={inputId}
-                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
-                                                                            onRemove={() => {
-                                                                                if (newFile) {
-                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
-                                                                                } else if (savedFile) {
-                                                                                    setAttachmentToDelete(savedFile);
-                                                                                    setShowDeleteModal(true);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    ) : (
-                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
-                                                                            <Upload size={14} className="pointer-events-none" />
-                                                                            <span className="truncate pointer-events-none">Upload Experience Letter</span>
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                        </div>
+                                        <EntryAttachmentsEditor
+                                            entryKind="experience"
+                                            entryIndex={idx}
+                                            entryMeta={{ companyName: history.companyName, jobTitle: history.jobTitle }}
+                                            attachments={formData.existingAttachments}
+                                            stagedFiles={formData.files}
+                                            DocumentPreview={DocumentPreview}
+                                            onStageFile={(typeKey, file) => setFormData(prev => ({
+                                                ...prev,
+                                                files: [...prev.files.filter(f => f.type !== typeKey), { file, type: typeKey }],
+                                            }))}
+                                            onRemoveStaged={(typeKey) => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }))}
+                                            onDeleteSaved={(_id, _name) => {
+                                                const saved = formData.existingAttachments?.find((a: any) => a._id === _id);
+                                                if (saved) {
+                                                    setAttachmentToDelete(saved);
+                                                    setShowDeleteModal(true);
+                                                }
+                                            }}
+                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                        />
                                     </div>
                                 </div>
                             ))}
@@ -1955,57 +1881,27 @@ const AddEmployeeWizard = () => {
                                                 setFormData({ ...formData, education: newEdu });
                                             }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all text-gray-600" />
                                         </div>
-                                        <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                            <div className="flex items-center gap-2">
-                                                        {(() => {
-                                                            const typeKey = `Degree - ${edu.level || idx}`;
-                                                            const newFile = formData.files.find(f => f.type === typeKey);
-                                                            const savedFile = formData.existingAttachments?.find(a => a.fileType === typeKey);
-                                                            const hasFile = !!newFile || !!savedFile;
-                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-                                                            return (
-                                                                <div className="flex flex-col gap-2 w-full">
-                                                                    <input
-                                                                        type="file"
-                                                                        id={inputId}
-                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                                setFormData(prev => ({
-                                                                                    ...prev,
-                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                                }));
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                    {hasFile ? (
-                                                                        <DocumentPreview
-                                                                            typeKey={typeKey}
-                                                                            existingFile={savedFile}
-                                                                            localFile={newFile?.file}
-                                                                            inputId={inputId}
-                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
-                                                                            onRemove={() => {
-                                                                                if (newFile) {
-                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
-                                                                                } else if (savedFile) {
-                                                                                    setAttachmentToDelete(savedFile);
-                                                                                    setShowDeleteModal(true);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    ) : (
-                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
-                                                                            <Upload size={14} className="pointer-events-none" />
-                                                                            <span className="truncate pointer-events-none">Upload Degree/Transcript Scan</span>
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                        </div>
+                                        <EntryAttachmentsEditor
+                                            entryKind="education"
+                                            entryIndex={idx}
+                                            entryMeta={{ level: edu.level, institute: edu.institute }}
+                                            attachments={formData.existingAttachments}
+                                            stagedFiles={formData.files}
+                                            DocumentPreview={DocumentPreview}
+                                            onStageFile={(typeKey, file) => setFormData(prev => ({
+                                                ...prev,
+                                                files: [...prev.files.filter(f => f.type !== typeKey), { file, type: typeKey }],
+                                            }))}
+                                            onRemoveStaged={(typeKey) => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }))}
+                                            onDeleteSaved={(_id, _name) => {
+                                                const saved = formData.existingAttachments?.find((a: any) => a._id === _id);
+                                                if (saved) {
+                                                    setAttachmentToDelete(saved);
+                                                    setShowDeleteModal(true);
+                                                }
+                                            }}
+                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                        />
                                     </div>
                                 </div>
                             ))}

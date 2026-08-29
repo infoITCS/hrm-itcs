@@ -153,10 +153,14 @@ export function computeEffectivePermissionsAndScopes(user: any, rolePermissions:
     const basePermissions = rolePermissions?.permissions || {};
     
     const effectivePermissions: Record<string, boolean> = { ...basePermissions };
-    // Apply custom user overrides if explicitly set
+    // Apply custom user overrides if explicitly set; default missing modules from sub-tab access
     for (const mod of SYSTEM_MODULES) {
         if (typeof customPerms[mod.key] === 'boolean') {
             effectivePermissions[mod.key] = customPerms[mod.key];
+        } else if (typeof effectivePermissions[mod.key] !== 'boolean') {
+            effectivePermissions[mod.key] = mod.subTabs.some((sub) =>
+                getDefaultSubTabAccess(user.role, mod.key, sub.key)
+            );
         }
     }
     

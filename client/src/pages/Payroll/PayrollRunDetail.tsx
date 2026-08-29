@@ -12,11 +12,12 @@ import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
+import { isExpenseClaimPayrollEarning } from '../../utils/expenseClaimPayroll';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
-interface Earning { component: string; amount: number; type: 'fixed' | 'variable' }
+interface Earning { component: string; amount: number; type: 'fixed' | 'variable'; expenseClaim?: boolean }
 interface Deduction { component: string; amount: number }
 
 interface Payslip {
@@ -102,6 +103,7 @@ const PRESET_EARNINGS = [
     'Performance Bonus',
     'Fuel Allowance',
     'Medical Allowance',
+    'Travel Allowance',
     'Mobile Allowance',
     'PF Withdrawal (Non-Taxable)',
     'Anniversary Bonus',
@@ -928,7 +930,7 @@ const PayrollRunDetail = () => {
     const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
     const totalExpenseClaims = payslips.reduce((s, p) => {
         const claimAmt = (p.earnings || [])
-            .filter(e => e.component === 'Expense Reimbursements')
+            .filter(isExpenseClaimPayrollEarning)
             .reduce((sum, e) => sum + (e.amount || 0), 0);
         return s + claimAmt;
     }, 0);
@@ -946,7 +948,7 @@ const PayrollRunDetail = () => {
             const totalPayable = payslips.reduce((s, p) => s + p.netPay, 0);
             const claims = payslips.reduce((s, p) => {
                 const claimAmt = (p.earnings || [])
-                    .filter(e => e.component === 'Expense Reimbursements')
+                    .filter(isExpenseClaimPayrollEarning)
                     .reduce((sum, e) => sum + (e.amount || 0), 0);
                 return s + claimAmt;
             }, 0);

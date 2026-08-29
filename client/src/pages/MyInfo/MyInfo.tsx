@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, Navigation, Cloud, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -15,6 +15,8 @@ import { getAvatarUrl } from '../../utils/avatar';
 import type { User as UserType } from '../../types';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
+import EntryAttachmentsEditor from '../../components/PIM/EntryAttachmentsEditor';
+import { buildPimLinkOptions } from '../../utils/pimAttachmentKeys';
 
 const DocumentPreview = ({
     typeKey,
@@ -141,6 +143,7 @@ const MyInfo = () => {
     const [activeTab, setActiveTab] = useState('personal');
     const [isSalaryUnlocked, setIsSalaryUnlocked] = useState(false);
     const [showSalaryPinModal, setShowSalaryPinModal] = useState(false);
+    const [hidePfFigures, setHidePfFigures] = useState(true);
     const [salaryPlanType, setSalaryPlanType] = useState<'direct' | 'probation'>('direct');
     const salaryLockTimerRef = useRef<any>(null);
 
@@ -892,6 +895,10 @@ const MyInfo = () => {
             if (!employeeData.bloodGroup) delete employeeData.bloodGroup;
             if (!employeeData.religion) delete employeeData.religion;
 
+            if (!canEditBankDetails) {
+                delete employeeData.bankDetails;
+            }
+
             let response;
             if (employeeId) {
                 // Update existing employee
@@ -1080,6 +1087,44 @@ const MyInfo = () => {
         }
     };
 
+    const pimLinkOptions = useMemo(
+        () => buildPimLinkOptions(formData.education, formData.employmentHistory, rawEmployee?.attachments),
+        [formData.education, formData.employmentHistory, rawEmployee?.attachments]
+    );
+
+    const handleLinkAttachment = async (attachmentId: string, fileType: string) => {
+        if (!employeeId || !fileType) return;
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(api.linkEmployeeAttachment(employeeId, attachmentId), {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ fileType }),
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to link document' }));
+                throw new Error(errorData.message || 'Failed to link document');
+            }
+            const updated = await response.json();
+            setRawEmployee((prev: any) => ({
+                ...prev,
+                attachments: (prev.attachments || [])
+                    .filter((att: any) => String(att._id) === attachmentId || att.fileType !== fileType)
+                    .map((att: any) => String(att._id) === attachmentId ? { ...att, ...updated, fileType } : att),
+            }));
+            setFormData((prev) => ({
+                ...prev,
+                files: prev.files.filter((f) => f.type !== fileType),
+            }));
+            showToast('Document linked successfully', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to link document', 'error');
+        }
+    };
+
     const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !employeeId) return;
@@ -1209,6 +1254,7 @@ const MyInfo = () => {
 
     const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
     const canEditJob = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
+    const canEditBankDetails = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
     const disabledJobClass = !canEditJob ? 'bg-gray-50 cursor-not-allowed' : 'bg-white';
     const steps = allSteps.filter(s => !s.roleRestricted || isAdmin);
 
@@ -1568,7 +1614,7 @@ const MyInfo = () => {
                                     </div>
                                     <h3 className="text-base font-bold text-slate-800">Financial Information Protected</h3>
                                     <p className="text-xs text-slate-500 mt-1 mb-5 leading-relaxed">
-                                        Salary breakdown, probation terms, and Provident Fund balance are locked with your 4-digit Security PIN to ensure privacy.
+                                        Salary breakdown and probation terms are locked with your 4-digit Security PIN to ensure privacy.
                                     </p>
                                     <button
                                         type="button"
@@ -1583,7 +1629,7 @@ const MyInfo = () => {
                                     <div className="flex items-center justify-between bg-indigo-50/60 p-3 rounded-2xl border border-indigo-100">
                                         <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900">
                                             <Shield size={14} className="text-indigo-600" />
-                                            <span>Salary & PF details unlocked for this session</span>
+                                            <span>Salary details unlocked for this session</span>
                                         </div>
                                         <button
                                             type="button"
@@ -1664,80 +1710,98 @@ const MyInfo = () => {
                                             )}
                                         </div>
                                     </div>
-
-                                    {/* Provident Fund Details */}
-                                    <div className="pt-8 border-t border-slate-100">
-                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Provident Fund Details</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
-                                            {renderField('Current PF Balance', rawEmployee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0')}
-                                        </div>
-
-                                        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                                            <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
-                                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
-                                            </div>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left border-collapse text-sm">
-                                                    <thead>
-                                                        <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
-                                                            <th className="px-6 py-3">Date</th>
-                                                            <th className="px-6 py-3">Description</th>
-                                                            <th className="px-6 py-3">Source</th>
-                                                            <th className="px-6 py-3">Type</th>
-                                                            <th className="px-6 py-3 text-right">Amount</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
-                                                        {rawEmployee.providentFundHistory?.length > 0 ? (
-                                                            [...rawEmployee.providentFundHistory]
-                                                                .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                                                .map((entry: any, index: number) => (
-                                                                    <tr key={index} className="hover:bg-slate-50/40 transition-colors">
-                                                                        <td className="px-6 py-4 text-xs text-slate-400">
-                                                                            {new Date(entry.date).toLocaleString()}
-                                                                        </td>
-                                                                        <td className="px-6 py-4 font-semibold text-slate-800">
-                                                                            {entry.description}
-                                                                        </td>
-                                                                        <td className="px-6 py-4">
-                                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                                                                                entry.source === 'payroll' 
-                                                                                    ? 'bg-blue-50 text-blue-600 border-blue-100' 
-                                                                                    : 'bg-amber-50 text-amber-600 border-amber-100'
-                                                                            }`}>
-                                                                                {entry.source}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className="px-6 py-4">
-                                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                                                                entry.type === 'credit' 
-                                                                                    ? 'bg-emerald-50 text-emerald-600' 
-                                                                                    : 'bg-rose-50 text-rose-600'
-                                                                            }`}>
-                                                                                {entry.type === 'credit' ? '+ Credit' : '- Debit'}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className={`px-6 py-4 text-right font-black ${
-                                                                            entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
-                                                                        }`}>
-                                                                            Rs. {entry.amount.toLocaleString()}
-                                                                        </td>
-                                                                    </tr>
-                                                                ))
-                                                        ) : (
-                                                            <tr>
-                                                                <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
-                                                                    No contribution history recorded.
-                                                                </td>
-                                                            </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </>
                             )}
+
+                            {/* Provident Fund Details — visible without PIN; amounts toggled with eye button */}
+                            <div className="pt-8 border-t border-slate-100">
+                                <div className="flex items-center justify-between mb-6 gap-3">
+                                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Provident Fund Details</h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setHidePfFigures(v => !v)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold transition-all"
+                                        title={hidePfFigures ? 'Show PF amounts' : 'Hide PF amounts'}
+                                    >
+                                        {hidePfFigures ? <Eye size={14} /> : <EyeOff size={14} />}
+                                        {hidePfFigures ? 'Show Amounts' : 'Hide Amounts'}
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
+                                    {renderField(
+                                        'Current PF Balance',
+                                        hidePfFigures
+                                            ? '••••••••'
+                                            : (rawEmployee.providentFundBalance
+                                                ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(rawEmployee.providentFundBalance).replace('PKR', 'Rs.')
+                                                : 'Rs. 0')
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">PF Contribution & Adjustment History</h4>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-sm">
+                                            <thead>
+                                                <tr className="bg-slate-50/30 text-xs font-bold text-slate-400 uppercase border-b border-slate-100">
+                                                    <th className="px-6 py-3">Date</th>
+                                                    <th className="px-6 py-3">Description</th>
+                                                    <th className="px-6 py-3">Source</th>
+                                                    <th className="px-6 py-3">Type</th>
+                                                    <th className="px-6 py-3 text-right">Amount</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-medium text-slate-750">
+                                                {rawEmployee.providentFundHistory?.length > 0 ? (
+                                                    [...rawEmployee.providentFundHistory]
+                                                        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                                        .map((entry: any, index: number) => (
+                                                            <tr key={index} className="hover:bg-slate-50/40 transition-colors">
+                                                                <td className="px-6 py-4 text-xs text-slate-400">
+                                                                    {new Date(entry.date).toLocaleString()}
+                                                                </td>
+                                                                <td className="px-6 py-4 font-semibold text-slate-800">
+                                                                    {entry.description}
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                                        entry.source === 'payroll'
+                                                                            ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                                                            : 'bg-amber-50 text-amber-600 border-amber-100'
+                                                                    }`}>
+                                                                        {entry.source}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                                                        entry.type === 'credit'
+                                                                            ? 'bg-emerald-50 text-emerald-600'
+                                                                            : 'bg-rose-50 text-rose-600'
+                                                                    }`}>
+                                                                        {entry.type === 'credit' ? '+ Credit' : '- Debit'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={`px-6 py-4 text-right font-black ${
+                                                                    entry.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'
+                                                                }`}>
+                                                                    {hidePfFigures ? '••••••••' : `Rs. ${entry.amount.toLocaleString()}`}
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                                            No contribution history recorded.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="pt-8 border-t border-slate-100">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Bank Account Details</h3>
@@ -2902,59 +2966,21 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Reason for Leaving</label>
                                                     <input type="text" value={eh.reasonForLeaving} onChange={(e) => handleChange(e, 'employmentHistory', idx, 'reasonForLeaving')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
-                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                                    <label className="text-xs font-medium text-gray-500 flex items-center gap-1">
-                                                        Experience Letter <span className="text-red-500 font-bold">*</span>
-                                                    </label>
-                                                    <div className="flex items-center gap-2">
-                                                        {(() => {
-                                                            const typeKey = `Experience Letter - ${eh.companyName || idx}`;
-                                                            const newFile = formData.files.find(f => f.type === typeKey);
-                                                            const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
-                                                            const hasFile = !!newFile || !!savedFile;
-                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-                                                            return (
-                                                                <div className="flex flex-col gap-2 w-full">
-                                                                    <input
-                                                                        type="file"
-                                                                        id={inputId}
-                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                                setFormData(prev => ({
-                                                                                    ...prev,
-                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                                }));
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                    {hasFile ? (
-                                                                        <DocumentPreview
-                                                                            typeKey={typeKey}
-                                                                            existingFile={savedFile}
-                                                                            localFile={newFile?.file}
-                                                                            inputId={inputId}
-                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
-                                                                            onRemove={() => {
-                                                                                if (newFile) {
-                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
-                                                                                } else if (savedFile) {
-                                                                                    handleDeleteDocument(savedFile._id, savedFile.fileName);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    ) : (
-                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
-                                                                            <Upload size={14} className="pointer-events-none" />
-                                                                            <span className="truncate pointer-events-none">Upload Experience Letter</span>
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
+                                                <EntryAttachmentsEditor
+                                                    entryKind="experience"
+                                                    entryIndex={idx}
+                                                    entryMeta={{ companyName: eh.companyName, jobTitle: eh.jobTitle }}
+                                                    attachments={rawEmployee?.attachments}
+                                                    stagedFiles={formData.files}
+                                                    DocumentPreview={DocumentPreview}
+                                                    onStageFile={(typeKey, file) => setFormData(prev => ({
+                                                        ...prev,
+                                                        files: [...prev.files.filter(f => f.type !== typeKey), { file, type: typeKey }],
+                                                    }))}
+                                                    onRemoveStaged={(typeKey) => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }))}
+                                                    onDeleteSaved={(id, name) => handleDeleteDocument(id, name)}
+                                                    onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                />
                                             </div>
                                         </div>
                                     ))}
@@ -3009,56 +3035,21 @@ const MyInfo = () => {
                                                     <label className="text-xs font-medium text-gray-500">Score / GPA</label>
                                                     <input type="text" placeholder="e.g., 3.5/4.0 or 85%" value={edu.score} onChange={(e) => handleChange(e, 'education', idx, 'score')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all" />
                                                 </div>
-                                                <div className="md:col-span-2 space-y-1 mt-2 pt-2 border-t border-gray-50">
-                                                    <div className="flex items-center gap-2">
-                                                        {(() => {
-                                                            const typeKey = `Degree - ${edu.level || idx}`;
-                                                            const newFile = formData.files.find(f => f.type === typeKey);
-                                                            const savedFile = rawEmployee?.attachments?.find((a: any) => a.fileType === typeKey);
-                                                            const hasFile = !!newFile || !!savedFile;
-                                                            const inputId = `file-input-${typeKey.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-                                                            return (
-                                                                <div className="flex flex-col gap-2 w-full">
-                                                                    <input
-                                                                        type="file"
-                                                                        id={inputId}
-                                                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                                                        className="hidden"
-                                                                        onChange={(e) => {
-                                                                            if (e.target.files && e.target.files.length > 0) {
-                                                                                setFormData(prev => ({
-                                                                                    ...prev,
-                                                                                    files: [...prev.files.filter(f => f.type !== typeKey), { file: e.target.files![0], type: typeKey }]
-                                                                                }));
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                    {hasFile ? (
-                                                                        <DocumentPreview
-                                                                            typeKey={typeKey}
-                                                                            existingFile={savedFile}
-                                                                            localFile={newFile?.file}
-                                                                            inputId={inputId}
-                                                                            onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
-                                                                            onRemove={() => {
-                                                                                if (newFile) {
-                                                                                    setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }));
-                                                                                } else if (savedFile) {
-                                                                                    handleDeleteDocument(savedFile._id, savedFile.fileName);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    ) : (
-                                                                        <label htmlFor={inputId} className="flex items-center gap-2 cursor-pointer px-3 py-1.5 border border-dashed border-gray-300 rounded-lg bg-gray-50 hover:bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 transition-all text-xs w-full justify-center animate-fade-in">
-                                                                            <Upload size={14} className="pointer-events-none" />
-                                                                            <span className="truncate pointer-events-none">Upload Degree/Transcript Scan</span>
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
+                                                <EntryAttachmentsEditor
+                                                    entryKind="education"
+                                                    entryIndex={idx}
+                                                    entryMeta={{ level: edu.level, institute: edu.institute }}
+                                                    attachments={rawEmployee?.attachments}
+                                                    stagedFiles={formData.files}
+                                                    DocumentPreview={DocumentPreview}
+                                                    onStageFile={(typeKey, file) => setFormData(prev => ({
+                                                        ...prev,
+                                                        files: [...prev.files.filter(f => f.type !== typeKey), { file, type: typeKey }],
+                                                    }))}
+                                                    onRemoveStaged={(typeKey) => setFormData(p => ({ ...p, files: p.files.filter(f => f.type !== typeKey) }))}
+                                                    onDeleteSaved={(id, name) => handleDeleteDocument(id, name)}
+                                                    onPreview={(url, name, type) => setLightboxFile({ url, fileName: name, fileType: type })}
+                                                />
                                             </div>
                                         </div>
                                     ))}
@@ -3547,10 +3538,13 @@ const MyInfo = () => {
 
                                 {/* Bank Details */}
                                 <div className="pt-8 border-t border-gray-100">
-                                    <h3 className="text-lg font-medium text-gray-700 mb-6 flex items-center gap-2">
+                                    <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center gap-2">
                                         <Banknote size={20} className="text-indigo-500" />
                                         Bank Account Details
                                     </h3>
+                                    {!canEditBankDetails && (
+                                        <p className="text-xs text-gray-500 mb-6">Bank details are managed by HR. Contact HR if you need to update your account information.</p>
+                                    )}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-1">
                                             <label className="text-xs font-medium text-gray-500">Bank Name</label>
@@ -3558,8 +3552,9 @@ const MyInfo = () => {
                                                 type="text"
                                                 placeholder="e.g. Chase Bank"
                                                 value={formData.bankDetails.bankName}
-                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } }))}
-                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                readOnly={!canEditBankDetails}
+                                                onChange={canEditBankDetails ? (e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, bankName: e.target.value } })) : undefined}
+                                                className={`w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all ${!canEditBankDetails ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                             />
                                         </div>
                                         <div className="space-y-1">
@@ -3568,8 +3563,9 @@ const MyInfo = () => {
                                                 type="text"
                                                 placeholder="Full name as per bank"
                                                 value={formData.bankDetails.accountName}
-                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } }))}
-                                                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                                readOnly={!canEditBankDetails}
+                                                onChange={canEditBankDetails ? (e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountName: e.target.value } })) : undefined}
+                                                className={`w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition-all ${!canEditBankDetails ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                             />
                                         </div>
                                         <div className="space-y-1">
@@ -3578,9 +3574,10 @@ const MyInfo = () => {
                                                 type="text"
                                                 placeholder="Account Number"
                                                 value={formData.bankDetails.accountNumber}
-                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } }))}
-                                                onBlur={(e) => handleFieldBlur('accountNumber', e.target.value)}
-                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.accountNumber ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
+                                                readOnly={!canEditBankDetails}
+                                                onChange={canEditBankDetails ? (e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, accountNumber: e.target.value } })) : undefined}
+                                                onBlur={canEditBankDetails ? (e) => handleFieldBlur('accountNumber', e.target.value) : undefined}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.accountNumber ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'} ${!canEditBankDetails ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                             />
                                             {fieldErrors.accountNumber && <p className="text-xs text-red-500 mt-1">{fieldErrors.accountNumber}</p>}
                                         </div>
@@ -3590,9 +3587,10 @@ const MyInfo = () => {
                                                 type="text"
                                                 placeholder="e.g. PK36SCBL0000001123456702"
                                                 value={formData.bankDetails.iban}
-                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } }))}
-                                                onBlur={(e) => handleFieldBlur('iban', e.target.value)}
-                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.iban ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
+                                                readOnly={!canEditBankDetails}
+                                                onChange={canEditBankDetails ? (e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, iban: e.target.value } })) : undefined}
+                                                onBlur={canEditBankDetails ? (e) => handleFieldBlur('iban', e.target.value) : undefined}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.iban ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'} ${!canEditBankDetails ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                             />
                                             {fieldErrors.iban && <p className="text-xs text-red-500 mt-1">{fieldErrors.iban}</p>}
                                         </div>
@@ -3602,9 +3600,10 @@ const MyInfo = () => {
                                                 type="text"
                                                 placeholder="e.g. SCBLPKKA"
                                                 value={formData.bankDetails.swiftCode}
-                                                onChange={(e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } }))}
-                                                onBlur={(e) => handleFieldBlur('swiftCode', e.target.value)}
-                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.swiftCode ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'}`}
+                                                readOnly={!canEditBankDetails}
+                                                onChange={canEditBankDetails ? (e) => setFormData(p => ({ ...p, bankDetails: { ...p.bankDetails, swiftCode: e.target.value } })) : undefined}
+                                                onBlur={canEditBankDetails ? (e) => handleFieldBlur('swiftCode', e.target.value) : undefined}
+                                                className={`w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 outline-none transition-all ${fieldErrors.swiftCode ? 'border-red-400 focus:ring-red-100' : 'border-gray-300 focus:ring-indigo-200'} ${!canEditBankDetails ? 'bg-gray-50 cursor-default select-none' : ''}`}
                                             />
                                             {fieldErrors.swiftCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.swiftCode}</p>}
                                         </div>
@@ -3930,11 +3929,26 @@ const MyInfo = () => {
                                                             {/* Info */}
                                                             <div className="min-w-0">
                                                                 <p className="text-[11px] font-bold text-slate-700 truncate" title={file.fileName}>{file.fileName}</p>
-                                                                <div className="flex items-center gap-2 mt-0.5">
+                                                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                                                     <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-wider">{file.fileType}</span>
                                                                     {file.status === 'approved' && <span className="text-[8px] text-emerald-600 font-bold px-1 bg-emerald-50 rounded italic">Approved</span>}
                                                                     {file.status === 'pending' && <span className="text-[8px] text-amber-600 font-bold px-1 bg-amber-50 rounded italic">Pending Review</span>}
                                                                 </div>
+                                                                <label className="block mt-2">
+                                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Link to</span>
+                                                                    <select
+                                                                        value={file.fileType}
+                                                                        onChange={(e) => handleLinkAttachment(file._id, e.target.value)}
+                                                                        className="mt-0.5 w-full text-[10px] border border-slate-200 rounded-md px-1.5 py-1 bg-white text-slate-700 focus:ring-1 focus:ring-indigo-300 outline-none"
+                                                                    >
+                                                                        {pimLinkOptions.map((opt) => (
+                                                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                                        ))}
+                                                                        {!pimLinkOptions.some((o) => o.value === file.fileType) && (
+                                                                            <option value={file.fileType}>{file.fileType}</option>
+                                                                        )}
+                                                                    </select>
+                                                                </label>
                                                             </div>
 
                                                             {/* Actions */}

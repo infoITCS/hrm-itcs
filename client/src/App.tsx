@@ -41,6 +41,7 @@ import DocumentVerification from './pages/DocumentVerification/DocumentVerificat
 import PayrollDashboard from './pages/Payroll/PayrollDashboard';
 import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
 import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
+import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
 
 // Dynamic Page Titles Mapping
@@ -61,7 +62,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/company-policy': 'Company Policy Manual',
   '/privacy-policy': 'Privacy Policy',
   '/terms': 'Terms of Service',
-  '/admin': 'User Management',
+  '/admin/loans': 'Loan Management',
   '/admin/settings': 'System Settings',
   '/login': 'Sign In',
   '/reset-password': 'Reset Password',
@@ -214,6 +215,11 @@ function AppRoutes() {
             <Route path="edit/:id" element={<AddEmployeeWizard />} />
             <Route path="view/:id" element={<EmployeeProfile />} />
           </Route>
+        </Route>
+
+        {/* Restricted to Super Admins only */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin']} />}>
+          <Route path="admin/loans" element={<LoanManagement />} />
         </Route>
 
         {/* Restricted to Super Admins & Admins */}

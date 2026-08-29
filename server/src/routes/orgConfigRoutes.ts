@@ -219,6 +219,7 @@ const DEFAULT_SALARY_COMPONENTS = [
     // Earnings
     { name: 'Basic Salary', type: 'earning', description: 'Base salary compensation', isActive: true },
     { name: 'Medical Allowance', type: 'earning', description: 'Medical coverage allowance', isActive: true },
+    { name: 'Travel Allowance', type: 'earning', description: 'Approved travel / conveyance claims', isActive: true },
     { name: 'HRA', type: 'earning', description: 'House Rent Allowance', isActive: true },
     { name: 'Conveyance Allowance', type: 'earning', description: 'Transportation and travel allowance', isActive: true },
     { name: 'Fuel Allowance', type: 'earning', description: 'Fuel expense allowance', isActive: true },
