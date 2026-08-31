@@ -192,7 +192,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         const activeTypes = await LeaveType.find({ isActive: true }).sort({ name: 1 });
 
         // Fetch all employees
-        const employees = await Employee.find().select('userId firstName lastName employeeId email jobInfo');
+        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo');
 
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
@@ -221,7 +221,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                 employeeId: emp.employeeId,
                 userId: emp.userId,
                 name: formatEmployeeFullName(emp, emp.employeeId),
-                email: emp.email,
+                email: emp.workEmail || emp.email || '—',
                 designation: emp.jobInfo?.designation || 'N/A',
                 department: emp.jobInfo?.department || 'N/A',
                 balances: empBalances

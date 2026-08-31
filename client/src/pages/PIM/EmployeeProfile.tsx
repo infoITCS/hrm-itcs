@@ -52,6 +52,7 @@ const EmployeeProfile = () => {
 
     const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
     const canViewFinancials = ['super-admin', 'finance', 'hr'].includes(role);
+    const isSuperAdmin = role === 'super-admin';
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -70,18 +71,21 @@ const EmployeeProfile = () => {
     }, [id]);
 
     const fetchAuditLogs = useCallback(async () => {
+        if (role !== 'super-admin') return;
         const token = localStorage.getItem('token');
         try {
             const res = await fetch(`${api.audit}?targetResource=Employee&targetId=${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await res.json();
-            // Support both old array response and new { logs } shape
-            setAuditLogs(Array.isArray(data) ? data : (data.logs || []));
+            if (res.ok) {
+                const data = await res.json();
+                // Support both old array response and new { logs } shape
+                setAuditLogs(Array.isArray(data) ? data : (data.logs || []));
+            }
         } catch (err) {
             console.error('Error fetching audit logs:', err);
         }
-    }, [id]);
+    }, [id, role]);
 
     const fetchAllEmployees = useCallback(async () => {
         if (!isAdmin) return; // only admins need the full list for name resolution
@@ -103,9 +107,11 @@ const EmployeeProfile = () => {
 
     useEffect(() => {
         fetchEmployee();
-        fetchAuditLogs();
+        if (role === 'super-admin') {
+            fetchAuditLogs();
+        }
         fetchAllEmployees();
-    }, [id, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
+    }, [id, role, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
 
     const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
     const [viewingAvatarUrl, setViewingAvatarUrl] = useState<string | null>(null);
@@ -273,7 +279,7 @@ const EmployeeProfile = () => {
         { id: 'education', label: 'Education', icon: GraduationCap },
         { id: 'dependents', label: 'Dependents', icon: Users },
         { id: 'documents', label: 'Documents', icon: FileText },
-        { id: 'audit', label: 'Audit Logs', icon: Shield },
+        ...(isSuperAdmin ? [{ id: 'audit', label: 'Audit Logs', icon: Shield }] : []),
     ];
 
     return (
@@ -992,8 +998,8 @@ const EmployeeProfile = () => {
                     </div>
                 )}
 
-                {/* Audit Logs Tab */}
-                {activeTab === 'audit' && (
+                {/* Audit Logs Tab (Super Admin Only) */}
+                {activeTab === 'audit' && isSuperAdmin && (
                     <div className="animate-fadeIn">
                         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                             <div className="flex items-center gap-2 text-blue-800">

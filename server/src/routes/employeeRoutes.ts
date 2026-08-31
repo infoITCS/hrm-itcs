@@ -726,6 +726,48 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
 });
 
 /**
+ * GET /api/employees/my-loans
+ * Returns detailed loan breakdown and monthly salary deduction history for the currently authenticated employee.
+ */
+router.get('/my-loans', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
+            .select('employeeId')
+            .lean() as any;
+
+        if (!employee && authReq.user?.email) {
+            employee = await Employee.findOne({
+                isDeleted: { $ne: true },
+                $or: [
+                    { workEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { personalEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
+                ]
+            })
+            .select('employeeId')
+            .lean() as any;
+        }
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee profile not found for current user.' });
+        }
+
+        const { getEmployeeLoanDetails } = await import('../services/loanManagementService');
+        const details = await getEmployeeLoanDetails(employee.employeeId);
+        res.json(details);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * GET /api/employees/:id/pf-statement-pdf
  * Generates and downloads a PDF statement of the employee's PF.
  * Accessed via query token ?token=... for easy browser downloads.

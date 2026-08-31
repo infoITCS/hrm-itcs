@@ -3,12 +3,12 @@ import mongoose from 'mongoose';
 import AuditLog from '../models/AuditLog';
 import User from '../models/User.model';
 import Employee from '../models/Employee';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = express.Router();
 
-// Get audit logs with filters — enriched with performer names
-router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// Get audit logs with filters — enriched with performer names (Super Admin Only)
+router.get('/', authenticate, authorize(['super-admin']), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { targetResource, targetId, action, page = 1, limit = 25 } = req.query;
         const query: any = {};

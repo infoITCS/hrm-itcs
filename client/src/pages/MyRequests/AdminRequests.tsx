@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useToast } from '../../contexts/ToastContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
+import { getAvatarUrl } from '../../utils/avatar';
+import Avatar from '../../components/UI/Avatar';
 import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
@@ -83,15 +85,16 @@ const AdminRequests = () => {
     };
 
     const isFinanceRole = (user?.role || '').toLowerCase().trim() === 'finance';
+    const isManagerRole = (user?.role || '').toLowerCase().trim() === 'manager';
 
     const filteredRequests = requests.filter(req => {
-        if (isFinanceRole) {
-            const cat = (req.category || '').toLowerCase();
-            const reqType = (req.requestType || '').toLowerCase();
-            const isFinanceRelated = cat.includes('loan') || cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
-                                     reqType.includes('loan') || reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
-            if (!isFinanceRelated) return false;
-        }
+        const cat = (req.category || '').toLowerCase();
+        const reqType = (req.requestType || '').toLowerCase();
+        const isFinanceRelated = cat.includes('loan') || cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
+                                 reqType.includes('loan') || reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
+
+        if (isFinanceRole && !isFinanceRelated) return false;
+        if (isManagerRole && isFinanceRelated) return false;
 
         const employeeName = formatEmployeeFullName(req.employee, '').toLowerCase();
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -201,13 +204,14 @@ const AdminRequests = () => {
                                         <tr key={req._id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
-                                                    {req.employee?.avatar ? (
-                                                        <img src={req.employee.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs">
-                                                            {req.employee?.firstName?.charAt(0)}{req.employee?.lastName?.charAt(0)}
-                                                        </div>
-                                                    )}
+                                                    <Avatar
+                                                        src={getAvatarUrl(req.employee)}
+                                                        firstName={req.employee?.firstName}
+                                                        lastName={req.employee?.lastName}
+                                                        size="w-8 h-8"
+                                                        className="border border-gray-100 shrink-0"
+                                                        initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
+                                                    />
                                                     <div>
                                                         <p className="font-medium text-gray-900">{formatEmployeeFullName(req.employee, 'Employee')}</p>
                                                         <p className="text-xs text-gray-500">{req.employee?.employeeId}</p>
@@ -370,17 +374,21 @@ const AdminRequests = () => {
                             )}
 
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
-                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div className="flex items-center gap-3 pb-3 border-b border-gray-200/60">
+                                    <Avatar
+                                        src={getAvatarUrl(actionModal.employee)}
+                                        firstName={actionModal.employee?.firstName}
+                                        lastName={actionModal.employee?.lastName}
+                                        size="w-10 h-10"
+                                        className="border border-gray-200 shrink-0"
+                                        initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
+                                    />
                                     <div>
-                                        <p className="text-gray-500 text-xs">Employee</p>
-                                        <p className="font-semibold text-gray-900">{formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-gray-500 text-xs">Employee ID</p>
-                                        <p className="font-semibold text-gray-900">{actionModal.employee?.employeeId}</p>
+                                        <p className="font-semibold text-gray-900 text-sm">{formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
+                                        <p className="text-xs text-gray-500">{actionModal.employee?.employeeId || '—'}</p>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm border-t border-gray-200/60 pt-2">
+                                <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div>
                                         <p className="text-gray-500 text-xs">Category</p>
                                         <p className="font-semibold text-gray-900">{actionModal.category}</p>

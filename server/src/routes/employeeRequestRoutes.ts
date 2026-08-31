@@ -104,8 +104,13 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         if (role === 'manager' && employee) {
             const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
             const reportIds = directReports.map(e => e.employeeId);
-            // Managers do not see loans/request loans
-            reqQuery = { employeeId: { $in: reportIds }, status: 'Pending', category: { $nin: ['Loan', 'Request Loan'] } };
+            // Managers do not see loan or financial requests (including Loan Pause)
+            reqQuery = {
+                employeeId: { $in: reportIds },
+                status: 'Pending',
+                category: { $not: /loan|pf|provident|salary|advance|finance/i },
+                requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
+            };
         } else if (isHrOrAdmin) {
             // HR and Admins see pending requests (including loans)
             reqQuery = { status: 'Pending' };
@@ -533,8 +538,12 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
             // Find employeeIds reporting to this manager
             const directReports = await Employee.find({ 'jobInfo.reportingManager': managerEmployee.employeeId }).select('employeeId');
             const reportIds = directReports.map(e => e.employeeId);
-            // Managers do not see Loan requests
-            query = { employeeId: { $in: reportIds }, category: { $nin: ['Loan', 'Request Loan'] } };
+            // Managers do not see any Loan or Financial requests (including Loan Pause)
+            query = {
+                employeeId: { $in: reportIds },
+                category: { $not: /loan|pf|provident|salary|advance|finance/i },
+                requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
+            };
         } else if (role === 'finance') {
             // Finance role ONLY sees Loan or Finance related requests
             query = {
@@ -548,7 +557,7 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
         const requests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).lean();
         
         const employeeIds = [...new Set(requests.map(r => r.employeeId))];
-        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName lastName avatar department designation providentFundBalance').lean();
+        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName avatar department designation providentFundBalance attachments._id attachments.fileType').lean();
         
         const empMap = employees.reduce((acc: any, emp: any) => {
             acc[emp.employeeId] = emp;
@@ -585,8 +594,10 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
 
         // If manager, check if the request belongs to a direct report
         if (role === 'manager') {
-            if (request.category === 'Loan' || request.category === 'Request Loan') {
-                return res.status(403).json({ message: 'Managers are not authorized to decide on loan requests.' });
+            const isFinancialOrLoan = /loan|pf|provident|salary|advance|finance/i.test(request.category || '') ||
+                                      /loan|pf|provident|salary|advance|finance/i.test(request.requestType || '');
+            if (isFinancialOrLoan) {
+                return res.status(403).json({ message: 'Managers are not authorized to decide on loan or financial requests.' });
             }
             const managerEmployee = await Employee.findOne({ userId }).select('employeeId');
             if (!managerEmployee) {
@@ -646,6 +657,58 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                         description: `Loan Approved Payout (Ref: Request ${request._id})`,
                         erpReferenceId: req.body.erpReferenceId || request.erpReferenceId
                     });
+                    await emp.save();
+                }
+            }
+        }
+
+        // Sync approved / completed loan requests directly into Employee.loans array
+        if (isLoan && (status === 'Approved' || status === 'Completed')) {
+            const cat = (request.category || '').toLowerCase();
+            const reqType = (request.requestType || '').toLowerCase();
+            const isPause = cat.includes('pause') || reqType.includes('pause');
+
+            if (!isPause) {
+                const emp = await Employee.findOne({ employeeId: request.employeeId });
+                if (emp) {
+                    emp.loans = emp.loans || [];
+                    const reqIdStr = request._id.toString();
+                    const existingLoan = emp.loans.find((l: any) => l.loanId === `LOAN-REQ-${reqIdStr}` || (l.notes && l.notes.includes(reqIdStr)));
+
+                    const reqAmt = Number(request.details?.requestedAmount || 0);
+                    const paybackMonths = Number(request.details?.paybackDuration) || 12;
+                    const monthlyDeduct = Number(request.details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / paybackMonths);
+
+                    if (!existingLoan && reqAmt > 0) {
+                        emp.loans.push({
+                            loanId: `LOAN-REQ-${reqIdStr}`,
+                            totalAmount: reqAmt,
+                            monthlyInstallment: monthlyDeduct,
+                            remainingAmount: reqAmt,
+                            status: 'Active',
+                            issueDate: new Date(),
+                            notes: `Approved Request ${reqIdStr} (${request.requestType || request.category})`
+                        } as any);
+                        await emp.save();
+                    } else if (existingLoan) {
+                        existingLoan.status = 'Active';
+                        existingLoan.totalAmount = reqAmt;
+                        existingLoan.monthlyInstallment = monthlyDeduct;
+                        if (existingLoan.remainingAmount === undefined || existingLoan.remainingAmount <= 0) {
+                            existingLoan.remainingAmount = reqAmt;
+                        }
+                        await emp.save();
+                    }
+                }
+            }
+        } else if (isLoan && (status === 'Rejected' || status === 'Cancelled')) {
+            const reqIdStr = request._id.toString();
+            const emp = await Employee.findOne({ employeeId: request.employeeId });
+            if (emp && emp.loans) {
+                const loan = emp.loans.find((l: any) => l.loanId === `LOAN-REQ-${reqIdStr}` || (l.notes && l.notes.includes(reqIdStr)));
+                if (loan) {
+                    loan.status = 'Cancelled';
+                    loan.remainingAmount = 0;
                     await emp.save();
                 }
             }

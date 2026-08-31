@@ -664,6 +664,21 @@ router.get('/loans', authenticate, requireSuperAdmin, async (req: Request, res: 
 });
 
 /**
+ * @route   GET /api/admin/loans/:employeeId/details
+ * @desc    Detailed employee loans breakdown & monthly salary repayment history (Super Admin)
+ */
+router.get('/loans/:employeeId/details', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { getEmployeeLoanDetails } = await import('../services/loanManagementService');
+        const data = await getEmployeeLoanDetails(req.params.employeeId);
+        res.json(data);
+    } catch (error: any) {
+        if (error.status === 404) return res.status(404).json({ message: error.message });
+        next(error);
+    }
+});
+
+/**
  * @route   PATCH /api/admin/loans/:employeeId
  * @desc    Update employee loan balance & monthly installment (Super Admin)
  */

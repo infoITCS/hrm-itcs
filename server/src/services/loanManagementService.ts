@@ -18,16 +18,25 @@ export interface EmployeeLoanSummary {
 }
 
 export async function buildComputedLoanMap() {
-    const allCompletedLoans = await EmployeeRequest.find({
-        status: 'Completed',
-        category: { $in: ['Loan', 'Request Loan'] },
+    const allApprovedLoans = await EmployeeRequest.find({
+        status: { $in: ['Approved', 'Completed'] },
+        $or: [
+            { category: { $in: ['Loan', 'Request Loan'] } },
+            { requestType: { $in: ['Loan', 'Request Loan'] } },
+            { category: { $regex: /loan/i } }
+        ],
     }).lean();
 
     const allFinalizedPayslips = await Payslip.find({ status: 'Finalized' }).lean();
 
     const map: Record<string, { balance: number; monthlyDeduction: number; totalDisbursed: number }> = {};
 
-    for (const loan of allCompletedLoans) {
+    for (const loan of allApprovedLoans) {
+        const cat = (loan.category || '').toLowerCase();
+        const reqType = (loan.requestType || '').toLowerCase();
+        // Exclude temporary pause requests
+        if (cat.includes('pause') || reqType.includes('pause')) continue;
+
         const empId = loan.employeeId;
         if (!map[empId]) {
             map[empId] = { balance: 0, monthlyDeduction: 0, totalDisbursed: 0 };
@@ -55,15 +64,19 @@ export async function buildComputedLoanMap() {
 }
 
 export function loanInfoFromEmployeeRecord(emp: any): { balance: number; monthlyDeduction: number; totalDisbursed: number; status: EmployeeLoanSummary['status']; loanId?: string } | null {
+    if (!emp.loans || emp.loans.length === 0) return null;
+
     const activeLoans = (emp.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
-    if (activeLoans.length === 0) return null;
+    const totalDisbursed = (emp.loans || []).reduce((s: number, l: any) => s + Number(l.totalAmount || l.remainingAmount || 0), 0);
+    const totalRemaining = activeLoans.reduce((s: number, l: any) => s + Number(l.remainingAmount || 0), 0);
+    const monthlyDeduction = activeLoans.reduce((s: number, l: any) => s + Number(l.monthlyInstallment || 0), 0);
 
     return {
-        balance: activeLoans.reduce((s: number, l: any) => s + Number(l.remainingAmount || 0), 0),
-        monthlyDeduction: activeLoans.reduce((s: number, l: any) => s + Number(l.monthlyInstallment || 0), 0),
-        totalDisbursed: activeLoans.reduce((s: number, l: any) => s + Number(l.totalAmount || l.remainingAmount || 0), 0),
-        status: 'Active',
-        loanId: activeLoans[0]?.loanId,
+        balance: totalRemaining,
+        monthlyDeduction,
+        totalDisbursed: Math.max(totalDisbursed, totalRemaining),
+        status: totalRemaining > 0 ? 'Active' : (totalDisbursed > 0 ? 'Paid' : 'None'),
+        loanId: activeLoans[0]?.loanId || emp.loans[0]?.loanId,
     };
 }
 
@@ -89,6 +102,7 @@ export async function buildAllEmployeeLoanSummaries(options: { activeOnly?: bool
         let loanId: string | undefined;
 
         if (fromRecord) {
+            // Explicit record in employee.loans is the source of truth
             remainingBalance = fromRecord.balance;
             monthlyInstallment = fromRecord.monthlyDeduction;
             totalDisbursed = fromRecord.totalDisbursed;
@@ -154,49 +168,237 @@ export async function updateEmployeeLoan(
         (employee as any).loans = [];
     }
 
-    let activeLoan = employee.loans!.find((l: { status?: string }) => l.status === 'Active');
-    const computedMap = await buildComputedLoanMap();
-    const computed = computedMap[employeeId];
-    const totalDisbursed = activeLoan?.totalAmount
-        ?? computed?.totalDisbursed
-        ?? remainingBalance;
-
-    if (!activeLoan) {
-        activeLoan = {
-            loanId: `LOAN-${employeeId}-${Date.now()}`,
-            totalAmount: totalDisbursed,
-            monthlyInstallment,
-            remainingAmount: remainingBalance,
-            status: remainingBalance > 0 ? 'Active' : 'Paid',
-            issueDate: new Date(),
-            notes: `Updated by admin (${updatedBy})`,
-        } as any;
-        employee.loans!.push(activeLoan);
+    if (remainingBalance === 0) {
+        // Mark all active loans as Paid and zero out remaining amounts
+        for (const l of employee.loans!) {
+            l.remainingAmount = 0;
+            l.monthlyInstallment = 0;
+            l.status = 'Paid';
+            l.notes = `Marked paid / zeroed by admin (${updatedBy}) on ${new Date().toISOString().slice(0, 10)}`;
+        }
+        if (employee.loans!.length === 0) {
+            employee.loans!.push({
+                loanId: `LOAN-${employeeId}-${Date.now()}`,
+                totalAmount: 0,
+                monthlyInstallment: 0,
+                remainingAmount: 0,
+                status: 'Paid',
+                issueDate: new Date(),
+                notes: `Zeroed by admin (${updatedBy})`,
+            } as any);
+        }
     } else {
-        activeLoan.remainingAmount = remainingBalance;
-        activeLoan.monthlyInstallment = monthlyInstallment;
-        activeLoan.status = remainingBalance > 0 ? 'Active' : 'Paid';
-        activeLoan.notes = `Updated by admin (${updatedBy}) on ${new Date().toISOString().slice(0, 10)}`;
-        if (!activeLoan.totalAmount || activeLoan.totalAmount < remainingBalance) {
-            activeLoan.totalAmount = Math.max(totalDisbursed, remainingBalance);
+        const activeLoans = employee.loans!.filter((l: { status?: string }) => l.status === 'Active');
+        if (activeLoans.length === 0) {
+            const newLoan = {
+                loanId: `LOAN-${employeeId}-${Date.now()}`,
+                totalAmount: remainingBalance,
+                monthlyInstallment,
+                remainingAmount: remainingBalance,
+                status: 'Active',
+                issueDate: new Date(),
+                notes: `Updated by admin (${updatedBy})`,
+            } as any;
+            employee.loans!.push(newLoan);
+        } else if (activeLoans.length === 1) {
+            activeLoans[0].remainingAmount = remainingBalance;
+            activeLoans[0].monthlyInstallment = monthlyInstallment;
+            activeLoans[0].status = 'Active';
+            if (!activeLoans[0].totalAmount || activeLoans[0].totalAmount < remainingBalance) {
+                activeLoans[0].totalAmount = remainingBalance;
+            }
+        } else {
+            // Update across multiple active loans
+            let bal = remainingBalance;
+            for (let i = 0; i < activeLoans.length; i++) {
+                const l = activeLoans[i];
+                if (i === activeLoans.length - 1) {
+                    l.remainingAmount = bal;
+                    l.status = bal > 0 ? 'Active' : 'Paid';
+                } else {
+                    const amt = Math.min(l.remainingAmount || l.totalAmount || 0, bal);
+                    l.remainingAmount = amt;
+                    l.status = amt > 0 ? 'Active' : 'Paid';
+                    bal -= amt;
+                }
+            }
+            activeLoans[activeLoans.length - 1].monthlyInstallment = monthlyInstallment;
         }
     }
 
     await employee.save();
 
-    const latestRequest = await EmployeeRequest.findOne({
-        employeeId,
-        status: 'Completed',
-        category: { $in: ['Loan', 'Request Loan'] },
-    }).sort({ updatedAt: -1 });
-
-    if (latestRequest) {
-        latestRequest.details = latestRequest.details || {};
-        (latestRequest.details as any).recommendedMonthlyDeduction = monthlyInstallment;
-        await latestRequest.save();
+    // If zeroed out, also mark any pending/approved EmployeeRequest loan items as Completed
+    if (remainingBalance === 0) {
+        await EmployeeRequest.updateMany(
+            {
+                employeeId,
+                status: { $in: ['Approved', 'Completed'] },
+                $or: [
+                    { category: { $in: ['Loan', 'Request Loan'] } },
+                    { requestType: { $in: ['Loan', 'Request Loan'] } },
+                    { category: { $regex: /loan/i } }
+                ]
+            },
+            {
+                $set: {
+                    status: 'Completed',
+                    'details.remainingAmount': 0,
+                    'details.recommendedMonthlyDeduction': 0
+                }
+            }
+        );
     }
 
     return buildAllEmployeeLoanSummaries().then((all) => all.find((s) => s.employeeId === employeeId));
+}
+
+export interface IndividualLoanItem {
+    loanId: string;
+    totalAmount: number;
+    remainingAmount: number;
+    monthlyInstallment: number;
+    status: 'Active' | 'Paid' | 'Cancelled';
+    issueDate?: Date | string;
+    category?: string;
+    notes?: string;
+    paybackDuration?: number;
+}
+
+export interface LoanRepaymentItem {
+    payslipId: string;
+    payslipNo?: string;
+    periodMonth: number;
+    periodYear: number;
+    amount: number;
+    date: Date | string;
+}
+
+export interface EmployeeLoanDetailResult {
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    designation?: string;
+    department?: string;
+    summary: {
+        totalDisbursed: number;
+        remainingBalance: number;
+        monthlyInstallment: number;
+        status: EmployeeLoanSummary['status'];
+    };
+    loans: IndividualLoanItem[];
+    repayments: LoanRepaymentItem[];
+}
+
+export async function getEmployeeLoanDetails(employeeId: string): Promise<EmployeeLoanDetailResult> {
+    const employee = (await Employee.findOne({ employeeId }).lean()) as any;
+    if (!employee) {
+        throw Object.assign(new Error('Employee not found.'), { status: 404 });
+    }
+
+    const loanRequests = await EmployeeRequest.find({
+        employeeId,
+        status: { $in: ['Approved', 'Completed'] },
+        $or: [
+            { category: { $in: ['Loan', 'Request Loan'] } },
+            { requestType: { $in: ['Loan', 'Request Loan'] } },
+            { category: { $regex: /loan/i } }
+        ],
+    }).sort({ requestedAt: 1 }).lean();
+
+    const payslips = await Payslip.find({
+        employeeId,
+        status: 'Finalized',
+    }).sort({ periodYear: 1, periodMonth: 1 }).lean();
+
+    const repayments: LoanRepaymentItem[] = [];
+    for (const ps of payslips) {
+        const loanDeds = (ps.deductions || []).filter((d: any) => d.component === 'Loan Deduction' && Number(d.amount) > 0);
+        for (const d of loanDeds) {
+            repayments.push({
+                payslipId: String((ps as any)._id || ''),
+                payslipNo: ps.payslipNo || '',
+                periodMonth: ps.periodMonth,
+                periodYear: ps.periodYear,
+                amount: Number(d.amount),
+                date: (ps as any).finalizedAt || ps.createdAt,
+            });
+        }
+    }
+
+    const existingRecordLoans: IndividualLoanItem[] = ((employee as any).loans || []).map((l: any) => ({
+        loanId: l.loanId || `LOAN-${employeeId}`,
+        totalAmount: Number(l.totalAmount || l.remainingAmount || 0),
+        remainingAmount: Number(l.remainingAmount || 0),
+        monthlyInstallment: Number(l.monthlyInstallment || 0),
+        status: (l.status || (Number(l.remainingAmount) > 0 ? 'Active' : 'Paid')) as any,
+        issueDate: l.issueDate,
+        notes: l.notes || '',
+        category: 'Loan',
+    }));
+
+    const loans: IndividualLoanItem[] = [...existingRecordLoans];
+
+    // Add approved EmployeeRequest loans that are not already present in employee.loans
+    for (const req of loanRequests) {
+        const cat = (req.category || '').toLowerCase();
+        const reqType = (req.requestType || '').toLowerCase();
+        if (cat.includes('pause') || reqType.includes('pause')) continue;
+
+        const reqIdStr = req._id.toString();
+        const alreadyInRecord = loans.some(l => l.loanId.includes(reqIdStr) || (l.notes && l.notes.includes(reqIdStr)));
+        if (!alreadyInRecord) {
+            const reqAmt = Number((req as any).details?.requestedAmount || 0);
+            const duration = Number((req as any).details?.paybackDuration) || 12;
+            const monthlyCut = Number((req as any).details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / duration);
+
+            loans.push({
+                loanId: `LOAN-REQ-${reqIdStr}`,
+                totalAmount: reqAmt,
+                remainingAmount: reqAmt,
+                monthlyInstallment: monthlyCut,
+                status: 'Active',
+                issueDate: (req as any).requestedAt || (req as any).createdAt,
+                category: req.requestType || req.category,
+                notes: (req as any).reason || (req as any).adminComments || `Approved Request ${reqIdStr}`,
+                paybackDuration: duration,
+            });
+        }
+    }
+
+    // Apply finalized repayments to adjust remaining amounts if loans were loaded without previous record deduction
+    if (existingRecordLoans.length === 0 && repayments.length > 0) {
+        let totalPaid = repayments.reduce((s, r) => s + r.amount, 0);
+        for (const l of loans) {
+            if (totalPaid <= 0) break;
+            const deduct = Math.min(l.remainingAmount, totalPaid);
+            l.remainingAmount = Math.max(0, l.remainingAmount - deduct);
+            totalPaid -= deduct;
+            if (l.remainingAmount <= 0) {
+                l.status = 'Paid';
+            }
+        }
+    }
+
+    const totalDisbursed = loans.reduce((s, l) => s + Number(l.totalAmount || 0), 0);
+    const remainingBalance = loans.reduce((s, l) => s + Number(l.remainingAmount || 0), 0);
+    const activeMonthlyInstallment = loans.filter(l => l.status === 'Active').reduce((s, l) => s + Number(l.monthlyInstallment || 0), 0);
+
+    return {
+        employeeId: employee.employeeId,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        designation: (employee as any).jobInfo?.designation,
+        department: (employee as any).jobInfo?.department,
+        summary: {
+            totalDisbursed,
+            remainingBalance,
+            monthlyInstallment: activeMonthlyInstallment,
+            status: remainingBalance > 0 ? 'Active' : (totalDisbursed > 0 ? 'Paid' : 'None'),
+        },
+        loans,
+        repayments: repayments.reverse(), // most recent repayments first
+    };
 }
 
 export function getLoanInfoForPayroll(
@@ -205,8 +407,17 @@ export function getLoanInfoForPayroll(
     computedMap: Record<string, { balance: number; monthlyDeduction: number; totalDisbursed?: number }>
 ) {
     const fromRecord = loanInfoFromEmployeeRecord(emp);
+    const computed = computedMap[employeeId];
+
     if (fromRecord) {
-        return { balance: fromRecord.balance, monthlyDeduction: fromRecord.monthlyDeduction };
+        return {
+            balance: Math.max(0, fromRecord.balance),
+            monthlyDeduction: Math.max(0, fromRecord.monthlyDeduction),
+        };
     }
-    return computedMap[employeeId] || { balance: 0, monthlyDeduction: 0 };
+    if (computed && computed.balance > 0) {
+        return { balance: computed.balance, monthlyDeduction: computed.monthlyDeduction };
+    }
+    return { balance: 0, monthlyDeduction: 0 };
 }
+
