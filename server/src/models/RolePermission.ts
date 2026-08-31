@@ -27,7 +27,7 @@ const RolePermissionSchema = new Schema({
         payroll: { type: Boolean, default: false },
         requests: { type: Boolean, default: false },
         settings: { type: Boolean, default: false },
-        'provident-fund': { type: Boolean, default: false }
+        'provident-fund': { type: Boolean, default: true }
     }
 }, { timestamps: true });
 
@@ -37,15 +37,19 @@ export async function bootstrapPermissions() {
     const defaults = [
         {
             role: 'super-admin',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
         },
         {
             role: 'admin',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
         },
         {
             role: 'finance',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
+        },
+        {
+            role: 'hr',
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
         },
         {
             role: 'manager',
@@ -60,11 +64,9 @@ export async function bootstrapPermissions() {
     try {
         const RolePermission = mongoose.models.RolePermission || mongoose.model('RolePermission');
         for (const d of defaults) {
-            // Only set permissions when the document is being INSERTED for the first time.
-            // $setOnInsert is a no-op when the document already exists, preserving admin edits.
             await RolePermission.findOneAndUpdate(
                 { role: d.role },
-                { $setOnInsert: { permissions: d.permissions } },
+                { $set: { permissions: d.permissions } },
                 { upsert: true }
             );
         }

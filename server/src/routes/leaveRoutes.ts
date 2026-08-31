@@ -99,6 +99,46 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[]): boolean =>
     return modified;
 };
 
+/**
+ * Resolves all potential database identifiers (employeeId, userId, _id) for an employee.
+ * Ensures consistent lookups whether an employee has a login User account or is an unlinked worker.
+ */
+const resolveEmployeeLookupIds = async (identifier: string, session?: mongoose.ClientSession): Promise<{
+    lookupIds: string[];
+    canonicalEmployeeId: string;
+    employee: any;
+}> => {
+    if (!identifier) return { lookupIds: [], canonicalEmployeeId: '', employee: null };
+
+    const query: any = {
+        $or: [
+            { employeeId: identifier },
+            { userId: identifier }
+        ]
+    };
+    if (mongoose.isValidObjectId(identifier)) {
+        query.$or.push({ _id: identifier });
+    }
+
+    let empQuery = Employee.findOne(query);
+    if (session) empQuery = empQuery.session(session);
+    const employee = await empQuery;
+
+    const lookupIds = new Set<string>([identifier]);
+    if (employee) {
+        if (employee.employeeId) lookupIds.add(employee.employeeId);
+        if (employee.userId) lookupIds.add(employee.userId.toString());
+        if (employee._id) lookupIds.add(employee._id.toString());
+    }
+
+    const canonicalEmployeeId = employee?.employeeId || identifier;
+    return {
+        lookupIds: Array.from(lookupIds),
+        canonicalEmployeeId,
+        employee
+    };
+};
+
 // GET /api/leaves/today - Get all employees on leave today
 router.get('/today', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -120,7 +160,7 @@ router.get('/today', authenticate, async (req: Request, res: Response, next: Nex
         const employees = await mongoose.model('Employee').find({ 
             $or: [
                 { employeeId: { $in: employeeIds } },
-                        { _id: { $in: employeeIds.filter((id: string) => id && mongoose.isValidObjectId(id)) } },
+                { _id: { $in: employeeIds.filter((id: string) => id && mongoose.isValidObjectId(id)) } },
                 { userId: { $in: employeeIds.filter((id: string) => id && mongoose.isValidObjectId(id)) } }
             ]
         }).select('_id employeeId userId firstName lastName avatar').lean();
@@ -165,12 +205,13 @@ router.get('/today', authenticate, async (req: Request, res: Response, next: Nex
 router.get('/mine', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
-        const employeeId = authReq.user?.userId;
-        if (!employeeId) {
+        const userId = authReq.user?.userId;
+        if (!userId) {
             return res.status(400).json({ success: false, message: 'No Employee profile linked to this user' });
         }
 
-        const leaves = await LeaveRequest.find({ employeeId }).sort({ createdAt: -1 });
+        const { lookupIds } = await resolveEmployeeLookupIds(userId);
+        const leaves = await LeaveRequest.find({ employeeId: { $in: lookupIds } }).sort({ createdAt: -1 });
         res.json({ success: true, data: leaves });
     } catch (error) {
         next(error);
@@ -200,8 +241,15 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         // Build list of employees with their balances
         const data = employees.map(emp => {
             const userIdStr = emp.userId?.toString();
-            // Find existing balance doc
-            let empBalanceDoc = balances.find(b => b.employeeId === userIdStr);
+            const empIdStr = emp.employeeId?.toString();
+            const rawIdStr = emp._id?.toString();
+
+            // Find existing balance doc matching any identifier (employeeId, userId, or _id)
+            let empBalanceDoc = balances.find(b => 
+                (empIdStr && b.employeeId === empIdStr) ||
+                (userIdStr && b.employeeId === userIdStr) ||
+                (rawIdStr && b.employeeId === rawIdStr)
+            );
             
             let empBalances = activeTypes.map(type => {
                 let balCat = empBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === type.code);
@@ -238,20 +286,22 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
 router.get('/balance', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
-        const employeeId = authReq.query.employeeId ? String(authReq.query.employeeId) : authReq.user?.userId;
-        if (!employeeId) {
+        const targetId = authReq.query.employeeId ? String(authReq.query.employeeId) : authReq.user?.userId;
+        if (!targetId) {
             return res.status(400).json({ success: false, message: 'No Employee profile linked to this user' });
         }
 
         // Only admins can query other users' balances
-        if (authReq.user?.role === 'employee' && employeeId !== authReq.user?.userId) {
+        if (authReq.user?.role === 'employee' && targetId !== authReq.user?.userId) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
+        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(targetId);
         const year = authReq.query.year ? Number(authReq.query.year) : new Date().getFullYear();
-        let balance = await LeaveBalance.findOne({ employeeId, year });
+        
+        let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
         if (!balance) {
-            balance = new LeaveBalance({ employeeId, year, balances: [] });
+            balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
@@ -392,9 +442,11 @@ router.put('/balance/:employeeId', authenticate, async (req: Request, res: Respo
             return res.status(400).json({ success: false, message: 'leaveTypeCode and total are required' });
         }
 
-        let balance = await LeaveBalance.findOne({ employeeId, year });
+        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId);
+
+        let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
         if (!balance) {
-            balance = new LeaveBalance({ employeeId, year, balances: [] });
+            balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
@@ -606,11 +658,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         try {
             await session.withTransaction(async () => {
                 const activeTypes = await LeaveType.find({ isActive: true }).session(session);
+                const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId, session);
 
                 for (const [year, days] of yearDaysMap.entries()) {
-                    let balance = await LeaveBalance.findOne({ employeeId, year }).session(session);
+                    let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
                     if (!balance) {
-                        balance = new LeaveBalance({ employeeId, year, balances: [] });
+                        balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
                     }
 
                     ensureBalancesInitialized(balance, activeTypes);
@@ -637,7 +690,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 }
 
                 const leaves = await LeaveRequest.create([{
-                    employeeId,
+                    employeeId: canonicalEmployeeId,
                     startDate,
                     endDate,
                     type: leaveType.name,
@@ -797,12 +850,15 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                     }
                 }
 
+                const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
+
                 for (const [year, days] of yearDaysMap.entries()) {
-                    const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                    const balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
                     if (balance) {
                         const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                         if (category) {
                             category.pending -= days;
+                            if (category.pending < 0) category.pending = 0;
                             if (status === 'Approved') {
                                 category.used += days;
                             }
@@ -949,14 +1005,18 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
                     }
                 }
 
+                const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
+
                 for (const [year, days] of yearDaysMap.entries()) {
-                    const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                    const balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
                     if (balance) {
                         const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                         if (category) {
                             // Undo old status
                             if (oldStatus === 'Pending') category.pending -= days;
                             if (oldStatus === 'Approved') category.used -= days;
+                            if (category.pending < 0) category.pending = 0;
+                            if (category.used < 0) category.used = 0;
                             
                             // Apply new status
                             if (status === 'Pending') category.pending += days;
@@ -1088,8 +1148,10 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
                     }
                 }
 
+                const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
+
                 for (const [year, days] of yearDaysMap.entries()) {
-                    const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                    const balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
                     if (balance) {
                         const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                         if (category) {
@@ -1235,8 +1297,10 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
                         }
                     }
 
+                    const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
+
                     for (const [year, days] of yearDaysMap.entries()) {
-                        const balance = await LeaveBalance.findOne({ employeeId: leave.employeeId, year }).session(session);
+                        const balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
                         if (balance) {
                             const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                             if (category) {

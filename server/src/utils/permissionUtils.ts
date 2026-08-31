@@ -157,6 +157,8 @@ export function computeEffectivePermissionsAndScopes(user: any, rolePermissions:
     for (const mod of SYSTEM_MODULES) {
         if (typeof customPerms[mod.key] === 'boolean') {
             effectivePermissions[mod.key] = customPerms[mod.key];
+        } else if (mod.key === 'provident-fund') {
+            effectivePermissions['provident-fund'] = true;
         } else if (typeof effectivePermissions[mod.key] !== 'boolean') {
             effectivePermissions[mod.key] = mod.subTabs.some((sub) =>
                 getDefaultSubTabAccess(user.role, mod.key, sub.key)

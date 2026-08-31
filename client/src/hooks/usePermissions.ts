@@ -48,6 +48,17 @@ export const usePermissions = () => {
     const hasAccess = useCallback((moduleName: string): boolean => {
         if (!user) return false;
         if (normalizedRole === 'super-admin') return true;
+
+        // Explicit custom per-user override takes precedence
+        if (user.customPermissions && typeof user.customPermissions[moduleName] === 'boolean') {
+            return user.customPermissions[moduleName];
+        }
+
+        // Provident Fund is an employee entitlement available to all active roles by default
+        if (moduleName === 'provident-fund') {
+            return true;
+        }
+
         if (user.permissions && user.permissions[moduleName] === false) return false;
         if (user.permissions && user.permissions[moduleName] === true) return true;
         // Role defaults when permissions are not yet loaded (e.g. during impersonation)
