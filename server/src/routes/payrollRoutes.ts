@@ -15,9 +15,10 @@ import Company from '../models/Company';
 import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 import ExpenseClaim from '../models/ExpenseClaim';
 import { sendPayslipDisbursedEmail } from '../utils/email';
-import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
 import { buildPayrollPayslips, computePayrollAmountTotals } from '../services/payrollCalculation';
+import * as XLSX from 'xlsx';
 
 const router = express.Router();
 
@@ -1080,6 +1081,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             missingSalary: result.missingSalary.length ? result.missingSalary : undefined,
             totalPayableAmount: result.totals.totalPayableAmount,
             totalExpenseClaimsAmount: result.totals.totalExpenseClaimsAmount,
+            totalLoanDeductionsAmount: result.totals.totalLoanDeductionsAmount,
             erpPayableAmount: result.totals.erpPayableAmount,
         });
     } catch (err: any) {
@@ -1130,6 +1132,7 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
         run.erpPostedAt = new Date();
         run.totalPayableAmount = totals.totalPayableAmount;
         run.totalExpenseClaimsAmount = totals.totalExpenseClaimsAmount;
+        run.totalLoanDeductionsAmount = totals.totalLoanDeductionsAmount;
         run.erpPayableAmount = totals.erpPayableAmount;
 
         await Payslip.updateMany(
@@ -1409,8 +1412,8 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
 
 /**
  * @route   GET /api/payroll/:runId/export-bank-excel
- * @desc    Export Bank Disbursement Advice as 4-column CSV/Excel compatible sheet
- *          Columns: Account Number, Beneficiary Name, Customer Reference, Transaction Amount
+ * @desc    Export Bank Disbursement Advice as real 4-column .xlsx Excel workbook
+ *          Columns: ACCOUNTNUMBER, BENEFICAIRY NAME, CUSTOMERREFERENCENUMBER,  TRANSAMOUNT 
  * @access  admin, super-admin, finance
  */
 router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: Response, next: NextFunction) => {
@@ -1432,28 +1435,96 @@ router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: 
             return res.status(400).json({ message: 'No payslips found for this run.' });
         }
 
-        // CSV Header with 4 exact required columns
-        const headers = ['Account Number', 'Beneficiary Name', 'Customer Reference', 'Transaction Amount'];
-        const rows = payslips.map((p, idx) => {
+        const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const shortMonth = MONTH_SHORT[run.periodMonth] || 'Mth';
+        const shortYear = String(run.periodYear).slice(-2);
+        const filename = `${shortMonth}${shortYear}Payroll.xlsx`;
+
+        const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
+
+        // 4 exact bank columns
+        const COL_ACCOUNT = 'ACCOUNTNUMBER';
+        const COL_NAME = 'BENEFICAIRY NAME';
+        const COL_REF = 'CUSTOMERREFERENCENUMBER';
+        const COL_AMOUNT = ' TRANSAMOUNT ';
+
+        const data = payslips.map((p, idx) => {
             const rawAcc = p.beneficiaryAccount || p.employeeDetails?.bankDetails?.accountNumber || p.employeeDetails?.bankDetails?.iban || '';
             const accNo = String(rawAcc).trim();
-            const name = p.beneficiaryName || formatEmployeeFullName(p.employeeDetails, p.employeeId);
-            const ref = p.customerReference || generateCustomerReference(run.periodYear, run.periodMonth, idx + 1);
-            const amount = p.netPay || 0;
+            const fullName = p.beneficiaryName || formatEmployeeFullName(p.employeeDetails, p.employeeId);
+            const uppercaseName = String(fullName || '').toUpperCase().trim();
 
-            // Preserve exact account digits in Excel without scientific notation or leading zero loss
-            const formattedAcc = accNo ? `="${accNo.replace(/"/g, '')}"` : '""';
-            const escapeCsv = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
-            return [formattedAcc, escapeCsv(name), escapeCsv(ref), amount].join(',');
+            // Pure numeric reference format: DDMMYYYYseq (e.g. 30082026001)
+            let refVal = String(p.customerReference || '').replace(/\D/g, '');
+            if (!refVal || refVal.length < 8) {
+                refVal = generateCustomerReference(run.periodYear, run.periodMonth, idx + 1, defaultLastDay);
+            }
+            const refNum = Number(refVal) || Number(`${defaultLastDay}${String(run.periodMonth).padStart(2, '0')}${run.periodYear}${String(idx + 1).padStart(3, '0')}`);
+            const amount = Number(p.netPay) || 0;
+
+            return {
+                [COL_ACCOUNT]: accNo,
+                [COL_NAME]: uppercaseName,
+                [COL_REF]: refNum,
+                [COL_AMOUNT]: amount,
+            };
         });
 
-        // Add UTF-8 BOM so Excel opens with correct encoding
-        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+        const ws = XLSX.utils.json_to_sheet(data, {
+            header: [COL_ACCOUNT, COL_NAME, COL_REF, COL_AMOUNT],
+        });
 
-        const safeTitle = (run.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_');
-        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="Bank_Disbursement_4Col_${safeTitle}.csv"`);
-        return res.send(csvContent);
+        // Set explicit cell types and number formats
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:D1');
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+            // Col A: ACCOUNTNUMBER (Text)
+            const cellA = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
+            if (cellA) {
+                cellA.t = 's';
+                cellA.v = String(cellA.v ?? '');
+                cellA.z = '@';
+            }
+
+            // Col B: BENEFICAIRY NAME (ALL CAPS Text)
+            const cellB = ws[XLSX.utils.encode_cell({ r: R, c: 1 })];
+            if (cellB) {
+                cellB.t = 's';
+                cellB.v = String(cellB.v ?? '').toUpperCase();
+            }
+
+            // Col C: CUSTOMERREFERENCENUMBER (Number)
+            const cellC = ws[XLSX.utils.encode_cell({ r: R, c: 2 })];
+            if (cellC) {
+                cellC.t = 'n';
+                cellC.v = Number(cellC.v) || 0;
+                cellC.z = '0';
+            }
+
+            // Col D:  TRANSAMOUNT  (Accounting / 2 decimal places)
+            const cellD = ws[XLSX.utils.encode_cell({ r: R, c: 3 })];
+            if (cellD) {
+                cellD.t = 'n';
+                cellD.v = Number(cellD.v) || 0;
+                cellD.z = '#,##0.00';
+            }
+        }
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 26 }, // ACCOUNTNUMBER
+            { wch: 34 }, // BENEFICAIRY NAME
+            { wch: 28 }, // CUSTOMERREFERENCENUMBER
+            { wch: 20 }, //  TRANSAMOUNT 
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'sheet1');
+
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(buffer);
     } catch (err) {
         next(err);
     }

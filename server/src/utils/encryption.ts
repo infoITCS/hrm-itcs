@@ -194,13 +194,14 @@ export function decryptPayslipFields(payslip: any): any {
 }
 
 /**
- * Generate a guaranteed unique Customer Reference ID for bank transfers.
- * Format: PAY-YYYYMMDD-XXXX (non-duplicating)
+ * Generate a pure numeric Customer Reference Number for bank transfers.
+ * Format: DDMMYYYYseq (e.g. 30082026001, 30082026002) - Pure numbers, no text or dashes.
  */
-export function generateCustomerReference(periodYear: number, periodMonth: number, seqIndex: number): string {
-    const yStr = String(periodYear);
+export function generateCustomerReference(periodYear: number, periodMonth: number, seqIndex: number, day?: number): string {
+    const d = day ? Math.min(Math.max(1, day), 31) : new Date(periodYear, periodMonth, 0).getDate();
+    const dStr = String(d).padStart(2, '0');
     const mStr = String(periodMonth).padStart(2, '0');
-    const randomHex = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const yStr = String(periodYear);
     const seqStr = String(seqIndex).padStart(3, '0');
-    return `PAY-${yStr}${mStr}-${seqStr}${randomHex}`;
+    return `${dStr}${mStr}${yStr}${seqStr}`;
 }

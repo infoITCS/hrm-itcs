@@ -734,6 +734,47 @@ router.patch('/loans/monthly-ledger/erp', authenticate, requireLoanAccess, async
 });
 
 /**
+ * @route   PATCH /api/admin/loans/monthly-ledger/item/:payslipId/erp
+ * @desc    Record or update individual employee loan deduction ERP Reference ID
+ */
+router.patch('/loans/monthly-ledger/item/:payslipId/erp', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const { payslipId } = req.params;
+        const { erpReferenceId } = req.body || {};
+
+        const { updateEmployeeMonthlyLoanErpId } = await import('../services/loanManagementService');
+        const payslip = await updateEmployeeMonthlyLoanErpId(
+            payslipId,
+            erpReferenceId || '',
+            authReq.user?.userId || 'admin'
+        );
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'EmployeeLoanDeductionERP',
+            targetId: payslipId,
+            performedBy: authReq.user?.userId || 'System',
+            details: {
+                employeeId: payslip.employeeId,
+                payslipNo: payslip.payslipNo,
+                periodMonth: payslip.periodMonth,
+                periodYear: payslip.periodYear,
+                loanDeductionErpId: String(erpReferenceId || '').trim(),
+            },
+        });
+
+        res.json({
+            message: 'Employee loan deduction ERP ID updated successfully.',
+            payslip,
+        });
+    } catch (error: any) {
+        if (error.status === 404) return res.status(404).json({ message: error.message });
+        next(error);
+    }
+});
+
+/**
  * @route   GET /api/admin/loans/:employeeId/details
  * @desc    Detailed employee loans breakdown & monthly salary repayment history
  */

@@ -68,6 +68,7 @@ function resolveEmployeeEarnings(emp: any): { component: string; amount: number;
 export function computePayrollAmountTotals(payslips: any[]) {
     let totalPayableAmount = 0;
     let totalExpenseClaimsAmount = 0;
+    let totalLoanDeductionsAmount = 0;
 
     for (const ps of payslips) {
         totalPayableAmount += Number(ps.netPay) || 0;
@@ -76,12 +77,22 @@ export function computePayrollAmountTotals(payslips: any[]) {
                 totalExpenseClaimsAmount += Number(e.amount) || 0;
             }
         }
+        if (ps.loanDeduction !== undefined && Number(ps.loanDeduction) > 0) {
+            totalLoanDeductionsAmount += Number(ps.loanDeduction) || 0;
+        } else {
+            for (const d of ps.deductions || []) {
+                if (d.component === 'Loan Deduction') {
+                    totalLoanDeductionsAmount += Number(d.amount) || 0;
+                }
+            }
+        }
     }
 
     return {
         totalPayableAmount,
         totalExpenseClaimsAmount,
-        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount,
+        totalLoanDeductionsAmount,
+        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount + totalLoanDeductionsAmount,
     };
 }
 
@@ -507,6 +518,7 @@ export async function buildPayrollPayslips(
         await PayrollRun.findByIdAndUpdate(run._id, {
             totalPayableAmount: totals.totalPayableAmount,
             totalExpenseClaimsAmount: totals.totalExpenseClaimsAmount,
+            totalLoanDeductionsAmount: totals.totalLoanDeductionsAmount,
             erpPayableAmount: totals.erpPayableAmount,
         });
     }

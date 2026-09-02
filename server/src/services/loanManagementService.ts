@@ -447,6 +447,7 @@ export interface MonthlyLoanDeductionItem {
     currentLoanBalance: number;
     deductionDate: Date | string;
     repaymentStatus: 'Deducted' | 'Completed' | 'Pending';
+    loanDeductionErpId?: string;
 }
 
 export interface MonthlyLoanLedgerResult {
@@ -514,6 +515,7 @@ export async function getMonthlyLoanDeductionsLedger(
                 currentLoanBalance: loanInfo.balance,
                 deductionDate: ps.finalizedAt || ps.createdAt || new Date(),
                 repaymentStatus: 'Deducted',
+                loanDeductionErpId: ps.loanDeductionErpId || '',
             });
         }
     }
@@ -573,6 +575,21 @@ export async function updateMonthlyLoanDeductionErpId(
 
     await run.save();
     return run;
+}
+
+export async function updateEmployeeMonthlyLoanErpId(
+    payslipId: string,
+    erpReferenceId: string,
+    _updatedBy?: string
+) {
+    const payslip = await Payslip.findById(payslipId);
+    if (!payslip) {
+        throw Object.assign(new Error('Payslip record not found'), { status: 404 });
+    }
+    const cleanId = String(erpReferenceId || '').trim();
+    payslip.loanDeductionErpId = cleanId;
+    await payslip.save();
+    return payslip;
 }
 
 /**

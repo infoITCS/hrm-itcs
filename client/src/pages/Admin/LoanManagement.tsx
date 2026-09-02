@@ -5,7 +5,7 @@ import { formatEmployeeFullName } from '../../utils/nameHelper';
 import {
     Banknote, Search, Pencil, Save, X, Loader2, Users, TrendingDown, Wallet,
     Eye, Calendar, History, FileText, ChevronRight, Download, CheckCircle2,
-    AlertCircle, RefreshCw, Layers
+    AlertCircle, RefreshCw, Layers, Check, Edit2, Plus
 } from 'lucide-react';
 
 interface LoanRow {
@@ -72,6 +72,7 @@ interface MonthlyLoanDeductionItem {
     currentLoanBalance: number;
     deductionDate: string;
     repaymentStatus: string;
+    loanDeductionErpId?: string;
 }
 
 interface MonthlyLoanLedgerResult {
@@ -121,15 +122,53 @@ export default function LoanManagement() {
     const [monthlyLedger, setMonthlyLedger] = useState<MonthlyLoanLedgerResult | null>(null);
     const [loadingLedger, setLoadingLedger] = useState(false);
     const [ledgerSearch, setLedgerSearch] = useState('');
-    const [monthlyErpInput, setMonthlyErpInput] = useState('');
-    const [monthlyErpNotes, setMonthlyErpNotes] = useState('');
-    const [savingMonthlyErp, setSavingMonthlyErp] = useState(false);
 
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+    // Per-Person ERP ID state
+    const [editingErpPayslipId, setEditingErpPayslipId] = useState<string | null>(null);
+    const [erpInputVal, setErpInputVal] = useState<string>('');
+    const [savingItemErp, setSavingItemErp] = useState<string | null>(null);
 
     const showToast = (msg: string, ok: boolean) => {
         setToast({ msg, ok });
         setTimeout(() => setToast(null), 3500);
+    };
+
+    const handleSaveItemErp = async (payslipId: string) => {
+        setSavingItemErp(payslipId);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.admin}/loans/monthly-ledger/item/${payslipId}/erp`, {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    erpReferenceId: erpInputVal.trim(),
+                }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                showToast(body.message || 'Failed to save employee ERP ID', false);
+                return;
+            }
+            showToast('Employee loan deduction ERP ID saved!', true);
+            setMonthlyLedger(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    items: prev.items.map(it => it.payslipId === payslipId ? { ...it, loanDeductionErpId: erpInputVal.trim() } : it),
+                };
+            });
+            setEditingErpPayslipId(null);
+            setErpInputVal('');
+        } catch {
+            showToast('Network error saving employee ERP ID', false);
+        } finally {
+            setSavingItemErp(null);
+        }
     };
 
     const loadBalances = useCallback(async () => {
@@ -324,7 +363,7 @@ export default function LoanManagement() {
             item.deductionDate ? new Date(item.deductionDate).toISOString().slice(0, 10) : '',
             item.amountDeducted,
             item.currentLoanBalance,
-            `"${monthlyLedger.loanDeductionErpId || ''}"`,
+            `"${item.loanDeductionErpId || monthlyLedger.loanDeductionErpId || ''}"`,
             MONTH_NAMES[selectedMonth],
             selectedYear
         ]);
@@ -617,32 +656,21 @@ export default function LoanManagement() {
                             <p className="text-[11px] text-slate-400 mt-1">Employees with active monthly cut</p>
                         </div>
 
-                        {/* ERP Voucher ID Status */}
+                        {/* Per-Person ERP Status */}
                         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
                             <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">ERP Voucher Status</span>
-                                {monthlyLedger?.loanDeductionErpId ? (
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Individual ERP IDs</span>
+                                {((monthlyLedger?.items || []).filter(i => i.loanDeductionErpId).length === (monthlyLedger?.items?.length || 0) && (monthlyLedger?.items?.length || 0) > 0) ? (
                                     <CheckCircle2 size={18} className="text-emerald-600" />
                                 ) : (
                                     <AlertCircle size={18} className="text-amber-500" />
                                 )}
                             </div>
                             <div className="mt-2">
-                                {monthlyLedger?.loanDeductionErpId ? (
-                                    <div>
-                                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                            {monthlyLedger.loanDeductionErpId}
-                                        </span>
-                                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">✓ Posted in ERP</p>
-                                    </div>
-                                ) : (
-                                    <div>
-                                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                            Pending ERP Entry
-                                        </span>
-                                        <p className="text-[10px] text-amber-600 mt-1">Voucher ID not recorded yet</p>
-                                    </div>
-                                )}
+                                <span className="text-xl font-black text-slate-900">
+                                    {(monthlyLedger?.items || []).filter(i => i.loanDeductionErpId).length} / {monthlyLedger?.items?.length || 0}
+                                </span>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Individual ERP IDs recorded in table</p>
                             </div>
                         </div>
 
@@ -659,65 +687,6 @@ export default function LoanManagement() {
                                 <p className="text-[11px] text-slate-400 mt-1 truncate">
                                     {monthlyLedger?.payrollTitle || `${MONTH_NAMES[selectedMonth]} ${selectedYear} Payroll`}
                                 </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ERP Voucher ID Entry Panel (Super Admin & Finance) */}
-                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-5 sm:p-6 text-white shadow-lg space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-3">
-                            <div>
-                                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                                    <Banknote size={18} className="text-emerald-400" /> Record Monthly Loan Recovery ERP Voucher ID
-                                </h3>
-                                <p className="text-xs text-slate-400 mt-0.5">
-                                    Enter the single Journal Voucher (JV) reference generated by your ERP for {MONTH_NAMES[selectedMonth]} {selectedYear}'s total loan deduction of {fmtPKR(monthlyLedger?.totalDeducted || 0)}.
-                                </p>
-                            </div>
-                            {monthlyLedger?.loanDeductionErpPostedAt && (
-                                <span className="text-[11px] text-emerald-400 font-mono">
-                                    Last saved: {new Date(monthlyLedger.loanDeductionErpPostedAt).toLocaleString('en-PK')}
-                                </span>
-                            )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                            <div className="sm:col-span-1">
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">
-                                    ERP Reference / Voucher ID *
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g., JV-LOAN-2026-08 or ERP-REC-9821"
-                                    value={monthlyErpInput}
-                                    onChange={(e) => setMonthlyErpInput(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-slate-700 text-sm text-white placeholder:text-slate-500 font-mono focus:ring-2 focus:ring-emerald-400 outline-none"
-                                />
-                            </div>
-
-                            <div className="sm:col-span-1">
-                                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300 block mb-1">
-                                    ERP Remarks / Notes (Optional)
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="e.g., Posted in ERP on Aug 31"
-                                    value={monthlyErpNotes}
-                                    onChange={(e) => setMonthlyErpNotes(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 outline-none"
-                                />
-                            </div>
-
-                            <div className="sm:col-span-1">
-                                <button
-                                    type="button"
-                                    onClick={handleSaveMonthlyErp}
-                                    disabled={savingMonthlyErp || !monthlyErpInput.trim()}
-                                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                                >
-                                    {savingMonthlyErp ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                                    Save ERP Voucher ID
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -795,12 +764,56 @@ export default function LoanManagement() {
                                                     {fmtPKR(item.currentLoanBalance)}
                                                 </td>
                                                 <td className="px-5 py-4">
-                                                    {monthlyLedger?.loanDeductionErpId ? (
-                                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                                            {monthlyLedger.loanDeductionErpId}
-                                                        </span>
+                                                    {editingErpPayslipId === item.payslipId ? (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="text"
+                                                                value={erpInputVal}
+                                                                onChange={(e) => setErpInputVal(e.target.value)}
+                                                                placeholder="e.g. ERP-LN-001"
+                                                                autoFocus
+                                                                className="w-36 px-2.5 py-1 text-xs font-mono font-bold bg-white border border-emerald-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSaveItemErp(item.payslipId)}
+                                                                disabled={savingItemErp === item.payslipId}
+                                                                className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                                                                title="Save"
+                                                            >
+                                                                {savingItemErp === item.payslipId ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setEditingErpPayslipId(null); setErpInputVal(''); }}
+                                                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all cursor-pointer"
+                                                                title="Cancel"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ) : item.loanDeductionErpId ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                {item.loanDeductionErpId}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setEditingErpPayslipId(item.payslipId); setErpInputVal(item.loanDeductionErpId || ''); }}
+                                                                className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all cursor-pointer"
+                                                                title="Edit ERP ID"
+                                                            >
+                                                                <Edit2 size={12} />
+                                                            </button>
+                                                        </div>
                                                     ) : (
-                                                        <span className="text-xs text-amber-600 font-medium">Pending ERP ID</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setEditingErpPayslipId(item.payslipId); setErpInputVal(''); }}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer"
+                                                        >
+                                                            <Plus size={11} /> Enter ERP ID
+                                                        </button>
                                                     )}
                                                 </td>
                                                 <td className="px-5 py-4 text-right whitespace-nowrap">

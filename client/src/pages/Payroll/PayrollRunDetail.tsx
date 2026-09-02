@@ -70,6 +70,7 @@ interface PayrollRun {
     erpPostedAt?: string;
     totalPayableAmount?: number;
     totalExpenseClaimsAmount?: number;
+    totalLoanDeductionsAmount?: number;
     erpPayableAmount?: number;
 }
 
@@ -85,6 +86,7 @@ interface ExpenseClaimPreview {
 interface AmountPreview {
     totalPayableAmount: number;
     totalExpenseClaimsAmount: number;
+    totalLoanDeductionsAmount?: number;
     erpPayableAmount: number;
     claimCount: number;
     expenseClaimsIncluded: ExpenseClaimPreview[];
@@ -776,6 +778,7 @@ const PayrollRunDetail = () => {
             setAmountPreview({
                 totalPayableAmount: res.data.totalPayableAmount ?? 0,
                 totalExpenseClaimsAmount: res.data.totalExpenseClaimsAmount ?? 0,
+                totalLoanDeductionsAmount: res.data.totalLoanDeductionsAmount ?? 0,
                 erpPayableAmount: res.data.erpPayableAmount ?? 0,
                 claimCount: res.data.claimCount ?? 0,
                 expenseClaimsIncluded: res.data.expenseClaimsIncluded ?? [],
@@ -886,16 +889,19 @@ const PayrollRunDetail = () => {
                 headers: { Authorization: `Bearer ${token}` },
                 responseType: 'blob'
             });
-            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8;' }));
+            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
             const link = document.createElement('a');
             link.href = url;
-            const filename = `Bank_Disbursement_4Col_${(run?.title || 'Payroll').replace(/[^a-zA-Z0-9_\-]/g, '_')}.csv`;
+            const MONTH_SHORT = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const shortMonth = run ? (MONTH_SHORT[run.periodMonth] || 'Mth') : 'Mth';
+            const shortYear = run ? String(run.periodYear).slice(-2) : '26';
+            const filename = `${shortMonth}${shortYear}Payroll.xlsx`;
             link.setAttribute('download', filename);
             document.body.appendChild(link);
             link.click();
             link.remove();
         } catch (err: any) {
-            triggerError('Export Failed', err.response?.data?.message || 'Failed to download bank transfer sheet.');
+            triggerError('Export Failed', err.response?.data?.message || 'Failed to download bank transfer spreadsheet.');
         } finally {
             setActionLoading(null);
         }
@@ -933,12 +939,20 @@ const PayrollRunDetail = () => {
             .reduce((sum, e) => sum + (e.amount || 0), 0);
         return s + claimAmt;
     }, 0);
+    const totalLoanDeductions = payslips.reduce((s, p) => {
+        if (p.loanDeduction !== undefined && Number(p.loanDeduction) > 0) {
+            return s + Number(p.loanDeduction);
+        }
+        const loanDeds = (p.deductions || []).filter((d: any) => d.component === 'Loan Deduction');
+        return s + loanDeds.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+    }, 0);
 
     const displayAmounts = useMemo(() => {
         if (amountPreview) {
             return {
                 totalPayableAmount: amountPreview.totalPayableAmount,
                 totalExpenseClaimsAmount: amountPreview.totalExpenseClaimsAmount,
+                totalLoanDeductionsAmount: amountPreview.totalLoanDeductionsAmount ?? totalLoanDeductions,
                 erpPayableAmount: amountPreview.erpPayableAmount,
                 claimCount: amountPreview.claimCount,
             };
@@ -954,12 +968,13 @@ const PayrollRunDetail = () => {
             return {
                 totalPayableAmount: totalPayable,
                 totalExpenseClaimsAmount: claims,
-                erpPayableAmount: totalPayable - claims,
+                totalLoanDeductionsAmount: totalLoanDeductions,
+                erpPayableAmount: totalPayable - claims + totalLoanDeductions,
                 claimCount: 0,
             };
         }
         return null;
-    }, [amountPreview, payslips]);
+    }, [amountPreview, payslips, totalLoanDeductions]);
 
     if (!isAdminRole) return <div className="p-6 text-rose-600">Access denied.</div>;
 
@@ -1148,7 +1163,7 @@ const PayrollRunDetail = () => {
                 </div>
             </div>
 
-            {/* ERP split: payable vs claims vs payroll ERP amount (after generate) */}
+            {/* ERP split: payable vs claims vs loans vs payroll ERP amount (after generate) */}
             {run.status === 'Draft' && payslips.length > 0 && displayAmounts && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-slate-100">
@@ -1156,25 +1171,32 @@ const PayrollRunDetail = () => {
                             <Building2 size={16} className="text-indigo-600" />
                             Payroll & ERP Amount Split
                         </h2>
-                        <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-                            Expense claims are on payslips but already in ERP with their own IDs.
-                            When you approve, you will enter a Payroll ERP ID for the salary portion only.
+                        <p className="text-xs text-slate-500 mt-1 max-w-3xl">
+                            Expense claims and loan deductions are posted to ERP under separate vouchers.
+                            When you approve, you will enter a Payroll ERP ID for the salary portion only ({fmt(displayAmounts.erpPayableAmount)}).
                         </p>
                     </div>
 
                     <div className="p-5">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                             <div className="rounded-xl p-4 bg-indigo-50 border border-indigo-100">
                                 <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Total Payable (Payslips)</p>
                                 <p className="text-xl font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
-                                <p className="text-[10px] text-indigo-600/80 mt-1">Full net pay incl. expense reimbursements</p>
+                                <p className="text-[10px] text-indigo-600/80 mt-1">Net cash transfer to employees</p>
                             </div>
                             <div className="rounded-xl p-4 bg-amber-50 border border-amber-100">
                                 <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-1 flex items-center gap-1">
                                     <Receipt size={11} /> Expense Claims
                                 </p>
                                 <p className="text-xl font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
-                                <p className="text-[10px] text-amber-700/80 mt-1">Already in ERP — do not double-post</p>
+                                <p className="text-[10px] text-amber-700/80 mt-1">Separate ERP IDs — deducted</p>
+                            </div>
+                            <div className="rounded-xl p-4 bg-purple-50 border border-purple-100">
+                                <p className="text-[11px] font-bold text-purple-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                    <CreditCard size={11} /> Loan Deductions
+                                </p>
+                                <p className="text-xl font-black text-purple-900">{fmt(displayAmounts.totalLoanDeductionsAmount ?? 0)}</p>
+                                <p className="text-[10px] text-purple-700/80 mt-1">Separate Loan ERP ID — added back</p>
                             </div>
                             <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 ring-1 ring-emerald-100">
                                 <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Payroll ERP Amount</p>
@@ -1229,7 +1251,7 @@ const PayrollRunDetail = () => {
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                         <p className="text-xs text-indigo-600 mb-1 flex items-center gap-1"><CreditCard size={12} /> Total Net Pay</p>
                         <p className="text-xl font-bold text-indigo-700">{fmt(totalNet)}</p>
-                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(totalNet - totalExpenseClaims)}</p>
+                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims + totalLoanDeductions))}</p>
                     </div>
                 </div>
             )}
@@ -1408,18 +1430,22 @@ const PayrollRunDetail = () => {
                             Finalize payslips and record the Payroll ERP voucher. Post only the <strong>Payroll ERP Amount</strong> to ERP — expense claims already have separate ERP IDs.
                         </p>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div className="rounded-xl p-3 bg-indigo-50 border border-indigo-100">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div className="rounded-xl p-2.5 bg-indigo-50 border border-indigo-100">
                                 <p className="text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Total Payable</p>
-                                <p className="text-sm font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
+                                <p className="text-xs font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
                             </div>
-                            <div className="rounded-xl p-3 bg-amber-50 border border-amber-100">
+                            <div className="rounded-xl p-2.5 bg-amber-50 border border-amber-100">
                                 <p className="text-[10px] font-bold text-amber-700 uppercase mb-0.5">Expense Claims</p>
-                                <p className="text-sm font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
+                                <p className="text-xs font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
                             </div>
-                            <div className="rounded-xl p-3 bg-emerald-50 border border-emerald-200">
+                            <div className="rounded-xl p-2.5 bg-purple-50 border border-purple-100">
+                                <p className="text-[10px] font-bold text-purple-700 uppercase mb-0.5">Loan Deductions</p>
+                                <p className="text-xs font-black text-purple-900">{fmt(displayAmounts.totalLoanDeductionsAmount ?? 0)}</p>
+                            </div>
+                            <div className="rounded-xl p-2.5 bg-emerald-50 border border-emerald-200">
                                 <p className="text-[10px] font-bold text-emerald-700 uppercase mb-0.5">Post to ERP</p>
-                                <p className="text-sm font-black text-emerald-900">{fmt(displayAmounts.erpPayableAmount)}</p>
+                                <p className="text-xs font-black text-emerald-900">{fmt(displayAmounts.erpPayableAmount)}</p>
                             </div>
                         </div>
 
@@ -1436,7 +1462,7 @@ const PayrollRunDetail = () => {
                                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono font-semibold text-sm"
                             />
                             <p className="text-[10px] text-slate-400 mt-1.5">
-                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims).
+                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims; loan deductions posted separately).
                             </p>
                         </div>
 
