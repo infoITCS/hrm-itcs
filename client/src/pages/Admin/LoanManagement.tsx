@@ -201,8 +201,6 @@ export default function LoanManagement() {
             if (res.ok) {
                 const data: MonthlyLoanLedgerResult = await res.json();
                 setMonthlyLedger(data);
-                setMonthlyErpInput(data.loanDeductionErpId || '');
-                setMonthlyErpNotes(data.loanDeductionErpNotes || '');
             } else {
                 const body = await res.json().catch(() => ({}));
                 showToast(body.message || 'Failed to load monthly ledger', false);
@@ -298,41 +296,6 @@ export default function LoanManagement() {
             showToast('Network error saving loan', false);
         } finally {
             setSaving(false);
-        }
-    };
-
-    const handleSaveMonthlyErp = async () => {
-        if (!monthlyErpInput.trim()) {
-            showToast('Please enter the ERP Transaction Reference / Voucher ID.', false);
-            return;
-        }
-        setSavingMonthlyErp(true);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${api.admin}/loans/monthly-ledger/erp`, {
-                method: 'PATCH',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    periodMonth: selectedMonth,
-                    periodYear: selectedYear,
-                    erpReferenceId: monthlyErpInput.trim(),
-                    notes: monthlyErpNotes.trim(),
-                }),
-            });
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                showToast(body.message || 'Failed to save monthly ERP ID', false);
-                return;
-            }
-            showToast('Monthly Loan Deduction ERP Reference ID saved successfully!', true);
-            await loadMonthlyLedger(selectedMonth, selectedYear);
-        } catch {
-            showToast('Network error saving monthly ERP ID', false);
-        } finally {
-            setSavingMonthlyErp(false);
         }
     };
 

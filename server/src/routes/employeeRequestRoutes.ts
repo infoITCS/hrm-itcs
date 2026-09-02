@@ -466,10 +466,11 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 const hrAdmins = await User.find({ role: { $in: ['admin', 'super-admin', 'hr'] } }).select('email');
                 const adminEmails = hrAdmins.map(a => a.email).filter(Boolean);
 
-                const recipients = [];
+                const recipients: string[] = [];
                 if (managerEmail) recipients.push(managerEmail);
                 recipients.push(...adminEmails);
-                recipients.push(process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk');
+                if (process.env.HR_EMAIL) recipients.push(process.env.HR_EMAIL);
+                else if (process.env.SMTP_USER) recipients.push(process.env.SMTP_USER);
 
                 const toList = [...new Set(recipients)].join(', ');
                 if (toList) {
@@ -678,28 +679,6 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         }
         request.approvedBy = userId;
         request.updatedAt = new Date();
-
-        // If completed Loan, record debit log in Employee's PF history automatically
-        if (status === 'Completed' && (request.category === 'Loan' || request.category === 'Request Loan')) {
-            const reqAmt = request.details?.requestedAmount ?? 0;
-            const emp = await Employee.findOne({ employeeId: request.employeeId });
-            if (emp && reqAmt > 0) {
-                const alreadyLogged = emp.providentFundHistory?.some((h: any) => h.description.includes(request._id.toString()));
-                if (!alreadyLogged) {
-                    emp.providentFundBalance = (emp.providentFundBalance || 0) - reqAmt;
-                    emp.providentFundHistory = emp.providentFundHistory || [];
-                    emp.providentFundHistory.push({
-                        amount: reqAmt,
-                        type: 'debit',
-                        source: 'manual',
-                        date: new Date(),
-                        description: `Loan Approved Payout (Ref: Request ${request._id})`,
-                        erpReferenceId: req.body.erpReferenceId || request.erpReferenceId
-                    });
-                    await emp.save();
-                }
-            }
-        }
 
         // Sync disbursed loan requests directly into Employee.loans array (upon Completed / Paid payout)
         if (isLoan && (status === 'Completed' || req.body.payoutStatus === 'Paid')) {

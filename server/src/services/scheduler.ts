@@ -9,6 +9,8 @@ import { upgradeCompletedProbations } from './probationUpgradeService';
 import logger from '../utils/logger';
 
 
+let isSchedulerInitialized = false;
+
 // Note: Vercel serverless functions have execution time limits.
 // For production on Vercel, disable this and use Vercel Cron Jobs instead.
 export const initScheduler = () => {
@@ -16,6 +18,11 @@ export const initScheduler = () => {
         logger.info('Scheduler disabled on Vercel. Use Vercel Cron Jobs for scheduled tasks.');
         return;
     }
+
+    if (isSchedulerInitialized) {
+        return;
+    }
+    isSchedulerInitialized = true;
 
     // ── Probation Auto-Upgrade: Run every day at midnight ─────────────────────────
     cron.schedule('0 0 * * *', async () => {

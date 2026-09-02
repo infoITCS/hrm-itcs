@@ -720,7 +720,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         ]
                     });
                     const employeeName = formatEmployeeFullName(emp, 'Employee');
-                    const hrEmail = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
+                    const hrEmail = process.env.HR_EMAIL || process.env.SMTP_USER || '';
 
                     let managerEmail: string | undefined = undefined;
                     if (emp && emp.jobInfo?.reportingManager) {

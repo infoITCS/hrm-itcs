@@ -27,16 +27,16 @@ const getHrEmails = async (): Promise<string[]> => {
     const envList = (process.env.EXPENSE_HR_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
     const dbUsers = await User.find({ role: { $in: ['super-admin', 'admin', 'hr'] } }).select('email').lean();
     const dbEmails = dbUsers.map((u: any) => u.email).filter(Boolean);
-    const fallback = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
-    return Array.from(new Set([...envList, ...dbEmails, fallback]));
+    const fallback = process.env.HR_EMAIL || process.env.SMTP_USER || '';
+    return Array.from(new Set([...envList, ...dbEmails, fallback].filter(Boolean)));
 };
 
 const getFinanceEmails = async (): Promise<string[]> => {
     const envList = (process.env.EXPENSE_FINANCE_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
     const dbUsers = await User.find({ role: { $in: ['super-admin', 'admin', 'finance'] } }).select('email').lean();
     const dbEmails = dbUsers.map((u: any) => u.email).filter(Boolean);
-    const fallback = process.env.HR_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
-    return Array.from(new Set([...envList, ...dbEmails, fallback]));
+    const fallback = process.env.FINANCE_EMAILS || process.env.HR_EMAIL || process.env.SMTP_USER || '';
+    return Array.from(new Set([...envList, ...dbEmails, fallback].filter(Boolean)));
 };
 
 function sanitizeClaimForJson(doc: any) {

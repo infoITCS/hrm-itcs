@@ -10,9 +10,13 @@ export interface IRolePermission extends Document {
         attendance: boolean;
         claim: boolean;
         payroll: boolean;
+        loans: boolean;
         requests: boolean;
-        settings: boolean;
         'provident-fund'?: boolean;
+        recruitment?: boolean;
+        performance?: boolean;
+        settings: boolean;
+        [key: string]: boolean | undefined;
     };
 }
 
@@ -25,9 +29,12 @@ const RolePermissionSchema = new Schema({
         attendance: { type: Boolean, default: false },
         claim: { type: Boolean, default: false },
         payroll: { type: Boolean, default: false },
+        loans: { type: Boolean, default: false },
         requests: { type: Boolean, default: false },
-        settings: { type: Boolean, default: false },
-        'provident-fund': { type: Boolean, default: true }
+        'provident-fund': { type: Boolean, default: true },
+        recruitment: { type: Boolean, default: false },
+        performance: { type: Boolean, default: false },
+        settings: { type: Boolean, default: false }
     }
 }, { timestamps: true });
 
@@ -37,36 +44,37 @@ export async function bootstrapPermissions() {
     const defaults = [
         {
             role: 'super-admin',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, loans: true, requests: true, 'provident-fund': true, recruitment: true, performance: true, settings: true }
         },
         {
             role: 'admin',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, loans: true, requests: true, 'provident-fund': true, recruitment: true, performance: true, settings: true }
         },
         {
             role: 'finance',
-            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: false, 'provident-fund': true }
+            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: true, loans: true, requests: true, 'provident-fund': true, recruitment: false, performance: false, settings: false }
         },
         {
             role: 'hr',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, loans: true, requests: true, 'provident-fund': true, recruitment: true, performance: true, settings: false }
         },
         {
             role: 'manager',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
+            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: false, loans: false, requests: true, 'provident-fund': true, recruitment: false, performance: true, settings: false }
         },
         {
             role: 'employee',
-            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, requests: true, settings: false, 'provident-fund': true }
+            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: false, loans: false, requests: true, 'provident-fund': true, recruitment: false, performance: true, settings: false }
         }
     ];
 
     try {
         const RolePermission = mongoose.models.RolePermission || mongoose.model('RolePermission');
         for (const d of defaults) {
+            // Use $setOnInsert so existing saved permissions are NEVER overwritten on server restart!
             await RolePermission.findOneAndUpdate(
                 { role: d.role },
-                { $set: { permissions: d.permissions } },
+                { $setOnInsert: { permissions: d.permissions } },
                 { upsert: true }
             );
         }

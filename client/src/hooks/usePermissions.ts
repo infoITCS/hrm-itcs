@@ -49,30 +49,28 @@ export const usePermissions = () => {
         if (!user) return false;
         if (normalizedRole === 'super-admin') return true;
 
-        // Explicit custom per-user override takes precedence
+        // Explicit custom per-user override takes highest precedence
         if (user.customPermissions && typeof user.customPermissions[moduleName] === 'boolean') {
             return user.customPermissions[moduleName];
         }
 
-        // Provident Fund is an employee entitlement available to all active roles by default
-        if (moduleName === 'provident-fund') {
-            return true;
+        // Explicit role permission matrix from database
+        if (user.permissions && typeof user.permissions[moduleName] === 'boolean') {
+            return user.permissions[moduleName];
         }
 
-        if (user.permissions && user.permissions[moduleName] === false) return false;
-        if (user.permissions && user.permissions[moduleName] === true) return true;
-        // Role defaults when permissions are not yet loaded (e.g. during impersonation)
+        // Fallbacks ONLY when permissions object is not yet loaded
         if (normalizedRole === 'admin') return true;
         if (normalizedRole === 'finance') {
-            return ['dashboard', 'leave', 'attendance', 'claim', 'payroll', 'requests', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'leave', 'attendance', 'claim', 'payroll', 'loans', 'requests', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'hr') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'loans', 'requests', 'provident-fund', 'recruitment', 'performance'].includes(moduleName);
         }
         if (normalizedRole === 'manager') {
-            return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund', 'performance'].includes(moduleName);
         }
-        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'payroll', 'provident-fund'].includes(moduleName);
+        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund', 'performance'].includes(moduleName);
     }, [user, normalizedRole]);
 
     const getModuleScope = useCallback((moduleName: string): 'none' | 'employee' | 'manager' | 'admin' => {

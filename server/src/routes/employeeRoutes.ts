@@ -609,9 +609,23 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
         const employees = await Employee.find({
             isDeleted: { $ne: true },
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned', 'Offboarded'] }
-        })
-            .select('employeeId firstName lastName jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
-            .lean();
+        });
+
+        // Auto-heal / restore any legacy loan debits from PF balances and history
+        for (const emp of employees) {
+            const history = emp.providentFundHistory || [];
+            const loanDebits = history.filter(
+                (h: any) => h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout')))
+            );
+            if (loanDebits.length > 0) {
+                const totalLoanDeducted = loanDebits.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+                emp.providentFundHistory = history.filter(
+                    (h: any) => !(h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout'))))
+                );
+                emp.providentFundBalance = (emp.providentFundBalance || 0) + totalLoanDeducted;
+                await emp.save();
+            }
+        }
 
         const now = new Date();
         const result = employees.map((emp: any) => {
@@ -647,6 +661,58 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
         });
 
         return res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/employees/restore-pf-loans
+ * One-time admin utility to restore any PF balances corrupted by legacy loan debits.
+ */
+router.post('/restore-pf-loans', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = (authReq.user?.role || '').toLowerCase().trim();
+    if (!['super-admin', 'admin'].includes(role)) {
+        return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+    }
+
+    try {
+        const employees = await Employee.find({ isDeleted: { $ne: true } });
+        let restoredCount = 0;
+        const details: any[] = [];
+
+        for (const emp of employees) {
+            const history = emp.providentFundHistory || [];
+            const loanDebits = history.filter(
+                (h: any) => h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout')))
+            );
+            if (loanDebits.length > 0) {
+                restoredCount++;
+                const totalLoanDeducted = loanDebits.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
+                const oldBal = emp.providentFundBalance || 0;
+                const newBal = oldBal + totalLoanDeducted;
+
+                emp.providentFundHistory = history.filter(
+                    (h: any) => !(h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout'))))
+                );
+                emp.providentFundBalance = newBal;
+                await emp.save();
+
+                details.push({
+                    employeeId: emp.employeeId,
+                    name: `${emp.firstName} ${emp.lastName}`,
+                    restoredAmount: totalLoanDeducted,
+                    newBalance: newBal
+                });
+            }
+        }
+
+        return res.json({
+            message: `Successfully checked ${employees.length} employees. Restored ${restoredCount} affected employee PF balances.`,
+            restoredCount,
+            details
+        });
     } catch (err) {
         next(err);
     }

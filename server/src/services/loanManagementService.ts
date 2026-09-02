@@ -625,30 +625,3 @@ export async function removeEmployeeLoans(employeeId: string) {
     return { success: true, message: `Loans cleared for employee ${employeeId}` };
 }
 
-/**
- * Remove Shahzaib's loan from the system
- */
-export async function cleanupShahzaibLoans() {
-    try {
-        const shahzaibEmployees = await Employee.find({
-            $or: [
-                { firstName: { $regex: /shahzaib/i } },
-                { lastName: { $regex: /shahzaib/i } }
-            ]
-        });
-
-        for (const emp of shahzaibEmployees) {
-            await removeEmployeeLoans(emp.employeeId);
-        }
-
-        if (shahzaibEmployees.length > 0) {
-            console.log(`[Loan Cleanup] Successfully cleared loans for ${shahzaibEmployees.length} Shahzaib record(s).`);
-        }
-    } catch (err: any) {
-        console.error('[Loan Cleanup Error]:', err.message);
-    }
-}
-
-// Auto-run cleanup on service initialize
-cleanupShahzaibLoans();
-

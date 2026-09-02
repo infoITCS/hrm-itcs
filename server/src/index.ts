@@ -231,11 +231,6 @@ app.use(async (req, res, next) => {
 });
 
 
-// Initialize Scheduler (runs in dev + production; Vercel guard is inside initScheduler)
-if (process.env.ENABLE_SCHEDULER !== 'false') {
-    initScheduler();
-}
-
 app.use(passport.initialize());
 app.use(passport.session()); // Required for OAuth state/PKCE
 configurePassport();

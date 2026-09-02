@@ -95,6 +95,28 @@ export const SYSTEM_MODULES: SystemModuleDefinition[] = [
         ]
     },
     {
+        key: 'loans',
+        name: 'Loan Management',
+        subTabs: [
+            { key: 'balances', name: 'Employee Balances & Details', defaultRoles: ['super-admin', 'admin', 'hr'] },
+            { key: 'monthly-deductions', name: 'Monthly Deductions & ERP', defaultRoles: ['super-admin', 'admin', 'hr', 'finance'] },
+        ]
+    },
+    {
+        key: 'recruitment',
+        name: 'Recruitment',
+        subTabs: [
+            { key: 'candidates', name: 'Candidate Pipeline', defaultRoles: ['super-admin', 'admin', 'hr'] },
+        ]
+    },
+    {
+        key: 'performance',
+        name: 'Performance',
+        subTabs: [
+            { key: 'reviews', name: 'Performance Reviews', defaultRoles: ['all'] },
+        ]
+    },
+    {
         key: 'settings',
         name: 'System Settings',
         subTabs: [

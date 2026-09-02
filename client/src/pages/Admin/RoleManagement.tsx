@@ -32,9 +32,13 @@ const RoleManagement = () => {
         { key: 'leave', name: 'Leave Management' },
         { key: 'attendance', name: 'Attendance & ADMS' },
         { key: 'claim', name: 'Expense Claims' },
-        { key: 'payroll', name: 'Payroll & PF Reports' },
-        { key: 'requests', name: 'Custom Requests / Loans' },
-        { key: 'settings', name: 'System Settings' }
+        { key: 'payroll', name: 'Payroll Management' },
+        { key: 'loans', name: 'Loan Management' },
+        { key: 'requests', name: 'Custom Requests' },
+        { key: 'provident-fund', name: 'Provident Fund' },
+        { key: 'recruitment', name: 'Recruitment' },
+        { key: 'performance', name: 'Performance' },
+        { key: 'settings', name: 'System Settings & Roles' }
     ];
 
     const fetchPermissions = async () => {

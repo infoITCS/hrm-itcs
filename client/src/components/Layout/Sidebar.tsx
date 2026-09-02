@@ -36,24 +36,24 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const { isImpersonated } = useAuth();
 
     const allMenuItems = [
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'dashboard', end: true },
-        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: ['super-admin', 'admin', 'hr'], end: true },
-        { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], end: true },
+        { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: null, module: 'dashboard', end: true },
+        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: null, module: 'loans', end: true },
+        { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], module: 'settings', end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
-        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'hr'], module: 'pim', subTab: 'employee-list' },
+        { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim', subTab: 'employee-list' },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: null, module: 'leave' },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: null, module: 'attendance' },
-        { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'] },
+        { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: null, module: 'recruitment' },
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
-        { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr'] },
+        { name: 'Performance', icon: Star, path: '/performance', roles: null, module: 'performance' },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },
         { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
-        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'finance'], module: 'payroll', subTab: 'payroll-runs' },
+        { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: null, module: 'payroll', subTab: 'payroll-runs' },
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', subTab: 'my-requests', end: true },
-        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'hr', 'finance', 'manager'], module: 'requests', subTab: 'manage-requests' },
-        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'provident-fund' },
+        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: null, module: 'requests', subTab: 'manage-requests' },
+        { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: null, module: 'provident-fund' },
     ];
 
     const menuItems = allMenuItems.filter(item => {
