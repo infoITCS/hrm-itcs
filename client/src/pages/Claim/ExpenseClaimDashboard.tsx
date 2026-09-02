@@ -299,9 +299,13 @@ const ExpenseClaimDashboard = () => {
     const [modalQuickComment, setModalQuickComment] = useState('');
     const [postingComment, setPostingComment] = useState(false);
 
-    const isApprover = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
-    const isAdminLike = role === 'admin' || role === 'super-admin' || role === 'hr';
-    const canSeeAllClaims = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
+    const canApprovalsSubAccess = role === 'super-admin' || hasSubAccess('claim', 'approvals');
+    const canHistorySubAccess = role === 'super-admin' || hasSubAccess('claim', 'history');
+    const canSettingsSubAccess = role === 'super-admin' || hasSubAccess('claim', 'settings');
+
+    const isApprover = (role === 'super-admin' || ['admin', 'hr', 'finance', 'manager'].includes(role)) && canApprovalsSubAccess;
+    const canSeeAllClaims = (role === 'super-admin' || ['admin', 'hr', 'finance'].includes(role)) && canHistorySubAccess;
+    const isAdminLike = role === 'super-admin' || (['admin', 'hr'].includes(role) && (canApprovalsSubAccess || canHistorySubAccess));
 
     const [erpInputs, setErpInputs] = useState<Record<string, string>>({});
     const [savingErp, setSavingErp] = useState<Record<string, boolean>>({});
@@ -1339,10 +1343,10 @@ const ExpenseClaimDashboard = () => {
 
     const canSubmitTab = hasSubAccess('claim', 'submit');
     const canMineTab = hasSubAccess('claim', 'mine');
-    const canApprovalsTab = isApprover && hasSubAccess('claim', 'approvals');
-    const canHistoryTab = canSeeAllClaims && hasSubAccess('claim', 'history');
-    const canMedicalRecordsTab = ['super-admin', 'admin', 'hr'].includes(role);
-    const canSettingsTab = (['super-admin', 'admin'].includes(role)) && hasSubAccess('claim', 'settings');
+    const canApprovalsTab = isApprover;
+    const canHistoryTab = canSeeAllClaims;
+    const canMedicalRecordsTab = (role === 'super-admin' || ['admin', 'hr'].includes(role)) && (canApprovalsSubAccess || canHistorySubAccess);
+    const canSettingsTab = (role === 'super-admin' || ['admin', 'finance'].includes(role)) && canSettingsSubAccess;
 
     const tabs = [
         ...(canSubmitTab ? [{ id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle }] : []),

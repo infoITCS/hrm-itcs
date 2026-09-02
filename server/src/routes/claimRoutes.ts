@@ -542,6 +542,13 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
         const role = authReq.user?.role || 'employee';
         if (!role || role === 'employee' || role === 'manager') return res.json({ success: true, data: [] });
 
+        if (role !== 'super-admin') {
+            const dbUser = await User.findById(userId).select('customScopes customSubPermissions').lean() as any;
+            if (dbUser?.customScopes?.claim === 'employee' || dbUser?.customSubPermissions?.['claim:approvals'] === false) {
+                return res.json({ success: true, data: [] });
+            }
+        }
+
         let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined', 'Action Required'] };
         if (role === 'finance') {
             statusQuery = 'Pending Finance';
@@ -566,6 +573,13 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
     try {
         const role = authReq.user?.role || 'employee';
         if (!isAdminLike(role) && role !== 'finance') return res.status(403).json({ message: 'Forbidden' });
+
+        if (role !== 'super-admin') {
+            const dbUser = await User.findById(authReq.user?.userId).select('customScopes customSubPermissions').lean() as any;
+            if (dbUser?.customScopes?.claim === 'employee' || dbUser?.customSubPermissions?.['claim:history'] === false) {
+                return res.status(403).json({ message: 'Forbidden' });
+            }
+        }
 
         const claims = await ExpenseClaim.find({})
             .select('-receipts.fileData')

@@ -37,7 +37,6 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
 
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: null, module: 'dashboard', end: true },
-        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: null, module: 'loans', end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], module: 'settings', end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
@@ -54,6 +53,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', subTab: 'my-requests', end: true },
         { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: null, module: 'requests', subTab: 'manage-requests' },
         { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: null, module: 'provident-fund' },
+        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: null, module: 'loans', end: true },
     ];
 
     const menuItems = allMenuItems.filter(item => {
