@@ -1,4 +1,11 @@
 import dotenv from 'dotenv';
+import dns from 'dns';
+
+// Fix Windows Node.js SRV resolution bug with local ISP DNS
+try {
+    dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {}
+
 // Load environment variables FIRST before any other imports
 dotenv.config();
 
@@ -27,11 +34,12 @@ process.on('uncaughtException', (err) => {
     // Process is in undefined state after uncaughtException — must exit
     setTimeout(() => process.exit(1), 1000).unref();
 });
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: any) => {
+    const msg = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
     if (logger) {
-        logger.error('❌ CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+        logger.error(`❌ CRITICAL: Unhandled Rejection: ${msg}`);
     } else {
-        console.error('❌ CRITICAL: Unhandled Rejection (Logger not ready):', reason);
+        console.error('❌ CRITICAL: Unhandled Rejection:', msg);
     }
 });
 
@@ -195,9 +203,11 @@ const sessionOptions: session.SessionOptions = {
 // Only use MongoDB store if URI is available
 if (process.env.MONGODB_URI) {
     sessionOptions.store = MongoStore.create({
-        mongoUrl: process.env.MONGODB_URI,
+        clientPromise: mongoose.connection.asPromise().then((conn: any) => conn.getClient()),
         collectionName: 'sessions',
-        ttl: 24 * 60 * 60 // 1 day
+        ttl: 24 * 60 * 60, // 1 day
+        autoRemove: 'interval',
+        autoRemoveInterval: 10,
     });
 } else {
     logger.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
@@ -256,9 +266,8 @@ async function connectDB(): Promise<void> {
 
     let finalUri = MONGO_URI;
 
-    // Auto-fix for Azure Cosmos DB on Vercel: Force direct port and remove SRV-only flags
-    if (!!process.env.VERCEL && finalUri.includes('authMechanism')) {
-        logger.info('⚙ Auto-sanitizing Cosmos DB URI for Vercel...');
+    // Auto-fix for Azure Cosmos DB: Clean up query parameters that cause TLS/handshake hangs
+    if (finalUri.includes('mongocluster.cosmos.azure.com') || finalUri.includes('cosmos.azure.com')) {
         const baseUrl = finalUri.split('?')[0];
         finalUri = `${baseUrl}?tls=true`;
     }
@@ -270,26 +279,20 @@ async function connectDB(): Promise<void> {
             dbName: 'hrm',
             autoIndex: true,
 
-            // Allow concurrent connection pooling for 30-50+ concurrent users
-            minPoolSize: 5,
+            // Start with 1 connection and scale up on demand up to 50
+            minPoolSize: 1,
             maxPoolSize: 50,
 
             // CRITICAL FOR COSMOS DB: Azure aggressively drops idle connections after 4 minutes.
-            // We tell Mongoose to cleanly close any connection idle for 2 minutes and open a fresh one.
             maxIdleTimeMS: 120000,
 
-            // Give the initial handshake plenty of time on cold starts
+            // Connection handshake timeouts
             connectTimeoutMS: 30000,
             serverSelectionTimeoutMS: 30000,
-
-            // 45s is a safe upper bound for a single query round-trip
             socketTimeoutMS: 45000,
 
-            // Cosmos DB drops idle TCP connections after ~4 min.
-            // Check every 60s (much less chatty than 10s) to reduce spurious timeouts.
+            // Heartbeat frequency
             heartbeatFrequencyMS: 60000,
-
-            // Allow extra time for the monitor to recover
             minHeartbeatFrequencyMS: 10000,
 
             // Cosmos DB (vCore) does NOT support retryWrites
@@ -300,7 +303,10 @@ async function connectDB(): Promise<void> {
             bufferCommands: true,
         });
         logger.info('✅ Connected to MongoDB (Cosmos DB)');
+
+        // Sequentially bootstrap permissions and seeds after connection is established
         try {
+            await bootstrapPermissions();
             const { seedLeaveTypes } = require('./utils/seedLeaves');
             await seedLeaveTypes();
             const { seedExpenseCategories } = require('./utils/seedExpenses');
@@ -310,7 +316,7 @@ async function connectDB(): Promise<void> {
             const { seedFuelAllowanceForAllEmployees } = require('./utils/seedFuelAllowance');
             await seedFuelAllowanceForAllEmployees();
         } catch (seedErr) {
-            logger.error('Failed to seed defaults:', seedErr);
+            logger.warn('Initial seeding notice (non-fatal):', (seedErr as any)?.message || seedErr);
         }
     } catch (err: any) {
         logger.error('❌ MongoDB Connection Error:', err);
@@ -324,14 +330,11 @@ mongoose.set('bufferTimeoutMS', 60000);
 // Register connection event listeners for observability
 mongoose.connection.on('connected', () => {
     logger.info('🔗 Mongoose: connected');
-    bootstrapPermissions();
     initScheduler();
     initCronService();
 });
 mongoose.connection.on('disconnected', () => {
     logger.warn('⚠️ Mongoose: disconnected from Cosmos DB');
-    // In serverless the function will simply call connectDB() on the next request.
-    // In long-running (dev) mode, attempt to reconnect automatically.
     if (!process.env.VERCEL) {
         logger.info('🔄 Non-serverless env — attempting reconnect in 5s...');
         setTimeout(connectDB, 5000);

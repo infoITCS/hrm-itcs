@@ -43,6 +43,10 @@ Thumbs.db
 server/uploads/*
 !server/uploads/.gitkeep
 hrm_final_dump.json
+db_backup/
+*/db_backup/
+scripts/
+server/scripts/
 
 # Test/Coverage
 coverage/

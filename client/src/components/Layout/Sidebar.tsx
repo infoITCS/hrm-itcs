@@ -37,11 +37,11 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
 
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], module: 'dashboard', end: true },
-        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: ['super-admin'], end: true },
+        { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: ['super-admin', 'admin', 'hr'], end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], end: true },
-        { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'settings' },
+        { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
-        { name: 'PIM', icon: Users, path: '/pim', roles: null, module: 'pim', subTab: 'employee-list' },
+        { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'hr'], module: 'pim', subTab: 'employee-list' },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: null, module: 'leave' },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: null, module: 'attendance' },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'] },

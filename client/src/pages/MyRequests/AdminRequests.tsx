@@ -9,6 +9,7 @@ import Avatar from '../../components/UI/Avatar';
 import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
+import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -27,6 +28,7 @@ const AdminRequests = () => {
     const [actionModal, setActionModal] = useState<any>(null);
     const [adminComments, setAdminComments] = useState('');
     const [erpReferenceId, setErpReferenceId] = useState('');
+    const [paymentModalTarget, setPaymentModalTarget] = useState<PaymentStatusTarget | null>(null);
 
     // Search and filter state
     const [searchTerm, setSearchTerm] = useState('');
@@ -38,6 +40,7 @@ const AdminRequests = () => {
 
     const fetchRequests = async () => {
         try {
+            setLoading(true);
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/my-requests/all`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -54,8 +57,8 @@ const AdminRequests = () => {
     };
     const handleAction = async (status: 'Pending' | 'Approved' | 'Rejected' | 'Completed') => {
         try {
-            const isLoan = actionModal.category === 'Loan' || actionModal.category === 'Request Loan';
-            if ((status === 'Completed' || (status === 'Approved' && actionModal.status === 'Pending Finance')) && isLoan && !erpReferenceId.trim()) {
+            const isLoan = actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan';
+            if (status === 'Completed' && isLoan && !erpReferenceId.trim()) {
                 showToast('ERP Transaction Reference ID is required to approve & disburse loan requests.', 'warning');
                 return;
             }
@@ -84,17 +87,62 @@ const AdminRequests = () => {
         }
     };
 
+
+    const handlePaymentModalSuccess = async (targetId: string, newStatus: 'Paid' | 'Unpaid', erpRef?: string, paidAt?: string, remarks?: string) => {
+        const token = localStorage.getItem('token');
+        const res = await fetch(api.requestPayoutStatus(targetId), {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                payoutStatus: newStatus,
+                erpReferenceId: erpRef,
+                paidAt,
+                remarks
+            })
+        });
+
+        if (res.ok) {
+            setRequests(prev => prev.map(r => r._id === targetId ? {
+                ...r,
+                payoutStatus: newStatus,
+                paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                erpReferenceId: erpRef || r.erpReferenceId
+            } : r));
+            if (actionModal && actionModal._id === targetId) {
+                setActionModal((prev: any) => ({
+                    ...prev,
+                    payoutStatus: newStatus,
+                    paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                    erpReferenceId: erpRef || prev.erpReferenceId
+                }));
+            }
+            showToast(
+                newStatus === 'Paid' 
+                    ? 'Marked as Paid — Excluded from future monthly payroll calculations.' 
+                    : 'Reverted to Unpaid — Will automatically be included in next monthly payroll.', 
+                'success'
+            );
+        } else {
+            showToast('Failed to update payment status', 'error');
+            throw new Error('Failed to update payout status');
+        }
+    };
+
     const isFinanceRole = (user?.role || '').toLowerCase().trim() === 'finance';
     const isManagerRole = (user?.role || '').toLowerCase().trim() === 'manager';
 
     const filteredRequests = requests.filter(req => {
         const cat = (req.category || '').toLowerCase();
         const reqType = (req.requestType || '').toLowerCase();
-        const isFinanceRelated = cat.includes('loan') || cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
-                                 reqType.includes('loan') || reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
+        const isLoan = cat.includes('loan') || reqType.includes('loan');
+        const isFinanceRelated = cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
+                                 reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
 
-        if (isFinanceRole && !isFinanceRelated) return false;
-        if (isManagerRole && isFinanceRelated) return false;
+        if (isFinanceRole && (isLoan || !isFinanceRelated)) return false;
+        if (isManagerRole && (isLoan || isFinanceRelated)) return false;
 
         const employeeName = formatEmployeeFullName(req.employee, '').toLowerCase();
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -196,11 +244,18 @@ const AdminRequests = () => {
                                         <th className="px-6 py-4">Details</th>
                                         <th className="px-6 py-4">Date</th>
                                         <th className="px-6 py-4">Status</th>
+                                        <th className="px-6 py-4">Payment</th>
                                         <th className="px-6 py-4">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {filteredRequests.map(req => (
+                                    {filteredRequests.map(req => {
+                                        const reqCat = (req.category || '').toLowerCase();
+                                        const reqTypeStr = (req.requestType || '').toLowerCase();
+                                        const isFinancialItem = reqCat.includes('loan') || reqCat.includes('finance') || reqCat.includes('pf') || reqCat.includes('provident') || reqCat.includes('salary') || reqCat.includes('advance') ||
+                                                               reqTypeStr.includes('loan') || reqTypeStr.includes('finance') || reqTypeStr.includes('pf') || reqTypeStr.includes('salary') || reqTypeStr.includes('advance');
+
+                                        return (
                                         <tr key={req._id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -250,6 +305,42 @@ const AdminRequests = () => {
                                                 {req.status === 'Completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200"><CheckCircle size={12}/> Completed</span>}
                                                 {req.status === 'Cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200"><XCircle size={12}/> Cancelled</span>}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {isFinancialItem ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (isFinanceRole || isAdminOrSuper) {
+                                                                setPaymentModalTarget({
+                                                                    id: req._id,
+                                                                    itemType: 'request',
+                                                                    employeeName: formatEmployeeFullName(req.employee, 'Employee'),
+                                                                    employeeId: req.employee?.employeeId,
+                                                                    title: req.requestType || req.category,
+                                                                    amount: req.details?.requestedAmount || req.details?.amount,
+                                                                    currency: 'Rs.',
+                                                                    currentStatus: req.payoutStatus || 'Unpaid',
+                                                                    currentErpRef: req.erpReferenceId,
+                                                                    currentPaidAt: req.paidAt
+                                                                });
+                                                            }
+                                                        }}
+                                                        disabled={!isFinanceRole && !isAdminOrSuper}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${
+                                                            req.payoutStatus === 'Paid'
+                                                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                                        } ${(isFinanceRole || isAdminOrSuper) ? 'cursor-pointer' : 'cursor-default'}`}
+                                                        title={(isFinanceRole || isAdminOrSuper) ? `Click to manage payment status (Current: ${req.payoutStatus || 'Unpaid'})` : req.payoutStatus || 'Unpaid'}
+                                                    >
+                                                        <span className={`w-2 h-2 rounded-full ${req.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                        {req.payoutStatus === 'Paid' ? 'Paid' : 'Unpaid'}
+                                                    </button>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">—</span>
+                                                )}
+                                            </td>
                                             <td className="px-6 py-4">
                                                 <button 
                                                     onClick={() => {
@@ -267,10 +358,11 @@ const AdminRequests = () => {
                                                 </button>
                                             </td>
                                         </tr>
-                                    ))}
+                                    );
+                                    })}
                                     {filteredRequests.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                                            <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                                                 No requests found.
                                             </td>
                                         </tr>
@@ -285,16 +377,22 @@ const AdminRequests = () => {
 
             {/* Review Action Modal */}
             {actionModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-slide-up">
-                        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
+                    onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }}
+                >
+                    <div 
+                        className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-slide-up my-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="shrink-0 px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Review Request</h3>
                             <button onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
                                 <XCircle size={20} />
                             </button>
                         </div>
                         
-                        <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+                        <div className="p-6 space-y-4 flex-1 overflow-y-auto min-h-0">
                             {/* Workflow Visual Timeline */}
                             <div className="space-y-3 pb-3 border-b border-gray-100">
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Workflow Timeline</p>
@@ -367,13 +465,8 @@ const AdminRequests = () => {
                                 </div>
                             </div>
 
-                            {isFinanceRole && (actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && (
-                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium flex items-center gap-2">
-                                    <span>⚠️</span> Awaiting HR/Admin stage 1 approval before Finance can disburse or approve.
-                                </div>
-                            )}
-
                             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
+
                                 <div className="flex items-center gap-3 pb-3 border-b border-gray-200/60">
                                     <Avatar
                                         src={getAvatarUrl(actionModal.employee)}
@@ -511,6 +604,46 @@ const AdminRequests = () => {
                                 ></textarea>
                             </div>
 
+                            {/* Finance Payment Status Toggle Card */}
+                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved' || actionModal.status === 'Pending Finance' || actionModal.status === 'Completed') && (
+                                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status (Finance)</p>
+                                            <p className="text-[11px] text-slate-500">Mark whether amount has been paid to employee</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPaymentModalTarget({
+                                                id: actionModal._id,
+                                                itemType: 'request',
+                                                employeeName: formatEmployeeFullName(actionModal.employee, 'Employee'),
+                                                employeeId: actionModal.employee?.employeeId,
+                                                title: actionModal.requestType || actionModal.category,
+                                                amount: actionModal.details?.requestedAmount || actionModal.details?.amount,
+                                                currency: 'Rs.',
+                                                currentStatus: actionModal.payoutStatus || 'Unpaid',
+                                                currentErpRef: actionModal.erpReferenceId,
+                                                currentPaidAt: actionModal.paidAt
+                                            })}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                                actionModal.payoutStatus === 'Paid'
+                                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                            }`}
+                                        >
+                                            <span className={`w-2 h-2 rounded-full ${actionModal.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                            {actionModal.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                        </button>
+                                    </div>
+                                    {actionModal.paidAt && (
+                                        <p className="text-[11px] text-emerald-700 font-semibold">
+                                            ✓ Paid on {new Date(actionModal.paidAt).toLocaleString()}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Render ERP Transaction ID input for completing financial requests */}
                             {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved' || actionModal.status === 'Pending Finance') && (
                                 <div className="space-y-1">
@@ -528,65 +661,90 @@ const AdminRequests = () => {
                             )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 flex-wrap">
+                        <div className="shrink-0 px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 flex-wrap">
                             <button 
                                 onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }}
                                 className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium text-sm"
                             >
                                 Close
                             </button>
-                            {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+
+                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') ? (
                                 <>
-                                    <button 
-                                        onClick={() => handleAction('Rejected')}
-                                        className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
-                                    >
-                                        Reject
-                                    </button>
-                                    {!isFinanceRole && (
+                                    {/* Loan Specific Workflow (Management / HR Exclusive) */}
+                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR' || actionModal.status === 'Approved') && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject Loan
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Completed')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                            >
+                                                <Banknote size={15} /> Approve & Disburse Loan
+                                            </button>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    {/* Generic Request Workflow */}
+                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Approved')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                            >
+                                                Approve
+                                            </button>
+                                        </>
+                                    )}
+                                    {actionModal.status === 'Pending Finance' && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Completed')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                            >
+                                                Approve & Disburse
+                                            </button>
+                                        </>
+                                    )}
+                                    {actionModal.status === 'Approved' && isAdminOrSuper && (
                                         <button 
-                                            onClick={() => handleAction('Approved')}
-                                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                            onClick={() => handleAction('Completed')}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
                                         >
-                                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan') ? 'Approve (Forward to Finance)' : 'Approve'}
+                                            Complete Request
                                         </button>
                                     )}
                                 </>
-                            )}
-                            {actionModal.status === 'Pending Finance' && (
-                                <>
-                                    <button 
-                                        onClick={() => handleAction('Rejected')}
-                                        className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
-                                    >
-                                        Reject
-                                    </button>
-                                    <button 
-                                        onClick={() => handleAction('Approved')}
-                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                    >
-                                        Approve & Disburse
-                                    </button>
-                                    <button 
-                                        onClick={() => handleAction('Completed')}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                    >
-                                        Complete Request
-                                    </button>
-                                </>
-                            )}
-                            {actionModal.status === 'Approved' && isAdminOrSuper && (
-                                <button 
-                                    onClick={() => handleAction('Completed')}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                >
-                                    Complete Request
-                                </button>
                             )}
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Payment Status Modal (Finance Direct Payout / Revert to Payroll) */}
+            <PaymentStatusModal 
+                target={paymentModalTarget}
+                onClose={() => setPaymentModalTarget(null)}
+                onSuccess={handlePaymentModalSuccess}
+            />
         </div>
     );
 };

@@ -38,3 +38,4 @@ coverage/
 *.lcov
 lcov-report/
 *.local.ts
+scripts/

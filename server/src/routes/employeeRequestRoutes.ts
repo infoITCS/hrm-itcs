@@ -96,6 +96,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         const notifications: any[] = [];
 
         const isHrOrAdmin = ['admin', 'super-admin', 'hr'].includes(role);
+        const isFinanceOnly = role === 'finance';
         const isFinanceOrAdmin = ['admin', 'super-admin', 'finance'].includes(role);
         const isManagerOrAdmin = ['admin', 'super-admin', 'manager'].includes(role);
 
@@ -109,14 +110,26 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 employeeId: { $in: reportIds },
                 status: 'Pending',
                 category: { $not: /loan|pf|provident|salary|advance|finance/i },
-                requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
+                requestType: { $not: /loan|pf|provident|salary|advance/i }
             };
         } else if (isHrOrAdmin) {
             // HR and Admins see pending requests (including loans)
             reqQuery = { status: 'Pending' };
-        } else if (isFinanceOrAdmin) {
-            // Finance only sees loan requests that are approved and need ERP payout entry
-            reqQuery = { status: 'Approved', category: { $in: ['Loan', 'Request Loan'] }, erpReferenceId: { $in: [null, ''] } };
+        } else if (isFinanceOnly) {
+            // Finance only sees non-loan financial requests. Loans are Management/HR exclusive.
+            reqQuery = { 
+                status: 'Pending',
+                $and: [
+                    {
+                        $or: [
+                            { category: { $regex: /finance|pf|provident|salary|advance/i } },
+                            { requestType: { $regex: /finance|pf|provident|salary|advance/i } }
+                        ]
+                    },
+                    { category: { $not: /loan/i } },
+                    { requestType: { $not: /loan/i } }
+                ]
+            };
         }
 
         if (reqQuery) {
@@ -135,11 +148,8 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 let msg = `Awaiting review for ${itemLabel}.`;
                 let title = `Pending: ${itemLabel}`;
 
-                if (reqObj.status === 'Approved' && (reqObj.category === 'Loan' || reqObj.category === 'Request Loan')) {
-                    title = `ERP Entry Required: ${reqObj.category}`;
-                    msg = `Log Rs. ${(reqObj.details?.requestedAmount ?? 0).toLocaleString()} payout for ${empName} in ERP and add ERP ID.`;
-                } else if (reqObj.details?.requestedAmount) {
-                    msg = `${empName} requested a loan of Rs. ${reqObj.details.requestedAmount.toLocaleString()}.`;
+                if (reqObj.details?.requestedAmount) {
+                    msg = `${empName} requested a ${itemLabel} of Rs. ${reqObj.details.requestedAmount.toLocaleString()}.`;
                 } else {
                     const qtyStr = reqObj.details?.quantity ? ` (Qty: ${reqObj.details.quantity})` : '';
                     msg = `${empName} requested ${itemLabel}${qtyStr}.`;
@@ -428,9 +438,10 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             employeeId: employee.employeeId,
             category,
             requestType,
-            status: isLoan ? 'Pending HR' : 'Pending',
+            status: 'Pending',
             details
         });
+
 
         if (isLoan) {
             if (details && details.paybackDuration && Number(details.paybackDuration) > 12) {
@@ -545,11 +556,17 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
                 requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
             };
         } else if (role === 'finance') {
-            // Finance role ONLY sees Loan or Finance related requests
+            // Finance role ONLY sees non-loan Financial requests (PF, Salary, Advance, Finance). Loans are Management/HR exclusive.
             query = {
-                $or: [
-                    { category: { $regex: /loan|finance|pf|provident|salary|advance/i } },
-                    { requestType: { $regex: /loan|finance|pf|provident|salary|advance/i } }
+                $and: [
+                    {
+                        $or: [
+                            { category: { $regex: /finance|pf|provident|salary|advance/i } },
+                            { requestType: { $regex: /finance|pf|provident|salary|advance/i } }
+                        ]
+                    },
+                    { category: { $not: /loan/i } },
+                    { requestType: { $not: /loan/i } }
                 ]
             };
         }
@@ -575,6 +592,40 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
     }
 });
 
+// Toggle or set Payout Status (Paid / Unpaid) for a request (Finance, Admin, Super Admin)
+router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admin', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { payoutStatus, erpReferenceId, paidAt, remarks } = req.body;
+        if (!['Paid', 'Unpaid', 'Included in Payroll'].includes(payoutStatus)) {
+            return res.status(400).json({ message: 'Invalid payoutStatus. Must be Paid, Unpaid, or Included in Payroll.' });
+        }
+
+        const request = await EmployeeRequest.findById(req.params.id);
+        if (!request) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+
+        request.payoutStatus = payoutStatus;
+        if (payoutStatus === 'Paid') {
+            request.paidAt = paidAt ? new Date(paidAt) : new Date();
+            if (erpReferenceId) request.erpReferenceId = erpReferenceId.trim();
+        } else if (payoutStatus === 'Unpaid') {
+            request.paidAt = undefined;
+        }
+
+        if (remarks) {
+            request.adminComments = remarks.trim();
+        }
+
+        request.updatedAt = new Date();
+        await request.save();
+
+        res.json({ success: true, message: `Payout status updated to ${payoutStatus}`, request });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // Approve or Reject a request (Admin & Manager)
 router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'manager', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
@@ -590,6 +641,13 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         const request = await EmployeeRequest.findById(req.params.id);
         if (!request) {
             return res.status(404).json({ message: 'Request not found' });
+        }
+
+        const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+
+        // Finance cannot manage or decide on Loans (Management / HR exclusive)
+        if (role === 'finance' && isLoan) {
+            return res.status(403).json({ message: 'Loans are managed and disbursed exclusively by HR and Management.' });
         }
 
         // If manager, check if the request belongs to a direct report
@@ -609,27 +667,8 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
             }
         }
 
-        const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+        request.status = status;
 
-        if (isLoan) {
-            const currentStatus = request.status || 'Pending HR';
-
-            if (status === 'Rejected') {
-                request.status = 'Rejected';
-            } else if (currentStatus === 'Pending' || currentStatus === 'Pending HR') {
-                if (role === 'finance') {
-                    return res.status(403).json({ message: 'Loan requests must be approved by HR / Admin before Finance can disburse or approve.' });
-                }
-                // Approving at stage 1 moves status to Pending Finance
-                request.status = (status === 'Approved' || status === 'Pending Finance') ? 'Pending Finance' : status;
-            } else if (currentStatus === 'Pending Finance') {
-                request.status = status;
-            } else {
-                request.status = status;
-            }
-        } else {
-            request.status = status;
-        }
 
         if (adminComments !== undefined) {
             request.adminComments = adminComments;
@@ -662,8 +701,10 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
             }
         }
 
-        // Sync approved / completed loan requests directly into Employee.loans array
-        if (isLoan && (status === 'Approved' || status === 'Completed')) {
+        // Sync disbursed loan requests directly into Employee.loans array (upon Completed / Paid payout)
+        if (isLoan && (status === 'Completed' || req.body.payoutStatus === 'Paid')) {
+            request.payoutStatus = 'Paid';
+            if (!request.paidAt) request.paidAt = new Date();
             const cat = (request.category || '').toLowerCase();
             const reqType = (request.requestType || '').toLowerCase();
             const isPause = cat.includes('pause') || reqType.includes('pause');

@@ -45,6 +45,8 @@ export const api = {
     medicalRecords: `${API_BASE_URL}/api/claims/medical-records`,
     medicalRecordEmployee: (employeeId: string) => `${API_BASE_URL}/api/claims/medical-records/${employeeId}`,
     medicalRecordAdjust: (employeeId: string) => `${API_BASE_URL}/api/claims/medical-records/${employeeId}/adjust`,
+    claimPayoutStatus: (id: string) => `${API_BASE_URL}/api/claims/${id}/payout-status`,
+    requestPayoutStatus: (id: string) => `${API_BASE_URL}/api/my-requests/${id}/payout-status`,
 
     // Payroll
     payrollRuns: `${API_BASE_URL}/api/payroll`,

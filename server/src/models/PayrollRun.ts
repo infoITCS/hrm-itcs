@@ -26,6 +26,13 @@ export interface IPayrollRun extends Document {
     totalExpenseClaimsAmount?: number;
     /** Amount to post to ERP (totalPayable minus expense claims — claims have their own ERP IDs) */
     erpPayableAmount?: number;
+    /** Loan Deduction External ERP Voucher / Reference ID */
+    loanDeductionErpId?: string;
+    loanDeductionErpStatus?: 'Pending' | 'Posted' | 'Reconciled';
+    loanDeductionErpNotes?: string;
+    loanDeductionErpPostedAt?: Date;
+    /** Sum of all employee loan deductions processed in this payroll run */
+    totalLoanDeductionsAmount?: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -61,6 +68,15 @@ const PayrollRunSchema: Schema = new Schema(
         totalPayableAmount: { type: Number, min: 0 },
         totalExpenseClaimsAmount: { type: Number, min: 0 },
         erpPayableAmount: { type: Number, min: 0 },
+        loanDeductionErpId: { type: String },
+        loanDeductionErpStatus: {
+            type: String,
+            enum: ['Pending', 'Posted', 'Reconciled'],
+            default: 'Pending',
+        },
+        loanDeductionErpNotes: { type: String },
+        loanDeductionErpPostedAt: { type: Date },
+        totalLoanDeductionsAmount: { type: Number, min: 0 },
     },
     { timestamps: true }
 );

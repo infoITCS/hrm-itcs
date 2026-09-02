@@ -206,8 +206,8 @@ function AppRoutes() {
           <Route path="payroll/runs/:id" element={<ModuleProtectedRoute moduleName="payroll"><PayrollRunDetail /></ModuleProtectedRoute>} />
         </Route>
 
-        {/* Restricted to Admins & Managers & HR */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
+        {/* Restricted to Super Admins, Admins, and HR */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr']} />}>
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
           <Route path="pim" element={<ModuleProtectedRoute moduleName="pim"><PIM /></ModuleProtectedRoute>}>
             <Route index element={<EmployeeList />} />
@@ -217,8 +217,8 @@ function AppRoutes() {
           </Route>
         </Route>
 
-        {/* Restricted to Super Admins only */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin']} />}>
+        {/* Loan Management: Super Admin, Admin, and HR */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr']} />}>
           <Route path="admin/loans" element={<LoanManagement />} />
         </Route>
 
@@ -233,9 +233,12 @@ function AppRoutes() {
           <Route path="my-requests/manage" element={<SubModuleProtectedRoute moduleName="requests" subTabKey="manage-requests"><AdminRequests /></SubModuleProtectedRoute>} />
         </Route>
         
-        {/* Restricted to Admins only */}
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr', 'finance']} />}>
+        {/* Restricted to Super Admins & Admins only */}
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="admin/settings" element={<ModuleProtectedRoute moduleName="settings"><AdminSettings /></ModuleProtectedRoute>} />
+        </Route>
+
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr']} />}>
           <Route path="recruitment" element={<div className="p-4">Recruitment Module Placeholder</div>} />
         </Route>
         <Route path="*" element={<NotFound />} />

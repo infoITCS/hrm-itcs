@@ -1,6 +1,7 @@
 import Employee from '../models/Employee';
 import EmployeeRequest from '../models/EmployeeRequest';
 import Payslip from '../models/Payslip';
+import PayrollRun from '../models/PayrollRun';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 
 export interface EmployeeLoanSummary {
@@ -272,6 +273,7 @@ export interface LoanRepaymentItem {
     periodYear: number;
     amount: number;
     date: Date | string;
+    erpReferenceId?: string;
 }
 
 export interface EmployeeLoanDetailResult {
@@ -311,10 +313,21 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         status: 'Finalized',
     }).sort({ periodYear: 1, periodMonth: 1 }).lean();
 
+    const payrollRuns = await PayrollRun.find({
+        status: { $in: ['Approved', 'Disbursed', 'Finalized', 'Draft'] }
+    }).select('periodMonth periodYear loanDeductionErpId erpReferenceId').lean();
+
+    const runErpMap: Record<string, string> = {};
+    for (const r of payrollRuns as any[]) {
+        const key = `${r.periodYear}-${r.periodMonth}`;
+        runErpMap[key] = r.loanDeductionErpId || r.erpReferenceId || '';
+    }
+
     const repayments: LoanRepaymentItem[] = [];
     for (const ps of payslips) {
         const loanDeds = (ps.deductions || []).filter((d: any) => d.component === 'Loan Deduction' && Number(d.amount) > 0);
         for (const d of loanDeds) {
+            const key = `${ps.periodYear}-${ps.periodMonth}`;
             repayments.push({
                 payslipId: String((ps as any)._id || ''),
                 payslipNo: ps.payslipNo || '',
@@ -322,6 +335,7 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
                 periodYear: ps.periodYear,
                 amount: Number(d.amount),
                 date: (ps as any).finalizedAt || ps.createdAt,
+                erpReferenceId: runErpMap[key] || undefined,
             });
         }
     }
@@ -420,4 +434,204 @@ export function getLoanInfoForPayroll(
     }
     return { balance: 0, monthlyDeduction: 0 };
 }
+
+export interface MonthlyLoanDeductionItem {
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    department?: string;
+    designation?: string;
+    payslipId: string;
+    payslipNo?: string;
+    amountDeducted: number;
+    currentLoanBalance: number;
+    deductionDate: Date | string;
+    repaymentStatus: 'Deducted' | 'Completed' | 'Pending';
+}
+
+export interface MonthlyLoanLedgerResult {
+    periodMonth: number;
+    periodYear: number;
+    payrollRunId?: string;
+    payrollTitle?: string;
+    payrollStatus?: string;
+    totalDeducted: number;
+    borrowerCount: number;
+    loanDeductionErpId?: string;
+    loanDeductionErpStatus: 'Pending' | 'Posted' | 'Reconciled';
+    loanDeductionErpNotes?: string;
+    loanDeductionErpPostedAt?: Date | string;
+    items: MonthlyLoanDeductionItem[];
+}
+
+export async function getMonthlyLoanDeductionsLedger(
+    periodMonth: number,
+    periodYear: number
+): Promise<MonthlyLoanLedgerResult> {
+    const month = Number(periodMonth);
+    const year = Number(periodYear);
+
+    const run = await PayrollRun.findOne({ periodMonth: month, periodYear: year }).lean() as any;
+
+    const payslips = await Payslip.find({
+        periodMonth: month,
+        periodYear: year,
+    }).lean() as any[];
+
+    const empIds = [...new Set(payslips.map(p => p.employeeId))];
+    const employees = await Employee.find({ employeeId: { $in: empIds } })
+        .select('employeeId firstName lastName jobInfo loans')
+        .lean() as any[];
+
+    const empMap = employees.reduce((acc: any, e: any) => {
+        acc[e.employeeId] = e;
+        return acc;
+    }, {});
+
+    const computedLoanMap = await buildComputedLoanMap();
+
+    const items: MonthlyLoanDeductionItem[] = [];
+    let totalDeducted = 0;
+
+    for (const ps of payslips) {
+        const loanDeds = (ps.deductions || []).filter((d: any) => d.component === 'Loan Deduction' && Number(d.amount) > 0);
+        const dedAmount = loanDeds.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
+        
+        if (dedAmount > 0) {
+            totalDeducted += dedAmount;
+            const emp = empMap[ps.employeeId];
+            const loanInfo = getLoanInfoForPayroll(ps.employeeId, emp || {}, computedLoanMap);
+
+            items.push({
+                employeeId: ps.employeeId,
+                firstName: emp?.firstName || ps.employeeName?.split(' ')[0] || 'Employee',
+                lastName: emp?.lastName || ps.employeeName?.split(' ').slice(1).join(' ') || '',
+                department: emp?.jobInfo?.department || ps.department || '—',
+                designation: emp?.jobInfo?.designation || ps.designation || '—',
+                payslipId: String(ps._id || ''),
+                payslipNo: ps.payslipNo || '',
+                amountDeducted: dedAmount,
+                currentLoanBalance: loanInfo.balance,
+                deductionDate: ps.finalizedAt || ps.createdAt || new Date(),
+                repaymentStatus: 'Deducted',
+            });
+        }
+    }
+
+    // Sort by employee name
+    items.sort((a, b) => {
+        const nameA = `${a.firstName} ${a.lastName}`.trim().toLowerCase();
+        const nameB = `${b.firstName} ${b.lastName}`.trim().toLowerCase();
+        return nameA.localeCompare(nameB);
+    });
+
+    return {
+        periodMonth: month,
+        periodYear: year,
+        payrollRunId: run ? String(run._id) : undefined,
+        payrollTitle: run?.title,
+        payrollStatus: run?.status || (payslips.length > 0 ? 'Payslips Generated' : 'No Run Created'),
+        totalDeducted,
+        borrowerCount: items.length,
+        loanDeductionErpId: run?.loanDeductionErpId || '',
+        loanDeductionErpStatus: run?.loanDeductionErpStatus || (run?.loanDeductionErpId ? 'Posted' : 'Pending'),
+        loanDeductionErpNotes: run?.loanDeductionErpNotes || '',
+        loanDeductionErpPostedAt: run?.loanDeductionErpPostedAt,
+        items,
+    };
+}
+
+export async function updateMonthlyLoanDeductionErpId(
+    periodMonth: number,
+    periodYear: number,
+    erpReferenceId: string,
+    notes?: string,
+    updatedBy?: string
+) {
+    const month = Number(periodMonth);
+    const year = Number(periodYear);
+
+    let run = await PayrollRun.findOne({ periodMonth: month, periodYear: year });
+    const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    if (!run) {
+        run = new PayrollRun({
+            title: `${MONTH_NAMES[month] || month} ${year} Payroll`,
+            periodMonth: month,
+            periodYear: year,
+            currency: 'PKR',
+            status: 'Draft',
+            createdBy: updatedBy || 'System',
+        });
+    }
+
+    const cleanId = String(erpReferenceId || '').trim();
+    run.loanDeductionErpId = cleanId;
+    run.loanDeductionErpStatus = cleanId ? 'Posted' : 'Pending';
+    run.loanDeductionErpPostedAt = cleanId ? new Date() : undefined;
+    if (notes !== undefined) run.loanDeductionErpNotes = notes.trim();
+
+    await run.save();
+    return run;
+}
+
+/**
+ * Completely clear and remove all active and historical loans for an employee
+ */
+export async function removeEmployeeLoans(employeeId: string) {
+    // 1. Clear loans on Employee model
+    const emp = await Employee.findOne({ employeeId });
+    if (emp) {
+        emp.loans = [];
+        await emp.save();
+    }
+
+    // 2. Cancel any pending or approved loan requests for this employee
+    await EmployeeRequest.updateMany(
+        {
+            employeeId,
+            $or: [
+                { category: { $in: ['Loan', 'Request Loan'] } },
+                { requestType: { $in: ['Loan', 'Request Loan'] } },
+                { category: { $regex: /loan/i } }
+            ]
+        },
+        {
+            $set: {
+                status: 'Cancelled',
+                payoutStatus: 'Unpaid',
+                updatedAt: new Date()
+            }
+        }
+    );
+
+    return { success: true, message: `Loans cleared for employee ${employeeId}` };
+}
+
+/**
+ * Remove Shahzaib's loan from the system
+ */
+export async function cleanupShahzaibLoans() {
+    try {
+        const shahzaibEmployees = await Employee.find({
+            $or: [
+                { firstName: { $regex: /shahzaib/i } },
+                { lastName: { $regex: /shahzaib/i } }
+            ]
+        });
+
+        for (const emp of shahzaibEmployees) {
+            await removeEmployeeLoans(emp.employeeId);
+        }
+
+        if (shahzaibEmployees.length > 0) {
+            console.log(`[Loan Cleanup] Successfully cleared loans for ${shahzaibEmployees.length} Shahzaib record(s).`);
+        }
+    } catch (err: any) {
+        console.error('[Loan Cleanup Error]:', err.message);
+    }
+}
+
+// Auto-run cleanup on service initialize
+cleanupShahzaibLoans();
 

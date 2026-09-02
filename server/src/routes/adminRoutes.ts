@@ -640,6 +640,15 @@ router.post('/users/:id/permissions/reset', authenticate, requireAdmin, async (r
     }
 });
 
+const requireLoanAccess = (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = (authReq.user?.role || '').toLowerCase().trim();
+    if (role !== 'super-admin' && role !== 'admin' && role !== 'hr') {
+        return res.status(403).json({ message: 'Forbidden. Super Admin, Admin, or HR access required.' });
+    }
+    next();
+};
+
 const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     if (authReq.user?.role !== 'super-admin') {
@@ -650,9 +659,9 @@ const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
 
 /**
  * @route   GET /api/admin/loans
- * @desc    Company-wide employee loan balances (Super Admin)
+ * @desc    Company-wide employee loan balances (Super Admin, Admin, Finance)
  */
-router.get('/loans', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/loans', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const activeOnly = req.query.activeOnly === 'true';
         const { buildAllEmployeeLoanSummaries } = await import('../services/loanManagementService');
@@ -664,10 +673,71 @@ router.get('/loans', authenticate, requireSuperAdmin, async (req: Request, res: 
 });
 
 /**
- * @route   GET /api/admin/loans/:employeeId/details
- * @desc    Detailed employee loans breakdown & monthly salary repayment history (Super Admin)
+ * @route   GET /api/admin/loans/monthly-ledger
+ * @desc    Get monthly salary loan deductions breakdown and ERP status
  */
-router.get('/loans/:employeeId/details', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/loans/monthly-ledger', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const now = new Date();
+        const month = Number(req.query.month) || (now.getMonth() + 1);
+        const year = Number(req.query.year) || now.getFullYear();
+
+        const { getMonthlyLoanDeductionsLedger } = await import('../services/loanManagementService');
+        const ledger = await getMonthlyLoanDeductionsLedger(month, year);
+        res.json(ledger);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   PATCH /api/admin/loans/monthly-ledger/erp
+ * @desc    Record or update ERP Reference ID for monthly total loan recovery
+ */
+router.patch('/loans/monthly-ledger/erp', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const { periodMonth, periodYear, erpReferenceId, notes } = req.body || {};
+        if (!periodMonth || !periodYear) {
+            return res.status(400).json({ message: 'periodMonth and periodYear are required.' });
+        }
+
+        const { updateMonthlyLoanDeductionErpId } = await import('../services/loanManagementService');
+        const updatedRun = await updateMonthlyLoanDeductionErpId(
+            Number(periodMonth),
+            Number(periodYear),
+            erpReferenceId || '',
+            notes,
+            authReq.user?.userId || 'admin'
+        );
+
+        await AuditLog.create({
+            action: 'UPDATE',
+            targetResource: 'MonthlyLoanDeductionERP',
+            targetId: `MONTHLY-LOAN-${periodYear}-${periodMonth}`,
+            performedBy: authReq.user?.userId || 'System',
+            details: {
+                periodMonth,
+                periodYear,
+                erpReferenceId: String(erpReferenceId || '').trim(),
+                notes,
+            },
+        });
+
+        res.json({
+            message: 'Monthly loan deduction ERP ID saved successfully.',
+            run: updatedRun,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route   GET /api/admin/loans/:employeeId/details
+ * @desc    Detailed employee loans breakdown & monthly salary repayment history
+ */
+router.get('/loans/:employeeId/details', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { getEmployeeLoanDetails } = await import('../services/loanManagementService');
         const data = await getEmployeeLoanDetails(req.params.employeeId);
@@ -680,9 +750,9 @@ router.get('/loans/:employeeId/details', authenticate, requireSuperAdmin, async 
 
 /**
  * @route   PATCH /api/admin/loans/:employeeId
- * @desc    Update employee loan balance & monthly installment (Super Admin)
+ * @desc    Update employee loan balance & monthly installment
  */
-router.patch('/loans/:employeeId', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/loans/:employeeId', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const { remainingBalance, monthlyInstallment } = req.body;
@@ -693,7 +763,7 @@ router.patch('/loans/:employeeId', authenticate, requireSuperAdmin, async (req: 
         const updated = await updateEmployeeLoan(
             req.params.employeeId,
             { remainingBalance, monthlyInstallment },
-            authReq.user?.userId || 'super-admin'
+            authReq.user?.userId || 'admin'
         );
 
         await AuditLog.create({

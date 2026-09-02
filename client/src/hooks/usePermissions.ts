@@ -64,13 +64,13 @@ export const usePermissions = () => {
         // Role defaults when permissions are not yet loaded (e.g. during impersonation)
         if (normalizedRole === 'admin') return true;
         if (normalizedRole === 'finance') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'payroll', 'requests', 'settings', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'leave', 'attendance', 'claim', 'payroll', 'requests', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'hr') {
             return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'manager') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
         }
         return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'payroll', 'provident-fund'].includes(moduleName);
     }, [user, normalizedRole]);

@@ -1456,7 +1456,7 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || 'employee';
-        if (!isAdminLike(role) && role !== 'finance') return res.status(403).json({ message: 'Forbidden' });
+        if (!['super-admin', 'admin', 'hr'].includes(role)) return res.status(403).json({ message: 'Forbidden' });
 
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(currentYear, 0, 1);
@@ -1579,7 +1579,7 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
         if (!emp) return res.status(404).json({ message: 'Employee not found' });
 
         const isSelf = String(emp.userId) === String(userId);
-        if (!isSelf && !isAdminLike(role) && role !== 'finance') {
+        if (!isSelf && !['super-admin', 'admin', 'hr'].includes(role)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
 
@@ -1713,6 +1713,51 @@ router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Re
 
         await emp.save();
         res.json({ success: true, data: emp.medicalBenefit, message: 'Medical benefit adjusted successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ── Mark Expense Claim as Paid / Unpaid (Finance & Admin) ─────────────────
+router.patch('/:id/payout-status', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        if (!['super-admin', 'admin', 'finance'].includes(role)) {
+            return res.status(403).json({ message: 'Forbidden. Finance or Admin access required.' });
+        }
+
+        const { payoutStatus, erpReferenceId, paidAt, remarks } = req.body;
+        if (!['Paid', 'Unpaid', 'Included in Payroll'].includes(payoutStatus)) {
+            return res.status(400).json({ message: 'Invalid payoutStatus' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) {
+            return res.status(404).json({ message: 'Claim not found' });
+        }
+
+        claim.payoutStatus = payoutStatus;
+        if (payoutStatus === 'Paid') {
+            claim.paidAt = paidAt ? new Date(paidAt) : new Date();
+            if (erpReferenceId) claim.erpReferenceId = erpReferenceId.trim();
+        } else if (payoutStatus === 'Unpaid') {
+            claim.paidAt = undefined;
+        }
+
+        if (remarks) {
+            claim.comments = claim.comments || [];
+            claim.comments.push({
+                userId: authReq.user?.userId,
+                userName: authReq.user?.email || 'Finance',
+                role: role,
+                comment: `[Payment Status: ${payoutStatus}] ${remarks.trim()}`,
+                createdAt: new Date()
+            });
+        }
+
+        await claim.save();
+        res.json({ success: true, message: `Claim payout status updated to ${payoutStatus}`, claim });
     } catch (err) {
         next(err);
     }

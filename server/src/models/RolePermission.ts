@@ -45,7 +45,7 @@ export async function bootstrapPermissions() {
         },
         {
             role: 'finance',
-            permissions: { dashboard: true, pim: true, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: true, 'provident-fund': true }
+            permissions: { dashboard: true, pim: false, leave: true, attendance: true, claim: true, payroll: true, requests: true, settings: false, 'provident-fund': true }
         },
         {
             role: 'hr',

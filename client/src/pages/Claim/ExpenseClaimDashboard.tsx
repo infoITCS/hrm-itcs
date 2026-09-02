@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
+import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
 import {
     FileText,
     Inbox,
@@ -304,6 +305,62 @@ const ExpenseClaimDashboard = () => {
 
     const [erpInputs, setErpInputs] = useState<Record<string, string>>({});
     const [savingErp, setSavingErp] = useState<Record<string, boolean>>({});
+    const [paymentModalTarget, setPaymentModalTarget] = useState<PaymentStatusTarget | null>(null);
+
+    const handleClaimPaymentSuccess = async (targetId: string, newStatus: 'Paid' | 'Unpaid', erpRef?: string, paidAt?: string, remarks?: string) => {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${api.claims}/${targetId}/payout-status`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                payoutStatus: newStatus,
+                erpReferenceId: erpRef,
+                paidAt,
+                remarks
+            })
+        });
+
+        if (res.ok) {
+            setHistory(prev => prev.map(c => c._id === targetId ? {
+                ...c,
+                payoutStatus: newStatus,
+                paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                erpReferenceId: erpRef || c.erpReferenceId
+            } : c));
+            setApprovals(prev => prev.map(c => c._id === targetId ? {
+                ...c,
+                payoutStatus: newStatus,
+                paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                erpReferenceId: erpRef || c.erpReferenceId
+            } : c));
+            setMine(prev => prev.map(c => c._id === targetId ? {
+                ...c,
+                payoutStatus: newStatus,
+                paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                erpReferenceId: erpRef || c.erpReferenceId
+            } : c));
+            if (decisionClaim && decisionClaim._id === targetId) {
+                setDecisionClaim((prev: any) => ({
+                    ...prev,
+                    payoutStatus: newStatus,
+                    paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
+                    erpReferenceId: erpRef || prev.erpReferenceId
+                }));
+            }
+            showToast(
+                newStatus === 'Paid' 
+                    ? 'Claim marked as Paid — Excluded from future payroll calculations.' 
+                    : 'Claim reverted to Unpaid — Will automatically be included in next monthly payroll.', 
+                'success'
+            );
+        } else {
+            showToast('Failed to update claim payment status', 'error');
+            throw new Error('Failed to update claim payout status');
+        }
+    };
 
     const handleQuickSaveErp = async (claimId: string, erpVal?: string) => {
         const valueToSave = erpVal !== undefined ? erpVal : erpInputs[claimId];
@@ -1004,6 +1061,31 @@ const ExpenseClaimDashboard = () => {
         setDecisionErpId('');
     };
 
+    const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
+        const newStatus = currentPayoutStatus === 'Paid' ? 'Unpaid' : 'Paid';
+        try {
+            const resp = await fetch(api.claimPayoutStatus(claimId), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ payoutStatus: newStatus })
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.message || 'Failed to update payment status');
+            showToast(`Claim marked as ${newStatus}`, 'success');
+            setMine(prev => prev.map(c => c._id === claimId ? { ...c, payoutStatus: newStatus as any, paidAt: newStatus === 'Paid' ? new Date().toISOString() : undefined } : c));
+            setApprovals(prev => prev.map(c => c._id === claimId ? { ...c, payoutStatus: newStatus as any, paidAt: newStatus === 'Paid' ? new Date().toISOString() : undefined } : c));
+            setHistory(prev => prev.map(c => c._id === claimId ? { ...c, payoutStatus: newStatus as any, paidAt: newStatus === 'Paid' ? new Date().toISOString() : undefined } : c));
+            if (decisionClaim && decisionClaim._id === claimId) {
+                setDecisionClaim((prev: any) => ({ ...prev, payoutStatus: newStatus, paidAt: newStatus === 'Paid' ? new Date().toISOString() : undefined }));
+            }
+        } catch (e: any) {
+            showToast(e?.message || 'Failed to update payment status', 'error');
+        }
+    };
+
     const currentRequiresAuthorization = useMemo(() => {
         if (!decisionClaim?.approvals?.length) return false;
         const pending = decisionClaim.approvals.find((a: any) => a.status === 'Pending');
@@ -1259,8 +1341,8 @@ const ExpenseClaimDashboard = () => {
     const canMineTab = hasSubAccess('claim', 'mine');
     const canApprovalsTab = isApprover && hasSubAccess('claim', 'approvals');
     const canHistoryTab = canSeeAllClaims && hasSubAccess('claim', 'history');
-    const canMedicalRecordsTab = isAdminLike || role === 'finance';
-    const canSettingsTab = isAdminLike && hasSubAccess('claim', 'settings');
+    const canMedicalRecordsTab = ['super-admin', 'admin', 'hr'].includes(role);
+    const canSettingsTab = (['super-admin', 'admin'].includes(role)) && hasSubAccess('claim', 'settings');
 
     const tabs = [
         ...(canSubmitTab ? [{ id: 'submit' as const, label: 'Submit Claim', icon: PlusCircle }] : []),
@@ -2041,15 +2123,27 @@ const ExpenseClaimDashboard = () => {
                                                             {c.status}
                                                         </span>
                                                         {c.status === 'Approved' && (
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
-                                                                c.payoutStatus === 'Paid'
-                                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                                    : c.payoutStatus === 'Included in Payroll'
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                                            }`}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (role === 'admin' || role === 'super-admin' || role === 'finance') {
+                                                                        handleToggleClaimPayout(c._id, c.payoutStatus);
+                                                                    }
+                                                                }}
+                                                                disabled={role !== 'admin' && role !== 'super-admin' && role !== 'finance'}
+                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all ${
+                                                                    c.payoutStatus === 'Paid'
+                                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
+                                                                        : c.payoutStatus === 'Included in Payroll'
+                                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                                                                } ${(role === 'admin' || role === 'super-admin' || role === 'finance') ? 'cursor-pointer' : 'cursor-default'}`}
+                                                                title={(role === 'admin' || role === 'super-admin' || role === 'finance') ? `Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})` : c.payoutStatus || 'Unpaid'}
+                                                            >
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
                                                                 {c.payoutStatus || 'Unpaid'}
-                                                            </span>
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </td>
@@ -2210,15 +2304,27 @@ const ExpenseClaimDashboard = () => {
                                                             {c.status}
                                                         </span>
                                                         {c.status === 'Approved' && (
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border ${
-                                                                c.payoutStatus === 'Paid'
-                                                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                                    : c.payoutStatus === 'Included in Payroll'
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                                                            }`}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (role === 'admin' || role === 'super-admin' || role === 'finance') {
+                                                                        handleToggleClaimPayout(c._id, c.payoutStatus);
+                                                                    }
+                                                                }}
+                                                                disabled={role !== 'admin' && role !== 'super-admin' && role !== 'finance'}
+                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all ${
+                                                                    c.payoutStatus === 'Paid'
+                                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
+                                                                        : c.payoutStatus === 'Included in Payroll'
+                                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                                                                } ${(role === 'admin' || role === 'super-admin' || role === 'finance') ? 'cursor-pointer' : 'cursor-default'}`}
+                                                                title={(role === 'admin' || role === 'super-admin' || role === 'finance') ? `Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})` : c.payoutStatus || 'Unpaid'}
+                                                            >
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
                                                                 {c.payoutStatus || 'Unpaid'}
-                                                            </span>
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </td>
@@ -2315,7 +2421,7 @@ const ExpenseClaimDashboard = () => {
                     </div>
                 )}
 
-                {tab === 'medical-records' && (isAdminLike || role === 'finance') && (
+                {tab === 'medical-records' && ['super-admin', 'admin', 'hr'].includes(role) && (
                     <div className="p-6 space-y-6">
                         {/* Header & Controls */}
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2771,6 +2877,46 @@ const ExpenseClaimDashboard = () => {
                                                 <span className="text-slate-500">Purpose: </span>
                                                 <span className="font-semibold text-slate-700">{decisionClaim.purpose}</span>
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* Payment Status (Finance) */}
+                                    {decisionClaim.status === 'Approved' && (
+                                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status (Finance)</p>
+                                                    <p className="text-[11px] text-slate-500">Direct Payout vs. Automatic Payroll Inclusion</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPaymentModalTarget({
+                                                        id: decisionClaim._id,
+                                                        itemType: 'claim',
+                                                        employeeName: decisionClaim.employeeName || formatEmployeeFullName(decisionClaim, 'Employee'),
+                                                        employeeId: decisionClaim.employeeId,
+                                                        title: `Expense Claim (${decisionClaim.claimNo || decisionClaim.category})`,
+                                                        amount: decisionClaim.approvedTotal ?? decisionClaim.amountAllowed ?? decisionClaim.amountRequested,
+                                                        currency: decisionClaim.currency || 'PKR',
+                                                        currentStatus: decisionClaim.payoutStatus || 'Unpaid',
+                                                        currentErpRef: decisionClaim.erpReferenceId,
+                                                        currentPaidAt: decisionClaim.paidAt
+                                                    })}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                                                        decisionClaim.payoutStatus === 'Paid'
+                                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                            : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                                    }`}
+                                                >
+                                                    <span className={`w-2 h-2 rounded-full ${decisionClaim.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                    {decisionClaim.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                                </button>
+                                            </div>
+                                            {decisionClaim.paidAt && (
+                                                <p className="text-[11px] text-emerald-700 font-semibold">
+                                                    ✓ Paid on {new Date(decisionClaim.paidAt).toLocaleString()}
+                                                </p>
+                                            )}
                                         </div>
                                     )}
 
@@ -3859,6 +4005,13 @@ const ExpenseClaimDashboard = () => {
                     </div>
                 </div>
             , document.body)}
+
+            {/* Payment Status Modal (Finance Direct Payout / Revert to Payroll) */}
+            <PaymentStatusModal 
+                target={paymentModalTarget}
+                onClose={() => setPaymentModalTarget(null)}
+                onSuccess={handleClaimPaymentSuccess}
+            />
         </div>
     );
 };
