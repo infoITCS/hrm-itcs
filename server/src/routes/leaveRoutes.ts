@@ -218,7 +218,7 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
     }
 });
 
-// GET /api/leaves/balances/all - Get leave balances of all employees (Admin only)
+// GET /api/leaves/balances/all - Get leave balances of all employees (Admin/HR only, with optional month filter)
 router.get('/balances/all', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
@@ -228,6 +228,9 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         }
 
         const year = Number(req.query.year) || new Date().getFullYear();
+        const monthQuery = req.query.month !== undefined && req.query.month !== '' && req.query.month !== 'all' 
+            ? Number(req.query.month) 
+            : null;
 
         // Fetch all active leave types
         const activeTypes = await LeaveType.find({ isActive: true }).sort({ name: 1 });
@@ -237,6 +240,19 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
 
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
+
+        // If a specific month is requested, fetch approved leave requests in that month range
+        let monthlyLeaves: any[] = [];
+        if (monthQuery && monthQuery >= 1 && monthQuery <= 12) {
+            const startOfMonth = new Date(Date.UTC(year, monthQuery - 1, 1, 0, 0, 0));
+            const endOfMonth = new Date(Date.UTC(year, monthQuery, 0, 23, 59, 59, 999));
+
+            monthlyLeaves = await LeaveRequest.find({
+                status: 'Approved',
+                startDate: { $lte: endOfMonth },
+                endDate: { $gte: startOfMonth }
+            }).lean();
+        }
 
         // Build list of employees with their balances
         const data = employees.map(emp => {
@@ -253,11 +269,32 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
             
             let empBalances = activeTypes.map(type => {
                 let balCat = empBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === type.code);
+
+                // Calculate month-specific used leaves if monthQuery is active
+                let monthUsed = 0;
+                if (monthQuery && monthlyLeaves.length > 0) {
+                    const empMonthLeaves = monthlyLeaves.filter(l => {
+                        const matchesEmp = (empIdStr && l.employeeId === empIdStr) ||
+                                           (userIdStr && l.employeeId === userIdStr) ||
+                                           (rawIdStr && l.employeeId === rawIdStr) ||
+                                           (userIdStr && l.appliedBy === userIdStr);
+                        if (!matchesEmp) return false;
+
+                        const lType = (l.type || '').toLowerCase().trim();
+                        const tCode = type.code.toLowerCase().trim();
+                        const tName = type.name.toLowerCase().trim();
+                        return lType === tCode || lType === tName || lType.includes(tCode) || tCode.includes(lType);
+                    });
+
+                    monthUsed = empMonthLeaves.reduce((sum, l) => sum + (Number(l.totalDays) || 0), 0);
+                }
+
                 return {
                     leaveTypeCode: type.code,
                     leaveTypeName: type.name,
                     total: balCat ? balCat.total : type.defaultDays,
                     used: balCat ? balCat.used : 0,
+                    monthUsed: monthUsed,
                     pending: balCat ? balCat.pending : 0,
                     available: balCat 
                         ? Math.max(0, balCat.total - (balCat.used || 0) - (balCat.pending || 0)) 
@@ -426,21 +463,17 @@ router.delete('/types/:id', authenticate, async (req: Request, res: Response, ne
     }
 });
 
-// PUT /api/leaves/balance/:employeeId - Adjust specific employee's leave balance (Admin only)
+// PUT /api/leaves/balance/:employeeId - Adjust specific employee's leave balance & starting used days (Admin/HR only)
 router.put('/balance/:employeeId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
         const { employeeId } = req.params;
-        const { leaveTypeCode, total } = req.body;
+        const { leaveTypeCode, total, used, balances: incomingBalances } = req.body;
         const year = req.body.year ? Number(req.body.year) : new Date().getFullYear();
-
-        if (!leaveTypeCode || total === undefined) {
-            return res.status(400).json({ success: false, message: 'leaveTypeCode and total are required' });
-        }
 
         const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId);
 
@@ -452,16 +485,37 @@ router.put('/balance/:employeeId', authenticate, async (req: Request, res: Respo
         const activeTypes = await LeaveType.find({ isActive: true });
         ensureBalancesInitialized(balance, activeTypes);
 
-        const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
-        if (category) {
-            category.total = Number(total);
+        if (Array.isArray(incomingBalances) && incomingBalances.length > 0) {
+            for (const b of incomingBalances) {
+                if (!b.leaveTypeCode) continue;
+                const cat = balance.balances.find((item: any) => item.leaveTypeCode === b.leaveTypeCode);
+                if (cat) {
+                    if (b.total !== undefined) cat.total = Math.max(0, Number(b.total));
+                    if (b.used !== undefined) cat.used = Math.max(0, Number(b.used));
+                } else {
+                    balance.balances.push({
+                        leaveTypeCode: b.leaveTypeCode,
+                        total: Math.max(0, Number(b.total || 0)),
+                        used: Math.max(0, Number(b.used || 0)),
+                        pending: 0
+                    });
+                }
+            }
+        } else if (leaveTypeCode) {
+            const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
+            if (category) {
+                if (total !== undefined) category.total = Math.max(0, Number(total));
+                if (used !== undefined) category.used = Math.max(0, Number(used));
+            } else {
+                balance.balances.push({
+                    leaveTypeCode,
+                    total: Math.max(0, Number(total || 0)),
+                    used: Math.max(0, Number(used || 0)),
+                    pending: 0
+                });
+            }
         } else {
-            balance.balances.push({
-                leaveTypeCode,
-                total: Number(total),
-                used: 0,
-                pending: 0
-            });
+            return res.status(400).json({ success: false, message: 'leaveTypeCode or balances array is required' });
         }
 
         balance.markModified('balances');

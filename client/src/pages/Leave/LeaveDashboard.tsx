@@ -73,12 +73,13 @@ const LeaveDashboard = () => {
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
     const [searchParams] = useSearchParams();
-    const [activeTab, setActiveTab] = useState<'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings'>(() => {
+    type LeaveTab = 'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings';
+    const [activeTab, setActiveTab] = useState<LeaveTab>(() => {
         const tabParam = searchParams.get('tab');
         if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
             return 'team-requests';
         }
-        if (tabParam === 'settings') return 'settings';
+        if (tabParam === 'settings' || tabParam === 'balances' || tabParam === 'all-balances' || tabParam === 'reports') return 'settings';
         if (tabParam === 'holiday-settings') return 'holiday-settings';
         return 'my-leaves';
     });
@@ -160,7 +161,7 @@ const LeaveDashboard = () => {
         const tabParam = searchParams.get('tab');
         if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
             if (isManagement) setActiveTab('team-requests');
-        } else if (tabParam === 'settings') {
+        } else if (tabParam === 'settings' || tabParam === 'balances' || tabParam === 'all-balances' || tabParam === 'reports') {
             if (isAdmin) setActiveTab('settings');
         } else if (tabParam === 'holiday-settings') {
             if (isAdmin) setActiveTab('holiday-settings');
@@ -308,7 +309,7 @@ const STATUS_COLORS: any = {
                                 onClick={() => setActiveTab('settings')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
-                                Leave Settings
+                                Leave Settings & Balances
                                 {activeTab === 'settings' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
