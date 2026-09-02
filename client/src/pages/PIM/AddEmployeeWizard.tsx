@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock, Utensils } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -443,7 +443,8 @@ const AddEmployeeWizard = () => {
             probationSalary: 0,
             confirmedSalary: 0,
             probationMonths: 3,
-            probationDays: 90
+            probationDays: 90,
+            entitledForMealAllowance: true
         },
         benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
         salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[],
@@ -615,7 +616,8 @@ const AddEmployeeWizard = () => {
                                 probationSalary: found.financeInfo?.probationSalary || 0,
                                 confirmedSalary: found.financeInfo?.confirmedSalary || 0,
                                 probationMonths: found.financeInfo?.probationMonths || 0,
-                                probationDays: found.financeInfo?.probationDays || 0
+                                probationDays: found.financeInfo?.probationDays || 0,
+                                entitledForMealAllowance: found.financeInfo?.entitledForMealAllowance !== false
                             },
                             benefits: found.benefits?.length
                                 ? found.benefits.map((b: any) => ({
@@ -2325,6 +2327,48 @@ const AddEmployeeWizard = () => {
                                     </p>
                                 </div>
                             )}
+                        </div>
+
+                        {/* Meal Allowance Entitlement Toggle */}
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                                <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                                    <Utensils size={18} />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-800">Entitled for Meal Allowance</h4>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        If enabled, monthly meal stipend is calculated based on office present days. If disabled, this employee receives Rs. 0 meal allowance on payroll runs.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                                <span className={`text-xs font-bold ${formData.financeInfo?.entitledForMealAllowance !== false ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                    {formData.financeInfo?.entitledForMealAllowance !== false ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const currentVal = formData.financeInfo?.entitledForMealAllowance !== false;
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            financeInfo: {
+                                                ...prev.financeInfo,
+                                                entitledForMealAllowance: !currentVal
+                                            }
+                                        }));
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                                    }`}
+                                >
+                                    <span
+                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                            formData.financeInfo?.entitledForMealAllowance !== false ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Salary Structure & Bank Details (Restricted to Super-Admin & Finance) */}

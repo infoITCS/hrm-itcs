@@ -366,12 +366,16 @@ export async function buildPayrollPayslips(
             notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
         }
 
-        const mealDays = mealDaysMap[emp.employeeId] ?? 0;
-        earnings.push({
-            component: 'Meal Allowance',
-            amount: mealDays * MEAL_RATE,
-            type: 'variable',
-        });
+        const isEntitledToMeal = emp.financeInfo?.entitledForMealAllowance !== false;
+        const mealDays = isEntitledToMeal ? (mealDaysMap[emp.employeeId] ?? 0) : 0;
+        if (isEntitledToMeal) {
+            earnings.push({
+                component: 'Meal Allowance',
+                amount: mealDays * MEAL_RATE,
+                type: 'variable',
+            });
+        }
+
 
         const grossPay = earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
 

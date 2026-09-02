@@ -64,6 +64,7 @@ export interface IEmployee extends Document {
         confirmedSalary?: number;
         probationMonths?: number;
         probationDays?: number;
+        entitledForMealAllowance?: boolean;
     };
     bankDetails?: {
         bankName?: string;
@@ -237,7 +238,8 @@ const EmployeeSchema: Schema = new Schema({
         probationSalary: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         confirmedSalary: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         probationMonths: { type: Number, default: 3 },
-        probationDays: { type: Number, default: 90 }
+        probationDays: { type: Number, default: 90 },
+        entitledForMealAllowance: { type: Boolean, default: true }
     },
     bankDetails: {
         bankName: { type: String },
