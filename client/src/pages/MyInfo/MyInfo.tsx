@@ -1578,32 +1578,43 @@ const MyInfo = () => {
                     {/* Job Tab */}
                     {activeTab === 'job' && (
                         <div className="space-y-10 animate-fadeIn">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {renderField('Designation', rawEmployee.jobInfo?.designation)}
-                                {renderField('Department', rawEmployee.jobInfo?.department)}
-                                {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManager)}
-                                {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
-                                {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
-                                {renderField('Status', (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) || '-')}
-                                {rawEmployee.employmentStatus?.status === 'Probation' && (
-                                    renderField('Probation End Date', formatDate(rawEmployee.employmentStatus?.probationEndDate))
-                                )}
-                            </div>
-                            <div className="p-8 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl text-white shadow-xl shadow-indigo-200">
-                                <h4 className="text-sm font-bold text-indigo-100 uppercase tracking-widest mb-4">Current Employment Status</h4>
-                                <div className="flex flex-wrap gap-12">
-                                    <div>
-                                        <label className="block text-xs font-medium text-indigo-200 uppercase mb-1">Status</label>
-                                        <p className="text-xl font-bold">{typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status}</p>
-                                    </div>
-                                    {typeof rawEmployee.employmentStatus !== 'string' && rawEmployee.employmentStatus?.probationEndDate && (
-                                        <div>
-                                            <label className="block text-xs font-medium text-indigo-200 uppercase mb-1">Probation Ends</label>
-                                            <p className="text-xl font-bold">{formatDate(rawEmployee.employmentStatus.probationEndDate)}</p>
+                            {(() => {
+                                const isProbationEnded = 
+                                    (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) === 'Permanent' ||
+                                    (rawEmployee.employmentStatus?.probationEndDate && new Date(rawEmployee.employmentStatus.probationEndDate) <= new Date());
+                                return (
+                                    <>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                            {renderField('Designation', rawEmployee.jobInfo?.designation)}
+                                            {renderField('Department', rawEmployee.jobInfo?.department)}
+                                            {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManager)}
+                                            {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
+                                            {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
+                                            {renderField('Status', (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) || '-')}
+                                            {rawEmployee.employmentStatus?.probationEndDate && (
+                                                renderField(isProbationEnded ? 'Probation Ended Date' : 'Probation End Date', formatDate(rawEmployee.employmentStatus?.probationEndDate))
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                            </div>
+                                        <div className="p-8 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl text-white shadow-xl shadow-indigo-200">
+                                            <h4 className="text-sm font-bold text-indigo-100 uppercase tracking-widest mb-4">Current Employment Status</h4>
+                                            <div className="flex flex-wrap gap-12">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-indigo-200 uppercase mb-1">Status</label>
+                                                    <p className="text-xl font-bold">{typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status}</p>
+                                                </div>
+                                                {typeof rawEmployee.employmentStatus !== 'string' && rawEmployee.employmentStatus?.probationEndDate && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-indigo-200 uppercase mb-1">
+                                                            {isProbationEnded ? 'Probation Ended' : 'Probation Ends'}
+                                                        </label>
+                                                        <p className="text-xl font-bold">{formatDate(rawEmployee.employmentStatus.probationEndDate)}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     )}
 

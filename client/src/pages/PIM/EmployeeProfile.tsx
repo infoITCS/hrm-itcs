@@ -634,9 +634,13 @@ const EmployeeProfile = () => {
                                         value={formatDate(employee.employmentStatus?.offboardingDate)}
                                     />
                                 )}
-                                {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.status === 'Probation' && (
+                                {typeof employee.employmentStatus !== 'string' && employee.employmentStatus?.probationEndDate && (
                                     <Field
-                                        label="Probation End Date"
+                                        label={
+                                            (employee.employmentStatus?.status === 'Permanent' || new Date(employee.employmentStatus.probationEndDate) <= new Date())
+                                                ? 'Probation Ended'
+                                                : 'Probation End Date'
+                                        }
                                         value={formatDate(employee.employmentStatus?.probationEndDate)}
                                     />
                                 )}

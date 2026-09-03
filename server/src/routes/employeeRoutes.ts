@@ -387,20 +387,23 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             employeeData.salaryComponents = ensureFuelAllowance(employeeData.salaryComponents);
         }
 
+        const effectiveJoiningDate = employeeData.jobInfo?.joiningDate ? new Date(employeeData.jobInfo.joiningDate) : new Date();
+        const defaultProbationEnd = new Date(effectiveJoiningDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+
         const employee = new Employee({
             ...employeeData,
             jobInfo: {
                 designation: 'Employee',
                 department: 'General',
-                joiningDate: new Date(),
+                joiningDate: effectiveJoiningDate,
                 ...employeeData.jobInfo
             },
             employmentStatus: {
                 status: 'Probation', // Default
                 ...employeeData.employmentStatus,
-                probationEndDate: (employeeData.employmentStatus?.status === 'Probation' || !employeeData.employmentStatus)
-                    ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) 
-                    : employeeData.employmentStatus?.probationEndDate
+                probationEndDate: employeeData.employmentStatus?.probationEndDate
+                    ? new Date(employeeData.employmentStatus.probationEndDate)
+                    : defaultProbationEnd
             }
         });
 
@@ -1789,7 +1792,10 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
 
         // Auto-calculate probation end if status changes to Probation
         if (updates.employmentStatus?.status === 'Probation' && employee.employmentStatus?.status !== 'Probation') {
-            updates.employmentStatus.probationEndDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+            const joining = updates.jobInfo?.joiningDate || employee.jobInfo?.joiningDate;
+            const refDate = joining ? new Date(joining) : new Date();
+            const candidateEnd = new Date(refDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+            updates.employmentStatus.probationEndDate = candidateEnd > new Date() ? candidateEnd : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
         }
 
         // Strip completely empty arrays from frontend defaults so they don't overwrite DB

@@ -680,7 +680,17 @@ const AddEmployeeWizard = () => {
         } else if (section === 'temporaryAddress') {
             setFormData(prev => ({ ...prev, temporaryAddress: { ...prev.temporaryAddress, [name]: value } }));
         } else if (section === 'jobInfo') {
-            setFormData(prev => ({ ...prev, jobInfo: { ...prev.jobInfo, [name]: value } }));
+            setFormData(prev => {
+                const updated = { ...prev, jobInfo: { ...prev.jobInfo, [name]: value } };
+                if (name === 'joiningDate' && value && prev.employmentStatus?.status === 'Probation') {
+                    const jDate = new Date(value);
+                    if (!Number.isNaN(jDate.getTime())) {
+                        const pEnd = new Date(jDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+                        updated.employmentStatus = { ...updated.employmentStatus, probationEndDate: pEnd.toISOString().split('T')[0] };
+                    }
+                }
+                return updated;
+            });
         } else if (section === 'employmentStatus') {
             setFormData(prev => ({ ...prev, employmentStatus: { ...prev.employmentStatus, [name]: value } }));
         } else if (section === 'emergencyContacts' && index !== undefined && subfield) {
@@ -1602,7 +1612,21 @@ const AddEmployeeWizard = () => {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <CustomSelect label="Employment Status" value={formData.employmentStatus.status} onChange={(val) => setFormData(p => ({ ...p, employmentStatus: { ...p.employmentStatus, status: val } }))} options={[...EMPLOYMENT_STATUS_OPTIONS]} />
+                                <CustomSelect 
+                                    label="Employment Status" 
+                                    value={formData.employmentStatus.status} 
+                                    onChange={(val) => setFormData(p => {
+                                        let pEnd = p.employmentStatus?.probationEndDate;
+                                        if (val === 'Probation' && !pEnd && p.jobInfo?.joiningDate) {
+                                            const jDate = new Date(p.jobInfo.joiningDate);
+                                            if (!Number.isNaN(jDate.getTime())) {
+                                                pEnd = new Date(jDate.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                                            }
+                                        }
+                                        return { ...p, employmentStatus: { ...p.employmentStatus, status: val, probationEndDate: pEnd || '' } };
+                                    })} 
+                                    options={[...EMPLOYMENT_STATUS_OPTIONS]} 
+                                />
                             </div>
                             {formData.employmentStatus.status === 'Probation' && (
                                 <div className="space-y-2">

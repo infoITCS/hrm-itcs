@@ -34,40 +34,69 @@ export async function upgradeCompletedProbations(options: { employeeId?: string 
     endOfToday.setHours(23, 59, 59, 999);
 
     const filter: Record<string, unknown> = {
-        'employmentStatus.probationEndDate': { $lte: endOfToday, $ne: null },
-        'employmentStatus.status': 'Probation',
-        'employmentStatus.autoUpdated': { $ne: true },
         isDeleted: { $ne: true },
     };
 
     if (options.employeeId) {
         filter.employeeId = options.employeeId;
+    } else {
+        filter['employmentStatus.status'] = 'Probation';
     }
 
-    const eligibleEmployees = await Employee.find(filter).select('_id employeeId employmentStatus').lean();
+    const eligibleEmployees = await Employee.find(filter).select('_id employeeId employmentStatus jobInfo').lean();
 
-    const toUpgrade = eligibleEmployees.filter((emp) =>
-        isProbationPeriodEnded(emp.employmentStatus?.probationEndDate, asOf)
-    );
+    const toUpgrade: any[] = [];
+    const bulkOps: any[] = [];
 
-    if (toUpgrade.length === 0) {
+    for (const emp of eligibleEmployees) {
+        const joining = emp.jobInfo?.joiningDate ? new Date(emp.jobInfo.joiningDate) : null;
+        const probationEnd = emp.employmentStatus?.probationEndDate ? new Date(emp.employmentStatus.probationEndDate) : null;
+        const currentStatus = employmentStatusValue(emp);
+
+        let shouldUpgrade = false;
+        let correctedEnd: Date | null = null;
+
+        // Check if joining date indicates probation has passed
+        if (joining && !Number.isNaN(joining.getTime())) {
+            const expectedEnd = new Date(joining.getTime() + 90 * 24 * 60 * 60 * 1000);
+            if (expectedEnd <= endOfToday) {
+                if (currentStatus === 'Probation') {
+                    shouldUpgrade = true;
+                }
+                if (!probationEnd || probationEnd > endOfToday) {
+                    correctedEnd = expectedEnd;
+                }
+            }
+        }
+
+        // Standard check on probationEndDate
+        if (!shouldUpgrade && currentStatus === 'Probation' && isProbationPeriodEnded(probationEnd, asOf)) {
+            shouldUpgrade = true;
+        }
+
+        if (shouldUpgrade || correctedEnd) {
+            toUpgrade.push(emp);
+            bulkOps.push({
+                updateOne: {
+                    filter: { _id: emp._id },
+                    update: {
+                        $set: {
+                            ...(shouldUpgrade ? { 'employmentStatus.status': 'Permanent', 'employmentStatus.autoUpdated': true } : {}),
+                            ...(correctedEnd ? { 'employmentStatus.probationEndDate': correctedEnd } : {}),
+                        },
+                    },
+                },
+            });
+        }
+    }
+
+    if (bulkOps.length === 0) {
         return { upgradedCount: 0, employeeIds: [] };
     }
 
-    const bulkOps = toUpgrade.map((emp) => ({
-        updateOne: {
-            filter: { _id: emp._id },
-            update: {
-                $set: {
-                    'employmentStatus.status': 'Permanent',
-                    'employmentStatus.autoUpdated': true,
-                },
-            },
-        },
-    }));
     await Employee.bulkWrite(bulkOps);
 
-    const auditEntries = toUpgrade.map((emp) => ({
+    const auditEntries = toUpgrade.filter(emp => employmentStatusValue(emp) === 'Probation').map((emp) => ({
         action: 'UPDATE',
         targetResource: 'Employee',
         targetId: emp.employeeId,
@@ -78,13 +107,15 @@ export async function upgradeCompletedProbations(options: { employeeId?: string 
                 'employmentStatus.status': { old: 'Probation', new: 'Permanent' },
                 'employmentStatus.autoUpdated': { old: false, new: true },
             },
-            reason: 'Automatic probation period completion',
+            reason: 'Automatic probation period completion based on joining date/probation end date',
         },
     }));
-    await AuditLog.insertMany(auditEntries);
+    if (auditEntries.length > 0) {
+        await AuditLog.insertMany(auditEntries);
+    }
 
     const employeeIds = toUpgrade.map((e) => e.employeeId);
-    logger.info(`Auto-upgraded ${employeeIds.length} employee(s) from Probation to Permanent: ${employeeIds.join(', ')}`);
+    logger.info(`Processed/auto-upgraded ${employeeIds.length} employee(s) for probation completion: ${employeeIds.join(', ')}`);
 
     return { upgradedCount: employeeIds.length, employeeIds };
 }
@@ -93,7 +124,21 @@ export async function upgradeCompletedProbations(options: { employeeId?: string 
 export async function ensureProbationUpgraded(employee: any): Promise<any> {
     if (!employee?.employeeId) return employee;
 
+    const joining = employee.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+    const currentProbationEnd = employee.employmentStatus?.probationEndDate ? new Date(employee.employmentStatus.probationEndDate) : null;
     const status = employmentStatusValue(employee);
+
+    // Self-heal: If joining date is historical (+90 days <= now) but probation end date is in the future
+    if (joining && !Number.isNaN(joining.getTime())) {
+        const expectedEnd = new Date(joining.getTime() + 90 * 24 * 60 * 60 * 1000);
+        const isHistorical = expectedEnd <= new Date();
+
+        if (isHistorical && (!currentProbationEnd || currentProbationEnd > new Date() || status === 'Probation')) {
+            await upgradeCompletedProbations({ employeeId: employee.employeeId });
+            return Employee.findOne({ employeeId: employee.employeeId }).select('-attachments.fileData').lean();
+        }
+    }
+
     if (status !== 'Probation') return employee;
     if (employee.employmentStatus?.autoUpdated) return employee;
     if (!isProbationPeriodEnded(employee.employmentStatus?.probationEndDate)) return employee;
