@@ -165,78 +165,18 @@ const generalLimiter = rateLimit({
 });
 app.use('/api/', generalLimiter); // General rate limit for all API routes
 
-// Session configuration (required for OAuth state/PKCE)
-const getSessionSecret = (): string => {
-    const secret = process.env.SESSION_SECRET;
-    if (!secret) {
-        // Fallback to JWT_SECRET if session secret is missing to prevent crash
-        if (process.env.JWT_SECRET) {
-            logger.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
-            return process.env.JWT_SECRET;
-        }
-
-        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-            logger.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
-            throw new Error('FATAL: At least JWT_SECRET must be set for the server to start.');
-        }
-        return 'dev-only-temp-secret-not-for-production';
-    }
-    return secret;
-};
-
-const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
-
-const sessionOptions: session.SessionOptions = {
-    secret: getSessionSecret(),
-    resave: false,
-    saveUninitialized: false,
-    proxy: isProduction, // Trust the proxy for setting secure cookies
-    cookie: {
-        // In Vercel/Production, we must use Secure and SameSite=None for cross-site SSO to work
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-};
-
-// Only use MongoDB store if URI is available
-if (process.env.MONGODB_URI) {
-    sessionOptions.store = MongoStore.create({
-        clientPromise: mongoose.connection.asPromise().then((conn: any) => conn.getClient()),
-        collectionName: 'sessions',
-        ttl: 24 * 60 * 60, // 1 day
-        autoRemove: 'interval',
-        autoRemoveInterval: 10,
-    });
-} else {
-    logger.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
-}
-
-app.use(session(sessionOptions));
-
-// Middleware to ensure DB connection is ready before processing requests.
-// On Vercel, each cold-start invocation may have a dead connection — re-establish it here.
-app.use(async (req, res, next) => {
-    const state = mongoose.connection.readyState as any;
-    if (state !== 1) {
-        logger.info(`⌛ MongoDB not ready (state=${state}). Re-connecting...`);
-        try {
-            await connectDB();
-        } catch (e: any) {
-            logger.error('❌ Re-connect failed in middleware:', e.message);
-        }
-    }
-    next();
-});
-
-
-app.use(passport.initialize());
-app.use(passport.session()); // Required for OAuth state/PKCE
-configurePassport();
-
-// Database Connection
+// Database URI Helper
 const MONGO_URI = process.env.MONGODB_URI;
+
+function getSanitizedMongoUri(uri?: string): string {
+    if (!uri) return '';
+    let finalUri = uri.trim();
+    if (finalUri.includes('mongocluster.cosmos.azure.com') || finalUri.includes('cosmos.azure.com')) {
+        const baseUrl = finalUri.split('?')[0];
+        finalUri = `${baseUrl}?tls=true`;
+    }
+    return finalUri;
+}
 
 /**
  * Connect (or reconnect) to Cosmos DB.
@@ -259,15 +199,7 @@ async function connectDB(): Promise<void> {
         return;
     }
 
-    let finalUri = MONGO_URI;
-
-    // Auto-fix for Azure Cosmos DB: Clean up query parameters that cause TLS/handshake hangs
-    if (finalUri.includes('mongocluster.cosmos.azure.com') || finalUri.includes('cosmos.azure.com')) {
-        const baseUrl = finalUri.split('?')[0];
-        finalUri = `${baseUrl}?tls=true`;
-    }
-
-
+    const finalUri = getSanitizedMongoUri(MONGO_URI);
 
     try {
         await mongoose.connect(finalUri, {
@@ -341,6 +273,82 @@ mongoose.connection.on('error', (err) =>
 
 // Initial connection attempt
 connectDB();
+
+// Session configuration (required for OAuth state/PKCE)
+const getSessionSecret = (): string => {
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) {
+        // Fallback to JWT_SECRET if session secret is missing to prevent crash
+        if (process.env.JWT_SECRET) {
+            logger.warn('⚠️ SESSION_SECRET not set, falling back to JWT_SECRET.');
+            return process.env.JWT_SECRET;
+        }
+
+        if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+            logger.error('❌ FATAL: SESSION_SECRET and JWT_SECRET are missing!');
+            throw new Error('FATAL: At least JWT_SECRET must be set for the server to start.');
+        }
+        return 'dev-only-temp-secret-not-for-production';
+    }
+    return secret;
+};
+
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+const sessionOptions: session.SessionOptions = {
+    secret: getSessionSecret(),
+    resave: false,
+    saveUninitialized: false,
+    proxy: isProduction, // Trust the proxy for setting secure cookies
+    cookie: {
+        // In Vercel/Production, we must use Secure and SameSite=None for cross-site SSO to work
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+};
+
+// Only use MongoDB store if URI is available
+if (process.env.MONGODB_URI) {
+    const sanitizedUri = getSanitizedMongoUri(process.env.MONGODB_URI);
+    sessionOptions.store = MongoStore.create({
+        mongoUrl: sanitizedUri,
+        dbName: 'hrm',
+        collectionName: 'sessions',
+        ttl: 24 * 60 * 60, // 1 day
+        autoRemove: 'interval',
+        autoRemoveInterval: 10,
+        mongoOptions: {
+            retryWrites: false,
+            connectTimeoutMS: 30000,
+            serverSelectionTimeoutMS: 30000,
+            maxIdleTimeMS: 120000,
+        }
+    });
+} else {
+    logger.error('❌ MONGODB_URI is missing. Sessions will be memory-only and will reset on every deploy.');
+}
+
+// Middleware to ensure DB connection is ready before processing requests.
+// On Vercel, each cold-start invocation may have a dead connection — re-establish it here.
+app.use(async (req, res, next) => {
+    const state = mongoose.connection.readyState as any;
+    if (state !== 1) {
+        logger.info(`⌛ MongoDB not ready (state=${state}). Re-connecting...`);
+        try {
+            await connectDB();
+        } catch (e: any) {
+            logger.error('❌ Re-connect failed in middleware:', e.message);
+        }
+    }
+    next();
+});
+
+app.use(session(sessionOptions));
+app.use(passport.initialize());
+app.use(passport.session()); // Required for OAuth state/PKCE
+configurePassport();
 
 // Static Files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
