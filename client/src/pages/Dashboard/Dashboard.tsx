@@ -78,16 +78,35 @@ const Dashboard = () => {
     const calculateOnboardingProgress = (emp: any) => {
         const empData = emp || {};
 
+        const hasCnicFront = empData.attachments?.some((a: any) => 
+            /cnic.*front|front.*cnic|national.*id.*front/i.test(a.fileType || '') || 
+            a.fileType === 'CNIC Front' || 
+            a.fileType === 'CNIC (Front)'
+        );
+
+        const hasCnicBack = empData.attachments?.some((a: any) => 
+            /cnic.*back|back.*cnic|national.*id.*back/i.test(a.fileType || '') || 
+            a.fileType === 'CNIC Back' || 
+            a.fileType === 'CNIC (Back)'
+        );
+
+        const hasDegree = empData.attachments?.some((a: any) => 
+            /degree|transcript|certificate|mark\s*sheet|education/i.test(a.fileType || '') || 
+            a.fileType?.startsWith('Education')
+        );
+
+        // Microsoft 365 photo, profile avatar, or attachment picture
+        const hasPicture = !!empData.avatar || !!user?.avatar || empData.attachments?.some((a: any) => 
+            /picture|avatar|photo|profile/i.test(a.fileType || '')
+        );
+
         const steps = [
-            { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && empData.cnic && empData.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!(empData.address?.city && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone)) },
-            { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level) || empData.employmentHistory?.some((eh: any) => eh.companyName)) },
-            { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link)) },
+            { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && (empData.cnic || empData.nationalId) && empData.dateOfBirth) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!((empData.address?.city || empData.address?.streetAddress || empData.phone) && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone || ec.relation)) },
+            { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level || edu.institute) || empData.employmentHistory?.some((eh: any) => eh.companyName || eh.jobTitle)) },
+            { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link || sp.url)) },
             { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: !!(
-                empData.attachments?.some((a: any) => a.fileType === 'CNIC Front') &&
-                empData.attachments?.some((a: any) => a.fileType === 'CNIC Back') &&
-                empData.attachments?.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - ')) &&
-                empData.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture')
+                hasCnicFront && hasCnicBack && hasDegree && hasPicture
             )}
         ];
 
