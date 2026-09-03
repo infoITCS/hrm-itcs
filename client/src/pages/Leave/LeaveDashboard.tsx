@@ -94,9 +94,13 @@ const LeaveDashboard = () => {
     const isAdmin = canSettings || canHolidaySettings;
     const isAdminLike = ['super-admin', 'admin', 'hr'].includes(role);
 
-    const filteredHistory = history.filter(item => 
-        statusFilter === 'All' || item.status === statusFilter
-    );
+    const filteredHistory = history
+        .filter(item => statusFilter === 'All' || item.status === statusFilter)
+        .sort((a, b) => {
+            const timeA = new Date(a.startDate || a.createdAt).getTime();
+            const timeB = new Date(b.startDate || b.createdAt).getTime();
+            return timeB - timeA;
+        });
 
     const fetchLeaveData = async () => {
         setLoading(true);
