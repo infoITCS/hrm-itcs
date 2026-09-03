@@ -79,25 +79,31 @@ const Dashboard = () => {
         const empData = emp || {};
 
         const hasCnicFront = empData.attachments?.some((a: any) => 
-            /cnic.*front|front.*cnic|national.*id.*front/i.test(a.fileType || '') || 
+            /cnic.*front|front.*cnic|national.*id.*front|identity.*front/i.test(a.fileType || '') || 
+            /cnic.*front|front.*cnic|national.*id.*front/i.test(a.fileName || a.name || a.originalName || '') ||
             a.fileType === 'CNIC Front' || 
             a.fileType === 'CNIC (Front)'
         );
 
         const hasCnicBack = empData.attachments?.some((a: any) => 
-            /cnic.*back|back.*cnic|national.*id.*back/i.test(a.fileType || '') || 
+            /cnic.*back|back.*cnic|national.*id.*back|identity.*back/i.test(a.fileType || '') || 
+            /cnic.*back|back.*cnic|national.*id.*back/i.test(a.fileName || a.name || a.originalName || '') ||
             a.fileType === 'CNIC Back' || 
             a.fileType === 'CNIC (Back)'
         );
 
         const hasDegree = empData.attachments?.some((a: any) => 
             /degree|transcript|certificate|mark\s*sheet|education/i.test(a.fileType || '') || 
-            a.fileType?.startsWith('Education')
+            /degree|transcript|certificate|mark\s*sheet|education|bachelor|master|matric|inter|diploma|graduation/i.test(a.fileName || a.name || a.originalName || '') ||
+            a.fileType?.startsWith('Education') ||
+            a.fileType?.startsWith('Certification') ||
+            (a.fileType === 'Other Documents' || a.fileType === 'Other' || a.fileType?.includes('Other'))
         );
 
         // Microsoft 365 photo, profile avatar, or attachment picture
         const hasPicture = !!empData.avatar || !!user?.avatar || empData.attachments?.some((a: any) => 
-            /picture|avatar|photo|profile/i.test(a.fileType || '')
+            /picture|avatar|photo|profile/i.test(a.fileType || '') ||
+            /picture|avatar|photo|profile/i.test(a.fileName || a.name || a.originalName || '')
         );
 
         const steps = [
