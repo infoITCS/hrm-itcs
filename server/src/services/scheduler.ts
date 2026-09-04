@@ -34,34 +34,105 @@ export const initScheduler = () => {
         }
     }, { timezone: 'Asia/Karachi' });
 
+const isEmployeeProfileComplete = (emp: any, user?: any): boolean => {
+    if (!emp) return false;
+
+    // 1. Personal Information (20%)
+    const hasPersonal = !!(
+        emp.firstName &&
+        emp.lastName &&
+        (emp.cnic || emp.nationalId) &&
+        emp.dateOfBirth
+    );
+    if (!hasPersonal) return false;
+
+    // 2. Contact & Emergency (20%)
+    const hasContact = !!(
+        (emp.address?.city || emp.address?.streetAddress || emp.address?.street || emp.phone) &&
+        (Array.isArray(emp.emergencyContacts) && emp.emergencyContacts.some((ec: any) => ec.name || ec.phone || ec.relation))
+    );
+    if (!hasContact) return false;
+
+    // 3. Education & Employment History (20%)
+    const hasHistory = !!(
+        (Array.isArray(emp.education) && emp.education.some((edu: any) => edu.level || edu.institute)) ||
+        (Array.isArray(emp.employmentHistory) && emp.employmentHistory.some((eh: any) => eh.companyName || eh.jobTitle))
+    );
+    if (!hasHistory) return false;
+
+    // 4. Skills & Profiles (20%)
+    const hasSkills = !!(
+        (Array.isArray(emp.skills) && emp.skills.length > 0) ||
+        (Array.isArray(emp.socialProfiles) && emp.socialProfiles.some((sp: any) => sp.link || sp.url))
+    );
+    if (!hasSkills) return false;
+
+    // 5. Identity Documents (20%)
+    const attachments = emp.attachments || [];
+    const hasCnicFront = attachments.some((a: any) => 
+        /cnic.*front|front.*cnic|national.*id.*front|identity.*front/i.test(a.fileType || '') || 
+        /cnic.*front|front.*cnic|national.*id.*front/i.test(a.fileName || a.name || a.originalName || '') ||
+        a.fileType === 'CNIC Front' || 
+        a.fileType === 'CNIC (Front)'
+    );
+
+    const hasCnicBack = attachments.some((a: any) => 
+        /cnic.*back|back.*cnic|national.*id.*back|identity.*back/i.test(a.fileType || '') || 
+        /cnic.*back|back.*cnic|national.*id.*back/i.test(a.fileName || a.name || a.originalName || '') ||
+        a.fileType === 'CNIC Back' || 
+        a.fileType === 'CNIC (Back)'
+    );
+
+    const hasDegree = attachments.some((a: any) => 
+        /degree|transcript|certificate|mark\s*sheet|education/i.test(a.fileType || '') || 
+        /degree|transcript|certificate|mark\s*sheet|education|bachelor|master|matric|inter|diploma|graduation/i.test(a.fileName || a.name || a.originalName || '') ||
+        a.fileType?.startsWith('Education') ||
+        a.fileType?.startsWith('Certification') ||
+        (a.fileType === 'Other Documents' || a.fileType === 'Other' || a.fileType?.includes('Other'))
+    );
+
+    const hasPicture = !!emp.avatar || !!user?.avatar || attachments.some((a: any) => 
+        /picture|avatar|photo|profile/i.test(a.fileType || '') ||
+        /picture|avatar|photo|profile/i.test(a.fileName || a.name || a.originalName || '')
+    );
+
+    return !!(hasCnicFront && hasCnicBack && hasDegree && hasPicture);
+};
+
     // ── Profile Completion Reminder: Run every day at 12:20 PM ──────────────────────
     cron.schedule('20 12 * * *', async () => {
         logger.info('Running daily onboarding profile completion reminder check...');
         try {
-            const incompleteUsers = await User.aggregate([
-                { $match: { isActive: true, role: 'employee' } },
-                {
-                    $lookup: {
-                        from: 'employees',
-                        let: { uid: { $toString: '$_id' } },
-                        pipeline: [
-                            { $match: { $expr: { $eq: ['$userId', '$$uid'] } } },
-                            { $project: { cnic: 1, dateOfBirth: 1 } }
-                        ],
-                        as: 'employeeRecord'
-                    }
-                },
-                {
-                    $match: {
-                        $or: [
-                            { 'employeeRecord.0': { $exists: false } },
-                            { 'employeeRecord.0.cnic': { $in: [null, '', undefined] } },
-                            { 'employeeRecord.0.dateOfBirth': { $in: [null, undefined] } }
-                        ]
-                    }
-                },
-                { $project: { email: 1, firstName: 1 } }
-            ]);
+            const activeUsers = await User.find({ isActive: true, role: 'employee' }).select('email firstName avatar').lean();
+            const activeEmployees = await Employee.find({
+                'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+            }).select('-attachments.fileData').lean() as any[];
+
+            // Map employees by both userId (string & ObjectId) and email addresses
+            const empByUserId = new Map<string, any>();
+            const empByEmail = new Map<string, any>();
+
+            for (const emp of activeEmployees) {
+                if (emp.userId) {
+                    empByUserId.set(String(emp.userId), emp);
+                }
+                if (emp.email) {
+                    empByEmail.set(emp.email.toLowerCase().trim(), emp);
+                }
+                if (emp.workEmail) {
+                    empByEmail.set(emp.workEmail.toLowerCase().trim(), emp);
+                }
+            }
+
+            // Filter down to only users whose profile is truly incomplete (< 100%)
+            const incompleteUsers = activeUsers.filter((u: any) => {
+                const uidStr = String(u._id);
+                const uEmail = (u.email || '').toLowerCase().trim();
+                const matchedEmp = empByUserId.get(uidStr) || empByEmail.get(uEmail);
+
+                // If no employee profile exists or required fields are not complete (< 100%), send reminder
+                return !isEmployeeProfileComplete(matchedEmp, u);
+            });
 
             const results = await Promise.allSettled(
                 incompleteUsers.map((u: any) =>
@@ -72,7 +143,7 @@ export const initScheduler = () => {
             const sent = results.filter(r => r.status === 'fulfilled').length;
             const failed = results.filter(r => r.status === 'rejected').length;
             if (sent > 0 || failed > 0) {
-                logger.info(`Profile reminders: ${sent} sent, ${failed} failed.`);
+                logger.info(`Profile reminders: ${sent} sent, ${failed} failed (out of ${incompleteUsers.length} incomplete profiles).`);
             }
         } catch (error) {
             logger.error('Error in profile reminder scheduler:', error);

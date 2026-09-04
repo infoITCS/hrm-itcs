@@ -49,6 +49,14 @@ export const seedRequestCategories = async () => {
                 options: [],
                 systemType: 'generic',
                 isDeletable: false
+            },
+            {
+                title: 'Work From Home (WFH)',
+                description: 'Apply for remote work. Approved WFH is reflected in attendance without meal allowance.',
+                icon: 'Home',
+                options: ['Single Day WFH', 'Multiple Days WFH'],
+                systemType: 'wfh',
+                isDeletable: false
             }
         ];
 

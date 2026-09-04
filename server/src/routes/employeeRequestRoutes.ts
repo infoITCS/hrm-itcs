@@ -9,6 +9,7 @@ import User from '../models/User.model';
 import ExpenseClaim from '../models/ExpenseClaim';
 import PayrollRun from '../models/PayrollRun';
 import LeaveRequest from '../models/LeaveRequest';
+import AttendanceRecord from '../models/AttendanceRecord';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { sendEmployeeRequestSubmittedEmail, sendEmployeeRequestStatusEmail } from '../utils/email';
@@ -455,7 +456,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         (async () => {
             try {
                 let managerEmail: string | undefined;
-                if ((category === 'Asset' || category === 'Document' || category === 'HR Document') && employee.jobInfo?.reportingManager) {
+                const isTeamRequest = category === 'Asset' || category === 'Document' || category === 'HR Document' || category === 'Work From Home (WFH)' || (category || '').includes('WFH');
+                if (isTeamRequest && employee.jobInfo?.reportingManager) {
                     const manager = await Employee.findOne({ employeeId: employee.jobInfo.reportingManager }).select('workEmail');
                     if (manager?.workEmail) {
                         managerEmail = manager.workEmail;
@@ -504,6 +506,28 @@ router.get('/my-requests', authenticate, async (req: Request, res: Response, nex
         next(err);
     }
 });
+
+const getWfhDatesFromRequest = (request: any): string[] => {
+    const details = request.details || {};
+    if (Array.isArray(details.dates) && details.dates.length > 0) {
+        return details.dates.map((d: any) => String(d).split('T')[0]).filter(Boolean);
+    }
+    if (details.startDate) {
+        const start = new Date(details.startDate);
+        const end = details.endDate ? new Date(details.endDate) : new Date(details.startDate);
+        const dates: string[] = [];
+        const cur = new Date(start);
+        while (cur <= end) {
+            dates.push(cur.toISOString().split('T')[0]);
+            cur.setDate(cur.getDate() + 1);
+        }
+        return dates;
+    }
+    if (details.wfhDate) {
+        return [String(details.wfhDate).split('T')[0]];
+    }
+    return [];
+};
 
 // Cancel a request (Employee)
 router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
@@ -670,7 +694,6 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
 
         request.status = status;
 
-
         if (adminComments !== undefined) {
             request.adminComments = adminComments;
         }
@@ -679,6 +702,56 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         }
         request.approvedBy = userId;
         request.updatedAt = new Date();
+
+        // ── Auto-Sync Work From Home (WFH) Requests to Attendance Records ──
+        const isWfh = (request.category || '').toLowerCase().includes('wfh') ||
+                      (request.category || '').toLowerCase().includes('work from home') ||
+                      (request.requestType || '').toLowerCase().includes('wfh') ||
+                      (request.requestType || '').toLowerCase().includes('work from home') ||
+                      Boolean(request.details?.isWfh);
+
+        if (isWfh) {
+            const wfhDates = getWfhDatesFromRequest(request);
+            if (status === 'Approved') {
+                for (const dateStr of wfhDates) {
+                    await AttendanceRecord.findOneAndUpdate(
+                        { employeeId: request.employeeId, date: dateStr },
+                        {
+                            $set: {
+                                status: 'Present',
+                                isWfh: true,
+                                note: `Work From Home (Approved Request #${request._id.toString().slice(-6)})`,
+                                manuallyAdjusted: true,
+                                adjustedBy: `WFH Request (${authReq.user?.email || 'System'})`
+                            },
+                            $setOnInsert: {
+                                location: 'Remote / WFH',
+                                workDurationMinutes: 480,
+                                lateMinutes: 0,
+                                overtimeMinutes: 0
+                            }
+                        },
+                        { upsert: true, new: true }
+                    );
+                }
+            } else if (status === 'Rejected' || status === 'Cancelled') {
+                for (const dateStr of wfhDates) {
+                    await AttendanceRecord.updateOne(
+                        {
+                            employeeId: request.employeeId,
+                            date: dateStr,
+                            note: { $regex: new RegExp(request._id.toString().slice(-6), 'i') }
+                        },
+                        {
+                            $set: {
+                                isWfh: false,
+                                note: 'WFH Request Cancelled/Rejected'
+                            }
+                        }
+                    );
+                }
+            }
+        }
 
         // Sync disbursed loan requests directly into Employee.loans array (upon Completed / Paid payout)
         if (isLoan && (status === 'Completed' || req.body.payoutStatus === 'Paid')) {

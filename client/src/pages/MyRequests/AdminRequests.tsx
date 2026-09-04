@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
-import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search } from 'lucide-react';
+import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search, Home } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
 import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
@@ -275,7 +275,9 @@ const AdminRequests = () => {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
-                                                    {(req.category === 'Asset' || req.category === 'Request Asset') ? <Package size={16} className="text-purple-500"/> : <Banknote size={16} className="text-emerald-500"/>}
+                                                    {(req.category === 'Asset' || req.category === 'Request Asset') ? <Package size={16} className="text-purple-500"/> :
+                                                     (req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) ? <Home size={16} className="text-teal-600"/> :
+                                                     <Banknote size={16} className="text-emerald-500"/>}
                                                     <span className="font-medium text-gray-700">{req.requestType}</span>
                                                 </div>
                                             </td>
@@ -287,6 +289,14 @@ const AdminRequests = () => {
                                                             <p>Duration: <strong className="text-gray-900">{req.details.paybackDuration} Months</strong></p>
                                                         )}
                                                         <p>Deduction: <strong className="text-gray-900">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}/mo</strong></p>
+                                                    </div>
+                                                ) : (req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) ? (
+                                                    <div className="text-xs text-teal-800 font-semibold space-y-0.5">
+                                                        <p className="flex items-center gap-1">
+                                                            <Home size={12} className="text-teal-600" />
+                                                            <span>{req.details?.startDate === req.details?.endDate || !req.details?.endDate ? req.details?.startDate : `${req.details?.startDate} to ${req.details?.endDate}`}</span>
+                                                        </p>
+                                                        {req.details?.daysCount && <p className="text-[10px] text-teal-600">({req.details.daysCount} day{req.details.daysCount === 1 ? '' : 's'})</p>}
                                                     </div>
                                                 ) : (
                                                     <div className="text-xs text-gray-600">
@@ -549,6 +559,16 @@ const AdminRequests = () => {
                                         <span className="font-semibold text-gray-900 bg-amber-50 px-2 py-0.5 rounded text-amber-900 border border-amber-200">
                                             {MONTH_NAMES[actionModal.details.periodMonth] || actionModal.details.periodMonth} {actionModal.details.periodYear || ''}
                                         </span>
+                                    </div>
+                                )}
+
+                                {(actionModal.category?.includes('WFH') || actionModal.requestType?.includes('WFH') || actionModal.details?.isWfh) && (
+                                    <div className="mt-3 p-3 bg-teal-50 border border-teal-100 rounded-xl space-y-1">
+                                        <div className="flex justify-between text-sm text-teal-900 font-bold">
+                                            <span className="flex items-center gap-1.5"><Home size={14} className="text-teal-600" /> WFH Dates:</span>
+                                            <span>{actionModal.details.startDate === actionModal.details.endDate || !actionModal.details.endDate ? actionModal.details.startDate : `${actionModal.details.startDate} to ${actionModal.details.endDate}`} {actionModal.details.daysCount ? `(${actionModal.details.daysCount} days)` : ''}</span>
+                                        </div>
+                                        <p className="text-[11px] text-teal-700">Approving will automatically mark attendance as Present (WFH) and exclude meal allowance.</p>
                                     </div>
                                 )}
 

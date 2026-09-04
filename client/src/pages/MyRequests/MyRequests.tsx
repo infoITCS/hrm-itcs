@@ -4,14 +4,14 @@ import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
-    ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones
+    ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones, Home
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const ICON_MAP: Record<string, any> = {
-    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle
+    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle, Home
 };
 
 const MyRequests = () => {
@@ -49,6 +49,8 @@ const MyRequests = () => {
     const [monthlyDeduction, setMonthlyDeduction] = useState('');
     const [pauseMonth, setPauseMonth] = useState<number>(new Date().getMonth() + 1);
     const [pauseYear, setPauseYear] = useState<number>(new Date().getFullYear());
+    const [wfhStartDate, setWfhStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [wfhEndDate, setWfhEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [reason, setReason] = useState('');
     const [purposeDetail, setPurposeDetail] = useState('');
     const [internshipStartDate, setInternshipStartDate] = useState('');
@@ -294,6 +296,10 @@ const MyRequests = () => {
             let type = selectedOption;
 
             const isLoanPause = activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause');
+            const isWfh = activeCategory.title === 'Work From Home (WFH)' || 
+                          activeCategory.systemType === 'wfh' || 
+                          activeCategory.title?.toLowerCase().includes('work from home') || 
+                          activeCategory.title?.toLowerCase().includes('wfh');
 
             if (isLoanPause) {
                 type = 'Loan Pause';
@@ -301,6 +307,40 @@ const MyRequests = () => {
                     ...details,
                     periodMonth: pauseMonth,
                     periodYear: pauseYear,
+                };
+            } else if (isWfh) {
+                if (!wfhStartDate) {
+                    triggerAlert('Validation Error', 'Please select the Work From Home date.', 'warning');
+                    return;
+                }
+                const isMulti = selectedOption === 'Multiple Days WFH';
+                const end = (isMulti && wfhEndDate) ? wfhEndDate : wfhStartDate;
+                if (new Date(end) < new Date(wfhStartDate)) {
+                    triggerAlert('Validation Error', 'End Date cannot be earlier than Start Date.', 'warning');
+                    return;
+                }
+                if (!reason || !reason.trim()) {
+                    triggerAlert('Validation Error', 'Please enter a reason for working from home.', 'warning');
+                    return;
+                }
+
+                type = selectedOption || (isMulti ? 'Multiple Days WFH' : 'Single Day WFH');
+                const dates: string[] = [];
+                const cur = new Date(wfhStartDate);
+                const stop = new Date(end);
+                while (cur <= stop) {
+                    dates.push(cur.toISOString().split('T')[0]);
+                    cur.setDate(cur.getDate() + 1);
+                }
+
+                details = {
+                    ...details,
+                    isWfh: true,
+                    startDate: wfhStartDate,
+                    endDate: end,
+                    dates,
+                    daysCount: dates.length,
+                    reason
                 };
             } else if (activeCategory.systemType === 'loan') {
                 type = 'Loan';
@@ -425,6 +465,13 @@ const MyRequests = () => {
                                 setLoanAmount('');
                                 setPaybackDuration('');
                                 setMonthlyDeduction('');
+                                const isWfhCat = cat.title === 'Work From Home (WFH)' || cat.systemType === 'wfh' || cat.title?.toLowerCase().includes('wfh');
+                                if (isWfhCat) {
+                                    const todayStr = new Date().toISOString().split('T')[0];
+                                    setWfhStartDate(todayStr);
+                                    setWfhEndDate(todayStr);
+                                    setSelectedOption('Single Day WFH');
+                                }
                                 setReason('');
                                 setUploadedFiles([]);
                                 setDropdownOpen(false);
@@ -434,6 +481,7 @@ const MyRequests = () => {
                                 cat.systemType === 'document' ? 'from-blue-500 to-blue-600' :
                                 cat.systemType === 'loan' ? 'from-emerald-500 to-emerald-600' :
                                 cat.title === 'Request Asset' ? 'from-purple-500 to-purple-600' :
+                                (cat.systemType === 'wfh' || cat.title?.toLowerCase().includes('wfh')) ? 'from-teal-500 to-indigo-600' :
                                 'from-indigo-500 to-indigo-600'
                             } rounded-2xl p-6 text-white cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 relative overflow-hidden group shadow-md`}
                         >
@@ -503,12 +551,14 @@ const MyRequests = () => {
                                             (req.category === 'Document' || req.category === 'Generate Document') ? 'bg-blue-50 text-blue-600' : 
                                             (req.category === 'Asset' || req.category === 'Request Asset') ? 'bg-purple-50 text-purple-600' : 
                                             (req.category === 'Loan' || req.category === 'Request Loan') ? 'bg-emerald-50 text-emerald-600' : 
+                                            (req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) ? 'bg-teal-50 text-teal-600' :
                                             'bg-indigo-50 text-indigo-600'
                                         }`}>
                                             {(req.category === 'Document' || req.category === 'Generate Document') && <FileText size={20} />}
                                             {(req.category === 'Asset' || req.category === 'Request Asset') && <Package size={20} />}
                                             {(req.category === 'Loan' || req.category === 'Request Loan') && <Banknote size={20} />}
-                                            {(req.category !== 'Document' && req.category !== 'Generate Document' && req.category !== 'Asset' && req.category !== 'Request Asset' && req.category !== 'Loan' && req.category !== 'Request Loan') && <Package size={20} />}
+                                            {(req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) && <Home size={20} />}
+                                            {(req.category !== 'Document' && req.category !== 'Generate Document' && req.category !== 'Asset' && req.category !== 'Request Asset' && req.category !== 'Loan' && req.category !== 'Request Loan' && !req.category?.includes('WFH') && !req.requestType?.includes('WFH') && !req.details?.isWfh) && <Package size={20} />}
                                         </div>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{req.requestType}</h3>
@@ -524,6 +574,16 @@ const MyRequests = () => {
                                         {req.status === 'Cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200"><XCircle size={12}/> Cancelled</span>}
                                     </div>
                                 </div>
+
+                                {(req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) && (
+                                    <div className="mt-4 p-3 bg-teal-50/70 border border-teal-100 rounded-xl text-xs space-y-1">
+                                        <div className="flex justify-between items-center text-teal-900 font-bold">
+                                            <span className="flex items-center gap-1"><Home size={13} className="text-teal-600" /> WFH Dates:</span>
+                                            <span>{req.details?.startDate === req.details?.endDate || !req.details?.endDate ? req.details?.startDate : `${req.details?.startDate} to ${req.details?.endDate}`} {req.details?.daysCount ? `(${req.details.daysCount} day${req.details.daysCount === 1 ? '' : 's'})` : ''}</span>
+                                        </div>
+                                        <p className="text-[10px] text-teal-700">Reflected in attendance upon approval. Meal allowance excluded.</p>
+                                    </div>
+                                )}
                                 
                                 {(req.category === 'Loan' || req.category === 'Request Loan') && (
                                     <div className="mt-4 p-3 bg-gray-50 rounded-lg text-xs sm:text-sm">
@@ -689,6 +749,84 @@ const MyRequests = () => {
                                                 required
                                             />
                                         </div>
+                                    </div>
+                                </>
+                            ) : (activeCategory.title === 'Work From Home (WFH)' || activeCategory.systemType === 'wfh' || activeCategory.title?.toLowerCase().includes('work from home') || activeCategory.title?.toLowerCase().includes('wfh')) ? (
+                                <>
+                                    <div className="bg-purple-50 text-purple-900 p-3.5 rounded-xl text-xs border border-purple-200/80 space-y-1">
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                            <Home size={15} className="text-purple-600 shrink-0" />
+                                            <span>Work From Home (WFH)</span>
+                                        </div>
+                                        <p className="text-purple-800/90 text-[11px] leading-relaxed">
+                                            Once approved by your manager / HR, your attendance for the selected date(s) will automatically be recorded as <b>Present (WFH)</b>.
+                                            Meal allowance will not be calculated for remote work days.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            WFH Duration
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setSelectedOption('Single Day WFH'); setWfhEndDate(wfhStartDate); }}
+                                                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                                                    selectedOption === 'Single Day WFH' || !selectedOption.includes('Multiple')
+                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                Single Day
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedOption('Multiple Days WFH')}
+                                                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                                                    selectedOption === 'Multiple Days WFH'
+                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                Multiple Days
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className={`grid ${selectedOption === 'Multiple Days WFH' ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                                {selectedOption === 'Multiple Days WFH' ? 'Start Date' : 'WFH Date'} <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={wfhStartDate}
+                                                onChange={(e) => {
+                                                    setWfhStartDate(e.target.value);
+                                                    if (selectedOption !== 'Multiple Days WFH' || new Date(wfhEndDate) < new Date(e.target.value)) {
+                                                        setWfhEndDate(e.target.value);
+                                                    }
+                                                }}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-medium text-slate-800"
+                                                required
+                                            />
+                                        </div>
+                                        {selectedOption === 'Multiple Days WFH' && (
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                                    End Date <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={wfhEndDate}
+                                                    min={wfhStartDate}
+                                                    onChange={(e) => setWfhEndDate(e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-medium text-slate-800"
+                                                    required
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             ) : activeCategory.systemType === 'loan' ? (
@@ -1079,6 +1217,15 @@ const MyRequests = () => {
                                     <div className="flex justify-between text-sm">
                                         <span className="text-gray-500">Monthly Deduction:</span>
                                         <span className="font-semibold text-gray-900">Rs. {selectedRequest.details.recommendedMonthlyDeduction.toLocaleString()}</span>
+                                    </div>
+                                )}
+                                {selectedRequest.details?.isWfh && (
+                                    <div className="p-3 bg-teal-50 border border-teal-100 rounded-xl space-y-1">
+                                        <div className="flex justify-between text-sm text-teal-900 font-semibold">
+                                            <span className="flex items-center gap-1.5"><Home size={14} className="text-teal-600" /> WFH Dates:</span>
+                                            <span>{selectedRequest.details.startDate === selectedRequest.details.endDate || !selectedRequest.details.endDate ? selectedRequest.details.startDate : `${selectedRequest.details.startDate} to ${selectedRequest.details.endDate}`}</span>
+                                        </div>
+                                        <p className="text-[11px] text-teal-700">Reflected in attendance automatically. Meal allowance is not calculated for remote work days.</p>
                                     </div>
                                 )}
                                 {selectedRequest.details?.quantity && (
