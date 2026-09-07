@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     X, Calendar, Clock, AlertCircle, CheckCircle2, 
@@ -143,22 +143,30 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
         return () => controller.abort();
     }, [employeeId, currentMonth, retryKey]);
 
-    // Remove old handleDownload function
+const NON_WORKING_STATUSES = new Set(['Absent', 'On Leave', 'Holiday', 'Weekend']);
+const isNonWorkingStatus = (s: string) => NON_WORKING_STATUSES.has(s);
 
-    const toEditableEntry = (day: MonthlyDayEntry): TodayRosterEntry => ({
-        employeeId,
-        employeeName,
-        location: 'ISB-Office',
-        checkIn: day.checkIn,
-        checkOut: day.checkOut,
-        totalPunches: (day.checkIn ? 1 : 0) + (day.checkOut ? 1 : 0),
-        workDurationMinutes: day.workDurationMinutes || 0,
-        lateMinutes: day.lateMinutes || 0,
-        status: day.status,
-        verifyType: 'Manual',
-        note: day.note,
-        isWfh: day.isWfh,
-    });
+    const toEditableEntry = (day: MonthlyDayEntry): TodayRosterEntry => {
+        const isNonWorking = isNonWorkingStatus(day.status);
+        return {
+            employeeId,
+            employeeName,
+            location: 'ISB-Office',
+            checkIn: isNonWorking ? undefined : day.checkIn,
+            checkOut: isNonWorking ? undefined : day.checkOut,
+            totalPunches: isNonWorking ? 0 : ((day.checkIn ? 1 : 0) + (day.checkOut ? 1 : 0)),
+            workDurationMinutes: isNonWorking ? 0 : (day.workDurationMinutes || 0),
+            lateMinutes: isNonWorking ? 0 : (day.lateMinutes || 0),
+            status: day.status,
+            verifyType: 'Manual',
+            note: day.note,
+            isWfh: isNonWorking ? false : day.isWfh,
+        };
+    };
+
+    const editableEmployee = useMemo(() => {
+        return editingDay ? toEditableEntry(editingDay) : null;
+    }, [editingDay, employeeId, employeeName]);
 
     return (
         <AnimatePresence>
@@ -367,14 +375,14 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                                                     <div className="hidden sm:flex flex-col items-end">
                                                         <span className="text-[10px] text-slate-400 font-medium">Work Time</span>
                                                         <span className="text-xs font-semibold text-slate-700">
-                                                            {day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '—'}
+                                                            {!isNonWorkingStatus(day.status) && day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '—'}
                                                         </span>
                                                     </div>
                                                     <div className="flex flex-col items-end min-w-[90px]">
                                                         <span className="text-[10px] text-slate-400 font-medium">Punches</span>
                                                         <span className="text-xs font-bold text-slate-600">
-                                                            {day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '—'}
-                                                            {day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' })}` : ''}
+                                                            {!isNonWorkingStatus(day.status) && day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '—'}
+                                                            {!isNonWorkingStatus(day.status) && day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' })}` : ''}
                                                         </span>
                                                     </div>
                                                     {canEditAttendance && (
@@ -400,7 +408,7 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
                 isOpen={!!editingDay}
                 onClose={() => setEditingDay(null)}
                 date={editingDay?.date || ''}
-                employee={editingDay ? toEditableEntry(editingDay) : null}
+                employee={editableEmployee}
                 onSuccess={() => {
                     setRetryKey((prev) => prev + 1);
                 }}

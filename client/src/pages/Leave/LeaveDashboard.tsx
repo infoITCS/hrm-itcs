@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
     Calendar, Plus, Eye, Filter, FileText, Clock,
-    Plane, Heart
+    Plane, Heart, Edit2
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import ApplyLeaveModal from './ApplyLeaveModal';
@@ -72,6 +72,7 @@ const LeaveDashboard = () => {
     const [showApplyModal, setShowApplyModal] = useState(false);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
+    const [editingLeave, setEditingLeave] = useState<any>(null);
     const [searchParams] = useSearchParams();
     type LeaveTab = 'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings';
     const [activeTab, setActiveTab] = useState<LeaveTab>(() => {
@@ -241,7 +242,10 @@ const STATUS_COLORS: any = {
                     </div>
 
                     <button 
-                        onClick={() => setShowApplyModal(true)}
+                        onClick={() => {
+                            setEditingLeave(null);
+                            setShowApplyModal(true);
+                        }}
                         className="bg-white text-indigo-600 px-5 sm:px-6 py-3 sm:py-3.5 rounded-xl sm:rounded-2xl font-bold shadow-xl hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 w-full sm:w-auto"
                     >
                         <Plus size={20} strokeWidth={3} />
@@ -435,17 +439,32 @@ const STATUS_COLORS: any = {
                                             </div>
                                         </td>
                                         <td className="px-6 py-5 text-right">
-                                            <button 
-                                                onClick={() => {
-                                                    setSelectedLeave(leave);
-                                                    setShowDetailsModal(true);
-                                                }}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
-                                                title="View leave details"
-                                            >
-                                                <Eye size={13} />
-                                                Details
-                                            </button>
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                {leave.status === 'Pending' && (
+                                                    <button 
+                                                        onClick={() => {
+                                                            setEditingLeave(leave);
+                                                            setShowApplyModal(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
+                                                        title="Edit leave request"
+                                                    >
+                                                        <Edit2 size={12} />
+                                                        Edit
+                                                    </button>
+                                                )}
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedLeave(leave);
+                                                        setShowDetailsModal(true);
+                                                    }}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer shadow-2xs"
+                                                    title="View leave details"
+                                                >
+                                                    <Eye size={13} />
+                                                    Details
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 )) : (
@@ -469,10 +488,15 @@ const STATUS_COLORS: any = {
 
             <ApplyLeaveModal 
                 isOpen={showApplyModal} 
-                onClose={() => setShowApplyModal(false)}
+                onClose={() => {
+                    setShowApplyModal(false);
+                    setEditingLeave(null);
+                }}
+                editLeave={editingLeave}
                 onSuccess={() => {
                     fetchLeaveData();
                     setRefreshCounter(prev => prev + 1);
+                    setEditingLeave(null);
                 }}
                 balance={balance}
                 isAdminLike={isAdminLike}
@@ -486,6 +510,12 @@ const STATUS_COLORS: any = {
                     setSelectedLeave(null);
                 }}
                 leave={selectedLeave}
+                onEdit={(leaveToEdit) => {
+                    setShowDetailsModal(false);
+                    setSelectedLeave(null);
+                    setEditingLeave(leaveToEdit);
+                    setShowApplyModal(true);
+                }}
                 onSuccess={() => {
                     fetchLeaveData();
                     setRefreshCounter(prev => prev + 1);

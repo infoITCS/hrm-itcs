@@ -529,7 +529,51 @@ const getWfhDatesFromRequest = (request: any): string[] => {
     return [];
 };
 
-// Cancel a request (Employee)
+// Edit a request (Employee) - Allowed only before approval
+router.put('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const employee = await Employee.findOne({ userId }).select('employeeId');
+        if (!employee) {
+            return res.status(400).json({ message: 'Employee profile not found' });
+        }
+
+        const request = await EmployeeRequest.findOne({ _id: req.params.id, employeeId: employee.employeeId });
+        if (!request) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+
+        // Rule: Only pre-approval stages can be edited
+        const editableStatuses = ['Pending', 'Pending HR', 'Pending Finance'];
+        if (request.status === 'Approved') {
+            return res.status(400).json({ message: 'Approved requests cannot be edited. You can only cancel this request.' });
+        }
+        if (!editableStatuses.includes(request.status)) {
+            return res.status(400).json({ message: `Requests in status '${request.status}' cannot be edited.` });
+        }
+
+        const { requestType, details } = req.body;
+        if (requestType) request.requestType = requestType;
+
+        if (details) {
+            const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+            if (isLoan && details.paybackDuration && Number(details.paybackDuration) > 12) {
+                return res.status(400).json({ message: 'Loan payback duration cannot exceed 1 year (12 months).' });
+            }
+            request.details = { ...request.details, ...details };
+        }
+
+        request.updatedAt = new Date();
+        await request.save();
+
+        res.json({ message: 'Request updated successfully', request });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Cancel a request (Employee) - Allowed when Pending/Pending HR/Pending Finance or Approved
 router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
@@ -544,12 +588,41 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
             return res.status(404).json({ message: 'Request not found' });
         }
 
-        if (request.status !== 'Pending') {
-            return res.status(400).json({ message: 'Only Pending requests can be cancelled.' });
+        const cancellableStatuses = ['Pending', 'Pending HR', 'Pending Finance', 'Approved'];
+        if (!cancellableStatuses.includes(request.status)) {
+            return res.status(400).json({ message: `Requests in status '${request.status}' cannot be cancelled.` });
         }
 
+        const wasApproved = request.status === 'Approved';
         request.status = 'Cancelled';
+        request.updatedAt = new Date();
         await request.save();
+
+        // If an approved WFH request is cancelled, reset attendance records
+        const isWfh = (request.category || '').toLowerCase().includes('wfh') ||
+                      (request.category || '').toLowerCase().includes('work from home') ||
+                      (request.requestType || '').toLowerCase().includes('wfh') ||
+                      (request.requestType || '').toLowerCase().includes('work from home') ||
+                      Boolean(request.details?.isWfh);
+
+        if (wasApproved && isWfh) {
+            const wfhDates = getWfhDatesFromRequest(request);
+            for (const dateStr of wfhDates) {
+                await AttendanceRecord.updateOne(
+                    {
+                        employeeId: request.employeeId,
+                        date: dateStr,
+                        note: { $regex: new RegExp(request._id.toString().slice(-6), 'i') }
+                    },
+                    {
+                        $set: {
+                            isWfh: false,
+                            note: 'WFH Request Cancelled'
+                        }
+                    }
+                );
+            }
+        }
 
         res.json({ message: 'Request cancelled successfully', request });
     } catch (err) {

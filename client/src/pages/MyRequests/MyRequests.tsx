@@ -4,7 +4,8 @@ import api from '../../utils/api';
 import { 
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
-    ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones, Home
+    ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones, Home,
+    Edit2
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
@@ -21,6 +22,7 @@ const MyRequests = () => {
     const [showModal, setShowModal] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<any>(null);
+    const [editingRequest, setEditingRequest] = useState<any>(null);
     const [generatingDoc, setGeneratingDoc] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     
@@ -359,8 +361,14 @@ const MyRequests = () => {
 
             const token = localStorage.getItem('token');
             setIsSubmitting(true);
-            const res = await fetch(`${api.baseURL}/api/my-requests`, {
-                method: 'POST',
+            const isEditing = Boolean(editingRequest);
+            const url = isEditing 
+                ? `${api.baseURL}/api/my-requests/${editingRequest._id}`
+                : `${api.baseURL}/api/my-requests`;
+            const method = isEditing ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -374,9 +382,12 @@ const MyRequests = () => {
 
             if (res.ok) {
                 setShowModal(false);
+                setEditingRequest(null);
+                triggerAlert('Success', isEditing ? 'Request updated successfully!' : 'Request submitted successfully!', 'success');
                 fetchRequests();
             } else {
-                triggerAlert('Submission Error', 'Failed to submit request. Please try again.', 'error');
+                const data = await res.json().catch(() => ({}));
+                triggerAlert(isEditing ? 'Update Error' : 'Submission Error', data.message || 'Failed to submit request. Please try again.', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -385,8 +396,33 @@ const MyRequests = () => {
         }
     };
 
-    const handleCancelRequest = async (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleEditRequest = (req: any, e?: React.MouseEvent) => {
+        e?.stopPropagation();
+        const cat = customCategories.find(c => c.title === req.category) || {
+            title: req.category,
+            systemType: req.details?.isWfh ? 'wfh' : (req.details?.requestedAmount ? 'loan' : 'custom'),
+            options: [req.requestType]
+        };
+
+        setActiveCategory(cat);
+        setEditingRequest(req);
+        setSelectedOption(req.requestType || '');
+        setReason(req.details?.reason || '');
+        setQuantity(req.details?.quantity || 1);
+        setLoanAmount(req.details?.requestedAmount?.toString() || '');
+        setPaybackDuration(req.details?.paybackDuration?.toString() || '');
+        setMonthlyDeduction(req.details?.recommendedMonthlyDeduction?.toString() || '');
+        setPauseMonth(req.details?.periodMonth || (new Date().getMonth() + 1));
+        setPauseYear(req.details?.periodYear || new Date().getFullYear());
+        setWfhStartDate(req.details?.startDate || new Date().toISOString().split('T')[0]);
+        setWfhEndDate(req.details?.endDate || req.details?.startDate || new Date().toISOString().split('T')[0]);
+        setUploadedFiles(req.details?.attachments || []);
+        setShowDetailModal(false);
+        setShowModal(true);
+    };
+
+    const handleCancelRequest = async (id: string, e?: React.MouseEvent) => {
+        e?.stopPropagation();
         if (!confirm('Are you sure you want to cancel this request?')) return;
         try {
             const token = localStorage.getItem('token');
@@ -395,9 +431,14 @@ const MyRequests = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
+                triggerAlert('Success', 'Request cancelled successfully.', 'success');
                 fetchRequests();
+                if (selectedRequest && selectedRequest._id === id) {
+                    setSelectedRequest((prev: any) => prev ? { ...prev, status: 'Cancelled', updatedAt: new Date().toISOString() } : null);
+                }
             } else {
-                triggerAlert('Cancellation Error', 'Failed to cancel request.', 'error');
+                const data = await res.json().catch(() => ({}));
+                triggerAlert('Cancellation Error', data.message || 'Failed to cancel request.', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -617,18 +658,30 @@ const MyRequests = () => {
                                 )}
                             </div>
 
-                            <div className="mt-4 flex justify-between items-center border-t border-gray-100 pt-3">
+                            <div className="mt-4 flex justify-between items-center border-t border-gray-100 pt-3 gap-2">
                                 <span className="text-xs text-indigo-600 font-semibold inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <Eye size={12} /> View Details
                                 </span>
-                                {req.status === 'Pending' && (
-                                    <button
-                                        onClick={(e) => handleCancelRequest(req._id, e)}
-                                        className="px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-md transition-colors font-medium ml-auto"
-                                    >
-                                        Cancel
-                                    </button>
-                                )}
+                                <div className="flex items-center gap-1.5 ml-auto">
+                                    {['Pending', 'Pending HR', 'Pending Finance'].includes(req.status) && (
+                                        <button
+                                            onClick={(e) => handleEditRequest(req, e)}
+                                            className="px-2.5 py-1 text-xs text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-md transition-colors font-medium flex items-center gap-1"
+                                            title="Edit request details"
+                                        >
+                                            <Edit2 size={11} /> Edit
+                                        </button>
+                                    )}
+                                    {['Pending', 'Pending HR', 'Pending Finance', 'Approved'].includes(req.status) && (
+                                        <button
+                                            onClick={(e) => handleCancelRequest(req._id, e)}
+                                            className="px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-md transition-colors font-medium"
+                                            title="Cancel request"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -698,9 +751,9 @@ const MyRequests = () => {
                     <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-slide-up">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">
-                                {activeCategory.title}
+                                {editingRequest ? `Edit ${editingRequest.requestType || activeCategory.title}` : activeCategory.title}
                             </h3>
-                            <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button onClick={() => { setShowModal(false); setEditingRequest(null); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
                                 <XCircle size={20} />
                             </button>
                         </div>
@@ -1084,7 +1137,7 @@ const MyRequests = () => {
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
                             <button 
                                 type="button"
-                                onClick={() => setShowModal(false)}
+                                onClick={() => { setShowModal(false); setEditingRequest(null); }}
                                 disabled={generatingDoc || isSubmitting}
                                 className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors font-medium text-sm disabled:opacity-50"
                             >
@@ -1104,8 +1157,10 @@ const MyRequests = () => {
                                 ) : isSubmitting ? (
                                     <>
                                         <Loader2 size={16} className="animate-spin" />
-                                        <span>Submitting...</span>
+                                        <span>Saving...</span>
                                     </>
+                                ) : editingRequest ? (
+                                    'Save Changes'
                                 ) : (
                                     activeCategory.systemType === 'document' ? 'Generate Document' : 'Submit Request'
                                 )}
@@ -1281,7 +1336,25 @@ const MyRequests = () => {
                             )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                {['Pending', 'Pending HR', 'Pending Finance'].includes(selectedRequest.status) && (
+                                    <button
+                                        onClick={(e) => handleEditRequest(selectedRequest, e)}
+                                        className="px-3.5 py-2 bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg transition-colors font-medium text-sm flex items-center gap-1.5 shadow-xs"
+                                    >
+                                        <Edit2 size={14} /> Edit Request
+                                    </button>
+                                )}
+                                {['Pending', 'Pending HR', 'Pending Finance', 'Approved'].includes(selectedRequest.status) && (
+                                    <button
+                                        onClick={(e) => handleCancelRequest(selectedRequest._id, e)}
+                                        className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg transition-colors font-medium text-sm shadow-xs"
+                                    >
+                                        Cancel Request
+                                    </button>
+                                )}
+                            </div>
                             <button
                                 onClick={() => { setShowDetailModal(false); setSelectedRequest(null); }}
                                 className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-medium text-sm"

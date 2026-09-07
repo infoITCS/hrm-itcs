@@ -810,6 +810,221 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     }
 });
 
+// PUT /api/leaves/:id - Edit pending leave request (Employee / Requester)
+router.put('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const user = authReq.user;
+        if (!user) return res.status(401).json({ message: 'Unauthorized' });
+
+        const leave = await LeaveRequest.findById(req.params.id);
+        if (!leave) return res.status(404).json({ success: false, message: 'Leave request not found' });
+
+        const isOwner = user.userId === leave.employeeId;
+        const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(user.role);
+
+        if (!isOwner && !isManagerOrAdmin) {
+            return res.status(403).json({ success: false, message: 'Forbidden: Cannot edit this leave request' });
+        }
+
+        if (leave.status === 'Approved') {
+            return res.status(400).json({ success: false, message: 'Approved leave cannot be edited. You can only cancel this leave request.' });
+        }
+
+        if (leave.status !== 'Pending') {
+            return res.status(400).json({ success: false, message: `Leave requests in status '${leave.status}' cannot be edited.` });
+        }
+
+        const { startDate, endDate, type, reason, duration = 'Full Day', startTime, endTime } = req.body;
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (start > end) {
+            return res.status(400).json({ success: false, message: 'Start date must be before end date' });
+        }
+
+        const requestedTypeCode = (type || leave.type).toLowerCase().trim();
+        const leaveType = await LeaveType.findOne({ 
+            $or: [
+                { name: type || leave.type },
+                { code: requestedTypeCode }
+            ],
+            isActive: true 
+        });
+        if (!leaveType) {
+            return res.status(400).json({ success: false, message: `Invalid or inactive leave type: ${type || leave.type}` });
+        }
+
+        const leaveTypeCode = leaveType.code;
+        const sandwichEnabled = leaveType.sandwichRuleEnabled !== false;
+
+        let requestedDurationDays = 1;
+        if (duration === 'Half Day - Morning' || duration === 'Half Day - Afternoon') {
+            if (start.getTime() !== end.getTime()) {
+                return res.status(400).json({ success: false, message: 'Partial leaves must be on a single date' });
+            }
+            requestedDurationDays = 0.5;
+        } else if (duration === 'Specify Time') {
+            if (start.getTime() !== end.getTime()) {
+                return res.status(400).json({ success: false, message: 'Specify time leaves must be on a single date' });
+            }
+            if (!startTime || !endTime) {
+                return res.status(400).json({ success: false, message: 'Start and end time are required' });
+            }
+            const [sH, sM] = startTime.split(':').map(Number);
+            const [eH, eM] = endTime.split(':').map(Number);
+            const diffHours = (eH + eM / 60) - (sH + sM / 60);
+            if (diffHours <= 0) return res.status(400).json({ success: false, message: 'End time must be after start time' });
+            requestedDurationDays = Number((diffHours / 8).toFixed(2));
+        }
+
+        const daysRequested = getLeaveDaysCountWithSandwich(start, end, sandwichEnabled);
+        if (daysRequested <= 0) {
+            return res.status(400).json({ success: false, message: 'Leave request must include at least one working day' });
+        }
+
+        // Calculate old days per year for rollback
+        const oldStart = new Date(leave.startDate);
+        const oldEnd = new Date(leave.endDate);
+        const oldRequestedTypeCode = leave.type.toLowerCase().trim();
+        const oldLeaveType = await LeaveType.findOne({ $or: [{ name: leave.type }, { code: oldRequestedTypeCode }] });
+        const oldTypeCode = oldLeaveType ? oldLeaveType.code : oldRequestedTypeCode;
+
+        const oldYearDaysMap = new Map<number, number>();
+        const oldDates: Date[] = [];
+        let oldCur = new Date(oldStart);
+        while (oldCur <= oldEnd) {
+            oldDates.push(new Date(oldCur));
+            oldCur.setDate(oldCur.getDate() + 1);
+        }
+        for (let i = 0; i < oldDates.length; i++) {
+            const d = oldDates[i];
+            const dayOfWeek = d.getDay();
+            let isSandwiched = false;
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                isSandwiched = true;
+            } else if (oldLeaveType ? oldLeaveType.sandwichRuleEnabled !== false : true) {
+                let hasBefore = false;
+                let hasAfter = false;
+                for (let j = 0; j < i; j++) {
+                    if (oldDates[j].getDay() !== 0 && oldDates[j].getDay() !== 6) { hasBefore = true; break; }
+                }
+                for (let j = i + 1; j < oldDates.length; j++) {
+                    if (oldDates[j].getDay() !== 0 && oldDates[j].getDay() !== 6) { hasAfter = true; break; }
+                }
+                if (hasBefore && hasAfter) isSandwiched = true;
+            }
+            if (isSandwiched) {
+                const year = d.getFullYear();
+                let dayDeduction = 1;
+                if (leave.duration && leave.duration !== 'Full Day' && oldDates.length === 1) {
+                    dayDeduction = leave.totalDays || 0.5;
+                }
+                oldYearDaysMap.set(year, (oldYearDaysMap.get(year) || 0) + dayDeduction);
+            }
+        }
+
+        // Calculate new days per year
+        const newYearDaysMap = new Map<number, number>();
+        const newDates: Date[] = [];
+        let newCur = new Date(start);
+        while (newCur <= end) {
+            newDates.push(new Date(newCur));
+            newCur.setDate(newCur.getDate() + 1);
+        }
+        for (let i = 0; i < newDates.length; i++) {
+            const d = newDates[i];
+            const dayOfWeek = d.getDay();
+            let isSandwiched = false;
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                isSandwiched = true;
+            } else if (sandwichEnabled) {
+                let hasBefore = false;
+                let hasAfter = false;
+                for (let j = 0; j < i; j++) {
+                    if (newDates[j].getDay() !== 0 && newDates[j].getDay() !== 6) { hasBefore = true; break; }
+                }
+                for (let j = i + 1; j < newDates.length; j++) {
+                    if (newDates[j].getDay() !== 0 && newDates[j].getDay() !== 6) { hasAfter = true; break; }
+                }
+                if (hasBefore && hasAfter) isSandwiched = true;
+            }
+            if (isSandwiched) {
+                const year = d.getFullYear();
+                let dayDeduction = 1;
+                if (duration !== 'Full Day' && newDates.length === 1) {
+                    dayDeduction = requestedDurationDays;
+                }
+                newYearDaysMap.set(year, (newYearDaysMap.get(year) || 0) + dayDeduction);
+            }
+        }
+
+        const session = await mongoose.startSession();
+        let totalNewDeducted = 0;
+        try {
+            await session.withTransaction(async () => {
+                const activeTypes = await LeaveType.find({ isActive: true }).session(session);
+                const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(leave.employeeId, session);
+
+                // 1. Rollback old pending deduction
+                for (const [year, days] of oldYearDaysMap.entries()) {
+                    let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
+                    if (balance) {
+                        const cat = balance.balances.find((b: any) => b.leaveTypeCode === oldTypeCode);
+                        if (cat) {
+                            cat.pending = Math.max(0, cat.pending - days);
+                            balance.markModified('balances');
+                            await balance.save({ session });
+                        }
+                    }
+                }
+
+                // 2. Reserve new pending deduction and validate availability
+                for (const [year, days] of newYearDaysMap.entries()) {
+                    let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
+                    if (!balance) {
+                        balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
+                    }
+                    ensureBalancesInitialized(balance, activeTypes);
+                    const cat = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
+                    if (!cat) {
+                        throw new Error(`Insufficient balance category for ${leaveType.name}`);
+                    }
+                    const available = cat.total - (cat.used + cat.pending);
+                    if (available < days) {
+                        throw new Error(`Insufficient ${leaveType.name} leave balance for year ${year}. Requested: ${days}, Available: ${available}`);
+                    }
+                    cat.pending += days;
+                    balance.markModified('balances');
+                    await balance.save({ session });
+                }
+
+                for (const days of newYearDaysMap.values()) {
+                    totalNewDeducted += days;
+                }
+
+                leave.startDate = start;
+                leave.endDate = end;
+                leave.type = leaveType.name;
+                leave.reason = reason;
+                leave.duration = duration;
+                leave.startTime = duration === 'Specify Time' ? startTime : undefined;
+                leave.endTime = duration === 'Specify Time' ? endTime : undefined;
+                leave.totalDays = totalNewDeducted;
+                leave.updatedAt = new Date();
+                await leave.save({ session });
+            });
+
+            res.json({ success: true, message: 'Leave request updated successfully', data: leave });
+        } catch (error: any) {
+            return res.status(400).json({ success: false, message: error.message });
+        } finally {
+            session.endSession();
+        }
+    } catch (error) {
+        next(error);
+    }
+});
+
 // PUT /api/leaves/:id/status - Approve or Reject Leave
 router.put('/:id/status', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
@@ -1135,10 +1350,6 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
 
         if (leave.status === 'Rejected') {
             return res.status(400).json({ message: 'Cannot cancel a rejected leave' });
-        }
-
-        if (leave.status === 'Approved' && !isManagerOrAdmin) {
-            return res.status(403).json({ message: 'Only Admins or Managers can cancel approved leaves' });
         }
 
         const oldStatus = leave.status;

@@ -297,20 +297,22 @@ export async function getTodayRoster(
             avatar = (emp as any).avatar;
         }
 
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(status);
+
         roster.push({
             employeeId: empId || (emp as any)?.employeeId || `unlinked_${firstPunch.machineUserId}`,
             employeeName,
             avatar,
             location: punchLoc,
-            checkIn: checkInTime.toISOString(),
-            checkOut: checkOutTime?.toISOString(),
-            totalPunches: punches.length,
-            workDurationMinutes,
-            lateMinutes,
+            checkIn: isNonWorking ? undefined : checkInTime.toISOString(),
+            checkOut: isNonWorking ? undefined : checkOutTime?.toISOString(),
+            totalPunches: isNonWorking ? 0 : punches.length,
+            workDurationMinutes: isNonWorking ? 0 : workDurationMinutes,
+            lateMinutes: isNonWorking ? 0 : lateMinutes,
             status,
             verifyType: firstPunch.deviceSN === 'WEB-PORTAL' ? 'Dashboard' : (VERIFY_LABELS[firstPunch.verifyType] || 'Biometric'),
             note: rec?.note,
-            isWfh: Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || ''),
+            isWfh: isNonWorking ? false : (Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || '')),
         });
     }
 
@@ -322,20 +324,22 @@ export async function getTodayRoster(
         const rec = recMap.get(empId) as any;
         const emp = idToEmp.get(empId);
         const name = emp ? `${(emp as any).firstName} ${(emp as any).lastName || ''}`.trim() : 'Unknown';
+        const effectiveStatus = rec?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent');
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(effectiveStatus);
 
         roster.push({
             employeeId: empId,
             employeeName: name,
             avatar: emp?.avatar,
             location: rec?.location || location || 'ISB-Office',
-            checkIn: rec?.checkIn?.toISOString?.() || rec?.checkIn,
-            checkOut: rec?.checkOut?.toISOString?.() || rec?.checkOut,
-            totalPunches: 0,
-            workDurationMinutes: rec?.workDurationMinutes || 0,
-            lateMinutes: rec?.lateMinutes || 0,
-            status: rec?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent'),
+            checkIn: isNonWorking ? undefined : (rec?.checkIn?.toISOString?.() || rec?.checkIn),
+            checkOut: isNonWorking ? undefined : (rec?.checkOut?.toISOString?.() || rec?.checkOut),
+            totalPunches: isNonWorking ? 0 : (rec?.allPunches?.length || 0),
+            workDurationMinutes: isNonWorking ? 0 : (rec?.workDurationMinutes || 0),
+            lateMinutes: isNonWorking ? 0 : (rec?.lateMinutes || 0),
+            status: effectiveStatus,
             note: rec?.note,
-            isWfh: Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || ''),
+            isWfh: isNonWorking ? false : (Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || '')),
         });
     }
 
@@ -381,7 +385,7 @@ export async function getDashboardSummary(
         // so HR can see late arrivals even when primary status is Early Leave.
         if (entry.status !== 'Incomplete' && (entry.lateMinutes || 0) > 0) totalLate++;
 
-        if (entry.checkIn) {
+        if (entry.checkIn && !['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(entry.status)) {
             totalWorkMins += entry.workDurationMinutes || 0;
             workCount++;
         }
@@ -680,23 +684,29 @@ export async function getEmployeeMonthlyAttendance(
         const r = recordMap.get(dateStr);
 
         if (r) {
+            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(r.status);
+
             if (['Present', 'Late', 'Half-Day'].includes(r.status)) {
                 summary.presentDays++;
                 if (r.lateMinutes > 0) summary.lateDays++;
             } else if (r.status === 'Absent') {
                 summary.absentDays++;
             }
-            summary.totalWorkMins += r.workDurationMinutes || 0;
+
+            // Only count work duration towards monthly total for working days
+            if (!isNonWorking) {
+                summary.totalWorkMins += r.workDurationMinutes || 0;
+            }
 
             days.push({
                 date: r.date,
-                checkIn: r.checkIn ? (typeof r.checkIn === 'string' ? r.checkIn : r.checkIn.toISOString()) : undefined,
-                checkOut: r.checkOut ? (typeof r.checkOut === 'string' ? r.checkOut : r.checkOut.toISOString()) : undefined,
-                workDurationMinutes: r.workDurationMinutes || 0,
-                lateMinutes: r.lateMinutes || 0,
+                checkIn: isNonWorking ? undefined : (r.checkIn ? (typeof r.checkIn === 'string' ? r.checkIn : r.checkIn.toISOString()) : undefined),
+                checkOut: isNonWorking ? undefined : (r.checkOut ? (typeof r.checkOut === 'string' ? r.checkOut : r.checkOut.toISOString()) : undefined),
+                workDurationMinutes: isNonWorking ? 0 : (r.workDurationMinutes || 0),
+                lateMinutes: isNonWorking ? 0 : (r.lateMinutes || 0),
                 status: r.status,
                 note: r.note,
-                isWfh: Boolean(r.isWfh) || /wfh|work from home/i.test(r.note || ''),
+                isWfh: isNonWorking ? false : (Boolean(r.isWfh) || /wfh|work from home/i.test(r.note || '')),
             });
         } else {
             const weekend = isWeekend(dateStr);
@@ -755,10 +765,11 @@ function buildAttendanceExportCsv(employees: any[], records: any[], dates: strin
             const record = recordMap.get(`${emp.employeeId}_${dateStr}`);
             const dateObj = new Date(dateStr);
             const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-            const checkIn = record?.checkIn ? new Date(record.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
-            const checkOut = record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
-            const workHrs = record?.workDurationMinutes ? (record.workDurationMinutes / 60).toFixed(2) : '0';
             const status = record?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent');
+            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(status);
+            const checkIn = !isNonWorking && record?.checkIn ? new Date(record.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
+            const checkOut = !isNonWorking && record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
+            const workHrs = !isNonWorking && record?.workDurationMinutes ? (record.workDurationMinutes / 60).toFixed(2) : '0';
 
             rows.push([
                 escapeCsvField(emp.employeeId),
@@ -877,7 +888,9 @@ function buildAttendanceMonthlyMatrixCsv(employees: any[], records: any[], dates
                 lateCount++;
             }
 
-            totalWorkMinutes += record?.workDurationMinutes || 0;
+            if (!['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(status)) {
+                totalWorkMinutes += record?.workDurationMinutes || 0;
+            }
             dayCells.push(escapeCsvField(code));
         }
 

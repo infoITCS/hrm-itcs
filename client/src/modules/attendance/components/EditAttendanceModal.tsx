@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { X, Clock, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Clock, AlertTriangle, Info } from 'lucide-react';
 import { attendanceApi } from '../api/attendanceApi';
 import type { AttendanceStatus, TodayRosterEntry } from '../types';
+import TimePicker12 from './TimePicker12';
 
 interface EditAttendanceModalProps {
     isOpen: boolean;
@@ -26,6 +27,9 @@ const STATUS_OPTIONS: { value: StatusSelectValue; label: string }[] = [
     { value: 'Weekend', label: 'Weekend' },
     { value: 'Incomplete', label: 'Incomplete' },
 ];
+
+const NON_WORKING_STATUSES = new Set<StatusSelectValue>(['Absent', 'On Leave', 'Holiday', 'Weekend']);
+const isNonWorkingStatus = (s: StatusSelectValue) => NON_WORKING_STATUSES.has(s);
 
 const isWfhMarked = (entry?: { isWfh?: boolean; note?: string; status?: AttendanceStatus } | null) =>
     Boolean(entry?.isWfh) || /wfh|work from home/i.test(entry?.note || '');
@@ -53,36 +57,61 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    // Session tracker: ensures form state initializes ONLY ONCE when opening for this record,
+    // preventing background parent polling or re-renders from clobbering in-progress user edits.
+    const lastOpenSessionRef = useRef<string | null>(null);
+
     useEffect(() => {
-        if (isOpen && employee) {
-            const checkInLocal = toLocalIsoString(employee.checkIn);
-            const checkOutLocal = toLocalIsoString(employee.checkOut);
-
-            if (checkInLocal) {
-                const [d, t] = checkInLocal.split('T');
-                setCheckInDate(d);
-                setCheckInTime(t);
-            } else {
-                setCheckInDate(date);
-                setCheckInTime('');
-            }
-
-            if (checkOutLocal) {
-                const [d, t] = checkOutLocal.split('T');
-                setCheckOutDate(d);
-                setCheckOutTime(t);
-            } else {
-                setCheckOutDate(date);
-                setCheckOutTime('');
-            }
-
-            setStatus(toStatusSelectValue(employee));
-            setNote(employee.note || '');
-            setError('');
+        if (!isOpen || !employee) {
+            lastOpenSessionRef.current = null;
+            return;
         }
-    }, [isOpen, employee, date]);
+
+        const currentSessionKey = `${employee.employeeId}_${date}`;
+        // If already open and active for this record, do NOT overwrite user's in-progress changes!
+        if (lastOpenSessionRef.current === currentSessionKey) {
+            return;
+        }
+
+        lastOpenSessionRef.current = currentSessionKey;
+
+        const entryStatus = toStatusSelectValue(employee);
+        setStatus(entryStatus);
+        setNote(employee.note || '');
+        setError('');
+
+        const isNonWorking = isNonWorkingStatus(entryStatus);
+        const checkInLocal = toLocalIsoString(employee.checkIn);
+        const checkOutLocal = toLocalIsoString(employee.checkOut);
+
+        if (!isNonWorking && checkInLocal) {
+            const [d, t] = checkInLocal.split('T');
+            setCheckInDate(d);
+            setCheckInTime(t);
+        } else {
+            setCheckInDate(date);
+            setCheckInTime('');
+        }
+
+        if (!isNonWorking && checkOutLocal) {
+            const [d, t] = checkOutLocal.split('T');
+            setCheckOutDate(d);
+            setCheckOutTime(t);
+        } else {
+            setCheckOutDate(date);
+            setCheckOutTime('');
+        }
+    }, [isOpen, employee?.employeeId, date]);
 
     if (!isOpen || !employee) return null;
+
+    const handleStatusChange = (newStatus: StatusSelectValue) => {
+        setStatus(newStatus);
+        if (isNonWorkingStatus(newStatus)) {
+            setCheckInTime('');
+            setCheckOutTime('');
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -90,14 +119,20 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
         setLoading(true);
 
         try {
-            const checkInDateTime = checkInDate && checkInTime ? `${checkInDate}T${checkInTime}` : '';
-            const checkOutDateTime = checkOutDate && checkOutTime ? `${checkOutDate}T${checkOutTime}` : '';
+            const isNonWorking = isNonWorkingStatus(status);
+            let cIn: string | undefined = undefined;
+            let cOut: string | undefined = undefined;
 
-            const cIn = checkInDateTime ? new Date(checkInDateTime).toISOString() : undefined;
-            const cOut = checkOutDateTime ? new Date(checkOutDateTime).toISOString() : undefined;
+            if (!isNonWorking) {
+                const checkInDateTime = checkInDate && checkInTime ? `${checkInDate}T${checkInTime}` : '';
+                const checkOutDateTime = checkOutDate && checkOutTime ? `${checkOutDate}T${checkOutTime}` : '';
 
-            const isWfh = status === 'Present (WFH)';
-            const attendanceStatus: AttendanceStatus = isWfh ? 'Present' : status;
+                cIn = checkInDateTime ? new Date(checkInDateTime).toISOString() : undefined;
+                cOut = checkOutDateTime ? new Date(checkOutDateTime).toISOString() : undefined;
+            }
+
+            const isWfh = !isNonWorking && status === 'Present (WFH)';
+            const attendanceStatus: AttendanceStatus = isWfh ? 'Present' : (status as AttendanceStatus);
 
             await attendanceApi.createManualRecord({
                 employeeId: employee.employeeId,
@@ -119,13 +154,15 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
         }
     };
 
+    const isNonWorking = isNonWorkingStatus(status);
+
     return (
         <div
             className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out] overscroll-contain"
             onClick={onClose}
         >
             <div
-                className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] flex flex-col animate-[slideUp_0.3s_ease-out]"
+                className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-lg max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] flex flex-col animate-[slideUp_0.3s_ease-out]"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -164,53 +201,13 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Clock size={12} /> Check In
-                                </label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                                    <input
-                                        type="date"
-                                        value={checkInDate}
-                                        onChange={(e) => setCheckInDate(e.target.value)}
-                                        className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                                    />
-                                    <input
-                                        type="time"
-                                        value={checkInTime}
-                                        onChange={(e) => setCheckInTime(e.target.value)}
-                                        className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Clock size={12} /> Check Out
-                                </label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
-                                    <input
-                                        type="date"
-                                        value={checkOutDate}
-                                        onChange={(e) => setCheckOutDate(e.target.value)}
-                                        className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                                    />
-                                    <input
-                                        type="time"
-                                        value={checkOutTime}
-                                        onChange={(e) => setCheckOutTime(e.target.value)}
-                                        className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
+                        {/* Status Selector at the top — status-first workflow */}
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status</label>
                             <select
                                 value={status}
-                                onChange={(e) => setStatus(e.target.value as StatusSelectValue)}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                onChange={(e) => handleStatusChange(e.target.value as StatusSelectValue)}
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                             >
                                 {STATUS_OPTIONS.map((opt) => (
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -222,6 +219,81 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                                 </p>
                             )}
                         </div>
+
+                        {/* Time Inputs — only shown for working statuses */}
+                        {isNonWorking ? (
+                            <div className="p-3.5 bg-amber-50/80 border border-amber-200/70 rounded-xl text-amber-800 text-xs flex items-start gap-2.5">
+                                <Info size={16} className="shrink-0 text-amber-600 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">Time constraints do not apply to {status}.</span>
+                                    <p className="text-amber-700/90 mt-0.5">
+                                        Punches and work hours are disabled for this status. To enter or edit times, first change the status to a working status (such as Present, Late, or Half-Day).
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Clock size={12} /> Check In (12-Hour Time)
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 items-start">
+                                        <div className="sm:col-span-5 min-w-0">
+                                            <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Date</label>
+                                            <input
+                                                type="date"
+                                                value={checkInDate}
+                                                onChange={(e) => setCheckInDate(e.target.value)}
+                                                className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-7 min-w-0">
+                                            <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Time</label>
+                                            <TimePicker12
+                                                value={checkInTime}
+                                                onChange={setCheckInTime}
+                                                defaultPeriod="AM"
+                                                presets={[
+                                                    { label: '9:00 AM', time: '09:00' },
+                                                    { label: '9:15 AM', time: '09:15' },
+                                                    { label: '9:30 AM', time: '09:30' },
+                                                    { label: '10:00 AM', time: '10:00' },
+                                                ]}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Clock size={12} /> Check Out (12-Hour Time)
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 items-start">
+                                        <div className="sm:col-span-5 min-w-0">
+                                            <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Date</label>
+                                            <input
+                                                type="date"
+                                                value={checkOutDate}
+                                                onChange={(e) => setCheckOutDate(e.target.value)}
+                                                className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-7 min-w-0">
+                                            <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Time</label>
+                                            <TimePicker12
+                                                value={checkOutTime}
+                                                onChange={setCheckOutTime}
+                                                defaultPeriod="PM"
+                                                presets={[
+                                                    { label: '6:00 PM', time: '18:00' },
+                                                    { label: '6:30 PM', time: '18:30' },
+                                                    { label: '7:00 PM', time: '19:00' },
+                                                ]}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Adjustment Note</label>
@@ -256,4 +328,4 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
             </div>
         </div>
     );
-};
+}

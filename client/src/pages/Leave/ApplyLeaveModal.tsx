@@ -11,9 +11,10 @@ interface ApplyLeaveModalProps {
     balance: any;
     isAdminLike?: boolean;
     allEmployees?: any[];
+    editLeave?: any;
 }
 
-const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees }: ApplyLeaveModalProps) => {
+const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees, editLeave }: ApplyLeaveModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -86,13 +87,26 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
 
         if (isOpen) {
             fetchTypes();
-            setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '', duration: 'Full Day', startTime: '', endTime: '' });
-            setSelectedEmployeeId('');
+            if (editLeave) {
+                setFormData({
+                    startDate: editLeave.startDate ? new Date(editLeave.startDate).toISOString().split('T')[0] : '',
+                    endDate: editLeave.endDate ? new Date(editLeave.endDate).toISOString().split('T')[0] : '',
+                    type: editLeave.type || 'Annual',
+                    reason: editLeave.reason || '',
+                    duration: editLeave.duration || 'Full Day',
+                    startTime: editLeave.startTime || '',
+                    endTime: editLeave.endTime || ''
+                });
+                setSelectedEmployeeId(editLeave.employeeId || '');
+            } else {
+                setFormData({ startDate: '', endDate: '', type: 'Annual', reason: '', duration: 'Full Day', startTime: '', endTime: '' });
+                setSelectedEmployeeId('');
+            }
             setLocalBalance(null);
             setError(null);
             setLoading(false);
         }
-    }, [isOpen]);
+    }, [isOpen, editLeave]);
 
     useEffect(() => {
         if (formData.duration !== 'Full Day' && formData.startDate && formData.startDate !== formData.endDate) {
@@ -166,8 +180,10 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                 return;
             }
             
-            if (diffDays > availableDays) {
-                setError(`Requested ${diffDays} day(s) exceeds your available ${availableDays} day(s) balance.`);
+            const isEditing = Boolean(editLeave);
+            const effectiveAvailableDays = isEditing ? (availableDays + (editLeave.totalDays || 0)) : availableDays;
+            if (diffDays > effectiveAvailableDays) {
+                setError(`Requested ${diffDays} day(s) exceeds your available ${effectiveAvailableDays} day(s) balance.`);
                 setLoading(false);
                 return;
             }
@@ -180,8 +196,10 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
             }
 
             const payload = { ...formData, employeeId: selectedEmployeeId || undefined };
-            const res = await fetch(`${api.baseURL}/api/leaves`, {
-                method: 'POST',
+            const url = isEditing ? `${api.baseURL}/api/leaves/${editLeave._id}` : `${api.baseURL}/api/leaves`;
+            const method = isEditing ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -221,8 +239,12 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                     <div className="p-5 sm:p-6">
                         <div className="flex items-center justify-between mb-4">
                             <div>
-                                <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">Apply For Leave</h2>
-                                <p className="text-[10px] text-slate-400">Fill the details below to submit</p>
+                                <h2 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">
+                                    {editLeave ? 'Edit Leave Request' : 'Apply For Leave'}
+                                </h2>
+                                <p className="text-[10px] text-slate-400">
+                                    {editLeave ? 'Modify your leave request details below' : 'Fill the details below to submit'}
+                                </p>
                             </div>
                         <button 
                             onClick={onClose}
@@ -377,7 +399,7 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                             ) : (
                                 <>
                                     <Send size={14} />
-                                    <span>Submit Request</span>
+                                    <span>{editLeave ? 'Save Changes' : 'Submit Request'}</span>
                                 </>
                             )}
                         </button>

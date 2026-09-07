@@ -15,7 +15,8 @@ import { useState, useEffect } from 'react';
 import {
     Activity, Calendar, MapPin, ChevronDown, RefreshCw,
     UserCheck, UserX, AlertTriangle, Timer, Clock,
-    Fingerprint, LogIn, LogOut, Download, User, Zap, Edit2
+    Fingerprint, LogIn, LogOut, Download, User, Zap, Edit2,
+    Search, X
 } from 'lucide-react';
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
 import { useRoster } from '../hooks/useRoster';
@@ -76,15 +77,16 @@ function RosterRow({
 }: { 
     entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void 
 }) {
-    const isMissing = entry.status === 'Incomplete' && isPast;
+    const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(entry.status);
+    const isMissing = !isNonWorking && entry.status === 'Incomplete' && isPast;
     const statusLabel = entry.isWfh && entry.status === 'Present'
         ? 'Present (WFH)'
         : isMissing
             ? 'Missing Checkout'
             : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
     const statusClass = STATUS_BADGE[statusLabel] || 'bg-slate-100 text-slate-500';
-    const showLateFlag = entry.status !== 'Incomplete' && entry.lateMinutes > 0;
-    const showEarlyFlag = entry.status === 'Early Leave';
+    const showLateFlag = !isNonWorking && entry.status !== 'Incomplete' && entry.lateMinutes > 0;
+    const showEarlyFlag = !isNonWorking && entry.status === 'Early Leave';
     const [imgError, setImgError] = useState(false);
 
     // Build full avatar URL if relative
@@ -122,7 +124,7 @@ function RosterRow({
             </td>
             {/* Check In */}
             <td className="py-3 px-4">
-                {entry.checkIn ? (
+                {!isNonWorking && entry.checkIn ? (
                     <div className="flex items-center gap-1.5">
                         <LogIn size={13} className="text-emerald-500" />
                         <span className="text-sm font-medium text-slate-700">{fmtTime(entry.checkIn)}</span>
@@ -133,12 +135,12 @@ function RosterRow({
             </td>
             {/* Check Out */}
             <td className="py-3 px-4">
-                {entry.checkOut ? (
+                {!isNonWorking && entry.checkOut ? (
                     <div className="flex items-center gap-1.5">
                         <LogOut size={13} className="text-rose-500" />
                         <span className="text-sm font-medium text-slate-700">{fmtTime(entry.checkOut)}</span>
                     </div>
-                ) : entry.checkIn ? (
+                ) : !isNonWorking && entry.checkIn ? (
                     isPast ? (
                         <span className="text-xs text-rose-500 font-bold">Missing</span>
                     ) : (
@@ -150,11 +152,11 @@ function RosterRow({
             </td>
             {/* Work Hours */}
             <td className="py-3 px-4 text-sm text-slate-600 font-medium">
-                {entry.workDurationMinutes > 0 ? fmtMins(entry.workDurationMinutes) : '—'}
+                {!isNonWorking && entry.workDurationMinutes > 0 ? fmtMins(entry.workDurationMinutes) : '—'}
             </td>
             {/* Late */}
             <td className="py-3 px-4">
-                {entry.lateMinutes > 0 ? (
+                {!isNonWorking && entry.lateMinutes > 0 ? (
                     <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">+{entry.lateMinutes}m</span>
                 ) : (
                     <span className="text-xs text-slate-300">—</span>
@@ -234,6 +236,7 @@ export default function AdminDashboard() {
     const [locations, setLocations] = useState<string[]>([]);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [statusFilter, setStatusFilter] = useState<StatusFilter | ''>('');
+    const [searchQuery, setSearchQuery] = useState('');
     const [selectedEmp, setSelectedEmp] = useState<{ id: string; name: string } | null>(null);
     const [editingEmp, setEditingEmp] = useState<TodayRosterEntry | null>(null);
     const [isAutoCloseModalOpen, setIsAutoCloseModalOpen] = useState(false);
@@ -254,21 +257,31 @@ export default function AdminDashboard() {
     }, []);
 
     useEffect(() => {
-        if (!autoRefresh) return;
+        // Pause background auto-refresh while editing or inspecting an employee
+        if (!autoRefresh || editingEmp || selectedEmp || isAutoCloseModalOpen) return;
         const id = setInterval(() => { refresh(true); refreshRoster(true); }, 30_000);
         return () => clearInterval(id);
-    }, [autoRefresh, refresh, refreshRoster]);
+    }, [autoRefresh, editingEmp, selectedEmp, isAutoCloseModalOpen, refresh, refreshRoster]);
 
-    // Filter roster by selected status
-    const filteredRoster = statusFilter
-        ? roster.filter((r) => {
-            if (statusFilter === 'OnTime') return ['Present', 'Half-Day'].includes(r.status) && r.lateMinutes === 0;
-            if (statusFilter === 'StillIn') return r.status === 'Incomplete';
-            if (statusFilter === 'Present') return ['Present', 'Late', 'Half-Day', 'Incomplete'].includes(r.status);
-            if (statusFilter === 'Late') return r.status !== 'Incomplete' && (r.lateMinutes || 0) > 0;
-            return r.status === statusFilter;
-        })
-        : roster;
+    // Filter roster by selected status and search query
+    const filteredRoster = roster.filter((r) => {
+        // Status filter
+        if (statusFilter === 'OnTime' && !(['Present', 'Half-Day'].includes(r.status) && r.lateMinutes === 0)) return false;
+        if (statusFilter === 'StillIn' && r.status !== 'Incomplete') return false;
+        if (statusFilter === 'Present' && !['Present', 'Late', 'Half-Day', 'Incomplete'].includes(r.status)) return false;
+        if (statusFilter === 'Late' && (r.status === 'Incomplete' || (r.lateMinutes || 0) <= 0)) return false;
+        if (statusFilter && !['OnTime', 'StillIn', 'Present', 'Late'].includes(statusFilter) && r.status !== statusFilter) return false;
+
+        // Search query filter (employee name or ID)
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const nameMatch = (r.employeeName || '').toLowerCase().includes(q);
+            const idMatch = (r.employeeId || '').toLowerCase().includes(q);
+            if (!nameMatch && !idMatch) return false;
+        }
+
+        return true;
+    });
 
     const handleStatClick = (filter: StatusFilter) => {
         setStatusFilter(prev => prev === filter ? '' : filter as StatusFilter);
@@ -402,35 +415,63 @@ export default function AdminDashboard() {
 
             {/* Table Section */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between p-5 border-b border-slate-100">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 sm:p-5 border-b border-slate-100 bg-slate-50/40">
                     <div className="flex items-center gap-2">
-                        <Fingerprint size={18} className="text-indigo-500" />
-                        <h2 className="font-bold text-slate-800 text-base">
-                            {date === todayStr() ? "Today's Attendance" : `Attendance for ${date}`}
+                        <Fingerprint size={18} className="text-indigo-500 shrink-0" />
+                        <h2 className="font-bold text-slate-800 text-base flex flex-wrap items-center gap-1.5">
+                            <span>{date === todayStr() ? "Today's Attendance" : `Attendance for ${date}`}</span>
                             {statusFilter && (
-                                <span className="ml-2 text-xs font-normal text-slate-400">
-                                    · Filtered by <button onClick={() => setStatusFilter('')} className="text-indigo-500 hover:underline">
-                                        {statusFilter === 'StillIn' ? 'Still In' : statusFilter === 'OnTime' ? 'On Time' : statusFilter}
-                                    </button>
+                                <span className="text-xs font-normal text-slate-400">
+                                    · <span className="font-semibold text-indigo-600">{statusFilter === 'StillIn' ? 'Still In' : statusFilter === 'OnTime' ? 'On Time' : statusFilter}</span>
+                                    <button onClick={() => setStatusFilter('')} className="ml-1 text-slate-400 hover:text-slate-600">×</button>
                                 </span>
                             )}
                         </h2>
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                     </div>
-                    <div className="flex items-center gap-3">
+
+                    {/* Search Bar & Table Controls */}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <div className="relative flex-1 sm:w-80">
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search employee name or ID..."
+                                className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs"
+                            />
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 transition-colors"
+                                    title="Clear search"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+
                         {date !== todayStr() && (
                             <button 
                                 onClick={() => setIsAutoCloseModalOpen(true)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors shrink-0"
                             >
                                 <Zap size={14} />
                                 Fix Incomplete
                             </button>
                         )}
-                        <span className="text-xs text-slate-400">{filteredRoster.length} employees</span>
-                        {statusFilter && (
-                            <button onClick={() => setStatusFilter('')} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors">
-                                Clear Filter ×
+
+                        <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-2 rounded-xl shrink-0">
+                            {filteredRoster.length} / {roster.length}
+                        </span>
+
+                        {(statusFilter || searchQuery) && (
+                            <button 
+                                onClick={() => { setStatusFilter(''); setSearchQuery(''); }} 
+                                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl border border-indigo-100 transition-colors shrink-0"
+                            >
+                                Clear All ×
                             </button>
                         )}
                     </div>
@@ -438,6 +479,26 @@ export default function AdminDashboard() {
 
                 {rosterLoading ? (
                     <div className="p-8 text-center text-slate-400 animate-pulse">Loading roster...</div>
+                ) : filteredRoster.length === 0 ? (
+                    <div className="py-12 px-4 text-center">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                            <Search size={22} />
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-800">No matching employees found</h3>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                            {searchQuery
+                                ? `No employee matching "${searchQuery}" was found for ${date}.`
+                                : 'No employees match the selected status filter.'}
+                        </p>
+                        {(searchQuery || statusFilter) && (
+                            <button
+                                onClick={() => { setSearchQuery(''); setStatusFilter(''); }}
+                                className="mt-3.5 px-3.5 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors inline-flex items-center gap-1 border border-indigo-100"
+                            >
+                                Reset Search & Filters
+                            </button>
+                        )}
+                    </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">

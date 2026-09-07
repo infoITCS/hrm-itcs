@@ -15,6 +15,10 @@ const VALID_STATUSES: AttendanceStatus[] = [
     'Present','Absent','Late','Half-Day','Early Leave','On Leave','Holiday','Weekend','Incomplete'
 ];
 
+export const NON_WORKING_STATUSES: AttendanceStatus[] = ['Absent', 'On Leave', 'Holiday', 'Weekend'];
+export const isNonWorkingStatus = (status?: string | null): boolean =>
+    Boolean(status && NON_WORKING_STATUSES.includes(status as AttendanceStatus));
+
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function buildRecordFilter(req: AuthRequest): RecordFilter {
@@ -140,51 +144,67 @@ export async function updateRecord(req: AuthRequest, res: Response) {
             return res.status(400).json({ success: false, message: `Invalid status: ${VALID_STATUSES.join(', ')}` });
         }
 
-        // Validate date ordering
-        const finalIn = checkIn ? new Date(checkIn) : (record.checkIn ? new Date(record.checkIn) : null);
-        const finalOut = checkOut ? new Date(checkOut) : (record.checkOut ? new Date(record.checkOut) : null);
-        
-        if (finalIn && isNaN(finalIn.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkIn date' });
-        if (finalOut && isNaN(finalOut.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkOut date' });
+        const finalStatus = status || (record as any).status;
+        const isNonWorking = isNonWorkingStatus(finalStatus);
 
-        if (finalIn && finalOut && finalOut <= finalIn) {
-            return res.status(400).json({ success: false, message: 'checkOut must be after checkIn' });
-        }
-
-        if (note && note.length > 500) {
-            return res.status(400).json({ success: false, message: 'Note too long (max 500 chars)' });
-        }
-
-        if (checkIn) (record as any).checkIn = new Date(checkIn);
-        if (checkOut) (record as any).checkOut = new Date(checkOut);
         if (status) (record as any).status = status;
         if (note !== undefined) (record as any).note = note;
-        if (typeof isWfh === 'boolean') (record as any).isWfh = isWfh;
+        if (typeof isWfh === 'boolean') (record as any).isWfh = isNonWorking ? false : isWfh;
 
-        if (finalIn) {
-            const employee = await repo.findEmployeeWithShift((record as any).employeeId);
-            const deviceConfig = await repo.findDeviceConfig((record as any).location);
-            const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+        if (isNonWorking) {
+            // Absent, On Leave, Weekend, Holiday: clear all punch timestamps and zero out work minutes
+            (record as any).checkIn = null;
+            (record as any).checkOut = null;
+            (record as any).allPunches = [];
+            (record as any).workDurationMinutes = 0;
+            (record as any).lateMinutes = 0;
+            (record as any).overtimeMinutes = 0;
+            (record as any).isWfh = false;
+        } else {
+            // Validate date ordering for working statuses
+            const finalIn = checkIn ? new Date(checkIn) : (record.checkIn ? new Date(record.checkIn) : null);
+            const finalOut = checkOut ? new Date(checkOut) : (record.checkOut ? new Date(record.checkOut) : null);
             
-            const shiftStartTime = pktHHMMtoUtc((record as any).date, cfg.shiftStart);
-            const shiftEndTime = pktHHMMtoUtc((record as any).date, cfg.shiftEnd);
+            if (finalIn && isNaN(finalIn.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkIn date' });
+            if (finalOut && isNaN(finalOut.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkOut date' });
 
-            const diffMins = Math.floor((finalIn.getTime() - shiftStartTime.getTime()) / 60000);
-            (record as any).lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
-            
-            if (finalOut) {
-                const otDiff = Math.floor((finalOut.getTime() - shiftEndTime.getTime()) / 60000);
-                (record as any).overtimeMinutes = otDiff > 0 ? otDiff : 0;
-            } else {
-                (record as any).overtimeMinutes = 0;
+            if (finalIn && finalOut && finalOut <= finalIn) {
+                return res.status(400).json({ success: false, message: 'checkOut must be after checkIn' });
+            }
+
+            if (note && note.length > 500) {
+                return res.status(400).json({ success: false, message: 'Note too long (max 500 chars)' });
+            }
+
+            if (checkIn) (record as any).checkIn = new Date(checkIn);
+            if (checkOut) (record as any).checkOut = new Date(checkOut);
+
+            if (finalIn) {
+                const employee = await repo.findEmployeeWithShift((record as any).employeeId);
+                const deviceConfig = await repo.findDeviceConfig((record as any).location);
+                const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+                
+                const shiftStartTime = pktHHMMtoUtc((record as any).date, cfg.shiftStart);
+                const shiftEndTime = pktHHMMtoUtc((record as any).date, cfg.shiftEnd);
+
+                const diffMins = Math.floor((finalIn.getTime() - shiftStartTime.getTime()) / 60000);
+                (record as any).lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
+                
+                if (finalOut) {
+                    const otDiff = Math.floor((finalOut.getTime() - shiftEndTime.getTime()) / 60000);
+                    (record as any).overtimeMinutes = otDiff > 0 ? otDiff : 0;
+                } else {
+                    (record as any).overtimeMinutes = 0;
+                }
+            }
+
+            if ((record as any).checkIn && (record as any).checkOut) {
+                (record as any).workDurationMinutes = Math.floor(
+                    ((record as any).checkOut.getTime() - (record as any).checkIn.getTime()) / 60000
+                );
             }
         }
 
-        if ((record as any).checkIn && (record as any).checkOut) {
-            (record as any).workDurationMinutes = Math.floor(
-                ((record as any).checkOut.getTime() - (record as any).checkIn.getTime()) / 60000
-            );
-        }
         (record as any).manuallyAdjusted = true;
         (record as any).adjustedBy = req.user?.userId;
         await record.save();
@@ -201,52 +221,61 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             return res.status(400).json({ success: false, message: `Invalid status: ${VALID_STATUSES.join(', ')}` });
         }
 
-        const dIn = checkIn ? new Date(checkIn) : null;
-        const dOut = checkOut ? new Date(checkOut) : null;
+        const effectiveStatus = status ?? 'Present';
+        const isNonWorking = isNonWorkingStatus(effectiveStatus);
 
-        if (dIn && isNaN(dIn.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkIn date' });
-        if (dOut && isNaN(dOut.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkOut date' });
-
-        if (dIn && dOut && dOut <= dIn) {
-            return res.status(400).json({ success: false, message: 'checkOut must be after checkIn' });
-        }
-
-        const allPunches = [dIn, dOut].filter(Boolean) as Date[];
-        const workDurationMinutes = dIn && dOut
-            ? Math.max(0, Math.floor((dOut.getTime() - dIn.getTime()) / 60000))
-            : 0;
-
+        let dIn: Date | null = null;
+        let dOut: Date | null = null;
+        let allPunches: Date[] = [];
+        let workDurationMinutes = 0;
         let lateMinutes = 0;
         let overtimeMinutes = 0;
 
-        if (dIn) {
-            const employee = await repo.findEmployeeWithShift(employeeId);
-            const deviceConfig = await repo.findDeviceConfig(location ?? 'ISB-Office');
-            const cfg = repo.resolveShiftConfig(employee, deviceConfig);
-            
-            const shiftStartTime = pktHHMMtoUtc(date, cfg.shiftStart);
-            const shiftEndTime = pktHHMMtoUtc(date, cfg.shiftEnd);
+        if (!isNonWorking) {
+            dIn = checkIn ? new Date(checkIn) : null;
+            dOut = checkOut ? new Date(checkOut) : null;
 
-            const diffMins = Math.floor((dIn.getTime() - shiftStartTime.getTime()) / 60000);
-            lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
-            
-            if (dOut) {
-                const otDiff = Math.floor((dOut.getTime() - shiftEndTime.getTime()) / 60000);
-                overtimeMinutes = otDiff > 0 ? otDiff : 0;
+            if (dIn && isNaN(dIn.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkIn date' });
+            if (dOut && isNaN(dOut.getTime())) return res.status(400).json({ success: false, message: 'Invalid checkOut date' });
+
+            if (dIn && dOut && dOut <= dIn) {
+                return res.status(400).json({ success: false, message: 'checkOut must be after checkIn' });
+            }
+
+            allPunches = [dIn, dOut].filter(Boolean) as Date[];
+            workDurationMinutes = dIn && dOut
+                ? Math.max(0, Math.floor((dOut.getTime() - dIn.getTime()) / 60000))
+                : 0;
+
+            if (dIn) {
+                const employee = await repo.findEmployeeWithShift(employeeId);
+                const deviceConfig = await repo.findDeviceConfig(location ?? 'ISB-Office');
+                const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+                
+                const shiftStartTime = pktHHMMtoUtc(date, cfg.shiftStart);
+                const shiftEndTime = pktHHMMtoUtc(date, cfg.shiftEnd);
+
+                const diffMins = Math.floor((dIn.getTime() - shiftStartTime.getTime()) / 60000);
+                lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
+                
+                if (dOut) {
+                    const otDiff = Math.floor((dOut.getTime() - shiftEndTime.getTime()) / 60000);
+                    overtimeMinutes = otDiff > 0 ? otDiff : 0;
+                }
             }
         }
 
         const record = await repo.upsertRecord(employeeId, date, {
             location: location ?? 'ISB-Office',
-            checkIn: dIn ?? undefined,
-            checkOut: dOut ?? undefined,
+            checkIn: isNonWorking ? null : (dIn ?? null),
+            checkOut: isNonWorking ? null : (dOut ?? null),
             workDurationMinutes,
             lateMinutes,
             overtimeMinutes,
             allPunches,
-            status: status ?? 'Present',
+            status: effectiveStatus,
             note,
-            isWfh: Boolean(isWfh),
+            isWfh: isNonWorking ? false : Boolean(isWfh),
             manuallyAdjusted: true,
             adjustedBy: req.user?.userId,
         });

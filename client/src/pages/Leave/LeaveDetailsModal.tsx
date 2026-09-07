@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare } from 'lucide-react';
+import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare, Edit2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { api } from '../../utils/api';
@@ -30,9 +30,10 @@ interface LeaveDetailsModalProps {
     onClose: () => void;
     leave: any;
     onSuccess?: () => void;
+    onEdit?: (leave: any) => void;
 }
 
-const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsModalProps) => {
+const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess, onEdit }: LeaveDetailsModalProps) => {
     const { user } = useAuth();
     const { role } = usePermissions();
     const [isActionLoading, setIsActionLoading] = useState(false);
@@ -62,10 +63,13 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
 
     if (!isOpen || !leave) return null;
 
-    const isOwner = user && leave && leave.employeeId === user.id;
-    const isManagerOrAdmin = ['super-admin', 'admin', 'manager'].includes(role);
+    const isOwner = user && leave && (leave.employeeId === user.id || leave.employeeId === (user as any).employeeId || leave.appliedBy === user.id);
+    const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr'].includes(role);
 
-    const showCancelButton = (leave.status === 'Pending' && (isOwner || isManagerOrAdmin)) || (leave.status === 'Approved' && isManagerOrAdmin);
+    // Rule: Edit is allowed ONLY when status is Pending (pre-approval)
+    const showEditButton = leave.status === 'Pending' && (isOwner || isManagerOrAdmin);
+    // Rule: Cancel is allowed when Pending or Approved (once approved, normal employee cannot edit, only cancel)
+    const showCancelButton = ['Pending', 'Approved'].includes(leave.status) && (isOwner || isManagerOrAdmin);
     const showDeleteButton = isManagerOrAdmin;
     const cancelBtnText = leave.status === 'Approved' ? 'Cancel Leave' : 'Cancel Request';
 
@@ -292,6 +296,16 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess }: LeaveDetailsMo
                 {/* Footer */}
                 <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0 gap-2">
                     <div className="flex items-center gap-2">
+                        {showEditButton && onEdit && (
+                            <button
+                                onClick={() => onEdit(leave)}
+                                disabled={isActionLoading}
+                                className="px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-lg sm:rounded-xl text-xs sm:text-sm font-bold hover:bg-indigo-100/70 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-2xs"
+                            >
+                                <Edit2 size={13} />
+                                Edit Request
+                            </button>
+                        )}
                         {showDeleteButton && (
                             <button
                                 onClick={handleDeletePrompt}
