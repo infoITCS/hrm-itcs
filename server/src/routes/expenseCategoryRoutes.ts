@@ -42,7 +42,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const role = authReq.user?.role || 'employee';
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
-        const { name, isActive, policyLimit, subCategories, requiresReceipt } = req.body;
+        const { name, isActive, policyLimit, subCategories, requiresReceipt, assignedTo } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Name is required' });
@@ -53,7 +53,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             isActive: isActive ?? true,
             policyLimit: policyLimit ?? 0,
             subCategories: Array.isArray(subCategories) ? subCategories : [],
-            requiresReceipt: requiresReceipt ?? false
+            requiresReceipt: requiresReceipt ?? false,
+            assignedTo: ['HR', 'Finance'].includes(assignedTo) ? assignedTo : 'HR'
         });
 
         await newCategory.save();
@@ -74,7 +75,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         const role = authReq.user?.role || 'employee';
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
-        const { name, isActive, policyLimit, subCategories, requiresReceipt } = req.body;
+        const { name, isActive, policyLimit, subCategories, requiresReceipt, assignedTo } = req.body;
 
         const category = await ExpenseCategory.findById(req.params.id);
         if (!category) return res.status(404).json({ message: 'Category not found' });
@@ -84,6 +85,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         if (policyLimit !== undefined) category.policyLimit = policyLimit;
         if (subCategories !== undefined && Array.isArray(subCategories)) category.subCategories = subCategories;
         if (requiresReceipt !== undefined) category.requiresReceipt = requiresReceipt;
+        if (assignedTo !== undefined && ['HR', 'Finance'].includes(assignedTo)) {
+            category.assignedTo = assignedTo;
+        }
 
         await category.save();
         res.json({ success: true, data: category });

@@ -47,7 +47,11 @@ function sanitizeClaimForJson(doc: any) {
     return obj;
 }
 
-function buildWorkflow(category: string): ExpenseClaimApprovalStage[] {
+async function buildWorkflow(category: string, catDoc?: any): Promise<ExpenseClaimApprovalStage[]> {
+    const doc = catDoc || (await ExpenseCategory.findOne({ name: category }).lean());
+    if (doc?.assignedTo === 'Finance') {
+        return ['finance'];
+    }
     return ['hr', 'finance'];
 }
 
@@ -111,7 +115,7 @@ function isAdminLike(role: string) {
 }
 
 function isFinalStatus(status?: string) {
-    return status === 'Approved' || status === 'Declined';
+    return status === 'Approved' || status === 'Declined' || status === 'Cancelled';
 }
 
 async function resolveClaimLimits(
@@ -152,7 +156,7 @@ async function resolveClaimLimits(
         const query: any = {
             employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
             category: 'Medical',
-            status: { $nin: ['Draft', 'Declined', 'Action Required'] },
+            status: { $nin: ['Draft', 'Declined', 'Action Required', 'Cancelled'] },
             createdAt: { $gte: startOfYear, $lte: endOfYear },
         };
         if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
@@ -174,7 +178,7 @@ async function resolveClaimLimits(
         const query: any = {
             employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
             category,
-            status: { $nin: ['Draft', 'Declined', 'Action Required'] },
+            status: { $nin: ['Draft', 'Declined', 'Action Required', 'Cancelled'] },
             createdAt: { $gte: startOfYear, $lte: endOfYear },
         };
         if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
@@ -340,7 +344,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             const existingClaims = await ExpenseClaim.find({
                 employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
                 category: category,
-                status: { $nin: ['Draft', 'Declined'] },
+                status: { $nin: ['Draft', 'Declined', 'Cancelled'] },
                 createdAt: { $gte: startOfYear, $lte: endOfYear }
             }).lean() as any[];
 
@@ -409,7 +413,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             }
         }
 
-        const workflow = buildWorkflow(category);
+        const workflow = await buildWorkflow(category, catDoc);
         let reportingManagerId = employee?.jobInfo?.reportingManager ? String(employee.jobInfo.reportingManager) : '';
         if (reportingManagerId) {
             const mgrDoc = await Employee.findOne({
@@ -549,7 +553,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             }
         }
 
-        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined', 'Action Required'] };
+        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined', 'Action Required', 'Cancelled'] };
         if (role === 'finance') {
             statusQuery = 'Pending Finance';
         } else if (role === 'hr') {
@@ -820,11 +824,13 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         if (decision === 'Approved') {
             let maxAllowed = typeof pending.amountAllowed === 'number' ? pending.amountAllowed : claim.amountAllowed;
             
-            // If current stage is finance, enforce max cap from HR approved amount
+            // If current stage is finance, enforce max cap from HR approved amount (if claim had an HR stage)
+            let hrCapMessage = '';
             if (currentStage === 'finance') {
                 const hrApproval = claim.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
                 if (hrApproval && typeof hrApproval.approvedAmount === 'number') {
                     maxAllowed = hrApproval.approvedAmount;
+                    hrCapMessage = ' the HR-approved amount of';
                 }
             }
 
@@ -832,7 +838,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             const proposed = typeof approvedAmount === 'number' ? approvedAmount : maxAllowed;
             if (proposed < 0) return res.status(400).json({ message: 'approvedAmount must be >= 0' });
             if (proposed > maxAllowed) {
-                return res.status(400).json({ message: `Approved amount cannot exceed the HR-approved amount of ${maxAllowed}` });
+                return res.status(400).json({ message: `Approved amount cannot exceed${hrCapMessage || ' the allowed amount of'} ${maxAllowed}` });
             }
             pending.approvedAmount = proposed;
             pending.amountAllowed = maxAllowed;
@@ -1419,8 +1425,8 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
             } as any);
         }
 
-        // Reset approval workflow back to Pending HR
-        const workflow = buildWorkflow(claim.category);
+        // Reset approval workflow based on category routing (Finance vs HR)
+        const workflow = await buildWorkflow(claim.category);
         claim.approvals = workflow.map(stage => ({
             stage,
             status: 'Pending' as any,
@@ -1436,13 +1442,13 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
 
         await claim.save();
 
-        // Notify HR of resubmission
+        // Notify appropriate team (Finance or HR) of resubmission
         (async () => {
             try {
-                const hrEmailsList = await getHrEmails();
+                const targetEmails = claim.status === 'Pending Finance' ? await getFinanceEmails() : await getHrEmails();
                 const emp = await Employee.findOne({ userId }).select('firstName lastName employeeId').lean() as any;
                 const empName = emp ? formatEmployeeFullName(emp, emp.employeeId) : authorName;
-                for (const to of hrEmailsList) {
+                for (const to of targetEmails) {
                     await sendExpenseClaimAmendedEmail(
                         to,
                         empName,
@@ -1454,7 +1460,7 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
                     );
                 }
             } catch (emailErr) {
-                console.error('[Expense Email] Failed to send resubmitted email to HR:', emailErr);
+                console.error('[Expense Email] Failed to send resubmitted email:', emailErr);
             }
         })();
 
@@ -1486,7 +1492,7 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
         // Fetch all Medical claims in current year
         const allMedicalClaims = await ExpenseClaim.find({
             category: 'Medical',
-            status: { $nin: ['Draft', 'Declined'] },
+            status: { $nin: ['Draft', 'Declined', 'Cancelled'] },
             createdAt: { $gte: startOfYear, $lte: endOfYear }
         }).select('employeeId employeeUserId amountRequested amountAllowed approvedTotal status createdAt subCategories forWhom dependentName')
         .lean() as any[];
@@ -1777,5 +1783,84 @@ router.patch('/:id/payout-status', authenticate, async (req: Request, res: Respo
     }
 });
 
+// ── Cancel an Expense Claim (Employee or Admin) ───────────────────────────
+router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        // Check ownership or admin permissions
+        const isOwner = String(claim.employeeUserId) === String(userId);
+        if (!isOwner && !isAdminLike(role)) {
+            return res.status(403).json({ message: 'You do not have permission to cancel this claim' });
+        }
+
+        if (claim.status === 'Cancelled') {
+            return res.status(400).json({ message: 'Claim is already cancelled' });
+        }
+
+        if (claim.status === 'Declined') {
+            return res.status(400).json({ message: 'Declined claims cannot be cancelled' });
+        }
+
+        if (claim.payoutStatus === 'Paid' || claim.payoutStatus === 'Included in Payroll') {
+            return res.status(400).json({ message: `Cannot cancel a claim that is already ${claim.payoutStatus.toLowerCase()}` });
+        }
+
+        // Set status to Cancelled and clear approved totals
+        claim.status = 'Cancelled';
+        claim.approvedTotal = 0;
+
+        // Mark any remaining pending approvals as Declined/Cancelled
+        if (Array.isArray(claim.approvals)) {
+            claim.approvals.forEach((app: any) => {
+                if (app.status === 'Pending') {
+                    app.status = 'Declined';
+                    app.comments = 'Claim cancelled by user';
+                    app.decidedAt = new Date();
+                    app.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                }
+            });
+        }
+
+        // Add audit comment
+        const employee = await Employee.findOne({ userId }).select('firstName lastName employeeId').lean() as any;
+        let authorName = 'User';
+        if (employee) {
+            authorName = formatEmployeeFullName(employee, employee.employeeId);
+        } else {
+            const userDoc = await User.findById(userId).select('firstName lastName role').lean() as any;
+            authorName = userDoc ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || userDoc.role || 'User' : 'User';
+        }
+
+        claim.comments = claim.comments || [];
+        claim.comments.push({
+            authorUserId: new mongoose.Types.ObjectId(String(userId)),
+            authorName,
+            authorRole: role || 'employee',
+            message: 'Claim was cancelled',
+            createdAt: new Date(),
+            isActionRequest: false
+        } as any);
+
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        await claim.save();
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+
+        res.json({ success: true, message: 'Expense claim cancelled successfully', data: sanitizeClaimForJson(claim) });
+    } catch (err) {
+        next(err);
+    }
+});
+
 export default router;
+
 

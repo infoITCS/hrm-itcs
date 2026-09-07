@@ -13,7 +13,8 @@ export type ExpenseClaimStatus =
     | 'Pending Finance'
     | 'Action Required'
     | 'Approved'
-    | 'Declined';
+    | 'Declined'
+    | 'Cancelled';
 
 export type ExpenseClaimApprovalStage = 'teamLead' | 'lineManager' | 'hr' | 'finance';
 
@@ -109,7 +110,7 @@ const ExpenseClaimSchema = new Schema(
 
         status: {
             type: String,
-            enum: ['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined'],
+            enum: ['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'],
             default: 'Submitted',
             index: true,
         },

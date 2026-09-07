@@ -6,7 +6,8 @@ const ExpenseCategorySchema = new Schema(
         isActive: { type: Boolean, default: true },
         policyLimit: { type: Number, default: 0 }, // 0 means no limit
         subCategories: [{ type: String }],
-        requiresReceipt: { type: Boolean, default: false }
+        requiresReceipt: { type: Boolean, default: false },
+        assignedTo: { type: String, enum: ['HR', 'Finance'], default: 'HR' }
     },
     { timestamps: true }
 );

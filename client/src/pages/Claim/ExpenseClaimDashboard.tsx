@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
+import AlertModal from '../../components/UI/AlertModal';
 import {
     FileText,
     Inbox,
@@ -46,6 +47,7 @@ const STATUS_COLORS: Record<string, string> = {
     'Action Required': 'bg-amber-100 text-amber-800 border-amber-300 font-bold',
     Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     Declined: 'bg-rose-50 text-rose-700 border-rose-200',
+    Cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
 };
 
 const FLAG_LABELS: Record<string, string> = {
@@ -265,6 +267,7 @@ const ExpenseClaimDashboard = () => {
     const [catFormActive, setCatFormActive] = useState(true);
     const [catFormReceipt, setCatFormReceipt] = useState(false);
     const [catFormSubCats, setCatFormSubCats] = useState('');
+    const [catFormAssignedTo, setCatFormAssignedTo] = useState<'HR' | 'Finance'>('Finance');
     const [catSubmitting, setCatSubmitting] = useState(false);
 
     // Medical Records state
@@ -408,7 +411,7 @@ const ExpenseClaimDashboard = () => {
 
         const categoryClaims = relevantClaims.filter((c: any) => {
             if (c.category !== category) return false;
-            if (c.status === 'Draft' || c.status === 'Declined') return false;
+            if (c.status === 'Draft' || c.status === 'Declined' || c.status === 'Cancelled') return false;
             const createdAt = new Date(c.createdAt).getTime();
             return createdAt >= startOfYear && createdAt <= endOfYear;
         });
@@ -1227,6 +1230,7 @@ const ExpenseClaimDashboard = () => {
                 isActive: catFormActive,
                 requiresReceipt: catFormReceipt,
                 subCategories: catFormSubCats.split(',').map(s => s.trim()).filter(Boolean),
+                assignedTo: catFormAssignedTo,
             };
 
             let r;
@@ -1257,6 +1261,7 @@ const ExpenseClaimDashboard = () => {
             setCatFormActive(cat.isActive !== false);
             setCatFormReceipt(cat.requiresReceipt === true);
             setCatFormSubCats((cat.subCategories || []).join(', '));
+            setCatFormAssignedTo(cat.assignedTo || 'Finance');
         } else {
             setEditingCategory(null);
             setCatFormName('');
@@ -1264,6 +1269,7 @@ const ExpenseClaimDashboard = () => {
             setCatFormActive(true);
             setCatFormReceipt(false);
             setCatFormSubCats('');
+            setCatFormAssignedTo('Finance');
         }
         setCategoryModalOpen(true);
     };
@@ -1338,6 +1344,55 @@ const ExpenseClaimDashboard = () => {
             showToast(e?.message || 'Failed to update claim', 'error');
         } finally {
             setCorrecting(false);
+        }
+    };
+
+    const [cancellingClaimId, setCancellingClaimId] = useState<string | null>(null);
+    const [cancelModalOpen, setCancelModalOpen] = useState(false);
+    const [claimToCancel, setClaimToCancel] = useState<string | null>(null);
+
+    const canCancelClaim = useCallback((c: any) => {
+        if (!c) return false;
+        if (c.status === 'Declined' || c.status === 'Cancelled') return false;
+        if (c.payoutStatus === 'Paid' || c.payoutStatus === 'Included in Payroll') return false;
+
+        const isOwner = (employee?._id && String(c.employeeId) === String(employee._id)) ||
+                        (employee?.employeeId && String(c.employeeId) === String(employee.employeeId)) ||
+                        (user?.id && String(c.employeeUserId) === String(user.id)) ||
+                        (user?._id && String(c.employeeUserId) === String(user._id));
+        const isAdmin = role === 'super-admin' || ['admin', 'hr', 'finance'].includes(role);
+        return Boolean(isOwner || isAdmin);
+    }, [employee, user, role]);
+
+    const openCancelModal = (claimId: string, e?: React.MouseEvent) => {
+        e?.stopPropagation();
+        setClaimToCancel(claimId);
+        setCancelModalOpen(true);
+    };
+
+    const handleConfirmCancel = async () => {
+        if (!claimToCancel) return;
+        const claimId = claimToCancel;
+        setCancellingClaimId(claimId);
+        try {
+            const r = await fetch(api.claim(claimId), {
+                method: 'DELETE',
+                headers,
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d?.message || 'Failed to cancel claim');
+            showToast('Expense claim cancelled successfully', 'success');
+            if (decisionClaim && decisionClaim._id === claimId) {
+                setDecisionClaim((prev: any) => prev ? { ...prev, status: 'Cancelled', approvedTotal: 0 } : null);
+            }
+            await fetchMine();
+            if (isApprover) await fetchApprovals();
+            if (canSeeAllClaims) await fetchHistory();
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to cancel claim', 'error');
+        } finally {
+            setCancellingClaimId(null);
+            setClaimToCancel(null);
         }
     };
 
@@ -1479,7 +1534,10 @@ const ExpenseClaimDashboard = () => {
                             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                         >
                             <option value="">All Categories</option>
-                            {['Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Other'].map(c => (
+                            {Array.from(new Set([
+                                'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage Charges', 'Meal Allowance', 'Other',
+                                ...categories.map((c: any) => c.name)
+                            ])).map(c => (
                                 <option key={c} value={c}>{c}</option>
                             ))}
                         </select>
@@ -1490,7 +1548,7 @@ const ExpenseClaimDashboard = () => {
                             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                         >
                             <option value="">All Statuses</option>
-                            {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'].map(s => (
+                            {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
                                 <option key={s} value={s}>{s}</option>
                             ))}
                         </select>
@@ -2022,6 +2080,17 @@ const ExpenseClaimDashboard = () => {
                                                         >
                                                             <Eye size={15} />
                                                         </button>
+                                                        {canCancelClaim(c) && (
+                                                            <button
+                                                                onClick={(e) => openCancelModal(c._id, e)}
+                                                                disabled={cancellingClaimId === c._id}
+                                                                className="px-2.5 py-1 text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+                                                                title="Cancel this claim"
+                                                            >
+                                                                <XCircle size={13} />
+                                                                {cancellingClaimId === c._id ? 'Cancelling…' : 'Cancel'}
+                                                            </button>
+                                                        )}
                                                         {isAdminLike && (
                                                             <button
                                                                 onClick={() => openCorrect(c)}
@@ -2404,6 +2473,17 @@ const ExpenseClaimDashboard = () => {
                                                         >
                                                             <Eye size={13} /> Details
                                                         </button>
+                                                        {canCancelClaim(c) && (
+                                                            <button
+                                                                onClick={(e) => openCancelModal(c._id, e)}
+                                                                disabled={cancellingClaimId === c._id}
+                                                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-colors flex items-center gap-1 shadow-xs"
+                                                                title="Cancel this claim"
+                                                            >
+                                                                <XCircle size={13} />
+                                                                {cancellingClaimId === c._id ? 'Cancelling…' : 'Cancel'}
+                                                            </button>
+                                                        )}
                                                         {isAdminLike && (
                                                             <button
                                                                 onClick={() => openCorrect(c)}
@@ -2666,8 +2746,15 @@ const ExpenseClaimDashboard = () => {
                                 <div key={cat._id} className={`p-5 rounded-2xl border ${cat.isActive ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-75'} shadow-sm flex flex-col`}>
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
-                                            <div className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                                            <div className="font-bold text-slate-800 text-lg flex items-center gap-2 flex-wrap">
                                                 {cat.name}
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border ${
+                                                    cat.assignedTo === 'Finance'
+                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                        : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                }`}>
+                                                    {cat.assignedTo === 'Finance' ? 'Finance Route' : 'HR Route'}
+                                                </span>
                                                 {!cat.isActive && <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 uppercase tracking-widest">Inactive</span>}
                                             </div>
                                             <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-4">
@@ -2716,6 +2803,39 @@ const ExpenseClaimDashboard = () => {
                                                 className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 outline-none"
                                                 placeholder="e.g., Variable Expense"
                                             />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-600">Approval Department / Route</label>
+                                            <div className="mt-1.5 grid grid-cols-2 gap-3">
+                                                <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition-all ${catFormAssignedTo === 'Finance' ? 'bg-purple-50 border-purple-300 text-purple-900 shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="catFormAssignedTo"
+                                                        value="Finance"
+                                                        checked={catFormAssignedTo === 'Finance'}
+                                                        onChange={() => setCatFormAssignedTo('Finance')}
+                                                        className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                                                    />
+                                                    <div>
+                                                        <div className="text-xs font-bold">Finance</div>
+                                                        <div className="text-[10px] text-slate-500 leading-tight mt-0.5">Direct to Finance for verification & reimbursement</div>
+                                                    </div>
+                                                </label>
+                                                <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition-all ${catFormAssignedTo === 'HR' ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="catFormAssignedTo"
+                                                        value="HR"
+                                                        checked={catFormAssignedTo === 'HR'}
+                                                        onChange={() => setCatFormAssignedTo('HR')}
+                                                        className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                                                    />
+                                                    <div>
+                                                        <div className="text-xs font-bold">HR</div>
+                                                        <div className="text-[10px] text-slate-500 leading-tight mt-0.5">HR review first, then Finance disbursement</div>
+                                                    </div>
+                                                </label>
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-600">Annual Policy Limit (PKR)</label>
@@ -3460,13 +3580,27 @@ const ExpenseClaimDashboard = () => {
                                         <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
                                             Claim Status: <span className={`font-bold px-2 py-0.5 rounded text-xs border ${STATUS_COLORS[decisionClaim.status] || 'bg-slate-100 text-slate-700'}`}>{decisionClaim.status}</span>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={closeDecision}
-                                            className="px-6 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900 transition-colors shadow-sm"
-                                        >
-                                            Close
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {canCancelClaim(decisionClaim) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => openCancelModal(decisionClaim._id, e)}
+                                                    disabled={cancellingClaimId === decisionClaim._id}
+                                                    className="px-4 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+                                                    title="Cancel this claim"
+                                                >
+                                                    <XCircle size={14} />
+                                                    {cancellingClaimId === decisionClaim._id ? 'Cancelling…' : 'Cancel Claim'}
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={closeDecision}
+                                                className="px-6 py-2 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900 transition-colors shadow-sm"
+                                            >
+                                                Close
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -4015,6 +4149,24 @@ const ExpenseClaimDashboard = () => {
                 target={paymentModalTarget}
                 onClose={() => setPaymentModalTarget(null)}
                 onSuccess={handleClaimPaymentSuccess}
+            />
+
+            {/* Cancel Expense Claim Confirmation Modal */}
+            <AlertModal
+                isOpen={cancelModalOpen}
+                onClose={() => {
+                    if (!cancellingClaimId) {
+                        setCancelModalOpen(false);
+                        setClaimToCancel(null);
+                    }
+                }}
+                title="Cancel Expense Claim"
+                message="Are you sure you want to cancel this expense claim? This will cancel any pending approvals and immediately restore the claimed amount back to your available policy limit."
+                type="error"
+                showCancel
+                confirmText={cancellingClaimId ? 'Cancelling…' : 'Yes, Cancel Claim'}
+                cancelText="Keep Claim"
+                onConfirm={handleConfirmCancel}
             />
         </div>
     );

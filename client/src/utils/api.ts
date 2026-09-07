@@ -29,6 +29,7 @@ export const api = {
     expenseCategoriesAll: `${API_BASE_URL}/api/expense-categories/all`,
     expenseCategory: (id: string) => `${API_BASE_URL}/api/expense-categories/${id}`,
     claims: `${API_BASE_URL}/api/claims`,
+    claim: (id: string) => `${API_BASE_URL}/api/claims/${id}`,
     claimMine: `${API_BASE_URL}/api/claims/mine`,
     claimAll: `${API_BASE_URL}/api/claims/all`,
     claimPendingApprovals: `${API_BASE_URL}/api/claims/approvals/pending`,
