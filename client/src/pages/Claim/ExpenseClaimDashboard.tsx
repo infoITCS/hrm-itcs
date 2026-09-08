@@ -2245,6 +2245,7 @@ const ExpenseClaimDashboard = () => {
                                 </table>
                             </div>
                         )}
+                        {renderPagination(filteredApprovals.length)}
                         
                         {/* Bulk Action Floating Toolbar */}
                         {selectedClaimIds.length > 0 && (
