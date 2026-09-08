@@ -282,6 +282,7 @@ export async function buildPayrollPayslips(
     }
 
     let nextSeq = 1;
+    let nextBankSeq = 1;
     const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
 
     if (persist) {
@@ -292,6 +293,16 @@ export async function buildPayrollPayslips(
             { upsert: true, new: true }
         );
         nextSeq = counter.seq - employees.length + 1;
+
+        const bankCounter = await Counter.findOneAndUpdate(
+            { key: 'bank_customer_ref_seq' },
+            { $inc: { seq: employees.length } },
+            { upsert: true, new: true }
+        );
+        nextBankSeq = bankCounter.seq - employees.length + 1;
+    } else {
+        const bankCounter = await Counter.findOne({ key: 'bank_customer_ref_seq' }).lean() as any;
+        nextBankSeq = ((bankCounter?.seq || 0) + 1);
     }
 
     const payslips: any[] = [];
@@ -454,7 +465,7 @@ export async function buildPayrollPayslips(
         const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
         nextSeq++;
 
-        const customerReference = generateCustomerReference(run.periodYear, run.periodMonth, empIndex);
+        const customerReference = generateCustomerReference(run.periodYear, run.periodMonth, nextBankSeq++);
         const beneficiaryAccount = emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
         const beneficiaryName = formatEmployeeFullName(emp, emp.employeeId);
         const beneficiaryBank = emp.bankDetails?.bankName || companyDoc?.payrollSettings?.defaultBankName || 'Meezan Bank';

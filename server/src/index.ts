@@ -160,8 +160,11 @@ const authLimiter = rateLimit({
 });
 const generalLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100, // 100 requests per minute per IP
+    max: process.env.NODE_ENV === 'production' ? 1000 : 5000, // 1000 req/min in prod (office NAT support), 5000 in dev
+    skip: (req) => process.env.NODE_ENV !== 'production' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === 'localhost',
     message: { message: 'Too many requests. Please slow down.' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 app.use('/api/', generalLimiter); // General rate limit for all API routes
 

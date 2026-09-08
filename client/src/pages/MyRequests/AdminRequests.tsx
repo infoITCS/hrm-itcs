@@ -252,8 +252,12 @@ const AdminRequests = () => {
                                     {filteredRequests.map(req => {
                                         const reqCat = (req.category || '').toLowerCase();
                                         const reqTypeStr = (req.requestType || '').toLowerCase();
-                                        const isFinancialItem = reqCat.includes('loan') || reqCat.includes('finance') || reqCat.includes('pf') || reqCat.includes('provident') || reqCat.includes('salary') || reqCat.includes('advance') ||
-                                                               reqTypeStr.includes('loan') || reqTypeStr.includes('finance') || reqTypeStr.includes('pf') || reqTypeStr.includes('salary') || reqTypeStr.includes('advance');
+                                        const isPauseRequest = reqCat.includes('pause') || reqTypeStr.includes('pause');
+                                        const isFinancialPayable = !isPauseRequest && (
+                                            reqCat.includes('loan') || reqCat.includes('finance') || reqCat.includes('pf') || reqCat.includes('provident') || reqCat.includes('salary') || reqCat.includes('advance') ||
+                                            reqTypeStr.includes('loan') || reqTypeStr.includes('finance') || reqTypeStr.includes('pf') || reqTypeStr.includes('salary') || reqTypeStr.includes('advance')
+                                        );
+                                        const isEligibleForPayment = isFinancialPayable && req.status !== 'Cancelled' && req.status !== 'Rejected';
 
                                         return (
                                         <tr key={req._id} className="hover:bg-gray-50 transition-colors">
@@ -316,7 +320,7 @@ const AdminRequests = () => {
                                                 {req.status === 'Cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500 border border-gray-200"><XCircle size={12}/> Cancelled</span>}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                {isFinancialItem ? (
+                                                {isEligibleForPayment ? (
                                                     <button
                                                         type="button"
                                                         onClick={(e) => {
@@ -624,8 +628,20 @@ const AdminRequests = () => {
                                 ></textarea>
                             </div>
 
-                            {/* Finance Payment Status Toggle Card */}
-                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved' || actionModal.status === 'Pending Finance' || actionModal.status === 'Completed') && (
+                            {/* Finance Payment Status Toggle Card — Exclude Cancelled, Rejected, and Loan Pause */}
+                            {(() => {
+                                const modalCat = (actionModal.category || '').toLowerCase();
+                                const modalType = (actionModal.requestType || '').toLowerCase();
+                                const isModalPause = modalCat.includes('pause') || modalType.includes('pause');
+                                const isModalPayable = !isModalPause && (
+                                    modalCat.includes('loan') || modalCat.includes('finance') || modalCat.includes('pf') || modalCat.includes('provident') || modalCat.includes('salary') || modalCat.includes('advance') ||
+                                    modalType.includes('loan') || modalType.includes('finance') || modalType.includes('pf') || modalType.includes('salary') || modalType.includes('advance')
+                                );
+                                const isModalEligible = isModalPayable && actionModal.status !== 'Cancelled' && actionModal.status !== 'Rejected';
+
+                                if (!isModalEligible) return null;
+
+                                return (
                                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                     <div className="flex items-center justify-between">
                                         <div>
@@ -662,10 +678,23 @@ const AdminRequests = () => {
                                         </p>
                                     )}
                                 </div>
-                            )}
+                                );
+                            })()}
 
-                            {/* Render ERP Transaction ID input for completing financial requests */}
-                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.status === 'Approved' || actionModal.status === 'Pending Finance') && (
+                            {/* Render ERP Transaction ID input for completing financial requests — Exclude Cancelled, Rejected, and Loan Pause */}
+                            {(() => {
+                                const modalCat = (actionModal.category || '').toLowerCase();
+                                const modalType = (actionModal.requestType || '').toLowerCase();
+                                const isModalPause = modalCat.includes('pause') || modalType.includes('pause');
+                                const isModalPayable = !isModalPause && (
+                                    modalCat.includes('loan') || modalCat.includes('finance') || modalCat.includes('pf') || modalCat.includes('provident') || modalCat.includes('salary') || modalCat.includes('advance') ||
+                                    modalType.includes('loan') || modalType.includes('finance') || modalType.includes('pf') || modalType.includes('salary') || modalType.includes('advance')
+                                );
+                                const showErpInput = isModalPayable && actionModal.status !== 'Cancelled' && actionModal.status !== 'Rejected' && (actionModal.status === 'Approved' || actionModal.status === 'Pending Finance');
+
+                                if (!showErpInput) return null;
+
+                                return (
                                 <div className="space-y-1">
                                     <label className="block text-xs font-bold text-gray-500 uppercase">
                                         ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
@@ -678,7 +707,8 @@ const AdminRequests = () => {
                                         onChange={(e) => setErpReferenceId(e.target.value)}
                                     />
                                 </div>
-                            )}
+                                );
+                            })()}
                         </div>
 
                         <div className="shrink-0 px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 flex-wrap">

@@ -195,13 +195,12 @@ export function decryptPayslipFields(payslip: any): any {
 
 /**
  * Generate a pure numeric Customer Reference Number for bank transfers.
- * Format: DDMMYYYYseq (e.g. 30082026001, 30082026002) - Pure numbers, no text or dashes.
+ * Format: YYYYMMNNNNNN (strictly 12 digits, e.g. 202608000001) - Pure numbers, uniform length.
+ * Guaranteed unique across lifetime when paired with the global monotonic bank sequence.
  */
-export function generateCustomerReference(periodYear: number, periodMonth: number, seqIndex: number, day?: number): string {
-    const d = day ? Math.min(Math.max(1, day), 31) : new Date(periodYear, periodMonth, 0).getDate();
-    const dStr = String(d).padStart(2, '0');
+export function generateCustomerReference(periodYear: number, periodMonth: number, seqIndex: number, _day?: number): string {
+    const yStr = String(periodYear).padStart(4, '0');
     const mStr = String(periodMonth).padStart(2, '0');
-    const yStr = String(periodYear);
-    const seqStr = String(seqIndex).padStart(3, '0');
-    return `${dStr}${mStr}${yStr}${seqStr}`;
+    const seqStr = String(seqIndex).padStart(6, '0');
+    return `${yStr}${mStr}${seqStr}`;
 }

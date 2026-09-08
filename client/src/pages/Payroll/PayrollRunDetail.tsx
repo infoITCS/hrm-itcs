@@ -559,7 +559,7 @@ const PayslipEditPanel = ({
                             <input
                                 value={customerReference}
                                 onChange={e => setCustomerReference(e.target.value)}
-                                placeholder="e.g. PAY-202608-001"
+                                placeholder="e.g. 202608000001"
                                 className="w-full h-8 border border-slate-200 rounded-lg px-2.5 text-xs bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                             />
                         </div>

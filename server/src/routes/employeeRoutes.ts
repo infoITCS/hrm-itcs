@@ -611,7 +611,10 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
     try {
         const employees = await Employee.find({
             isDeleted: { $ne: true },
-            'employmentStatus.status': { $nin: ['Terminated', 'Resigned', 'Offboarded'] }
+            $or: [
+                { 'employmentStatus.status': 'Permanent' },
+                { employmentStatus: 'Permanent' }
+            ]
         });
 
         // Auto-heal / restore any legacy loan debits from PF balances and history
@@ -771,6 +774,11 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
         }
         const isMatured = maturityDate ? now >= maturityDate : false;
 
+        const empStatus = typeof employee.employmentStatus === 'string'
+            ? employee.employmentStatus
+            : employee.employmentStatus?.status;
+        const isPermanent = empStatus === 'Permanent';
+
         const result = {
             employeeId: employee.employeeId,
             firstName: employee.firstName,
@@ -779,15 +787,20 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
             designation: employee.jobInfo?.designation,
             department: employee.jobInfo?.department,
             joiningDate: employee.jobInfo?.joiningDate,
+            employmentStatus: empStatus,
+            isEligible: isPermanent,
+            eligibilityMessage: isPermanent
+                ? null
+                : 'Provident Fund is exclusively available to confirmed Permanent employees.',
             monthsOfService,
             maturityDate: maturityDate ? maturityDate.toISOString() : null,
-            providentFundBalance: employee.providentFundBalance || 0,
-            providentFundHistory: employee.providentFundHistory || [],
+            providentFundBalance: isPermanent ? (employee.providentFundBalance || 0) : 0,
+            providentFundHistory: isPermanent ? (employee.providentFundHistory || []) : [],
             pfClaimed: employee.pfClaimed || false,
             pfClaimedAt: employee.pfClaimedAt || null,
-            isMatured,
+            isMatured: isPermanent ? isMatured : false,
             maturityThresholdMonths: PF_MATURITY_MONTHS,
-            musharakahAgreement: employee.musharakahAgreement || { enrolled: false }
+            musharakahAgreement: isPermanent ? (employee.musharakahAgreement || { enrolled: false }) : { enrolled: false }
         };
 
         return res.json(result);
@@ -835,6 +848,13 @@ router.post('/my-pf/musharakah/opt-in', authenticate, async (req: Request, res: 
 
         if (!employee) {
             return res.status(404).json({ message: 'Employee record not found.' });
+        }
+
+        const empStatus = typeof employee.employmentStatus === 'string'
+            ? employee.employmentStatus
+            : employee.employmentStatus?.status;
+        if (empStatus !== 'Permanent') {
+            return res.status(403).json({ message: 'The Musharakah Scheme is exclusively available to confirmed Permanent employees.' });
         }
 
         const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
@@ -1339,6 +1359,13 @@ router.post('/:id/pf-adjust', authenticate, async (req: Request, res: Response, 
 
         const employee = await Employee.findOne({ employeeId: req.params.id });
         if (!employee) return res.status(404).json({ message: 'Employee not found.' });
+
+        const empStatus = typeof employee.employmentStatus === 'string'
+            ? employee.employmentStatus
+            : employee.employmentStatus?.status;
+        if (empStatus !== 'Permanent') {
+            return res.status(400).json({ message: 'Provident Fund adjustments are exclusively allowed for confirmed Permanent employees.' });
+        }
 
         const adjustAmount = Number(amount);
 

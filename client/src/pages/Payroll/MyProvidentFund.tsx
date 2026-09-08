@@ -46,6 +46,9 @@ interface MyPFData {
         acknowledgedTerms?: boolean;
         agreementVersion?: string;
     };
+    isEligible?: boolean;
+    employmentStatus?: string;
+    eligibilityMessage?: string;
 }
 
 interface IndividualLoanItem {
@@ -367,7 +370,9 @@ export default function MyProvidentFund() {
                     <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
                         <AlertCircle size={24} />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-800">Account Not Found</h3>
+                    <h3 className="text-lg font-bold text-slate-800">
+                        {error?.toLowerCase().includes('slow down') || error?.toLowerCase().includes('too many') ? 'Too Many Requests' : 'Account Not Found'}
+                    </h3>
                     <p className="text-sm text-slate-600 max-w-md mx-auto">
                         {error || 'No employee record is linked to your user account. Please contact your HR department for assistance.'}
                     </p>
@@ -377,6 +382,29 @@ export default function MyProvidentFund() {
                     >
                         Retry Loading
                     </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (data.isEligible === false) {
+        return (
+            <div className="p-8 max-w-3xl mx-auto">
+                <div className="bg-amber-50/80 border border-amber-200/90 rounded-3xl p-8 text-center space-y-4 shadow-sm">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+                        <ShieldCheck size={28} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">Provident Fund & Musharakah Benefit</h3>
+                    <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+                        Provident Fund contributions and the Musharakah partnership scheme are exclusively available to confirmed <strong>Permanent</strong> employees.
+                    </p>
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-amber-300 text-amber-900 text-xs font-semibold shadow-xs">
+                        <span>Current Status:</span>
+                        <span className="font-bold uppercase tracking-wider text-amber-700">{data.employmentStatus || 'Non-Permanent'}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto pt-2">
+                        Once your evaluation period or contract is completed and confirmed into Permanent status by HR, your Provident Fund enrollment will automatically activate.
+                    </p>
                 </div>
             </div>
         );

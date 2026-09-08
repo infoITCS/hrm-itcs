@@ -741,7 +741,12 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
         if (customerReference) {
             payslip.customerReference = customerReference;
         } else if (!payslip.customerReference) {
-            payslip.customerReference = generateCustomerReference(payslip.periodYear, payslip.periodMonth, 1);
+            const bankCounter = await Counter.findOneAndUpdate(
+                { key: 'bank_customer_ref_seq' },
+                { $inc: { seq: 1 } },
+                { upsert: true, new: true }
+            );
+            payslip.customerReference = generateCustomerReference(payslip.periodYear, payslip.periodMonth, bankCounter.seq);
         }
         if (loanDeduction !== undefined) payslip.loanDeduction = Number(loanDeduction) || 0;
         if (pfPayout !== undefined) payslip.pfPayout = Number(pfPayout) || 0;
@@ -1146,6 +1151,14 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
             const employee = await Employee.findOne({ employeeId: payslip.employeeId });
             if (!employee) continue;
 
+            // Provident Fund is strictly reserved for confirmed Permanent employees
+            const empStatus = typeof employee.employmentStatus === 'string'
+                ? employee.employmentStatus
+                : employee.employmentStatus?.status;
+            if (empStatus !== 'Permanent') {
+                continue;
+            }
+
             // Check if payroll contribution already exists for this month/year for this employee
             const existingPF = employee.providentFundHistory?.some(
                 (pf: any) => pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear
@@ -1454,12 +1467,12 @@ router.get('/:runId/export-bank-excel', authenticate, async (req: Request, res: 
             const fullName = p.beneficiaryName || formatEmployeeFullName(p.employeeDetails, p.employeeId);
             const uppercaseName = String(fullName || '').toUpperCase().trim();
 
-            // Pure numeric reference format: DDMMYYYYseq (e.g. 30082026001)
+            // Strictly uniform 12-digit pure numeric reference: YYYYMMNNNNNN (e.g. 202608000001)
             let refVal = String(p.customerReference || '').replace(/\D/g, '');
-            if (!refVal || refVal.length < 8) {
-                refVal = generateCustomerReference(run.periodYear, run.periodMonth, idx + 1, defaultLastDay);
+            if (refVal.length !== 12) {
+                refVal = generateCustomerReference(run.periodYear, run.periodMonth, idx + 1);
             }
-            const refNum = Number(refVal) || Number(`${defaultLastDay}${String(run.periodMonth).padStart(2, '0')}${run.periodYear}${String(idx + 1).padStart(3, '0')}`);
+            const refNum = Number(refVal) || Number(`${run.periodYear}${String(run.periodMonth).padStart(2, '0')}${String(idx + 1).padStart(6, '0')}`);
             const amount = Number(p.netPay) || 0;
 
             return {

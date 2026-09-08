@@ -91,7 +91,7 @@ const PayslipSchema: Schema = new Schema(
         beneficiaryAccount: { type: String },
         beneficiaryName: { type: String },
         beneficiaryBank: { type: String },
-        customerReference: { type: String, index: true },
+        customerReference: { type: String, unique: true, sparse: true, index: true },
 
         taxDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         loanDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
