@@ -9,7 +9,7 @@ import {
     Banknote, Search, ChevronDown, ChevronRight, CheckCircle2,
     Clock, XCircle, TrendingUp, Users, BadgeCheck,
     AlertTriangle, FileText, X, CalendarDays, User, Building2,
-    Lock, Unlock
+    Lock, Unlock, ShieldCheck, ChevronLeft
 } from 'lucide-react';
 
 interface PFEntry {
@@ -39,6 +39,14 @@ interface EmpPFData {
     pfClaimedAt?: string;
     isMatured: boolean;
     maturityThresholdMonths: number;
+    musharakahAgreement?: {
+        enrolled?: boolean;
+        enrolledAt?: string;
+        signatureData?: string;
+        acknowledgedTerms?: boolean;
+        agreementVersion?: string;
+        ipAddress?: string;
+    };
 }
 
 const fmtPKR = (n: number) => `Rs. ${n.toLocaleString('en-PK')}`;
@@ -394,6 +402,120 @@ function StatementModal({ emp: initialEmp, isAdmin, onClose, onSuccess }: { emp:
     );
 }
 
+// Musharakah Agreement Inspection Modal for Admin/HR
+function MusharakahAgreementModal({
+    emp,
+    onClose,
+}: {
+    emp: EmpPFData;
+    onClose: () => void;
+}) {
+    const agreement = emp.musharakahAgreement;
+    return createPortal(
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden my-8 max-h-[92vh] flex flex-col">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-emerald-700 to-teal-800 px-6 py-5 text-white flex items-start justify-between">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/30 text-emerald-200 px-2.5 py-0.5 rounded-full border border-emerald-400/30">
+                                Shariah Partnership Record
+                            </span>
+                            <span className="text-xs font-semibold text-emerald-200">Version {agreement?.agreementVersion || '1.0'}</span>
+                        </div>
+                        <h2 className="text-xl font-black">Musharakah Agreement (*Aqd*)</h2>
+                        <p className="text-xs text-emerald-100/90 mt-0.5">
+                            Formal contract record for {formatEmployeeFullName(emp, emp.employeeId)} (#{emp.employeeId})
+                        </p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-6 overflow-y-auto space-y-5 text-sm">
+                    {/* Employee & Contract Meta */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80 text-xs">
+                        <div>
+                            <span className="text-slate-400 block font-medium">Employee</span>
+                            <strong className="text-slate-800 block text-sm">{formatEmployeeFullName(emp, emp.employeeId)}</strong>
+                            <span className="text-slate-500 text-[11px]">#{emp.employeeId}</span>
+                        </div>
+                        <div>
+                            <span className="text-slate-400 block font-medium">Department</span>
+                            <strong className="text-slate-800 block">{emp.department || 'N/A'}</strong>
+                            <span className="text-slate-500 text-[11px]">{emp.designation || 'Staff'}</span>
+                        </div>
+                        <div>
+                            <span className="text-slate-400 block font-medium">Enrollment Date</span>
+                            <strong className="text-emerald-700 block">
+                                {agreement?.enrolledAt ? new Date(agreement.enrolledAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                            </strong>
+                            <span className="text-emerald-600 font-semibold text-[11px]">● Active Enrolled</span>
+                        </div>
+                        <div>
+                            <span className="text-slate-400 block font-medium">Signing IP</span>
+                            <strong className="text-slate-700 block font-mono">{agreement?.ipAddress || 'Recorded'}</strong>
+                            <span className="text-slate-500 text-[11px]">Consent Verified</span>
+                        </div>
+                    </div>
+
+                    {/* Agreed Disclosure */}
+                    <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 text-xs space-y-2">
+                        <div className="flex items-center gap-2 text-amber-900 font-bold uppercase tracking-wider text-[11px]">
+                            <ShieldCheck size={14} className="text-amber-600" />
+                            <span>Agreed Shariah Disclosure & Terms</span>
+                        </div>
+                        <p className="text-amber-950/90 leading-relaxed italic">
+                            “Opting in converts (a defined portion of) your PF balance from a protected savings deposit into a risk-bearing capital contribution. Read the details of the policy in the Company’s HRM Policy Manual before accepting.”
+                        </p>
+                        <p className="text-[11px] text-amber-900/80 border-t border-amber-200/60 pt-2">
+                            ✓ The employee ticked the mandatory checkbox confirming informed consent (<b>Rida</b>) to bear profit/loss sharing under Section 04 of the Company HRM Policy Manual.
+                        </p>
+                    </div>
+
+                    {/* Digital Signature */}
+                    <div className="border border-slate-200 rounded-2xl p-4 space-y-2 bg-white">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-700 uppercase tracking-wider">
+                            <span>Captured Digital Signature</span>
+                            <span className="text-emerald-600 font-semibold text-[11px]">Formal Aqd Signature</span>
+                        </div>
+                        <div className="border border-dashed border-slate-300 rounded-xl p-3 bg-slate-50/70 flex items-center justify-center min-h-[110px]">
+                            {agreement?.signatureData ? (
+                                <img
+                                    src={agreement.signatureData}
+                                    alt="Digital Signature"
+                                    className="max-h-24 max-w-full object-contain filter contrast-125"
+                                />
+                            ) : (
+                                <p className="text-xs text-slate-400 italic">No signature image on file.</p>
+                            )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 text-center">
+                            Digitally executed and timestamped via ITCS HRM Portal.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                    <button
+                        onClick={onClose}
+                        className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white transition-all cursor-pointer"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
 export default function ProvidentFundReport() {
     const { hasSubAccess } = usePermissions();
     const canSeeCompanyPF = hasSubAccess('provident-fund', 'company-pf');
@@ -409,12 +531,13 @@ export default function ProvidentFundReport() {
     const [data, setData] = useState<EmpPFData[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [filter, setFilter] = useState<'all' | 'matured' | 'claimed' | 'pending'>('all');
+    const [filter, setFilter] = useState<'all' | 'matured' | 'claimed' | 'musharakah' | 'pending'>('all');
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [claiming, setClaiming] = useState<string | null>(null);
     const [confirmId, setConfirmId] = useState<string | null>(null);
     const [claimErpId, setClaimErpId] = useState('');
     const [statement, setStatement] = useState<EmpPFData | null>(null);
+    const [selectedAgreementEmp, setSelectedAgreementEmp] = useState<EmpPFData | null>(null);
     const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
     const showToast = (msg: string, ok: boolean) => {
@@ -473,6 +596,7 @@ export default function ProvidentFundReport() {
             filter === 'all' ? true :
             filter === 'matured' ? (emp.isMatured && !emp.pfClaimed) :
             filter === 'claimed' ? emp.pfClaimed :
+            filter === 'musharakah' ? Boolean(emp.musharakahAgreement?.enrolled) :
             !emp.isMatured;
         return matchSearch && matchFilter;
     });
@@ -485,10 +609,12 @@ export default function ProvidentFundReport() {
     }, [search, filter, activeTab]);
 
     const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    const totalPages = Math.ceil(filtered.length / pageSize) || 1;
 
     const totalBalance = data.reduce((s, e) => s + e.providentFundBalance, 0);
     const maturedCount = data.filter(e => e.isMatured && !e.pfClaimed).length;
     const claimedCount = data.filter(e => e.pfClaimed).length;
+    const musharakahCount = data.filter(e => e.musharakahAgreement?.enrolled).length;
 
     if (!isAdmin) {
         return <MyProvidentFund />;
@@ -598,11 +724,12 @@ export default function ProvidentFundReport() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {([
                     { label: 'Total PF Pool', value: fmtPKR(totalBalance), Icon: Banknote, bg: 'bg-emerald-50', color: 'text-emerald-600' },
                     { label: 'Matured & Claimable', value: String(maturedCount), Icon: BadgeCheck, bg: 'bg-indigo-50', color: 'text-indigo-600' },
                     { label: 'Already Claimed', value: String(claimedCount), Icon: CheckCircle2, bg: 'bg-slate-100', color: 'text-slate-500' },
+                    { label: 'Musharakah Opt-Ins', value: String(musharakahCount), Icon: ShieldCheck, bg: 'bg-teal-50', color: 'text-teal-600' },
                 ] as const).map(({ label, value, Icon, bg, color }) => (
                     <div key={label} className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
                         <div className={`p-3 rounded-xl ${bg}`}><Icon size={20} className={color} /></div>
@@ -627,15 +754,21 @@ export default function ProvidentFundReport() {
                     />
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                    {(['all', 'matured', 'claimed', 'pending'] as const).map(f => (
+                    {([
+                        { key: 'all', label: 'All' },
+                        { key: 'matured', label: 'Matured' },
+                        { key: 'claimed', label: 'Claimed' },
+                        { key: 'musharakah', label: `Musharakah (${musharakahCount})` },
+                        { key: 'pending', label: 'Not Matured' },
+                    ] as const).map(f => (
                         <button
-                            key={f}
-                            onClick={() => setFilter(f)}
+                            key={f.key}
+                            onClick={() => setFilter(f.key)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${
-                                filter === f ? 'bg-indigo-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                filter === f.key ? 'bg-indigo-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                         >
-                            {f === 'all' ? 'All' : f === 'matured' ? 'Matured' : f === 'claimed' ? 'Claimed' : 'Not Matured'}
+                            {f.label}
                         </button>
                     ))}
                 </div>
@@ -653,7 +786,8 @@ export default function ProvidentFundReport() {
                     <p className="font-medium">No employees found</p>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <>
+                    <div className="space-y-3">
                     {paginatedList.map(emp => {
                         const isExpanded = !!expanded[emp.employeeId];
                         const canClaim = emp.isMatured && !emp.pfClaimed && emp.providentFundBalance > 0;
@@ -666,39 +800,48 @@ export default function ProvidentFundReport() {
                             <div key={emp.employeeId} className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
 
                                 {/* Summary row */}
-                                <div
-                                    className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 sm:px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none"
-                                    onClick={() => setExpanded(p => ({ ...p, [emp.employeeId]: !p[emp.employeeId] }))}
-                                >
-                                    <span className="text-slate-400 shrink-0">
-                                        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                                    </span>
+                                {/* Summary row with horizontal scroll protection */}
+                                <div className="overflow-x-auto">
+                                    <div
+                                        className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 cursor-pointer hover:bg-slate-50/50 transition-colors select-none min-w-[980px]"
+                                        onClick={() => setExpanded(p => ({ ...p, [emp.employeeId]: !p[emp.employeeId] }))}
+                                    >
+                                        <span className="text-slate-400 shrink-0">
+                                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                        </span>
 
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-slate-800 truncate">
-                                            {formatEmployeeFullName(emp, emp.employeeId)}
-                                            <span className="ml-2 text-xs font-medium text-slate-400">#{emp.employeeId}</span>
-                                        </p>
-                                        <p className="text-xs text-slate-500 truncate">{emp.designation} • {emp.department}</p>
-                                    </div>
+                                        {/* Employee identity: Guaranteed full name & ID badge */}
+                                        <div className="min-w-[240px] sm:min-w-[280px] shrink-0">
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-bold text-slate-900 text-sm whitespace-nowrap">
+                                                    {formatEmployeeFullName(emp, emp.employeeId)}
+                                                </p>
+                                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                                                    #{emp.employeeId}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                                                {emp.designation || 'Staff'}{emp.department ? ` • ${emp.department}` : ''}
+                                            </p>
+                                        </div>
 
-                                    {/* Maturity date */}
-                                    <div className="text-center hidden md:block min-w-[120px]">
-                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Maturity Date</p>
-                                        <p className="font-bold text-slate-700 text-xs whitespace-nowrap">{fmtDate(emp.maturityDate)}</p>
-                                    </div>
+                                        {/* Maturity date */}
+                                        <div className="text-center min-w-[110px] shrink-0">
+                                            <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Maturity Date</p>
+                                            <p className="font-bold text-slate-700 text-xs whitespace-nowrap">{fmtDate(emp.maturityDate)}</p>
+                                        </div>
 
-                                    {/* Service */}
-                                    <div className="text-center hidden sm:block min-w-[130px]">
-                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Service</p>
-                                        <p className="font-bold text-slate-700 whitespace-nowrap">{fmtMonths(emp.monthsOfService)}</p>
-                                    </div>
+                                        {/* Service */}
+                                        <div className="text-center min-w-[100px] shrink-0">
+                                            <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Service</p>
+                                            <p className="font-bold text-slate-700 text-xs whitespace-nowrap">{fmtMonths(emp.monthsOfService)}</p>
+                                        </div>
 
-                                    {/* Balance */}
-                                    <div className="text-center hidden sm:block min-w-[120px]">
-                                        <p className="text-xs text-slate-400 font-medium whitespace-nowrap">PF Balance</p>
-                                        <p className="font-black text-emerald-600 whitespace-nowrap">{fmtPKR(emp.providentFundBalance)}</p>
-                                    </div>
+                                        {/* Balance */}
+                                        <div className="text-center min-w-[120px] shrink-0">
+                                            <p className="text-xs text-slate-400 font-medium whitespace-nowrap">PF Balance</p>
+                                            <p className="font-black text-emerald-600 whitespace-nowrap">{fmtPKR(emp.providentFundBalance)}</p>
+                                        </div>
 
                                     {/* Status badge */}
                                     <div className="shrink-0">
@@ -713,6 +856,25 @@ export default function ProvidentFundReport() {
                                         ) : (
                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap">
                                                 <Clock size={12} /> {fmtMonths(monthsLeft)} left
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Musharakah Scheme badge */}
+                                    <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                                        {emp.musharakahAgreement?.enrolled ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedAgreementEmp(emp)}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                                                title="View signed Shariah Musharakah Aqd"
+                                            >
+                                                <ShieldCheck size={13} className="text-emerald-600" />
+                                                <span>Musharakah Active</span>
+                                            </button>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
+                                                Protected
                                             </span>
                                         )}
                                     </div>
@@ -773,6 +935,7 @@ export default function ProvidentFundReport() {
                                         )}
                                     </div>
                                 </div>
+                            </div>
 
                                 {/* Expanded raw history */}
                                 {isExpanded && (
@@ -855,8 +1018,73 @@ export default function ProvidentFundReport() {
                         );
                     })}
                 </div>
+
+                {/* Pagination Controls */}
+                {filtered.length > pageSize && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white border border-slate-200/80 rounded-2xl px-5 py-3.5 shadow-sm mt-3">
+                        <div className="text-xs text-slate-500 font-medium">
+                            Showing <strong className="text-slate-800">{(currentPage - 1) * pageSize + 1}</strong> to <strong className="text-slate-800">{Math.min(currentPage * pageSize, filtered.length)}</strong> of <strong className="text-slate-800">{filtered.length}</strong> employees
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                                <ChevronLeft size={14} /> Previous
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                    <button
+                                        key={page}
+                                        type="button"
+                                        onClick={() => setCurrentPage(page)}
+                                        className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                            currentPage === page
+                                                ? 'bg-indigo-600 text-white shadow-sm'
+                                                : 'text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                                Next <ChevronRight size={14} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+                </>
             )}
             </>
+            )}
+
+            {/* Statement Modal */}
+            {statement && (
+                <StatementModal
+                    emp={statement}
+                    isAdmin={isAdmin}
+                    onClose={() => setStatement(null)}
+                    onSuccess={load}
+                />
+            )}
+
+            {/* Musharakah Signed Agreement Modal for Admin/HR */}
+            {selectedAgreementEmp && (
+                <MusharakahAgreementModal
+                    emp={selectedAgreementEmp}
+                    onClose={() => setSelectedAgreementEmp(null)}
+                />
             )}
 
             {/* Universal Master Financial Security Modal */}

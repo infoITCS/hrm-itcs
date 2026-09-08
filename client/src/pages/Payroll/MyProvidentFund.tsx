@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import {
     PiggyBank, Search, Download,
     BadgeCheck, Clock, CheckCircle2, FileText,
     ArrowUpRight, ArrowDownLeft, Wallet, AlertCircle,
-    Eye, EyeOff, Banknote, History, Calendar, PlusCircle
+    Eye, EyeOff, Banknote, History, Calendar, PlusCircle,
+    Scale, Handshake, ShieldCheck, PenTool, RotateCcw, X,
+    ExternalLink, Loader2, BookOpen, Check
 } from 'lucide-react';
 
 interface PFEntry {
@@ -35,6 +38,14 @@ interface MyPFData {
     pfClaimedAt?: string;
     isMatured: boolean;
     maturityThresholdMonths: number;
+    musharakahAgreement?: {
+        enrolled: boolean;
+        enrolledAt?: string;
+        optedOutAt?: string;
+        signatureData?: string;
+        acknowledgedTerms?: boolean;
+        agreementVersion?: string;
+    };
 }
 
 interface IndividualLoanItem {
@@ -97,6 +108,194 @@ export default function MyProvidentFund() {
     const pageSize = 10;
 
     const [hideFigures, setHideFigures] = useState(true);
+
+    // Musharakah Agreement States
+    const [showOptInModal, setShowOptInModal] = useState(false);
+    const [showOptOutModal, setShowOptOutModal] = useState(false);
+    const [showAgreementRecordModal, setShowAgreementRecordModal] = useState(false);
+    const [musharakahSubmitting, setMusharakahSubmitting] = useState(false);
+    const [musharakahFeedback, setMusharakahFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+    // Opt-In Modal Form States
+    const [agreedCheckbox, setAgreedCheckbox] = useState(false);
+    const [signatureType, setSignatureType] = useState<'draw' | 'type'>('draw');
+    const [typedSignature, setTypedSignature] = useState('');
+    const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    const isEnrolledInMusharakah = Boolean(data?.musharakahAgreement?.enrolled);
+
+    const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        setIsDrawing(true);
+    };
+
+    const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        if (!isDrawing) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        setHasDrawnSignature(true);
+    };
+
+    const stopDrawing = () => {
+        setIsDrawing(false);
+    };
+
+    const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHasDrawnSignature(false);
+        setTypedSignature('');
+    };
+
+    const handleTypedSignatureChange = (val: string) => {
+        setTypedSignature(val);
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (val.trim()) {
+            ctx.font = 'italic 32px "Brush Script MT", "Segoe Script", "Dancing Script", cursive, serif';
+            ctx.fillStyle = '#0f172a';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(val.trim(), canvas.width / 2, canvas.height / 2);
+            setHasDrawnSignature(true);
+        } else {
+            setHasDrawnSignature(false);
+        }
+    };
+
+    const getSignatureData = (): string => {
+        const canvas = canvasRef.current;
+        if (!canvas) return '';
+        if (signatureType === 'type' && typedSignature.trim()) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.font = 'italic 32px "Brush Script MT", "Segoe Script", "Dancing Script", cursive, serif';
+                ctx.fillStyle = '#0f172a';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(typedSignature.trim(), canvas.width / 2, canvas.height / 2);
+            }
+        }
+        return canvas.toDataURL('image/png');
+    };
+
+    const handleToggleClick = () => {
+        if (isEnrolledInMusharakah) {
+            setShowOptOutModal(true);
+        } else {
+            setAgreedCheckbox(false);
+            setHasDrawnSignature(false);
+            setSignatureType('draw');
+            setTypedSignature(`${data?.firstName || ''} ${data?.lastName || ''}`.trim());
+            setShowOptInModal(true);
+            setTimeout(() => {
+                clearCanvas();
+            }, 100);
+        }
+    };
+
+    const handleOptInSubmit = async () => {
+        if (!agreedCheckbox || !hasDrawnSignature) return;
+        const sig = getSignatureData();
+        if (!sig) return;
+
+        setMusharakahSubmitting(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/employees/my-pf/musharakah/opt-in`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    acknowledgedTerms: true,
+                    signatureData: sig
+                })
+            });
+
+            const body = await res.json();
+            if (res.ok) {
+                setData(prev => prev ? { ...prev, musharakahAgreement: body.musharakahAgreement } : null);
+                setShowOptInModal(false);
+                setMusharakahFeedback({
+                    type: 'success',
+                    message: 'Successfully enrolled into Musharakah Profit/Loss Sharing agreement.'
+                });
+                setTimeout(() => setMusharakahFeedback(null), 6000);
+            } else {
+                alert(body.message || 'Failed to opt in to Musharakah agreement.');
+            }
+        } catch {
+            alert('A network error occurred while submitting your agreement.');
+        } finally {
+            setMusharakahSubmitting(false);
+        }
+    };
+
+    const handleOptOutSubmit = async () => {
+        setMusharakahSubmitting(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/employees/my-pf/musharakah/opt-out`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const body = await res.json();
+            if (res.ok) {
+                setData(prev => prev ? { ...prev, musharakahAgreement: body.musharakahAgreement } : null);
+                setShowOptOutModal(false);
+                setMusharakahFeedback({
+                    type: 'success',
+                    message: 'You have opted out of Musharakah. Your PF balance has reverted to standard capital-protected status.'
+                });
+                setTimeout(() => setMusharakahFeedback(null), 6000);
+            } else {
+                alert(body.message || 'Failed to opt out of Musharakah agreement.');
+            }
+        } catch {
+            alert('A network error occurred while processing opt-out.');
+        } finally {
+            setMusharakahSubmitting(false);
+        }
+    };
 
     const fmtPKR = (n: number) => {
         if (hideFigures) return '••••••••';
@@ -516,6 +715,108 @@ export default function MyProvidentFund() {
                         </div>
                     )}
 
+                    {/* Musharakah Feedback Toast */}
+                    {musharakahFeedback && (
+                        <div className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold shadow-sm transition-all animate-fadeIn ${
+                            musharakahFeedback.type === 'success' 
+                                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+                                : 'bg-rose-50 border border-rose-200 text-rose-800'
+                        }`}>
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                                <span>{musharakahFeedback.message}</span>
+                            </div>
+                            <button onClick={() => setMusharakahFeedback(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Musharakah Profit/Loss Sharing Scheme Card */}
+                    <div className={`rounded-2xl p-5 sm:p-6 border transition-all shadow-sm ${
+                        isEnrolledInMusharakah
+                            ? 'bg-gradient-to-r from-emerald-950/5 via-teal-900/5 to-emerald-900/10 border-emerald-300'
+                            : 'bg-white border-slate-200/80 hover:border-slate-300'
+                    }`}>
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                            <div className="space-y-2 max-w-2xl">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-xs">
+                                        <Handshake size={18} />
+                                    </div>
+                                    <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                                        Musharakah Profit/Loss Sharing Agreement
+                                    </h3>
+                                    {isEnrolledInMusharakah ? (
+                                        <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                            <BadgeCheck size={13} className="text-emerald-600" /> Enrolled (Aqd Active)
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                            <ShieldCheck size={13} className="text-indigo-600" /> Capital-Protected (Qard / Wadiah)
+                                        </span>
+                                    )}
+                                </div>
+
+                                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                                    {isEnrolledInMusharakah
+                                        ? `Your eligible Provident Fund balance is actively enrolled in profit/loss sharing under Shariah terms (Formally signed on ${fmtDate(data.musharakahAgreement?.enrolledAt)}). You may toggle off at any time to return to a capital-protected status.`
+                                        : 'A Shariah-compliant partnership arrangement between your Provident Fund contribution and the Company’s operating capital. Your balance is currently held as a protected savings deposit.'}
+                                </p>
+
+                                <div className="flex flex-wrap items-center gap-4 pt-1 text-xs">
+                                    <a
+                                        href="/company-policy#provident-fund-musharakah"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+                                    >
+                                        <BookOpen size={13} /> Review Shariah Policy in HRM Manual <ExternalLink size={12} />
+                                    </a>
+
+                                    {isEnrolledInMusharakah && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAgreementRecordModal(true)}
+                                            className="inline-flex items-center gap-1.5 font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
+                                        >
+                                            <FileText size={13} /> View Signed Contract Record
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Toggle Switch Component */}
+                            <div className="flex items-center gap-3 self-start md:self-center shrink-0 bg-slate-50 border border-slate-200/80 px-4 py-3 rounded-2xl">
+                                <div className="text-right">
+                                    <div className="text-xs font-bold text-slate-800">
+                                        {isEnrolledInMusharakah ? 'Opted In' : 'Opted Out'}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 font-medium">
+                                        {isEnrolledInMusharakah ? 'Musharakah Active' : 'Protected Deposit'}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={isEnrolledInMusharakah}
+                                    onClick={handleToggleClick}
+                                    className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+                                        isEnrolledInMusharakah ? 'bg-emerald-600' : 'bg-slate-300'
+                                    }`}
+                                >
+                                    <span className="sr-only">Toggle Musharakah Profit/Loss Sharing</span>
+                                    <span
+                                        aria-hidden="true"
+                                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                            isEnrolledInMusharakah ? 'translate-x-7' : 'translate-x-0'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* 4 Summary Cards Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {/* Card 1: Current Balance */}
@@ -764,6 +1065,302 @@ export default function MyProvidentFund() {
 
             </div>
             </div>
+            )}
+
+            {/* MODAL 1: Musharakah Opt-In Agreement Modal */}
+            {showOptInModal && createPortal(
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+                    <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden my-auto relative max-h-[92vh] flex flex-col">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900 text-white p-5 sm:p-6 flex items-start justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
+                                    <Scale size={22} className="text-emerald-300" />
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Shariah Agreement</div>
+                                    <h3 className="text-lg sm:text-xl font-black">Musharakah Profit/Loss Sharing</h3>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowOptInModal(false)}
+                                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+                            {/* Required Verbatim Shariah Disclosure */}
+                            <div className="bg-amber-50 border-2 border-amber-300/80 rounded-2xl p-4 sm:p-5 text-amber-950 shadow-xs">
+                                <div className="flex items-center gap-2 font-bold text-amber-900 text-sm mb-1.5">
+                                    <AlertCircle size={18} className="text-amber-600 shrink-0" />
+                                    <span>Mandatory Disclosure</span>
+                                </div>
+                                <blockquote className="text-xs sm:text-sm font-semibold leading-relaxed italic text-amber-900 pl-3 border-l-3 border-amber-500">
+                                    “Opting in converts (a defined portion of) your PF balance from a protected savings deposit into a risk-bearing capital contribution. Read the details of the policy in the Company’s HRM Policy Manual before accepting.”
+                                </blockquote>
+                            </div>
+
+                            {/* Shariah Key Points Summary */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs text-slate-700">
+                                <div className="font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                                    <BookOpen size={14} className="text-indigo-600" /> Contract Fundamentals (Aqd Formation)
+                                </div>
+                                <ul className="list-disc list-inside space-y-1 text-slate-600 leading-relaxed">
+                                    <li><b>Offer & Acceptance (Aqd):</b> Your submission constitutes employee offer (<i>Ijab</i>); activation by ITCS constitutes acceptance (<i>Qabul</i>).</li>
+                                    <li><b>Capital at Risk:</b> In a loss year, losses are borne against your enrolled Musharakah capital. ITCS does not claim losses beyond your enrolled capital contribution.</li>
+                                    <li><b>Protected Balance:</b> Any PF funds not opted into the scheme continue to be held on a capital-protected basis (Qard/Wadiah).</li>
+                                    <li><b>Eligibility:</b> Requires matured funds plus a minimum 1-year post-maturity holding period for profit/loss calculation.</li>
+                                </ul>
+                                <div className="pt-1">
+                                    <a
+                                        href="/company-policy#provident-fund-musharakah"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1"
+                                    >
+                                        Read full 5-section policy in Company Manual <ExternalLink size={11} />
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Requirement 1: Checkbox Consent */}
+                            <div className="space-y-2">
+                                <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 hover:bg-emerald-50 transition-colors cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={agreedCheckbox}
+                                        onChange={e => setAgreedCheckbox(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                                    />
+                                    <span className="text-xs font-semibold text-emerald-950 leading-relaxed">
+                                        I confirm that I have read and understood the disclosure and relevant policy in the Company HRM Policy Manual, and formally offer (<i>Ijab</i>) to enter the Musharakah agreement.
+                                    </span>
+                                </label>
+                            </div>
+
+                            {/* Requirement 2: Digital Signature Pad */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs uppercase tracking-wider">
+                                        <PenTool size={14} className="text-emerald-700" /> Digital Signature (Aqd Formalization)
+                                    </div>
+                                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSignatureType('draw'); clearCanvas(); }}
+                                            className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                signatureType === 'draw' ? 'bg-white shadow-xs text-emerald-800' : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            Draw Signature
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSignatureType('type'); handleTypedSignatureChange(typedSignature || `${data.firstName} ${data.lastName}`); }}
+                                            className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                signatureType === 'type' ? 'bg-white shadow-xs text-emerald-800' : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            Type Name
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {signatureType === 'type' ? (
+                                    <div className="space-y-2">
+                                        <input
+                                            type="text"
+                                            value={typedSignature}
+                                            onChange={e => handleTypedSignatureChange(e.target.value)}
+                                            placeholder="Type your full legal name"
+                                            className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                                        />
+                                        <p className="text-[11px] text-slate-500">Preview of your digital signature script:</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-[11px] text-slate-500">Sign with your mouse or fingertip on the canvas below:</p>
+                                )}
+
+                                {/* Canvas drawing area */}
+                                <div className="relative bg-white border border-slate-300 rounded-2xl overflow-hidden shadow-inner">
+                                    <canvas
+                                        ref={canvasRef}
+                                        width={500}
+                                        height={120}
+                                        onMouseDown={startDrawing}
+                                        onMouseMove={draw}
+                                        onMouseUp={stopDrawing}
+                                        onMouseLeave={stopDrawing}
+                                        onTouchStart={startDrawing}
+                                        onTouchMove={draw}
+                                        onTouchEnd={stopDrawing}
+                                        className="w-full h-[120px] cursor-crosshair touch-none bg-slate-50/50"
+                                    />
+                                    <div className="absolute bottom-2 left-4 pointer-events-none text-slate-400 text-xs font-mono select-none">
+                                        ✕ Sign here
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={clearCanvas}
+                                        className="absolute top-2 right-2 px-2 py-1 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                                        title="Clear signature"
+                                    >
+                                        <RotateCcw size={11} /> Clear
+                                    </button>
+                                </div>
+
+                                {/* Signature Status Badge */}
+                                <div className="flex items-center justify-between text-xs">
+                                    {hasDrawnSignature ? (
+                                        <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                            <Check size={14} className="text-emerald-600" /> Digital signature captured
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-400 font-medium">
+                                            * Signature is required to meet Shariah Aqd criteria
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setShowOptInModal(false)}
+                                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Cancel / Keep Protected
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleOptInSubmit}
+                                disabled={!agreedCheckbox || !hasDrawnSignature || musharakahSubmitting}
+                                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
+                            >
+                                {musharakahSubmitting ? (
+                                    <>
+                                        <Loader2 size={14} className="animate-spin" /> Formalizing Aqd...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle2 size={14} /> I Accept (Enter Agreement)
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* MODAL 2: Musharakah Opt-Out Confirmation Modal */}
+            {showOptOutModal && createPortal(
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+                    <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4 my-auto relative">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                            <AlertCircle size={26} />
+                        </div>
+                        <div className="space-y-2">
+                            <h3 className="text-lg font-bold text-slate-900">Opt Out of Musharakah Scheme?</h3>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                Are you sure you want to withdraw from the Musharakah Profit/Loss Sharing scheme? Your Provident Fund balance will revert to a capital-protected savings status (structured under Qard/Wadiah per company policy) and will no longer participate in company profit/loss.
+                            </p>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowOptOutModal(false)}
+                                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Keep Enrolled
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleOptOutSubmit}
+                                disabled={musharakahSubmitting}
+                                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                                {musharakahSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+                                Confirm Opt-Out
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* MODAL 3: View Signed Agreement Record */}
+            {showAgreementRecordModal && data.musharakahAgreement && createPortal(
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+                    <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-auto relative">
+                        <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white p-5 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <Scale size={20} className="text-emerald-300" />
+                                <h3 className="text-base font-bold">Musharakah Contract Record</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowAgreementRecordModal(false)}
+                                className="text-white/70 hover:text-white p-1 cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4 text-xs text-slate-700">
+                            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-100">
+                                <div>
+                                    <span className="text-slate-400 font-semibold block uppercase text-[10px]">Employee</span>
+                                    <span className="font-bold text-slate-900">{data.firstName} {data.lastName}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 font-semibold block uppercase text-[10px]">Employee ID</span>
+                                    <span className="font-bold text-slate-900">{data.employeeId}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 font-semibold block uppercase text-[10px]">Contract Formation</span>
+                                    <span className="font-bold text-slate-900">{fmtDate(data.musharakahAgreement.enrolledAt)}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 font-semibold block uppercase text-[10px]">Shariah Status</span>
+                                    <span className="font-bold text-emerald-700 flex items-center gap-1">
+                                        <BadgeCheck size={13} /> Active Musharakah
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1 bg-amber-50/80 border border-amber-200/80 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed italic">
+                                “Opting in converts (a defined portion of) your PF balance from a protected savings deposit into a risk-bearing capital contribution. Read the details of the policy in the Company’s HRM Policy Manual before accepting.”
+                            </div>
+
+                            {data.musharakahAgreement.signatureData && (
+                                <div className="space-y-1.5 pt-1">
+                                    <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px] block">Captured Digital Signature</span>
+                                    <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-center">
+                                        <img
+                                            src={data.musharakahAgreement.signatureData}
+                                            alt="Employee Digital Signature"
+                                            className="max-h-16 object-contain"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="pt-2 flex justify-end">
+                                <button
+                                    onClick={() => setShowAgreementRecordModal(false)}
+                                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                    Close Record
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
         </div>

@@ -87,6 +87,15 @@ export interface IEmployee extends Document {
     }[];
     pfClaimed?: boolean;
     pfClaimedAt?: Date;
+    musharakahAgreement?: {
+        enrolled: boolean;
+        enrolledAt?: Date;
+        optedOutAt?: Date;
+        signatureData?: string;
+        acknowledgedTerms?: boolean;
+        agreementVersion?: string;
+        ipAddress?: string;
+    };
     socialProfiles?: {
         platform: string;
         link: string;
@@ -262,6 +271,15 @@ const EmployeeSchema: Schema = new Schema({
     }],
     pfClaimed: { type: Boolean, default: false },
     pfClaimedAt: { type: Date },
+    musharakahAgreement: {
+        enrolled: { type: Boolean, default: false },
+        enrolledAt: { type: Date },
+        optedOutAt: { type: Date },
+        signatureData: { type: String },
+        acknowledgedTerms: { type: Boolean, default: false },
+        agreementVersion: { type: String, default: '1.0' },
+        ipAddress: { type: String }
+    },
     socialProfiles: [{
         platform: { type: String },
         link: { type: String }

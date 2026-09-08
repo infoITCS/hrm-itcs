@@ -659,7 +659,8 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
                 pfClaimed: emp.pfClaimed || false,
                 pfClaimedAt: emp.pfClaimedAt || null,
                 isMatured,
-                maturityThresholdMonths: PF_MATURITY_MONTHS
+                maturityThresholdMonths: PF_MATURITY_MONTHS,
+                musharakahAgreement: emp.musharakahAgreement || { enrolled: false }
             };
         });
 
@@ -736,7 +737,7 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
         }
 
         let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
-            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement')
             .lean() as any;
 
         if (!employee && authReq.user?.email) {
@@ -748,7 +749,7 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
                     { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
                 ]
             })
-            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus')
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement')
             .lean() as any;
         }
 
@@ -785,10 +786,122 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
             pfClaimed: employee.pfClaimed || false,
             pfClaimedAt: employee.pfClaimedAt || null,
             isMatured,
-            maturityThresholdMonths: PF_MATURITY_MONTHS
+            maturityThresholdMonths: PF_MATURITY_MONTHS,
+            musharakahAgreement: employee.musharakahAgreement || { enrolled: false }
         };
 
         return res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/employees/my-pf/musharakah/opt-in
+ * Formally enrolls the employee into the Musharakah (partnership-based profit/loss sharing) agreement.
+ * Captures acknowledgment and digital signature (Aqd — Contract Formation).
+ */
+router.post('/my-pf/musharakah/opt-in', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const { acknowledgedTerms, signatureData } = req.body;
+
+        if (!acknowledgedTerms) {
+            return res.status(400).json({ message: 'Acknowledgment of terms and disclosure is required to enter the Musharakah agreement.' });
+        }
+
+        if (!signatureData || typeof signatureData !== 'string' || signatureData.trim().length < 20) {
+            return res.status(400).json({ message: 'A valid digital signature is required to formalize the Musharakah contract.' });
+        }
+
+        let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } });
+
+        if (!employee && authReq.user?.email) {
+            employee = await Employee.findOne({
+                isDeleted: { $ne: true },
+                $or: [
+                    { workEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { personalEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
+                ]
+            });
+        }
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee record not found.' });
+        }
+
+        const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+
+        employee.musharakahAgreement = {
+            enrolled: true,
+            enrolledAt: new Date(),
+            signatureData,
+            acknowledgedTerms: true,
+            agreementVersion: '1.0',
+            ipAddress
+        };
+
+        await employee.save();
+
+        return res.json({
+            message: 'Successfully enrolled in Musharakah Profit/Loss Sharing agreement.',
+            musharakahAgreement: employee.musharakahAgreement
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * POST /api/employees/my-pf/musharakah/opt-out
+ * Allows employee to opt out of the Musharakah agreement, reverting funds to capital-protected status.
+ */
+router.post('/my-pf/musharakah/opt-out', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const userId = authReq.user?.userId;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } });
+
+        if (!employee && authReq.user?.email) {
+            employee = await Employee.findOne({
+                isDeleted: { $ne: true },
+                $or: [
+                    { workEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { personalEmail: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } },
+                    { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
+                ]
+            });
+        }
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee record not found.' });
+        }
+
+        if (!employee.musharakahAgreement) {
+            employee.musharakahAgreement = { enrolled: false };
+        } else {
+            employee.musharakahAgreement.enrolled = false;
+            employee.musharakahAgreement.optedOutAt = new Date();
+        }
+
+        await employee.save();
+
+        return res.json({
+            message: 'Successfully opted out of Musharakah agreement. Your funds have reverted to capital-protected status.',
+            musharakahAgreement: employee.musharakahAgreement
+        });
     } catch (err) {
         next(err);
     }

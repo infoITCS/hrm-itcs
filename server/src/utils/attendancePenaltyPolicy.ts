@@ -10,8 +10,8 @@ export interface AttendancePenaltyEvent {
 
 /** Map attendance record status to a payroll penalty type, if any. */
 export function statusToPenaltyType(status: string): AttendancePenaltyType | null {
-    if (status === 'Late') return 'half';
-    if (status === 'Half-Day' || status === 'Absent') return 'full';
+    if (status === 'Late' || status === 'Half-Day') return 'half';
+    if (status === 'Absent') return 'full';
     return null;
 }
 

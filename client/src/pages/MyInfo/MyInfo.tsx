@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock, Utensils, CheckCircle2, XCircle } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
@@ -141,7 +141,23 @@ const MyInfo = () => {
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
     const [showCompletion, setShowCompletion] = useState<number | null>(null);
     const [isEditing, setIsEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState('personal');
+    const location = useLocation();
+    const initialSearchParams = new URLSearchParams(location.search);
+    const initialTabParam = initialSearchParams.get('tab');
+    const initialStepParam = initialSearchParams.get('step');
+    const initialTab = initialTabParam || (initialStepParam === '8' ? 'documents' : 'personal');
+    const [activeTab, setActiveTab] = useState(initialTab);
+
+    useEffect(() => {
+        const searchParams = new URLSearchParams(location.search);
+        const tab = searchParams.get('tab');
+        const step = searchParams.get('step');
+        if (tab) {
+            setActiveTab(tab);
+        } else if (step === '8') {
+            setActiveTab('documents');
+        }
+    }, [location.search]);
     const [isSalaryUnlocked, setIsSalaryUnlocked] = useState(false);
     const [showSalaryPinModal, setShowSalaryPinModal] = useState(false);
     const [hidePfFigures, setHidePfFigures] = useState(true);

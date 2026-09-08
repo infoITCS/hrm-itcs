@@ -19,7 +19,7 @@ const STATUS_OPTIONS: { value: StatusSelectValue; label: string }[] = [
     { value: 'Present', label: 'Present' },
     { value: 'Present (WFH)', label: 'Present (WFH)' },
     { value: 'Late', label: 'Late' },
-    { value: 'Half-Day', label: 'Half-Day' },
+    { value: 'Half-Day', label: 'Half-Day Absent (0.5 Cut)' },
     { value: 'Early Leave', label: 'Early Leave' },
     { value: 'On Leave', label: 'On Leave' },
     { value: 'Absent', label: 'Absent' },

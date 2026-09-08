@@ -29,6 +29,14 @@ export async function seedExpenseCategories() {
                 assignedTo: 'Finance'
             },
             {
+                name: 'Postage and Delivery',
+                isActive: true,
+                policyLimit: 0,
+                subCategories: ['TCS', 'Leopards', 'M&P', 'By Air', 'Air Lift', 'By Land', 'By Sea', 'Daewoo FastEx', 'BlueEx', 'Other'],
+                requiresReceipt: true,
+                assignedTo: 'Finance'
+            },
+            {
                 name: 'Meal Allowance',
                 isActive: true,
                 policyLimit: 0,

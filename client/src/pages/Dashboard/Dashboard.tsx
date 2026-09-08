@@ -75,24 +75,25 @@ const Dashboard = () => {
         localStorage.getItem(`onboarding_dismissed_${user?.id}`) === 'true'
     );
 
-    const calculateOnboardingProgress = (emp: any) => {
+    const checkProfileDocuments = (emp: any, userAvatar?: string) => {
         const empData = emp || {};
+        const attachments = empData.attachments || [];
 
-        const hasCnicFront = empData.attachments?.some((a: any) => 
+        const hasCnicFront = attachments.some((a: any) => 
             /cnic.*front|front.*cnic|national.*id.*front|identity.*front/i.test(a.fileType || '') || 
             /cnic.*front|front.*cnic|national.*id.*front/i.test(a.fileName || a.name || a.originalName || '') ||
             a.fileType === 'CNIC Front' || 
             a.fileType === 'CNIC (Front)'
         );
 
-        const hasCnicBack = empData.attachments?.some((a: any) => 
+        const hasCnicBack = attachments.some((a: any) => 
             /cnic.*back|back.*cnic|national.*id.*back|identity.*back/i.test(a.fileType || '') || 
             /cnic.*back|back.*cnic|national.*id.*back/i.test(a.fileName || a.name || a.originalName || '') ||
             a.fileType === 'CNIC Back' || 
             a.fileType === 'CNIC (Back)'
         );
 
-        const hasDegree = empData.attachments?.some((a: any) => 
+        const hasDegree = attachments.some((a: any) => 
             /degree|transcript|certificate|mark\s*sheet|education/i.test(a.fileType || '') || 
             /degree|transcript|certificate|mark\s*sheet|education|bachelor|master|matric|inter|diploma|graduation/i.test(a.fileName || a.name || a.originalName || '') ||
             a.fileType?.startsWith('Education') ||
@@ -101,25 +102,30 @@ const Dashboard = () => {
         );
 
         // Microsoft 365 photo, profile avatar, or attachment picture
-        const hasPicture = !!empData.avatar || !!user?.avatar || empData.attachments?.some((a: any) => 
+        const hasPicture = !!empData.avatar || !!userAvatar || attachments.some((a: any) => 
             /picture|avatar|photo|profile/i.test(a.fileType || '') ||
             /picture|avatar|photo|profile/i.test(a.fileName || a.name || a.originalName || '')
         );
 
+        return !!(hasCnicFront && hasCnicBack && hasDegree && hasPicture);
+    };
+
+    const calculateOnboardingProgress = (emp: any) => {
+        const empData = emp || {};
+        const hasDocs = checkProfileDocuments(empData, user?.avatar);
+
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && (empData.cnic || empData.nationalId) && empData.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!((empData.address?.city || empData.address?.streetAddress || empData.phone) && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone || ec.relation)) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!((empData.address?.city || empData.address?.streetAddress || empData.address?.street || empData.phone) && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone || ec.relation)) },
             { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level || edu.institute) || empData.employmentHistory?.some((eh: any) => eh.companyName || eh.jobTitle)) },
             { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link || sp.url)) },
-            { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: !!(
-                hasCnicFront && hasCnicBack && hasDegree && hasPicture
-            )}
+            { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: hasDocs }
         ];
 
         const completedCount = steps.filter(s => s.completed).length;
         const percent = Math.round((completedCount / steps.length) * 100);
 
-        return { percent, steps };
+        return { percent, steps, documentsCompleted: hasDocs };
     };
 
     // Show onboarding for employees & finance staff even if they don't have an employee record yet
@@ -171,31 +177,26 @@ const Dashboard = () => {
                             setOnboardingData(emp);
 
                             // Check for personal pending items (e.g. missing mandatory profile documents)
-                            const pendingSelfTasks: any[] = [];
-                            const hasCnicFront = emp.attachments?.some((a: any) => a.fileType === 'CNIC Front');
-                            const hasCnicBack = emp.attachments?.some((a: any) => a.fileType === 'CNIC Back');
-                            const hasDegree = emp.attachments?.some((a: any) => a.fileType === 'Degree' || a.fileType?.startsWith('Degree - '));
-                            const hasPhoto = emp.attachments?.some((a: any) => a.fileType === 'Profile Picture' || a.fileType === 'Picture');
-                            
-                            if (!hasCnicFront || !hasCnicBack || !hasDegree || !hasPhoto) {
-                                pendingSelfTasks.push({
+                            const onboardingProgress = calculateOnboardingProgress(emp);
+                            const hasDocs = checkProfileDocuments(emp, user?.avatar);
+
+                            // If documents are completed or overall onboarding is 100%, do NOT show pending document upload task
+                            if (!hasDocs && onboardingProgress.percent < 100) {
+                                const docTask = {
                                     id: 'profile-docs-pending',
                                     type: 'task',
                                     title: 'Upload Profile Documents (CNIC / Degree / Photo)',
                                     employeeName: 'Mandatory profile verification required',
                                     date: 'Action Required',
-                                    path: '/my-info?step=8'
-                                });
-                            }
-
-                            if (pendingSelfTasks.length > 0) {
+                                    path: '/my-info?tab=documents&step=8'
+                                };
                                 setPendingTasks(prev => {
-                                    const combined = [...prev];
-                                    pendingSelfTasks.forEach(t => {
-                                        if (!combined.some(e => e.id === t.id)) combined.push(t);
-                                    });
-                                    return combined;
+                                    if (prev.some(e => e.id === docTask.id)) return prev;
+                                    return [...prev, docTask];
                                 });
+                            } else {
+                                // If documents are complete or onboarding is 100%, guarantee profile-docs-pending is cleared
+                                setPendingTasks(prev => prev.filter(t => t.id !== 'profile-docs-pending'));
                             }
                         }
                     }

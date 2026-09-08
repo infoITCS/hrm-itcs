@@ -787,7 +787,7 @@ const EmployeeProfile = () => {
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                                     <Banknote size={16} className="text-emerald-500" /> Provident Fund Details
                                 </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 bg-slate-50/50 p-6 rounded-3xl border border-slate-100 mb-6">
                                     <Field 
                                         label="Current PF Balance" 
                                         value={employee.providentFundBalance ? new Intl.NumberFormat('en-PK', { style: 'currency', currency: 'PKR' }).format(employee.providentFundBalance).replace('PKR', 'Rs.') : 'Rs. 0'} 
@@ -799,6 +799,10 @@ const EmployeeProfile = () => {
                                     <Field 
                                         label="PF Match Scheme" 
                                         value="Standard Employee + Employer Match" 
+                                    />
+                                    <Field 
+                                        label="Musharakah Scheme" 
+                                        value={employee.musharakahAgreement?.enrolled ? 'Enrolled (Profit/Loss Sharing)' : 'Capital-Protected (Qard / Wadiah)'} 
                                     />
                                 </div>
 

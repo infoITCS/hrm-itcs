@@ -122,6 +122,9 @@ const isEmployeeProfileComplete = (emp: any, user?: any): boolean => {
                 if (emp.workEmail) {
                     empByEmail.set(emp.workEmail.toLowerCase().trim(), emp);
                 }
+                if (emp.otherEmail) {
+                    empByEmail.set(emp.otherEmail.toLowerCase().trim(), emp);
+                }
             }
 
             // Filter down to only users whose profile is truly incomplete (< 100%)

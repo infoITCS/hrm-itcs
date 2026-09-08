@@ -37,7 +37,7 @@ const SECTIONS: Section[] = [
     { id: 'sec-01', num: '01', title: 'Introduction', icon: BookOpen, keywords: ['mission', 'vision', 'values', 'islam', 'services', 'cloud', 'cybersecurity', 'overview', 'purpose', 'profile'] },
     { id: 'sec-02', num: '02', title: 'Business Operations', icon: Building2, keywords: ['business', 'communication', 'compliance', 'respect', 'managers', 'employees', 'unacceptable', 'confidentiality', 'personal records', 'assets'] },
     { id: 'sec-03', num: '03', title: 'Employment', icon: Users, keywords: ['recruitment', 'probation', 'permanent', 'contract', 'internship', 'appointment', 'orientation', 'attendance', 'wfh', 'resignation', 'termination'] },
-    { id: 'sec-04', num: '04', title: 'Terms & Conditions of Employment', icon: Briefcase, keywords: ['dress code', 'working hours', 'lunch', 'prayer', 'overtime', 'technical', 'compensation', 'benefits', 'opd', 'medical', 'provident fund', 'loans', 'sim'] },
+    { id: 'sec-04', num: '04', title: 'Terms & Conditions of Employment', icon: Briefcase, keywords: ['dress code', 'working hours', 'lunch', 'prayer', 'overtime', 'technical', 'compensation', 'benefits', 'opd', 'medical', 'provident fund', 'loans', 'sim', 'musharakah', 'profit loss', 'shariah'] },
     { id: 'sec-05', num: '05', title: 'Harassment Policy', icon: ShieldAlert, keywords: ['harassment', 'bullying', 'sexual', 'reporting', 'confidentiality', 'sanctions', 'misconduct'] },
     { id: 'sec-06', num: '06', title: 'HSE Policy', icon: Shield, keywords: ['hse', 'health', 'safety', 'environment', 'risk', 'emergency', 'compliance'] },
     { id: 'sec-07', num: '07', title: 'Employee Tardiness & Leave Policy', icon: Clock, keywords: ['tardiness', 'late', 'grace period', 'leave', 'sick', 'annual', 'half-day', 'maternity', 'paternity', 'meal allowance'] },
@@ -526,6 +526,111 @@ export default function CompanyPolicy() {
                                             <Lock size={16} className="text-indigo-400 mb-1" />
                                             <div className="font-bold text-white text-xs">Employee Loans</div>
                                             <div className="text-[11px] text-purple-200/70 mt-1">Loan up to accumulated PF balance, repayable in 6 equal monthly installments.</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Provident Fund Profit/Loss Sharing Policy (Shariah-Compliant Structure) */}
+                                <div id="provident-fund-musharakah" className="bg-gradient-to-br from-purple-950/60 via-[#1e1338] to-indigo-950/60 border border-purple-500/30 rounded-2xl p-5 sm:p-6 space-y-5 shadow-lg scroll-mt-24">
+                                    <div className="flex items-center gap-3 border-b border-purple-500/20 pb-3">
+                                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                                            <Sparkles size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Shariah-Compliant Structure</div>
+                                            <h3 className="text-base sm:text-lg font-bold text-white">Provident Fund Profit/Loss Sharing Policy (Musharakah)</h3>
+                                        </div>
+                                    </div>
+
+                                    {/* 1. Shariah Basis */}
+                                    <div className="space-y-1.5 text-xs text-purple-200/85">
+                                        <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            1. Shariah Basis
+                                        </h4>
+                                        <p className="leading-relaxed pl-3.5 text-purple-100/80">
+                                            This scheme is structured as a <b>Musharakah (partnership-based profit/loss sharing)</b> arrangement between the employee's Provident Fund contribution and the Company's operating capital.
+                                        </p>
+                                    </div>
+
+                                    {/* 2. Enrollment (Aqd — Contract Formation) */}
+                                    <div className="space-y-2 text-xs text-purple-200/85">
+                                        <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            2. Enrollment (Aqd — Contract Formation)
+                                        </h4>
+                                        <div className="pl-3.5 space-y-2">
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                Employee can enroll via the HRM portal, which constitutes the employee's offer (<b>Ijab</b>) to enter a Musharakah arrangement with ITCS for that portion of PF funds; activation by ITCS constitutes acceptance (<b>Qabul</b>).
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                Employee is presented with clear, written disclosure before opting in, stating:
+                                            </p>
+                                            <ul className="list-disc list-inside pl-2 space-y-1 text-purple-200/80">
+                                                <li>That opting in converts (a defined portion of) their PF balance from a protected savings deposit into a risk-bearing capital contribution.</li>
+                                                <li>That principal is not guaranteed in a loss year, subject to Section 5.</li>
+                                                <li>The exact calculation methodology (Section 4).</li>
+                                            </ul>
+                                            <p className="leading-relaxed text-purple-100/80 bg-purple-900/30 border border-purple-500/20 p-2.5 rounded-xl">
+                                                This disclosure/consent is captured as an explicit acknowledgment (checkbox + digital signature + I Accept on the portal), as Shariah contracts require informed, demonstrable consent (<b>Rida</b>), particularly since capital protection is being waived.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* 3. Eligibility Criteria */}
+                                    <div className="space-y-2 text-xs text-purple-200/85">
+                                        <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            3. Eligibility Criteria
+                                        </h4>
+                                        <div className="pl-3.5 space-y-1.5">
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                <b>Maturity</b> — Funds must have reached maturity under the Company's PF policy.
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                <b>Post-Maturity Holding Period</b> — Matured funds must remain in the PF account for a minimum of one (1) year post-maturity before being treated as Musharakah capital eligible for profit/loss sharing.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Calculation Methodology */}
+                                    <div className="space-y-2.5 text-xs text-purple-200/85">
+                                        <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                            4. Calculation Methodology
+                                        </h4>
+                                        <div className="pl-3.5 space-y-2">
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                <b>Step 1 — Determine the employee's capital (and profit-sharing) ratio:</b><br />
+                                                <code className="text-emerald-300 font-mono bg-black/40 px-2 py-0.5 rounded text-[11px] inline-block mt-1">Employee Capital Ratio = Employee's Eligible PF Balance ÷ Total Company Capital</code>
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                <b>Step 2 — Profit case:</b><br />
+                                                <code className="text-emerald-300 font-mono bg-black/40 px-2 py-0.5 rounded text-[11px] inline-block mt-1">Employee's Profit Share = Employee Capital Ratio × Total Company Net Profit</code>
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                <b>Step 3 — Loss case:</b><br />
+                                                <code className="text-rose-300 font-mono bg-black/40 px-2 py-0.5 rounded text-[11px] inline-block mt-1">Employee's Loss Share = Employee Capital Ratio × Total Company Net Loss</code>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* 5. Treatment of Losses (Critical Shariah Point) */}
+                                    <div className="space-y-2 text-xs text-purple-200/85">
+                                        <h4 className="font-bold text-white text-xs flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                            5. Treatment of Losses (Critical Shariah Point)
+                                        </h4>
+                                        <div className="pl-3.5 space-y-2">
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                Losses are borne only against the employee's Musharakah capital contribution — i.e., the portion of PF funds enrolled in profit/loss sharing. ITCS does not claim losses beyond this amount from the employee, nor from PF funds not enrolled in the scheme.
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80">
+                                                The employee's principal, to the extent enrolled, is genuinely at risk. This is disclosed unambiguously during the opt-in process.
+                                            </p>
+                                            <p className="leading-relaxed text-purple-100/80 bg-white/5 border border-white/10 p-2.5 rounded-xl">
+                                                PF funds not opted into profit/loss sharing (or not yet eligible under Section 3) continue to be held on a <b>capital-protected basis</b>, structured appropriately (e.g., <b>Qard</b> or <b>Wadiah</b>, per existing PF policy) — unaffected by company profit/loss.
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
