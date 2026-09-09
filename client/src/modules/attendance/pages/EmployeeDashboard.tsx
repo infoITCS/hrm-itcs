@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
-import { useToast } from '../../../contexts/ToastContext';
 import { attendanceApi } from '../api/attendanceApi';
 import SheetPreviewModal from '../components/SheetPreviewModal';
 import type { EmployeeMonthlyDetail } from '../types';
 import {
     Clock, CheckCircle2, AlertTriangle, 
     XCircle, History, ChevronLeft, ChevronRight,
-    User, Download, MapPin, LogIn, LogOut, RefreshCw
+    User, Download, MapPin, RefreshCw, LogIn, LogOut
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,14 +52,12 @@ function StatCard({ title, value, icon: Icon, colorClass }: { title: string; val
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeeDashboard() {
     const { user } = useAuth();
-    const { showToast } = useToast();
     
     // Default to current local month YYYY-MM
     const [month, setMonth] = useState(() => getLocalYearMonth(new Date()));
     const [data, setData] = useState<EmployeeMonthlyDetail | null>(null);
     const [loading, setLoading] = useState(Boolean(user?.id));
     const [error, setError] = useState<string | null>(null);
-    const [punching, setPunching] = useState(false);
     const [previewConfig, setPreviewConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -87,8 +84,6 @@ export default function EmployeeDashboard() {
         }
     }, [user?.id, month]);
 
-    const todayStr = () => new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
-
     const handleShowPreviewMonthly = () => {
         setPreviewConfig({
             isOpen: true,
@@ -97,21 +92,6 @@ export default function EmployeeDashboard() {
             fetchData: () => attendanceApi.fetchMonthlyReportCsv(month, 'me'),
             downloadFileName: `attendance_me_${month}.csv`
         });
-    };
-
-
-    const handlePunch = async () => {
-        setPunching(true);
-        try {
-            await attendanceApi.selfPunch();
-            showToast('Punch recorded successfully', 'success');
-            await loadData();
-        } catch (err: any) {
-            console.error('Punch failed:', err);
-            showToast(err.message || 'Failed to record punch', 'error');
-        } finally {
-            setPunching(false);
-        }
     };
 
     useEffect(() => {
@@ -135,12 +115,6 @@ export default function EmployeeDashboard() {
     const isCurrentMonth = month === getLocalYearMonth(new Date());
     const [y, mNum] = month.split('-').map(Number);
     const monthLabel = new Date(y, mNum - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-    const todayVal = todayStr();
-    const todayRecord = data?.days.find(d => d.date === todayVal);
-    const hasCheckedIn = Boolean(todayRecord?.checkIn);
-    const hasCheckedOut = Boolean(todayRecord?.checkOut);
-    const isWorking = hasCheckedIn && !hasCheckedOut;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -185,20 +159,6 @@ export default function EmployeeDashboard() {
                                 <ChevronRight size={18} />
                             </button>
                         </div>
-
-                        {/* Live Punch Button */}
-                        <button
-                            onClick={handlePunch}
-                            disabled={punching}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-xl text-sm border border-white/20 ${
-                                isWorking 
-                                    ? 'bg-rose-500 hover:bg-rose-600 text-white' 
-                                    : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                            } ${punching ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
-                        >
-                            {punching ? <RefreshCw size={16} className="animate-spin" /> : isWorking ? <LogOut size={16} /> : <LogIn size={16} />}
-                            {punching ? 'Recording...' : isWorking ? 'Check Out' : 'Check In'}
-                        </button>
 
                         <button
                             onClick={handleShowPreviewMonthly}

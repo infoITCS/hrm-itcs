@@ -209,6 +209,39 @@ router.get('/dropdown', authenticate, async (req: Request, res: Response, next: 
     }
 });
 
+// Real-time "data collection progress" (employee profile completeness) for PIM & Admins
+router.get('/profile-progress', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        if (!['super-admin', 'admin', 'hr', 'manager'].includes(role)) {
+            return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0 } });
+        }
+
+        const employees = await Employee.find({
+            isDeleted: { $ne: true },
+            'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+        })
+            .select('phone address cnic jobInfo.designation jobInfo.department userId')
+            .lean() as any[];
+
+        const totalEmployees = employees.length;
+        const completed = employees.filter(e =>
+            !!e.userId &&
+            !!e.phone &&
+            !!e.cnic &&
+            !!(e.address?.street || e.address?.city || e.address?.state || e.address?.country) &&
+            !!e.jobInfo?.department &&
+            !!e.jobInfo?.designation
+        ).length;
+
+        const pct = totalEmployees > 0 ? Math.round((completed / totalEmployees) * 100) : 0;
+        res.json({ success: true, data: { totalEmployees, completed, pct } });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // Get all employees (Protected) - Role-based filtering
 router.get('/', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;

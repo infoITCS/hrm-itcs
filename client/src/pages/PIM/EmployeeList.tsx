@@ -34,6 +34,7 @@ const EmployeeList = () => {
     const [isInviting, setIsInviting] = React.useState(false);
     const [inviteSuccess, setInviteSuccess] = React.useState<string | null>(null);
     const [inviteError, setInviteError] = React.useState<string | null>(null);
+    const [profileProgress, setProfileProgress] = React.useState<{ totalEmployees: number; completed: number; pct: number } | null>(null);
 
     const handleQuickInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -72,22 +73,29 @@ const EmployeeList = () => {
     };
 
     React.useEffect(() => {
-        const fetchConfig = async () => {
+        const fetchConfigAndProgress = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const [deptRes] = await Promise.all([
-                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } })
+                const [deptRes, progressRes] = await Promise.all([
+                    fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                    fetch(api.employeeProfileProgress, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null)
                 ]);
 
                 if (deptRes.ok) {
                     const data = await deptRes.json();
                     setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
                 }
+                if (progressRes && progressRes.ok) {
+                    const progressData = await progressRes.json();
+                    if (progressData?.success) {
+                        setProfileProgress(progressData.data);
+                    }
+                }
             } catch (err) {
-                console.error('Failed to fetch config', err);
+                console.error('Failed to fetch config or progress', err);
             }
         };
-        fetchConfig();
+        fetchConfigAndProgress();
     }, []);
 
     const handleDeleteClick = (id: string) => {
@@ -266,6 +274,41 @@ const EmployeeList = () => {
                     );
                 })}
             </div>
+
+            {/* Data Collection Progress Banner */}
+            {profileProgress && profileProgress.totalEmployees > 0 && (
+                <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/60">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                            <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
+                                <ShieldCheck size={20} />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-slate-800">Data Collection Progress</h3>
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                                        PIM Completeness
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    <span className="font-semibold text-slate-700">{profileProgress.completed}</span> of{' '}
+                                    <span className="font-semibold text-slate-700">{profileProgress.totalEmployees}</span> active employees have completed full profile records (CNIC, Contact, Address & Job Info).
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                            <span className="text-xl font-bold text-slate-800">{profileProgress.pct}%</span>
+                            <span className="text-xs text-slate-400 font-medium">Complete</span>
+                        </div>
+                    </div>
+                    <div className="mt-3.5 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-indigo-600 rounded-full transition-all duration-500 ease-out"
+                            style={{ width: `${Math.min(100, Math.max(0, profileProgress.pct))}%` }}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* 2. Sleek Filter Bar */}
             <div className="bg-white/80 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/60 sticky top-20 z-20">

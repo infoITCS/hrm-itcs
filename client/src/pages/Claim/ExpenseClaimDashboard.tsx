@@ -159,14 +159,10 @@ const ExpenseClaimDashboard = () => {
     const [mine, setMine] = useState<Claim[]>([]);
     const [approvals, setApprovals] = useState<Claim[]>([]);
     const [history, setHistory] = useState<Claim[]>([]);
-
-    const [progress, setProgress] = useState<{ pct: number; totalEmployees: number; completed: number } | null>(null);
-
     const [loadingEmployee, setLoadingEmployee] = useState(false);
     const [loadingMine, setLoadingMine] = useState(false);
     const [loadingApprovals, setLoadingApprovals] = useState(false);
     const [loadingHistory, setLoadingHistory] = useState(false);
-    const [loadingProgress, setLoadingProgress] = useState(false);
 
     // Form state
     const [categories, setCategories] = useState<any[]>([]);
@@ -464,20 +460,6 @@ const ExpenseClaimDashboard = () => {
             // ignore
         } finally {
             setLoadingApprovals(false);
-        }
-    }, [headers, isApprover]);
-
-    const fetchProgress = useCallback(async () => {
-        if (!isApprover) return;
-        setLoadingProgress(true);
-        try {
-            const r = await fetch(api.claimProfileProgress, { headers });
-            const d = await r.json();
-            if (d?.success) setProgress(d.data);
-        } catch {
-            // ignore
-        } finally {
-            setLoadingProgress(false);
         }
     }, [headers, isApprover]);
 
@@ -794,12 +776,11 @@ const ExpenseClaimDashboard = () => {
         fetchEmployee();
         fetchMine();
         fetchApprovals();
-        fetchProgress();
         fetchHistory();
         fetchAllEmployees();
         fetchCategories();
         fetchMedicalRecords();
-    }, [fetchEmployee, fetchMine, fetchApprovals, fetchProgress, fetchHistory, fetchAllEmployees, fetchCategories, fetchMedicalRecords]);
+    }, [fetchEmployee, fetchMine, fetchApprovals, fetchHistory, fetchAllEmployees, fetchCategories, fetchMedicalRecords]);
 
     useEffect(() => {
         if (forWhom === 'Self') setDependentId('');
@@ -1440,7 +1421,7 @@ const ExpenseClaimDashboard = () => {
                     <div className="flex flex-wrap items-center gap-3">
 
                         <button
-                            onClick={() => { fetchMine(); fetchApprovals(); fetchProgress(); fetchHistory(); }}
+                            onClick={() => { fetchMine(); fetchApprovals(); fetchHistory(); }}
                             className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all"
                         >
                             <RefreshCw size={15} />
@@ -1448,33 +1429,6 @@ const ExpenseClaimDashboard = () => {
                         </button>
                     </div>
                 </div>
-
-                {isApprover && (
-                    <div className="relative z-10 mt-5 bg-white/10 border border-white/15 rounded-2xl p-4">
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-white/15 rounded-xl">
-                                    <ShieldCheck size={18} />
-                                </div>
-                                <div>
-                                    <div className="text-sm font-bold">Data Collection Progress</div>
-                                    <div className="text-xs text-white/80">
-                                        {loadingProgress ? 'Loading…' : progress ? `${progress.completed}/${progress.totalEmployees} employees complete` : '—'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="text-sm font-extrabold">
-                                {loadingProgress ? '—' : `${progress?.pct ?? 0}%`}
-                            </div>
-                        </div>
-                        <div className="mt-3 h-2.5 rounded-full bg-white/20 overflow-hidden">
-                            <div
-                                className="h-full bg-white/70 rounded-full transition-all"
-                                style={{ width: `${Math.min(100, Math.max(0, progress?.pct ?? 0))}%` }}
-                            />
-                        </div>
-                    </div>
-                )}
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">

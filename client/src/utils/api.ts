@@ -8,6 +8,7 @@ export const api = {
     employees: `${API_BASE_URL}/api/employees`,
     employeesDropdown: `${API_BASE_URL}/api/employees/dropdown`,
     directory: `${API_BASE_URL}/api/employees/directory`,
+    employeeProfileProgress: `${API_BASE_URL}/api/employees/profile-progress`,
     todaySpecials: `${API_BASE_URL}/api/employees/today-specials`,
     audit: `${API_BASE_URL}/api/audit-logs`,
     auth: `${API_BASE_URL}/api/auth`,

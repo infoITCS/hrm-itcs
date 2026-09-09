@@ -284,30 +284,10 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
 }
 
 export async function selfPunch(req: AuthRequest, res: Response) {
-    try {
-        const userId = req.user?.userId;
-        if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
-
-        const emp = await repo.findEmployeeByUserId(userId);
-        if (!emp) return res.status(404).json({ success: false, message: 'Employee profile not found' });
-
-        const now = new Date();
-        const dateStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
-
-        await repo.upsertPunch('WEB-PORTAL', emp.employeeId, now, {
-            employeeId: emp.employeeId,
-            employeeName: formatEmployeeFullName(emp, emp.employeeId),
-            location: 'Web Portal',
-            verifyType: 5,
-        });
-
-        await svc.processEmployeePunches(emp.employeeId, dateStr, 'WEB-PORTAL');
-
-        res.json({ success: true, message: 'Punch recorded successfully' });
-    } catch (err: any) { 
-        logger.error('[selfPunch] Error:', err);
-        res.status(500).json({ success: false, message: err.message }); 
-    }
+    return res.status(403).json({
+        success: false,
+        message: 'Web check-in is disabled. Attendance is recorded via office biometric machine or authorized HR entry.'
+    });
 }
 
 export async function getLiveFeed(req: AuthRequest, res: Response) {
