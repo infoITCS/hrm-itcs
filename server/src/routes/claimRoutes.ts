@@ -52,6 +52,9 @@ async function buildWorkflow(category: string, catDoc?: any): Promise<ExpenseCla
     if (doc?.assignedTo === 'Finance') {
         return ['finance'];
     }
+    if (doc?.assignedTo === 'Manager') {
+        return ['lineManager', 'finance'];
+    }
     return ['hr', 'finance'];
 }
 
@@ -104,7 +107,7 @@ async function generateClaimNo(): Promise<string> {
 }
 
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {
-    if (stage === 'teamLead' || stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin';
+    if (stage === 'teamLead' || stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr';
     if (stage === 'hr') return role === 'admin' || role === 'super-admin' || role === 'hr';
     if (stage === 'finance') return role === 'admin' || role === 'super-admin' || role === 'finance';
     return false;
@@ -505,6 +508,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                                 req.headers.origin as string
                             );
                         }
+                    } else {
+                        // Fallback: notify HR/Admin when no line manager is assigned so claim is not delayed
+                        const hrEmails = await getHrEmails();
+                        for (const to of hrEmails) {
+                            void sendHRNotificationEmail(to, employeeName, `expense claim ${doc.claimNo} (${category}) has no Line Manager assigned and requires Admin/HR approval`);
+                        }
                     }
                 } catch (emailErr) {
                     console.error('[Expense Email] Failed to send submission email to manager:', emailErr);
@@ -544,7 +553,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
     try {
         const userId = authReq.user?.userId;
         const role = authReq.user?.role || 'employee';
-        if (!role || role === 'employee' || role === 'manager') return res.json({ success: true, data: [] });
+        if (!role || role === 'employee') return res.json({ success: true, data: [] });
 
         if (role !== 'super-admin') {
             const dbUser = await User.findById(userId).select('customScopes customSubPermissions').lean() as any;
@@ -553,19 +562,51 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             }
         }
 
-        let statusQuery: any = { $nin: ['Draft', 'Approved', 'Declined', 'Action Required', 'Cancelled'] };
-        if (role === 'finance') {
-            statusQuery = 'Pending Finance';
-        } else if (role === 'hr') {
-            statusQuery = 'Pending HR';
+        if (role === 'manager') {
+            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
+            const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
+            const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
+            const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
+
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': { $in: managerIdentifiers } })
+                .select('employeeId userId')
+                .lean() as any[];
+            const directReportEmpIds = directReports.map((d: any) => d.employeeId).filter(Boolean);
+            const directReportUserIds = directReports.map((d: any) => d.userId).filter(Boolean);
+
+            const claims = await ExpenseClaim.find({
+                status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
+                $or: [
+                    { 'approvals.assignedToEmployeeId': { $in: managerIdentifiers } },
+                    { employeeId: { $in: directReportEmpIds } },
+                    { employeeUserId: { $in: directReportUserIds } }
+                ]
+            })
+                .select('-receipts.fileData')
+                .sort({ createdAt: -1 })
+                .populate('employeeDetails', 'firstName middleName lastName employeeId');
+
+            return res.json({ success: true, data: claims });
         }
 
-        let claims = await ExpenseClaim.find({
-            status: statusQuery,
-        })
+        let claimsQuery: any;
+        if (role === 'finance') {
+            claimsQuery = { status: 'Pending Finance' };
+        } else if (role === 'hr') {
+            claimsQuery = {
+                $or: [
+                    { status: 'Pending HR' },
+                    { status: { $in: ['Pending Line Manager', 'Pending Team Lead'] }, 'approvals.assignedToEmployeeId': { $in: [null, '', undefined] } }
+                ]
+            };
+        } else {
+            claimsQuery = { status: { $nin: ['Draft', 'Approved', 'Declined', 'Action Required', 'Cancelled'] } };
+        }
+
+        let claims = await ExpenseClaim.find(claimsQuery)
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
-            .populate('employeeDetails', 'firstName middleName lastName employeeId')
+            .populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: claims });
     } catch (err) {
         next(err);
@@ -674,7 +715,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                     }
                 }
 
-                if (currentStage === 'hr' && role === 'finance') {
+                if ((currentStage === 'hr' || currentStage === 'lineManager') && role === 'finance') {
                     failedIds.push(claimId);
                     continue;
                 }
@@ -785,8 +826,8 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         }
 
         // Enforce stage-based permissions
-        if (currentStage === 'hr' && role === 'finance') {
-            return res.status(403).json({ message: 'Expense claims must be approved by HR / Admin before Finance can disburse or approve.' });
+        if ((currentStage === 'hr' || currentStage === 'lineManager') && role === 'finance') {
+            return res.status(403).json({ message: 'Expense claims must be approved by Line Manager / HR before Finance can disburse or approve.' });
         }
 
         if (currentStage === 'finance' && decision === 'Approved' && (!erpReferenceId || !String(erpReferenceId).trim())) {
@@ -820,17 +861,17 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             }
         }
 
-        // Partial approvals (primarily HR): allow approvedAmount <= amountAllowed
+        // Partial approvals (primarily Line Manager / HR): allow approvedAmount <= amountAllowed
         if (decision === 'Approved') {
             let maxAllowed = typeof pending.amountAllowed === 'number' ? pending.amountAllowed : claim.amountAllowed;
             
-            // If current stage is finance, enforce max cap from HR approved amount (if claim had an HR stage)
-            let hrCapMessage = '';
+            // If current stage is finance, enforce max cap from Line Manager / HR approved amount (if claim had an earlier stage)
+            let priorCapMessage = '';
             if (currentStage === 'finance') {
-                const hrApproval = claim.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
-                if (hrApproval && typeof hrApproval.approvedAmount === 'number') {
-                    maxAllowed = hrApproval.approvedAmount;
-                    hrCapMessage = ' the HR-approved amount of';
+                const priorApproval = claim.approvals?.find((a: any) => (a.stage === 'hr' || a.stage === 'lineManager') && a.status === 'Approved');
+                if (priorApproval && typeof priorApproval.approvedAmount === 'number') {
+                    maxAllowed = priorApproval.approvedAmount;
+                    priorCapMessage = ` the ${priorApproval.stage === 'lineManager' ? 'Line Manager' : 'HR'}-approved amount of`;
                 }
             }
 
@@ -838,7 +879,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             const proposed = typeof approvedAmount === 'number' ? approvedAmount : maxAllowed;
             if (proposed < 0) return res.status(400).json({ message: 'approvedAmount must be >= 0' });
             if (proposed > maxAllowed) {
-                return res.status(400).json({ message: `Approved amount cannot exceed${hrCapMessage || ' the allowed amount of'} ${maxAllowed}` });
+                return res.status(400).json({ message: `Approved amount cannot exceed${priorCapMessage || ' the allowed amount of'} ${maxAllowed}` });
             }
             pending.approvedAmount = proposed;
             pending.amountAllowed = maxAllowed;

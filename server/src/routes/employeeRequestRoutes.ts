@@ -103,9 +103,24 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
 
         // --- Custom Requests / Loans Approver Notifications ---
         let reqQuery: any = null;
+        let reportIds: string[] = [];
+
         if (role === 'manager' && employee) {
-            const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
-            const reportIds = directReports.map(e => e.employeeId);
+            const managerIdentifiers = [
+                employee.employeeId,
+                employee._id ? String(employee._id) : '',
+                String(userId)
+            ].filter(Boolean);
+
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': { $in: managerIdentifiers } }).select('employeeId _id userId').lean() as any[];
+            const directReportIds = new Set<string>();
+            directReports.forEach(e => {
+                if (e.employeeId) directReportIds.add(String(e.employeeId));
+                if (e._id) directReportIds.add(String(e._id));
+                if (e.userId) directReportIds.add(String(e.userId));
+            });
+            reportIds = Array.from(directReportIds);
+
             // Managers do not see loan or financial requests (including Loan Pause)
             reqQuery = {
                 employeeId: { $in: reportIds },
@@ -170,8 +185,6 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         // --- Leaves Pending Approvals Notifications ---
         let leaveQuery: any = null;
         if (role === 'manager' && employee) {
-            const directReports = await Employee.find({ 'jobInfo.reportingManager': employee.employeeId }).select('employeeId');
-            const reportIds = directReports.map(e => e.employeeId);
             leaveQuery = { employeeId: { $in: reportIds }, status: 'Pending' };
         } else if (isHrOrAdmin) {
             leaveQuery = { status: 'Pending' };
@@ -640,16 +653,34 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
         let query = {};
 
         if (role === 'manager') {
-            const managerEmployee = await Employee.findOne({ userId }).select('employeeId');
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
-            // Find employeeIds reporting to this manager
-            const directReports = await Employee.find({ 'jobInfo.reportingManager': managerEmployee.employeeId }).select('employeeId');
-            const reportIds = directReports.map(e => e.employeeId);
+            const managerIdentifiers = [
+                managerEmployee.employeeId,
+                managerEmployee._id ? String(managerEmployee._id) : '',
+                String(userId)
+            ].filter(Boolean);
+
+            // Find direct reports matching any manager identifier
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': { $in: managerIdentifiers } }).select('employeeId _id userId').lean() as any[];
+            const directReportIds = new Set<string>();
+            directReports.forEach(e => {
+                if (e.employeeId) directReportIds.add(String(e.employeeId));
+                if (e._id) directReportIds.add(String(e._id));
+                if (e.userId) directReportIds.add(String(e.userId));
+            });
+
             // Managers do not see any Loan or Financial requests (including Loan Pause)
             query = {
-                employeeId: { $in: reportIds },
+                employeeId: { $in: Array.from(directReportIds) },
                 category: { $not: /loan|pf|provident|salary|advance|finance/i },
                 requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
             };

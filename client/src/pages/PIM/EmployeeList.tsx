@@ -13,7 +13,7 @@ const ITEMS_PER_PAGE = 12;
 
 const EmployeeList = () => {
     const navigate = useNavigate();
-    const { canCreateUser, canEditSensitiveData, hasSubAccess } = usePermissions();
+    const { canCreateUser, canEditSensitiveData, hasSubAccess, role } = usePermissions();
     const canAddEmployee = canCreateUser() && hasSubAccess('pim', 'add-employee');
     const [employees, setEmployees] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
@@ -34,7 +34,7 @@ const EmployeeList = () => {
     const [isInviting, setIsInviting] = React.useState(false);
     const [inviteSuccess, setInviteSuccess] = React.useState<string | null>(null);
     const [inviteError, setInviteError] = React.useState<string | null>(null);
-    const [profileProgress, setProfileProgress] = React.useState<{ totalEmployees: number; completed: number; pct: number } | null>(null);
+    const [profileProgress, setProfileProgress] = React.useState<{ totalEmployees: number; completed: number; pct: number; isTeamScope?: boolean } | null>(null);
 
     const handleQuickInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -285,14 +285,17 @@ const EmployeeList = () => {
                             </div>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-bold text-slate-800">Data Collection Progress</h3>
+                                    <h3 className="text-sm font-bold text-slate-800">
+                                        {profileProgress.isTeamScope || role === 'manager' ? 'Team Data Collection Progress' : 'Data Collection Progress'}
+                                    </h3>
                                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
-                                        PIM Completeness
+                                        {profileProgress.isTeamScope || role === 'manager' ? 'Team Completeness' : 'PIM Completeness'}
                                     </span>
                                 </div>
                                 <p className="text-xs text-slate-500 mt-0.5">
                                     <span className="font-semibold text-slate-700">{profileProgress.completed}</span> of{' '}
-                                    <span className="font-semibold text-slate-700">{profileProgress.totalEmployees}</span> active employees have completed full profile records (CNIC, Contact, Address & Job Info).
+                                    <span className="font-semibold text-slate-700">{profileProgress.totalEmployees}</span>{' '}
+                                    {profileProgress.isTeamScope || role === 'manager' ? 'team members' : 'active employees'} have completed full profile records (CNIC, Contact, Address & Job Info).
                                 </p>
                             </div>
                         </div>

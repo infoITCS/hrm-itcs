@@ -54,7 +54,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             policyLimit: policyLimit ?? 0,
             subCategories: Array.isArray(subCategories) ? subCategories : [],
             requiresReceipt: requiresReceipt ?? false,
-            assignedTo: ['HR', 'Finance'].includes(assignedTo) ? assignedTo : 'HR'
+            assignedTo: ['HR', 'Finance', 'Manager'].includes(assignedTo) ? assignedTo : 'HR'
         });
 
         await newCategory.save();
@@ -85,7 +85,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         if (policyLimit !== undefined) category.policyLimit = policyLimit;
         if (subCategories !== undefined && Array.isArray(subCategories)) category.subCategories = subCategories;
         if (requiresReceipt !== undefined) category.requiresReceipt = requiresReceipt;
-        if (assignedTo !== undefined && ['HR', 'Finance'].includes(assignedTo)) {
+        if (assignedTo !== undefined && ['HR', 'Finance', 'Manager'].includes(assignedTo)) {
             category.assignedTo = assignedTo;
         }
 

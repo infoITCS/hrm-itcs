@@ -263,7 +263,7 @@ const ExpenseClaimDashboard = () => {
     const [catFormActive, setCatFormActive] = useState(true);
     const [catFormReceipt, setCatFormReceipt] = useState(false);
     const [catFormSubCats, setCatFormSubCats] = useState('');
-    const [catFormAssignedTo, setCatFormAssignedTo] = useState<'HR' | 'Finance'>('Finance');
+    const [catFormAssignedTo, setCatFormAssignedTo] = useState<'HR' | 'Finance' | 'Manager'>('Finance');
     const [catSubmitting, setCatSubmitting] = useState(false);
 
     // Medical Records state
@@ -1489,7 +1489,7 @@ const ExpenseClaimDashboard = () => {
                         >
                             <option value="">All Categories</option>
                             {Array.from(new Set([
-                                'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage Charges', 'Meal Allowance', 'Other',
+                                'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage and Delivery', 'Meal Allowance / Kitchen Expenses', 'Other',
                                 ...categories.map((c: any) => c.name)
                             ])).map(c => (
                                 <option key={c} value={c}>{c}</option>
@@ -2706,9 +2706,11 @@ const ExpenseClaimDashboard = () => {
                                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border ${
                                                     cat.assignedTo === 'Finance'
                                                         ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                        : cat.assignedTo === 'Manager'
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
                                                         : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                                 }`}>
-                                                    {cat.assignedTo === 'Finance' ? 'Finance Route' : 'HR Route'}
+                                                    {cat.assignedTo === 'Finance' ? 'Finance Route' : cat.assignedTo === 'Manager' ? 'Line Manager Route' : 'HR Route'}
                                                 </span>
                                                 {!cat.isActive && <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 uppercase tracking-widest">Inactive</span>}
                                             </div>
@@ -2761,7 +2763,7 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-600">Approval Department / Route</label>
-                                            <div className="mt-1.5 grid grid-cols-2 gap-3">
+                                            <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-3">
                                                 <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition-all ${catFormAssignedTo === 'Finance' ? 'bg-purple-50 border-purple-300 text-purple-900 shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                                                     <input
                                                         type="radio"
@@ -2772,8 +2774,22 @@ const ExpenseClaimDashboard = () => {
                                                         className="mt-0.5 text-purple-600 focus:ring-purple-500"
                                                     />
                                                     <div>
-                                                        <div className="text-xs font-bold">Finance</div>
+                                                        <div className="text-xs font-bold">Finance Direct</div>
                                                         <div className="text-[10px] text-slate-500 leading-tight mt-0.5">Direct to Finance for verification & reimbursement</div>
+                                                    </div>
+                                                </label>
+                                                <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition-all ${catFormAssignedTo === 'Manager' ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        name="catFormAssignedTo"
+                                                        value="Manager"
+                                                        checked={catFormAssignedTo === 'Manager'}
+                                                        onChange={() => setCatFormAssignedTo('Manager')}
+                                                        className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                                                    />
+                                                    <div>
+                                                        <div className="text-xs font-bold">Line Manager</div>
+                                                        <div className="text-[10px] text-slate-500 leading-tight mt-0.5">Line Manager review first, then Finance disbursement</div>
                                                     </div>
                                                 </label>
                                                 <label className={`flex items-start gap-2 p-3 rounded-xl border cursor-pointer transition-all ${catFormAssignedTo === 'HR' ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-sm' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>

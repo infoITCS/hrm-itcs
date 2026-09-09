@@ -538,15 +538,34 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
         let filter: any = {};
         
         if (role === 'manager') {
-            const managerEmployee = await mongoose.model('Employee').findOne({ userId });
+            const managerEmployee = await mongoose.model('Employee').findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
             
             if (managerEmployee) {
-                const directReports = await mongoose.model('Employee').find({ 
-                    'jobInfo.reportingManager': managerEmployee.employeeId 
-                }).select('employeeId _id userId');
+                const managerIdentifiers = [
+                    managerEmployee.employeeId,
+                    managerEmployee._id ? String(managerEmployee._id) : '',
+                    managerEmployee.userId ? String(managerEmployee.userId) : '',
+                    String(userId)
+                ].filter(Boolean);
 
-                const directReportIds = directReports.map(emp => emp.userId).filter(Boolean);
-                filter.employeeId = { $in: directReportIds };
+                const directReports = await mongoose.model('Employee').find({ 
+                    'jobInfo.reportingManager': { $in: managerIdentifiers } 
+                }).select('employeeId _id userId').lean() as any[];
+
+                const directReportIds = new Set<string>();
+                directReports.forEach((emp: any) => {
+                    if (emp.employeeId) directReportIds.add(String(emp.employeeId));
+                    if (emp._id) directReportIds.add(String(emp._id));
+                    if (emp.userId) directReportIds.add(String(emp.userId));
+                });
+
+                filter.employeeId = { $in: Array.from(directReportIds) };
             } else {
                 filter.employeeId = { $in: [] };
             }

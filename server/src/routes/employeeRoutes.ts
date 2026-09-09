@@ -214,14 +214,41 @@ router.get('/profile-progress', authenticate, async (req: Request, res: Response
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || 'employee';
+        const userId = authReq.user?.userId;
         if (!['super-admin', 'admin', 'hr', 'manager'].includes(role)) {
-            return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0 } });
+            return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: false } });
         }
 
-        const employees = await Employee.find({
+        const query: any = {
             isDeleted: { $ne: true },
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
-        })
+        };
+
+        const isManager = role === 'manager';
+        if (isManager) {
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            if (managerEmployee) {
+                const managerIdentifiers = [
+                    managerEmployee.employeeId,
+                    managerEmployee._id ? String(managerEmployee._id) : '',
+                    managerEmployee.userId ? String(managerEmployee.userId) : '',
+                    String(userId)
+                ].filter(Boolean);
+
+                query['jobInfo.reportingManager'] = { $in: managerIdentifiers };
+            } else {
+                return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: true } });
+            }
+        }
+
+        const employees = await Employee.find(query)
             .select('phone address cnic jobInfo.designation jobInfo.department userId')
             .lean() as any[];
 
@@ -236,7 +263,7 @@ router.get('/profile-progress', authenticate, async (req: Request, res: Response
         ).length;
 
         const pct = totalEmployees > 0 ? Math.round((completed / totalEmployees) * 100) : 0;
-        res.json({ success: true, data: { totalEmployees, completed, pct } });
+        res.json({ success: true, data: { totalEmployees, completed, pct, isTeamScope: isManager } });
     } catch (err) {
         next(err);
     }
@@ -284,11 +311,24 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
             ]);
         } else if (role === 'manager') {
             // Managers see only their direct reports + their own record
-            const managerEmployee = await Employee.findOne({ userId, ...baseFilter }).select('employeeId').lean() as any;
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId, ...baseFilter },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined, ...baseFilter },
+                    { employeeId: userId, ...baseFilter }
+                ]
+            }).select('employeeId _id userId').lean() as any;
             if (!managerEmployee) {
                 return res.status(404).json({ message: 'Manager employee record not found' });
             }
-            const query = { ...baseFilter, $or: [{ 'jobInfo.reportingManager': managerEmployee.employeeId }, { userId }] };
+            const managerIdentifiers = [
+                managerEmployee.employeeId,
+                managerEmployee._id ? String(managerEmployee._id) : '',
+                managerEmployee.userId ? String(managerEmployee.userId) : '',
+                String(userId)
+            ].filter(Boolean);
+
+            const query = { ...baseFilter, $or: [{ 'jobInfo.reportingManager': { $in: managerIdentifiers } }, { userId }] };
             [employees, total] = await Promise.all([
                 Employee.find(query).select('-attachments.fileData').skip(skip).limit(limit).lean(),
                 Employee.countDocuments(query)
