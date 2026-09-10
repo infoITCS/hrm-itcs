@@ -30,12 +30,25 @@ jobs:
         run: |
           npm ci
           npm run build
+          test -f dist/index.js
+          npm prune --omit=dev
+
+      # Explicit paths so dist/ is not dropped (server/.gitignore has "dist")
+      - name: Prepare deploy package
+        run: |
+          mkdir -p deploy-pkg
+          cp -r server/dist deploy-pkg/dist
+          cp server/package.json server/package-lock.json deploy-pkg/
+          if [ -d server/public ]; then cp -r server/public deploy-pkg/public; fi
+          cp -r server/node_modules deploy-pkg/node_modules
+          test -f deploy-pkg/dist/index.js
+          ls -la deploy-pkg
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: server
+          path: deploy-pkg
 
   deploy:
     runs-on: ubuntu-latest
