@@ -1071,7 +1071,15 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
         }
 
         const approverEmp = await Employee.findOne({ userId: user.userId }).select('firstName lastName').lean() as any;
-        const roleLabel = user.role === 'admin' || user.role === 'super-admin' ? 'Admin' : (user.role === 'hr' ? 'HR Manager' : (user.role === 'finance' ? 'Finance Manager' : 'Team Lead'));
+        const roleLabel = user.role === 'admin' || user.role === 'super-admin'
+            ? 'Admin'
+            : (user.role === 'hr'
+                ? 'HR Manager'
+                : (user.role === 'finance'
+                    ? 'Finance Manager'
+                    : (user.role === 'manager'
+                        ? 'Reporting Manager'
+                        : 'Team Lead')));
         const actionByName = approverEmp ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` : `${user.role.toUpperCase()} (${roleLabel})`;
 
         const session = await mongoose.startSession();

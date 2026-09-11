@@ -290,7 +290,8 @@ const AddEmployeeWizard = () => {
                 check(formData.domicile, 'Domicile');
                 break;
             case 2:
-                check(formData.phone, 'Phone Number');
+                check(formData.phone, 'Personal Phone');
+                check(formData.simNumber, 'Official Number (Company SIM)');
                 check(formData.email, 'Email Address');
                 check(formData.address.street, 'Street Address');
                 check(formData.address.city, 'City');
@@ -1347,8 +1348,8 @@ const AddEmployeeWizard = () => {
                                 <input type="email" name="email" placeholder="Personal Email" value={formData.email} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                                 <input type="email" name="workEmail" placeholder="Work Email" value={formData.workEmail} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                                 <input type="email" name="otherEmail" placeholder="Other Email" value={formData.otherEmail} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="phone" placeholder="Personal Phone" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
-                                <input type="text" name="simNumber" placeholder="Company SIM Number" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="phone" placeholder="Personal Phone *" value={formData.phone} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
+                                <input type="text" name="simNumber" placeholder="Official Number (Company SIM) *" value={formData.simNumber} onChange={handleChange} className="w-full border border-gray-300 rounded px-3 py-2 text-sm" />
                             </div>
                         </div>
 

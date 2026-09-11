@@ -181,7 +181,7 @@ router.get('/directory', authenticate, async (req: Request, res: Response, next:
         const directory = await Employee.find({
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
         })
-        .select('firstName lastName middleName avatar workEmail phone jobInfo.designation jobInfo.department employeeId userId attachments._id attachments.fileType')
+        .select('firstName lastName middleName avatar workEmail phone simNumber jobInfo.designation jobInfo.department employeeId userId attachments._id attachments.fileType')
         .sort({ firstName: 1 })
         .lean();
 
@@ -2082,6 +2082,54 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         ).select('-attachments.fileData');
 
         if (!updatedEmployee) return res.status(404).json({ message: 'Employee not found during update' });
+
+        // Check if reportingManager was changed, and automatically transfer in-flight pending claims
+        const oldManager = originalEmployeeObj.jobInfo?.reportingManager;
+        const newManagerRaw = updates.jobInfo?.reportingManager;
+        if (newManagerRaw !== undefined && newManagerRaw !== oldManager) {
+            let newManagerEmployeeId = '';
+            if (newManagerRaw) {
+                const mgrDoc = await Employee.findOne({
+                    $or: [
+                        { employeeId: newManagerRaw },
+                        { _id: mongoose.isValidObjectId(newManagerRaw) ? newManagerRaw : undefined },
+                        { userId: newManagerRaw }
+                    ]
+                }).select('employeeId').lean() as any;
+                newManagerEmployeeId = mgrDoc?.employeeId || String(newManagerRaw);
+            }
+
+            try {
+                const ExpenseClaimModel = mongoose.models.ExpenseClaim || mongoose.model('ExpenseClaim');
+                await ExpenseClaimModel.updateMany(
+                    {
+                        $or: [
+                            { employeeId: req.params.id },
+                            ...(updatedEmployee.userId ? [{ employeeUserId: updatedEmployee.userId }] : [])
+                        ],
+                        status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
+                        'approvals.stage': { $in: ['lineManager', 'teamLead'] },
+                        'approvals.status': 'Pending'
+                    },
+                    {
+                        $set: {
+                            'approvals.$[elem].assignedToEmployeeId': newManagerEmployeeId || undefined
+                        }
+                    },
+                    {
+                        arrayFilters: [
+                            {
+                                'elem.stage': { $in: ['lineManager', 'teamLead'] },
+                                'elem.status': 'Pending'
+                            }
+                        ]
+                    }
+                );
+                logger.info(`[EmployeeUpdate] Reassigned in-flight pending claims for employee ${req.params.id} to manager: ${newManagerEmployeeId || 'unassigned'}`);
+            } catch (claimErr) {
+                logger.error(`[EmployeeUpdate] Failed to reassign pending claims for employee ${req.params.id}:`, claimErr);
+            }
+        }
 
         const diff = updates;
 

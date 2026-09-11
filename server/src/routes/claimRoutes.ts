@@ -15,6 +15,7 @@ import {
 } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -45,6 +46,80 @@ function sanitizeClaimForJson(doc: any) {
         obj.receipts = obj.receipts.map((r: any) => ({ ...r, fileData: undefined }));
     }
     return obj;
+}
+
+/**
+ * Auto-heal & reassign in-flight pending claims whose assigned manager
+ * does not match the employee's current reportingManager in PIM.
+ */
+export async function syncPendingClaimsToCurrentManager(targetEmployeeId?: string): Promise<void> {
+    try {
+        const query: any = {
+            status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
+            'approvals': {
+                $elemMatch: {
+                    stage: { $in: ['lineManager', 'teamLead'] },
+                    status: 'Pending'
+                }
+            }
+        };
+        if (targetEmployeeId) {
+            query.employeeId = targetEmployeeId;
+        }
+
+        const pendingClaims = await ExpenseClaim.find(query).select('_id employeeId employeeUserId approvals status').lean();
+        if (!pendingClaims || pendingClaims.length === 0) return;
+
+        const empIds = [...new Set(pendingClaims.map((c: any) => c.employeeId).filter(Boolean))];
+        const employees = await Employee.find({ employeeId: { $in: empIds } })
+            .select('employeeId jobInfo.reportingManager')
+            .lean() as any[];
+
+        const empManagerMap = new Map<string, string>();
+        for (const emp of employees) {
+            let mgrId = emp.jobInfo?.reportingManager ? String(emp.jobInfo.reportingManager).trim() : '';
+            if (mgrId) {
+                const mgrDoc = await Employee.findOne({
+                    $or: [
+                        { employeeId: mgrId },
+                        { _id: mongoose.isValidObjectId(mgrId) ? mgrId : undefined },
+                        { userId: mgrId }
+                    ]
+                }).select('employeeId').lean() as any;
+                if (mgrDoc?.employeeId) {
+                    mgrId = mgrDoc.employeeId;
+                }
+            }
+            empManagerMap.set(emp.employeeId, mgrId);
+        }
+
+        for (const claim of pendingClaims) {
+            const currentMgrId = empManagerMap.get(claim.employeeId);
+            if (!currentMgrId) continue;
+
+            const pendingApproval = claim.approvals?.find(
+                (a: any) => (a.stage === 'lineManager' || a.stage === 'teamLead') && a.status === 'Pending'
+            );
+
+            if (pendingApproval && pendingApproval.assignedToEmployeeId !== currentMgrId) {
+                await ExpenseClaim.updateOne(
+                    {
+                        _id: claim._id,
+                        'approvals.stage': pendingApproval.stage,
+                        'approvals.status': 'Pending'
+                    },
+                    {
+                        $set: {
+                            'approvals.$.assignedToEmployeeId': currentMgrId
+                        }
+                    }
+                );
+                logger.info(`[ClaimSync] Reassigned pending claim ${claim._id} of employee ${claim.employeeId} to manager ${currentMgrId} (was ${pendingApproval.assignedToEmployeeId || 'unassigned'})`);
+            }
+        }
+    } catch (err) {
+        logger.error('[ClaimSync] Error syncing pending claims:', err);
+    }
 }
 
 async function buildWorkflow(category: string, catDoc?: any): Promise<ExpenseClaimApprovalStage[]> {
@@ -563,6 +638,8 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
         }
 
         if (role === 'manager') {
+            await syncPendingClaimsToCurrentManager();
+
             const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
             const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
             const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
@@ -577,7 +654,13 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             const claims = await ExpenseClaim.find({
                 status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
                 $or: [
-                    { 'approvals.assignedToEmployeeId': { $in: managerIdentifiers } },
+                    {
+                        'approvals.assignedToEmployeeId': { $in: managerIdentifiers },
+                        $or: [
+                            { employeeId: { $in: directReportEmpIds } },
+                            { employeeUserId: { $in: directReportUserIds } }
+                        ]
+                    },
                     { employeeId: { $in: directReportEmpIds } },
                     { employeeUserId: { $in: directReportUserIds } }
                 ]
@@ -651,6 +734,20 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
         if (!['Approved', 'Declined'].includes(decision)) {
             return res.status(400).json({ message: 'decision must be Approved or Declined' });
         }
+
+        const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+        const roleLabel = role === 'admin' || role === 'super-admin'
+            ? 'Admin'
+            : (role === 'hr'
+                ? 'HR Manager'
+                : (role === 'finance'
+                    ? 'Finance Manager'
+                    : (role === 'manager'
+                        ? 'Line Manager'
+                        : 'Team Lead')));
+        const actionByName = approverEmp 
+            ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
+            : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
 
         const processedIds = [];
         const failedIds = [];
@@ -772,6 +869,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                                 claim.status,
                                 claim.approvedTotal ?? undefined,
                                 comments,
+                                actionByName,
                                 req.headers.origin as string
                             );
                         }
@@ -843,19 +941,24 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
             const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
 
+            const claimSubmitter = await Employee.findOne({
+                $or: [
+                    { employeeId: claim.employeeId },
+                    { userId: claim.employeeUserId }
+                ]
+            }).select('jobInfo.reportingManager').lean() as any;
+
+            const isDirectReport = Boolean(
+                claimSubmitter?.jobInfo?.reportingManager &&
+                managerIdentifiers.includes(String(claimSubmitter.jobInfo.reportingManager))
+            );
             const isAssigned = managerIdentifiers.includes(String(pending.assignedToEmployeeId || ''));
-            let isDirectReport = false;
-            if (!isAssigned) {
-                const claimSubmitter = await Employee.findOne({
-                    $or: [
-                        { employeeId: claim.employeeId },
-                        { userId: claim.employeeUserId }
-                    ]
-                }).select('jobInfo.reportingManager').lean() as any;
-                if (claimSubmitter?.jobInfo?.reportingManager && managerIdentifiers.includes(String(claimSubmitter.jobInfo.reportingManager))) {
-                    isDirectReport = true;
-                }
+
+            // If the employee has moved to another manager, the old manager cannot decide on this claim
+            if (claimSubmitter?.jobInfo?.reportingManager && !isDirectReport) {
+                return res.status(403).json({ message: 'This employee now reports to a different manager. You cannot decide on this claim.' });
             }
+
             if (!isAssigned && !isDirectReport) {
                 return res.status(403).json({ message: 'This claim is not assigned to you' });
             }
@@ -927,6 +1030,20 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         // Trigger employee notification email asynchronously
         (async () => {
             try {
+                const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+                const roleLabel = role === 'admin' || role === 'super-admin'
+                    ? 'Admin'
+                    : (role === 'hr'
+                        ? 'HR Manager'
+                        : (role === 'finance'
+                            ? 'Finance Manager'
+                            : (role === 'manager'
+                                ? 'Line Manager'
+                                : 'Team Lead')));
+                const actionByName = approverEmp 
+                    ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
+                    : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
+
                 const emp = await Employee.findOne({
                     $or: [
                         { userId: claim.employeeUserId },
@@ -949,6 +1066,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
                         claim.status,
                         pending.approvedAmount ?? claim.approvedTotal ?? undefined,
                         comments || pending.comments,
+                        actionByName,
                         req.headers.origin as string
                     );
                 }
@@ -1010,6 +1128,20 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
         // Trigger employee notification email asynchronously
         (async () => {
             try {
+                const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+                const roleLabel = role === 'admin' || role === 'super-admin'
+                    ? 'Admin'
+                    : (role === 'hr'
+                        ? 'HR Manager'
+                        : (role === 'finance'
+                            ? 'Finance Manager'
+                            : (role === 'manager'
+                                ? 'Line Manager'
+                                : 'Team Lead')));
+                const actionByName = approverEmp 
+                    ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
+                    : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
+
                 const emp = await Employee.findOne({
                     $or: [
                         { userId: claim.employeeUserId },
@@ -1027,6 +1159,7 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                         claim.status,
                         claim.approvedTotal ?? undefined,
                         notes || claim.notes,
+                        actionByName,
                         req.headers.origin as string
                     );
                 }

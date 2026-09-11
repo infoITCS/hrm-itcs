@@ -11,25 +11,27 @@
  * - Auto-refresh every 30 seconds
  * - Click stat card → filters the roster by that status
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
     Activity, Calendar, MapPin, ChevronDown, RefreshCw,
     UserCheck, UserX, AlertTriangle, Timer, Clock,
     Fingerprint, LogIn, LogOut, Download, User, Zap, Edit2,
-    Search, X
+    Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight
 } from 'lucide-react';
+import api from '../../../utils/api';
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
 import { useRoster } from '../hooks/useRoster';
 import { attendanceApi } from '../api/attendanceApi';
 import { useToast } from '../../../contexts/ToastContext';
-import type { TodayRosterEntry, StatusFilter } from '../types';
+import type { TodayRosterEntry, StatusFilter, MonthlyDayEntry, EmployeeMonthlyDetail } from '../types';
 import MonthlyInsightsModal from '../components/MonthlyInsightsModal';
 import EditAttendanceModal from '../components/EditAttendanceModal';
 import SheetPreviewModal from '../components/SheetPreviewModal';
+import AttendanceCalendarView from '../components/AttendanceCalendarView';
 import AlertModal from '../../../components/UI/AlertModal';
 import EmployeeDashboard from './EmployeeDashboard';
 
-type Tab = 'overview' | 'personal';
+type Tab = 'overview' | 'calendar' | 'personal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const todayStr = () => new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
@@ -291,8 +293,156 @@ export default function AdminDashboard() {
         ? Math.round((summary.totalPresent / (summary.totalPresent + summary.totalLate + summary.totalAbsent)) * 100)
         : 0;
 
+    // Roster sorting state
+    type RosterSortField = 'employee' | 'checkIn' | 'checkOut' | 'workHours' | 'late' | 'status' | 'method';
+    type RosterSortOrder = 'asc' | 'desc';
+    const [rosterSortField, setRosterSortField] = useState<RosterSortField>('employee');
+    const [rosterSortOrder, setRosterSortOrder] = useState<RosterSortOrder>('asc');
+
+    const handleRosterSort = (field: RosterSortField) => {
+        if (rosterSortField === field) {
+            setRosterSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setRosterSortField(field);
+            setRosterSortOrder('asc');
+        }
+    };
+
+    const sortedRoster = useMemo(() => {
+        return [...filteredRoster].sort((a, b) => {
+            let cmp = 0;
+            if (rosterSortField === 'employee') {
+                cmp = (a.employeeName || '').localeCompare(b.employeeName || '');
+            } else if (rosterSortField === 'checkIn') {
+                cmp = (a.checkIn || '').localeCompare(b.checkIn || '');
+            } else if (rosterSortField === 'checkOut') {
+                cmp = (a.checkOut || '').localeCompare(b.checkOut || '');
+            } else if (rosterSortField === 'workHours') {
+                cmp = (a.workDurationMinutes || 0) - (b.workDurationMinutes || 0);
+            } else if (rosterSortField === 'late') {
+                cmp = (a.lateMinutes || 0) - (b.lateMinutes || 0);
+            } else if (rosterSortField === 'status') {
+                cmp = (a.status || '').localeCompare(b.status || '');
+            } else if (rosterSortField === 'method') {
+                cmp = (a.verifyType || '').localeCompare(b.verifyType || '');
+            }
+            return rosterSortOrder === 'asc' ? cmp : -cmp;
+        });
+    }, [filteredRoster, rosterSortField, rosterSortOrder]);
+
+    const renderSortableRosterHeader = (field: RosterSortField, label: string) => {
+        const isActive = rosterSortField === field;
+        return (
+            <th
+                onClick={() => handleRosterSort(field)}
+                className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-indigo-600 transition-colors group"
+            >
+                <div className="flex items-center gap-1">
+                    <span className={isActive ? 'text-indigo-600 font-extrabold' : ''}>{label}</span>
+                    {isActive ? (
+                        rosterSortOrder === 'asc' ? (
+                            <ArrowUp size={13} className="text-indigo-600 shrink-0" />
+                        ) : (
+                            <ArrowDown size={13} className="text-indigo-600 shrink-0" />
+                        )
+                    ) : (
+                        <ArrowUpDown size={13} className="text-slate-300 group-hover:text-slate-500 shrink-0 transition-colors" />
+                    )}
+                </div>
+            </th>
+        );
+    };
+
+    // Calendar Tab State
+    const [calendarMonth, setCalendarMonth] = useState(() => todayStr().slice(0, 7));
+    const [calendarEmployeeId, setCalendarEmployeeId] = useState<string>('');
+    const [calendarEmployeeName, setCalendarEmployeeName] = useState<string>('');
+    const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string; name: string }[]>([]);
+    const [calendarData, setCalendarData] = useState<EmployeeMonthlyDetail | null>(null);
+    const [calendarLoading, setCalendarLoading] = useState(false);
+    const [calendarEditingDay, setCalendarEditingDay] = useState<MonthlyDayEntry | null>(null);
+
+    // Fetch employee dropdown options
+    useEffect(() => {
+        fetch(`${api.baseURL}/api/employees/dropdown`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (Array.isArray(data) && data.length > 0) {
+                    const formatted = data.map((d: any) => ({
+                        value: d.value,
+                        label: d.label,
+                        name: d.label.split(' (')[0] || d.value
+                    }));
+                    setEmployeeOptions(formatted);
+                    if (!calendarEmployeeId) {
+                        setCalendarEmployeeId(formatted[0].value);
+                        setCalendarEmployeeName(formatted[0].name);
+                    }
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    // Also populate from roster if dropdown hasn't loaded or returned empty
+    useEffect(() => {
+        if (employeeOptions.length === 0 && roster.length > 0) {
+            const fromRoster = roster
+                .filter(r => r.employeeId && !r.employeeId.startsWith('unlinked_'))
+                .map(r => ({
+                    value: r.employeeId,
+                    label: `${r.employeeName} (${r.employeeId})`,
+                    name: r.employeeName
+                }));
+            if (fromRoster.length > 0) {
+                setEmployeeOptions(fromRoster);
+                if (!calendarEmployeeId) {
+                    setCalendarEmployeeId(fromRoster[0].value);
+                    setCalendarEmployeeName(fromRoster[0].name);
+                }
+            }
+        }
+    }, [roster, employeeOptions.length, calendarEmployeeId]);
+
+    // Load monthly attendance for selected employee in Calendar Tab
+    useEffect(() => {
+        if (activeTab !== 'calendar' || !calendarEmployeeId) return;
+        let active = true;
+        setCalendarLoading(true);
+        attendanceApi.getEmployeeMonthly(calendarEmployeeId, calendarMonth)
+            .then(res => {
+                if (active) setCalendarData(res);
+            })
+            .catch(err => {
+                console.error('Failed to load employee monthly calendar:', err);
+            })
+            .finally(() => {
+                if (active) setCalendarLoading(false);
+            });
+        return () => { active = false; };
+    }, [activeTab, calendarEmployeeId, calendarMonth]);
+
+    const toEditableCalendarEntry = (day: MonthlyDayEntry): TodayRosterEntry => {
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(day.status);
+        return {
+            employeeId: calendarEmployeeId,
+            employeeName: calendarEmployeeName || calendarData?.employeeName || calendarEmployeeId,
+            location: location || 'ISB-Office',
+            checkIn: isNonWorking ? undefined : day.checkIn,
+            checkOut: isNonWorking ? undefined : day.checkOut,
+            totalPunches: isNonWorking ? 0 : ((day.checkIn ? 1 : 0) + (day.checkOut ? 1 : 0)),
+            workDurationMinutes: isNonWorking ? 0 : (day.workDurationMinutes || 0),
+            lateMinutes: isNonWorking ? 0 : (day.lateMinutes || 0),
+            status: day.status,
+            note: day.note,
+            isWfh: day.isWfh,
+        };
+    };
+
     const tabs = [
         { id: 'overview' as Tab, label: 'Overview',      icon: Activity },
+        { id: 'calendar' as Tab, label: 'Calendar View', icon: Calendar },
         { id: 'personal' as Tab, label: 'My Attendance', icon: User     },
     ];
 
@@ -504,18 +654,18 @@ export default function AdminDashboard() {
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-100">
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Check In</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Check Out</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Work Hrs</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Late</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Method</th>
+                                    {renderSortableRosterHeader('employee', 'Employee')}
+                                    {renderSortableRosterHeader('checkIn', 'Check In')}
+                                    {renderSortableRosterHeader('checkOut', 'Check Out')}
+                                    {renderSortableRosterHeader('workHours', 'Work Hrs')}
+                                    {renderSortableRosterHeader('late', 'Late')}
+                                    {renderSortableRosterHeader('status', 'Status')}
+                                    {renderSortableRosterHeader('method', 'Method')}
                                     <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredRoster.map((entry) => (
+                                {sortedRoster.map((entry) => (
                                     <RosterRow 
                                         key={entry.employeeId} 
                                         entry={entry} 
@@ -573,6 +723,148 @@ export default function AdminDashboard() {
                 }}
             />
                 </>
+            )}
+
+            {activeTab === 'calendar' && (
+                <div className="space-y-6 animate-[fadeIn_0.3s_ease]">
+                    {/* Calendar Controls Card */}
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        {/* Employee Selector */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase tracking-wide">
+                                <User size={16} className="text-indigo-600" />
+                                <span>Employee:</span>
+                            </div>
+                            <select
+                                value={calendarEmployeeId}
+                                onChange={(e) => {
+                                    const selectedId = e.target.value;
+                                    setCalendarEmployeeId(selectedId);
+                                    const emp = employeeOptions.find(o => o.value === selectedId);
+                                    if (emp) setCalendarEmployeeName(emp.name);
+                                }}
+                                className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[240px]"
+                            >
+                                {employeeOptions.map(opt => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Month Navigator & Export */}
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200/60">
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = calendarMonth.split('-').map(Number);
+                                        const d = new Date(y, m - 2, 1);
+                                        setCalendarMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                                    }}
+                                    className="p-1.5 hover:bg-white rounded-lg text-slate-600 transition-colors"
+                                    title="Previous Month"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <div className="px-3 text-xs sm:text-sm font-bold text-slate-800 min-w-[120px] text-center">
+                                    {new Date(calendarMonth + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const [y, m] = calendarMonth.split('-').map(Number);
+                                        const d = new Date(y, m, 1);
+                                        setCalendarMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                                    }}
+                                    className="p-1.5 hover:bg-white rounded-lg text-slate-600 transition-colors"
+                                    title="Next Month"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    if (!calendarEmployeeId) return;
+                                    setPreviewConfig({
+                                        isOpen: true,
+                                        title: 'Monthly Attendance Sheet Preview',
+                                        subtitle: `Monthly report for ${calendarEmployeeName || calendarEmployeeId} (${calendarMonth})`,
+                                        fetchData: () => attendanceApi.fetchMonthlyReportCsv(calendarMonth, calendarEmployeeId),
+                                        downloadFileName: `attendance_${calendarEmployeeId}_${calendarMonth}.csv`
+                                    });
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-xs sm:text-sm font-bold transition-all border border-indigo-100"
+                            >
+                                <Download size={15} />
+                                <span>Monthly Sheet</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Calendar Body */}
+                    {calendarLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400">
+                            <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3" />
+                            <p className="text-xs font-bold text-slate-500">Loading attendance calendar...</p>
+                        </div>
+                    ) : calendarData ? (
+                        <div className="space-y-4">
+                            {/* Stats row */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-emerald-600">Present Days</div>
+                                    <div className="text-2xl font-extrabold text-slate-900 mt-1">{calendarData.summary.presentDays}</div>
+                                </div>
+                                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-amber-600">Late Arrivals</div>
+                                    <div className="text-2xl font-extrabold text-slate-900 mt-1">{calendarData.summary.lateDays}</div>
+                                </div>
+                                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-rose-600">Absent Days</div>
+                                    <div className="text-2xl font-extrabold text-slate-900 mt-1">{calendarData.summary.absentDays}</div>
+                                </div>
+                                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                                    <div className="text-xs font-bold uppercase tracking-wider text-indigo-600">Total Work Hours</div>
+                                    <div className="text-2xl font-extrabold text-slate-900 mt-1">{calendarData.summary.totalWorkHours}</div>
+                                </div>
+                            </div>
+
+                            {/* Calendar View */}
+                            <AttendanceCalendarView
+                                days={calendarData.days}
+                                month={calendarMonth}
+                                employeeName={calendarEmployeeName || calendarData.employeeName}
+                                canEdit={true}
+                                onDayClick={(day) => setCalendarEditingDay(day)}
+                            />
+                        </div>
+                    ) : (
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400 font-medium text-sm">
+                            Select an employee to view attendance calendar.
+                        </div>
+                    )}
+
+                    {/* Edit Day Attendance Modal */}
+                    {calendarEditingDay && (
+                        <EditAttendanceModal
+                            isOpen={!!calendarEditingDay}
+                            onClose={() => setCalendarEditingDay(null)}
+                            date={calendarEditingDay.date}
+                            employee={toEditableCalendarEntry(calendarEditingDay)}
+                            onSuccess={() => {
+                                if (calendarEmployeeId) {
+                                    attendanceApi.getEmployeeMonthly(calendarEmployeeId, calendarMonth)
+                                        .then(res => setCalendarData(res))
+                                        .catch(() => {});
+                                }
+                                refresh();
+                                refreshRoster();
+                                setCalendarEditingDay(null);
+                            }}
+                        />
+                    )}
+                </div>
             )}
 
             {activeTab === 'personal' && (

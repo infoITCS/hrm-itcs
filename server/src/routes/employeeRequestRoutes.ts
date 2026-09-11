@@ -93,7 +93,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         const role = authReq.user?.role || '';
         const userId = authReq.user?.userId;
 
-        const employee = await Employee.findOne({ userId }).select('employeeId');
+        const employee = await Employee.findOne({ userId }).select('employeeId phone');
         const notifications: any[] = [];
 
         const isHrOrAdmin = ['admin', 'super-admin', 'hr'].includes(role);
@@ -218,12 +218,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         if (role === 'manager' && employee) {
             claimQuery = {
                 status: { $in: ['Pending Team Lead', 'Pending Line Manager'] },
-                'approvals': {
-                    $elemMatch: {
-                        status: 'Pending',
-                        assignedToEmployeeId: employee.employeeId
-                    }
-                }
+                employeeId: { $in: reportIds }
             };
         } else {
             const statusOrList: any[] = [];
@@ -422,6 +417,18 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     time: claim.updatedAt,
                     type: claim.status === 'Approved' ? 'success' : 'alert',
                     path: '/claim?tab=mine'
+                });
+            }
+
+            // Reminder to update personal contact number if missing
+            if (!employee.phone || !employee.phone.trim()) {
+                notifications.unshift({
+                    id: `contact-reminder-${employee.employeeId}`,
+                    title: 'Action Required: Contact Details',
+                    message: 'Please provide your personal phone number in your profile so colleagues and HR can reach you.',
+                    time: new Date(),
+                    type: 'task',
+                    path: '/my-info?step=2'
                 });
             }
         }
@@ -916,6 +923,20 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         // Asynchronously notify employee via email on status update
         (async () => {
             try {
+                const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+                const roleLabel = role === 'admin' || role === 'super-admin'
+                    ? 'Admin'
+                    : (role === 'hr'
+                        ? 'HR Manager'
+                        : (role === 'finance'
+                            ? 'Finance Manager'
+                            : (role === 'manager'
+                                ? 'Reporting Manager'
+                                : 'Team Lead')));
+                const actionByName = approverEmp 
+                    ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
+                    : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
+
                 const employee = await Employee.findOne({ employeeId: request.employeeId }).select('workEmail personalEmail userId firstName lastName');
                 let targetEmail = employee?.workEmail || employee?.personalEmail;
                 if (!targetEmail && employee?.userId) {
@@ -924,7 +945,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                 }
                 if (targetEmail) {
                     const empName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : 'Employee';
-                    await sendEmployeeRequestStatusEmail(targetEmail, empName, request.category, request.status, adminComments);
+                    await sendEmployeeRequestStatusEmail(targetEmail, empName, request.category, request.status, adminComments, actionByName, req.headers.origin as string);
                 }
             } catch (err: any) {
                 logger.error('Failed to send request status update email:', err.message);

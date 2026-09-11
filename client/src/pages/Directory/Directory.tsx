@@ -16,6 +16,7 @@ interface Employee {
     avatar?: string;
     workEmail?: string;
     phone?: string;
+    simNumber?: string;
     jobInfo?: {
         designation?: string;
         department?: string;
@@ -35,7 +36,7 @@ const Directory = () => {
         title: string;
         message: string;
         type: 'info' | 'success' | 'warning' | 'error' | 'confirm' | 'contact';
-        contactInfo?: { phone?: string; email?: string; name?: string };
+        contactInfo?: { phone?: string; workPhone?: string; email?: string; name?: string };
         onConfirm?: () => void;
     }>({
         isOpen: false,
@@ -87,11 +88,16 @@ const Directory = () => {
             type: 'contact',
             contactInfo: {
                 phone: emp.phone,
+                workPhone: emp.simNumber,
                 email: emp.workEmail,
                 name: formatEmployeeFullName(emp, 'Employee')
             },
             onConfirm: () => {
-                window.location.href = `tel:${emp.phone}`;
+                if (emp.phone) {
+                    window.location.href = `tel:${emp.phone}`;
+                } else if (emp.simNumber) {
+                    window.location.href = `tel:${emp.simNumber}`;
+                }
             }
         });
     };
@@ -243,7 +249,7 @@ const Directory = () => {
                                             </div>
                                         )}
 
-                                        {emp.phone ? (
+                                        {(emp.phone || emp.simNumber) ? (
                                             <button 
                                                 onClick={() => handleCallClick(emp)}
                                                 className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-slate-50 text-slate-600 hover:bg-emerald-600 hover:text-white transition-all text-xs font-bold group/btn active:scale-95"
@@ -309,9 +315,17 @@ const Directory = () => {
                                                     </p>
                                                 )}
                                                 {emp.phone && (
-                                                    <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                                                        <Phone size={12} className="text-slate-300" />
-                                                        {emp.phone}
+                                                    <p className="text-xs text-slate-500 flex items-center gap-1.5" title="Personal Phone">
+                                                        <Phone size={12} className="text-slate-400" />
+                                                        <span>{emp.phone}</span>
+                                                        <span className="text-[9px] uppercase px-1 py-0.2 bg-slate-100 text-slate-500 rounded font-semibold">Personal</span>
+                                                    </p>
+                                                )}
+                                                {emp.simNumber && (
+                                                    <p className="text-xs text-indigo-600 flex items-center gap-1.5 font-medium" title="Company SIM">
+                                                        <Phone size={12} className="text-indigo-400" />
+                                                        <span>{emp.simNumber}</span>
+                                                        <span className="text-[9px] uppercase px-1 py-0.2 bg-indigo-50 text-indigo-600 rounded font-bold">Official</span>
                                                     </p>
                                                 )}
                                             </div>
@@ -319,14 +333,15 @@ const Directory = () => {
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {emp.workEmail && (
-                                                    <a href={`mailto:${emp.workEmail}`} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                                                    <a href={`mailto:${emp.workEmail}`} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Send Email">
                                                         <Mail size={18} />
                                                     </a>
                                                 )}
-                                                {emp.phone && (
+                                                {(emp.phone || emp.simNumber) && (
                                                     <button 
                                                         onClick={() => handleCallClick(emp)}
                                                         className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                                        title="Contact Numbers"
                                                     >
                                                         <Phone size={18} />
                                                     </button>

@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { attendanceApi } from '../api/attendanceApi';
 import SheetPreviewModal from '../components/SheetPreviewModal';
+import AttendanceCalendarView from '../components/AttendanceCalendarView';
 import type { EmployeeMonthlyDetail } from '../types';
 import {
     Clock, CheckCircle2, AlertTriangle, 
     XCircle, History, ChevronLeft, ChevronRight,
-    User, Download, MapPin, RefreshCw, LogIn, LogOut
+    User, Download, MapPin, RefreshCw, LogIn, LogOut,
+    ArrowUpDown, ArrowUp, ArrowDown, List, Calendar as CalendarGridIcon
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,6 +67,68 @@ export default function EmployeeDashboard() {
         fetchData: () => Promise<string>;
         downloadFileName: string;
     } | null>(null);
+
+    // View mode: table or calendar
+    const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
+
+    // Sorting state (default: date ascending)
+    type SortField = 'date' | 'checkIn' | 'checkOut' | 'status' | 'workDurationMinutes' | 'lateMinutes';
+    type SortOrder = 'asc' | 'desc';
+    const [sortField, setSortField] = useState<SortField>('date');
+    const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortOrder('asc');
+        }
+    };
+
+    const sortedDays = useMemo(() => {
+        if (!data?.days) return [];
+        return [...data.days].sort((a, b) => {
+            let cmp = 0;
+            if (sortField === 'date') {
+                cmp = a.date.localeCompare(b.date);
+            } else if (sortField === 'checkIn') {
+                cmp = (a.checkIn || '').localeCompare(b.checkIn || '');
+            } else if (sortField === 'checkOut') {
+                cmp = (a.checkOut || '').localeCompare(b.checkOut || '');
+            } else if (sortField === 'status') {
+                cmp = a.status.localeCompare(b.status);
+            } else if (sortField === 'workDurationMinutes') {
+                cmp = (a.workDurationMinutes || 0) - (b.workDurationMinutes || 0);
+            } else if (sortField === 'lateMinutes') {
+                cmp = (a.lateMinutes || 0) - (b.lateMinutes || 0);
+            }
+            return sortOrder === 'asc' ? cmp : -cmp;
+        });
+    }, [data?.days, sortField, sortOrder]);
+
+    const renderSortableHeader = (field: SortField, label: string) => {
+        const isActive = sortField === field;
+        return (
+            <th 
+                onClick={() => handleSort(field)} 
+                className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer select-none hover:text-indigo-600 transition-colors group"
+            >
+                <div className="flex items-center gap-1.5">
+                    <span className={isActive ? 'text-indigo-600 font-extrabold' : ''}>{label}</span>
+                    {isActive ? (
+                        sortOrder === 'asc' ? (
+                            <ArrowUp size={14} className="text-indigo-600 shrink-0" />
+                        ) : (
+                            <ArrowDown size={14} className="text-indigo-600 shrink-0" />
+                        )
+                    ) : (
+                        <ArrowUpDown size={14} className="text-slate-300 group-hover:text-slate-500 shrink-0 transition-colors" />
+                    )}
+                </div>
+            </th>
+        );
+    };
 
     const loadData = useCallback(async () => {
         if (!user?.id) {
@@ -203,96 +267,139 @@ export default function EmployeeDashboard() {
                         <StatCard title="Work Hours" value={data.summary.totalWorkHours} icon={Clock} colorClass="bg-indigo-50 text-indigo-600" />
                     </div>
 
-                    {/* Detailed Log Table */}
+                    {/* Attendance Records Section with View Switcher */}
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+                        <div className="p-4 sm:p-6 border-b border-slate-50 flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-slate-50 text-slate-400 rounded-lg">
                                     <History size={18} />
                                 </div>
-                                <h2 className="text-lg font-bold text-slate-800">Attendance Log</h2>
+                                <h2 className="text-lg font-bold text-slate-800">
+                                    {viewMode === 'calendar' ? 'Attendance Calendar' : 'Attendance Log'}
+                                </h2>
                             </div>
-                            <span className="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full">
-                                {data.days.length} entries
-                            </span>
+
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <span className="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full">
+                                    {data.days.length} days
+                                </span>
+
+                                {/* View Switcher */}
+                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode('table')}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            viewMode === 'table'
+                                                ? 'bg-white text-indigo-600 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <List size={14} />
+                                        Table View
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setViewMode('calendar')}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            viewMode === 'calendar'
+                                                ? 'bg-white text-indigo-600 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        <CalendarGridIcon size={14} />
+                                        Calendar View
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead>
-                                    <tr className="bg-slate-50/50 border-b border-slate-50">
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Check In</th>
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Check Out</th>
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Work Hours</th>
-                                        <th className="py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Late</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {data.days.map((day) => (
-                                        <tr key={day.date} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors group">
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-xs font-bold text-indigo-600 border border-slate-100">
-                                                        {new Date(day.date + 'T00:00:00').getDate()}
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-slate-700">
-                                                            {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+
+                        {viewMode === 'calendar' ? (
+                            <div className="p-4 sm:p-6 bg-slate-50/40">
+                                <AttendanceCalendarView 
+                                    days={data.days} 
+                                    month={month} 
+                                    employeeName={user?.name}
+                                />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="bg-slate-50/50 border-b border-slate-50">
+                                            {renderSortableHeader('date', 'Date')}
+                                            {renderSortableHeader('checkIn', 'Check In')}
+                                            {renderSortableHeader('checkOut', 'Check Out')}
+                                            {renderSortableHeader('status', 'Status')}
+                                            {renderSortableHeader('workDurationMinutes', 'Work Hours')}
+                                            {renderSortableHeader('lateMinutes', 'Late')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sortedDays.map((day) => (
+                                            <tr key={day.date} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors group">
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-xs font-bold text-indigo-600 border border-slate-100">
+                                                            {new Date(day.date + 'T00:00:00').getDate()}
                                                         </div>
-                                                        <div className="text-[10px] text-slate-400 font-medium">
-                                                            {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-slate-700">
+                                                                {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                                                            </div>
+                                                            <div className="text-[10px] text-slate-400 font-medium">
+                                                                {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-2">
-                                                    <LogIn size={13} className="text-emerald-500" />
-                                                    <span className="text-sm font-medium text-slate-700">{fmtTime(day.checkIn)}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-2">
-                                                    <LogOut size={13} className="text-rose-500" />
-                                                    <span className="text-sm font-medium text-slate-700">{fmtTime(day.checkOut)}</span>
-                                                </div>
-                                            </td>
-                                             <td className="py-4 px-6">
-                                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[day.status] || 'bg-slate-100 text-slate-500'}`}>
-                                                         {day.status}
-                                                     </span>
-                                                     {(day.isAutoClosed || day.note?.includes('Auto Clocked-Out') || day.note?.includes('Auto-closed')) && (
-                                                         <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200" title={day.note || 'Auto Clocked-Out at midnight'}>
-                                                             Auto Clocked-Out
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-2">
+                                                        <LogIn size={13} className="text-emerald-500" />
+                                                        <span className="text-sm font-medium text-slate-700">{fmtTime(day.checkIn)}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    <div className="flex items-center gap-2">
+                                                        <LogOut size={13} className="text-rose-500" />
+                                                        <span className="text-sm font-medium text-slate-700">{fmtTime(day.checkOut)}</span>
+                                                    </div>
+                                                </td>
+                                                 <td className="py-4 px-6">
+                                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                                         <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${STATUS_BADGE[day.status] || 'bg-slate-100 text-slate-500'}`}>
+                                                             {day.status}
                                                          </span>
-                                                     )}
-                                                 </div>
-                                             </td>
-                                            <td className="py-4 px-6 text-sm font-medium text-slate-600">
-                                                {fmtMins(day.workDurationMinutes)}
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                {day.lateMinutes > 0 ? (
-                                                    <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">+{day.lateMinutes}m</span>
-                                                ) : (
-                                                    <span className="text-slate-300">—</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {data.days.length === 0 && (
-                                        <tr>
-                                            <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
-                                                No attendance records found for this month.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                                         {(day.isAutoClosed || day.note?.includes('Auto Clocked-Out') || day.note?.includes('Auto-closed')) && (
+                                                             <span className="px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200" title={day.note || 'Auto Clocked-Out at midnight'}>
+                                                                 Auto Clocked-Out
+                                                             </span>
+                                                         )}
+                                                     </div>
+                                                 </td>
+                                                <td className="py-4 px-6 text-sm font-medium text-slate-600">
+                                                    {fmtMins(day.workDurationMinutes)}
+                                                </td>
+                                                <td className="py-4 px-6">
+                                                    {day.lateMinutes > 0 ? (
+                                                        <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">+{day.lateMinutes}m</span>
+                                                    ) : (
+                                                        <span className="text-slate-300">—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {sortedDays.length === 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
+                                                    No attendance records found for this month.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </>
             ) : null}

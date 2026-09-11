@@ -418,10 +418,32 @@ export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: s
     }
 };
 
-export const sendExpenseClaimStatusEmail = async (to: string, employeeName: string, category: string, amount: number, status: string, approvedAmount?: number, adminNote?: string, baseUrl?: string) => {
+export const sendExpenseClaimStatusEmail = async (
+    to: string, 
+    employeeName: string, 
+    category: string, 
+    amount: number, 
+    status: string, 
+    approvedAmount?: number, 
+    adminNote?: string, 
+    actionBy?: string,
+    baseUrl?: string
+) => {
     const clientUrl = getBaseUrl(baseUrl);
     const statusColor = status === 'Approved' || status === 'Pending Finance' ? '#10b981' : (status === 'Declined' ? '#ef4444' : '#6b7280');
-    const displayStatus = status === 'Pending Finance' ? 'Approved by HR (Awaiting Finance Disbursement)' : status;
+    
+    let displayStatus: string;
+    if (status === 'Pending Finance') {
+        displayStatus = actionBy 
+            ? `Approved by ${actionBy} (Awaiting Finance Disbursement)` 
+            : 'Approved (Awaiting Finance Disbursement)';
+    } else if (status === 'Approved') {
+        displayStatus = actionBy ? `Approved by ${actionBy}` : 'Approved';
+    } else if (status === 'Declined') {
+        displayStatus = actionBy ? `Declined by ${actionBy}` : 'Declined';
+    } else {
+        displayStatus = status;
+    }
     
     const mailOptions = {
         from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
@@ -452,7 +474,7 @@ export const sendExpenseClaimStatusEmail = async (to: string, employeeName: stri
     if (!process.env.SMTP_USER) {
         logger.info(`\n================= EXPENSE CLAIM STATUS EMAIL (MOCK) ===================`);
         logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, Approved Amount: ${approvedAmount}, Note: ${adminNote}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Approved Amount: ${approvedAmount}, Note: ${adminNote}`);
         logger.info(`======================================================================\n`);
         return true;
     }
@@ -634,9 +656,18 @@ export const sendEmployeeRequestSubmittedEmail = async (to: string, employeeName
     }
 };
 
-export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: string, category: string, status: string, adminComments?: string, baseUrl?: string) => {
+export const sendEmployeeRequestStatusEmail = async (
+    to: string, 
+    employeeName: string, 
+    category: string, 
+    status: string, 
+    adminComments?: string, 
+    actionBy?: string,
+    baseUrl?: string
+) => {
     const clientUrl = getBaseUrl(baseUrl);
     const statusColor = status === 'Approved' || status === 'Completed' ? '#10b981' : (status === 'Rejected' ? '#ef4444' : '#6b7280');
+    const actionByText = actionBy ? ` by <strong>${actionBy}</strong>` : '';
     
     const mailOptions = {
         from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
@@ -646,7 +677,7 @@ export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: s
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px;">
                 <h2 style="color: #4f46e5;">Request Status Update</h2>
                 <p style="color: #4b5563; font-size: 16px;">Hello ${employeeName},</p>
-                <p style="color: #4b5563; font-size: 16px;">Your request for <strong>${category}</strong> has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
+                <p style="color: #4b5563; font-size: 16px;">Your request for <strong>${category}</strong> has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>${actionByText}.</p>
                 ${adminComments ? `
                 <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px dashed #e5e7eb; font-style: italic;">
                     <p style="margin: 0; font-size: 14px; color: #6b7280;"><strong>Remarks:</strong> "${adminComments}"</p>
@@ -662,7 +693,7 @@ export const sendEmployeeRequestStatusEmail = async (to: string, employeeName: s
     if (!process.env.SMTP_USER) {
         logger.info(`\n================= REQUEST STATUS EMAIL (MOCK) ===================`);
         logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, Comments: ${adminComments}`);
+        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Comments: ${adminComments}`);
         logger.info(`==================================================================\n`);
         return true;
     }

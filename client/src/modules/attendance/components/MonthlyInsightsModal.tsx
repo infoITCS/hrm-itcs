@@ -2,7 +2,8 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     X, Calendar, Clock, AlertCircle, CheckCircle2, 
-    Briefcase, ChevronRight, Download, Edit2
+    Briefcase, ChevronRight, Download, Edit2,
+    ArrowUp, ArrowDown, List, Calendar as CalendarGridIcon
 } from 'lucide-react';
 import { attendanceApi } from '../api/attendanceApi';
 import { STATUS_LABELS } from '../types';
@@ -10,6 +11,7 @@ import type { EmployeeMonthlyDetail, MonthlyDayEntry, TodayRosterEntry } from '.
 import { usePermissions } from '../../../hooks/usePermissions';
 import EditAttendanceModal from './EditAttendanceModal';
 import SheetPreviewModal from './SheetPreviewModal';
+import AttendanceCalendarView from './AttendanceCalendarView';
 
 // Deterministic class mappings for Tailwind JIT safety
 const STATUS_CLASS_MAP: Record<string, string> = {
@@ -71,6 +73,17 @@ const MonthlyInsightsModal: React.FC<MonthlyInsightsModalProps> = ({
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     });
     const [retryKey, setRetryKey] = useState(0);
+
+    const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+    const sortedDays = useMemo(() => {
+        if (!data?.days) return [];
+        return [...data.days].sort((a, b) => {
+            const cmp = a.date.localeCompare(b.date);
+            return sortOrder === 'asc' ? cmp : -cmp;
+        });
+    }, [data?.days, sortOrder]);
 
     // Escape key listener
     useEffect(() => {
@@ -321,79 +334,139 @@ const isNonWorkingStatus = (s: string) => NON_WORKING_STATUSES.has(s);
                                     </div>
                                 </div>
 
-                                {/* Table */}
+                                {/* Attendance Records Section */}
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                            Attendance Log
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-lg font-bold text-slate-800">
+                                                {viewMode === 'calendar' ? 'Attendance Calendar' : 'Attendance Log'}
+                                            </h3>
                                             <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
                                                 {data.days.length} days
                                             </span>
-                                        </h3>
-                                        {canEditAttendance && (
-                                            <span className="text-xs text-indigo-600 font-semibold flex items-center gap-1">
-                                                <Edit2 size={12} /> Click any day to edit / mark
-                                            </span>
-                                        )}
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {/* Sort Toggle (visible in list mode) */}
+                                            {viewMode === 'list' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                                                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                                                    title="Toggle Date sorting order"
+                                                >
+                                                    <span>Date: {sortOrder === 'asc' ? '1st → 31st' : '31st → 1st'}</span>
+                                                    {sortOrder === 'asc' ? (
+                                                        <ArrowUp size={13} className="text-indigo-600" />
+                                                    ) : (
+                                                        <ArrowDown size={13} className="text-indigo-600" />
+                                                    )}
+                                                </button>
+                                            )}
+
+                                            {/* View Switcher */}
+                                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setViewMode('list')}
+                                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                                        viewMode === 'list'
+                                                            ? 'bg-white text-indigo-600 shadow-xs'
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                    }`}
+                                                >
+                                                    <List size={13} />
+                                                    List
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setViewMode('calendar')}
+                                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                                        viewMode === 'calendar'
+                                                            ? 'bg-white text-indigo-600 shadow-xs'
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                    }`}
+                                                >
+                                                    <CalendarGridIcon size={13} />
+                                                    Calendar
+                                                </button>
+                                            </div>
+
+                                            {canEditAttendance && (
+                                                <span className="text-xs text-indigo-600 font-semibold flex items-center gap-1 ml-1">
+                                                    <Edit2 size={12} /> Click day to edit
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                     
-                                    <div className="space-y-2.5">
-                                        {data.days.map((day) => (
-                                            <div 
-                                                key={day.date}
-                                                onClick={canEditAttendance ? () => setEditingDay(day) : undefined}
-                                                className={`group flex items-center justify-between p-3.5 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all ${
-                                                    canEditAttendance ? 'cursor-pointer hover:bg-slate-50/70' : 'cursor-default'
-                                                }`}
-                                                title={canEditAttendance ? `Click to edit attendance for ${day.date}` : undefined}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex flex-col min-w-[70px]">
-                                                        <span className="text-sm font-bold text-slate-800">
-                                                            {formatDate(day.date, { month: 'short', day: '2-digit' })}
-                                                        </span>
-                                                        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
-                                                            {formatDate(day.date, { weekday: 'short' })}
-                                                        </span>
-                                                    </div>
-                                                    <div className="h-7 w-[1px] bg-slate-100" />
-                                                    <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${
-                                                        day.isWfh && day.status === 'Present'
-                                                            ? 'bg-sky-50 text-sky-700 border-sky-200'
-                                                            : STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'
-                                                    }`}>
-                                                        {day.isWfh && day.status === 'Present' ? 'Present (WFH)' : STATUS_LABELS[day.status]}
-                                                    </div>
-                                                    {day.isWfh && day.status !== 'Present' && (
-                                                        <div className="px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-sky-50 text-sky-700 border-sky-200">
-                                                            WFH
+                                    {viewMode === 'calendar' ? (
+                                        <AttendanceCalendarView
+                                            days={data.days}
+                                            month={currentMonth}
+                                            employeeName={employeeName}
+                                            canEdit={canEditAttendance}
+                                            onDayClick={(day) => setEditingDay(day)}
+                                        />
+                                    ) : (
+                                        <div className="space-y-2.5">
+                                            {sortedDays.map((day) => (
+                                                <div 
+                                                    key={day.date}
+                                                    onClick={canEditAttendance ? () => setEditingDay(day) : undefined}
+                                                    className={`group flex items-center justify-between p-3.5 bg-white border border-slate-100 rounded-xl hover:border-indigo-300 hover:shadow-sm transition-all ${
+                                                        canEditAttendance ? 'cursor-pointer hover:bg-slate-50/70' : 'cursor-default'
+                                                    }`}
+                                                    title={canEditAttendance ? `Click to edit attendance for ${day.date}` : undefined}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex flex-col min-w-[70px]">
+                                                            <span className="text-sm font-bold text-slate-800">
+                                                                {formatDate(day.date, { month: 'short', day: '2-digit' })}
+                                                            </span>
+                                                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                                                                {formatDate(day.date, { weekday: 'short' })}
+                                                            </span>
                                                         </div>
-                                                    )}
-                                                </div>
+                                                        <div className="h-7 w-[1px] bg-slate-100" />
+                                                        <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${
+                                                            day.isWfh && day.status === 'Present'
+                                                                ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                                                : STATUS_CLASS_MAP[day.status] || 'bg-slate-50 text-slate-500 border-slate-100'
+                                                        }`}>
+                                                            {day.isWfh && day.status === 'Present' ? 'Present (WFH)' : STATUS_LABELS[day.status]}
+                                                        </div>
+                                                        {day.isWfh && day.status !== 'Present' && (
+                                                            <div className="px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-sky-50 text-sky-700 border-sky-200">
+                                                                WFH
+                                                            </div>
+                                                        )}
+                                                    </div>
 
-                                                <div className="flex items-center gap-4">
-                                                    <div className="hidden sm:flex flex-col items-end">
-                                                        <span className="text-[10px] text-slate-400 font-medium">Work Time</span>
-                                                        <span className="text-xs font-semibold text-slate-700">
-                                                            {!isNonWorkingStatus(day.status) && day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '—'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col items-end min-w-[90px]">
-                                                        <span className="text-[10px] text-slate-400 font-medium">Punches</span>
-                                                        <span className="text-xs font-bold text-slate-600">
-                                                            {!isNonWorkingStatus(day.status) && day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '—'}
-                                                            {!isNonWorkingStatus(day.status) && day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' })}` : ''}
-                                                        </span>
-                                                    </div>
-                                                    {canEditAttendance && (
-                                                        <div className="p-1 rounded-lg text-slate-300 group-hover:text-indigo-600 group-hover:bg-indigo-50 transition-colors">
-                                                            <Edit2 size={13} />
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="hidden sm:flex flex-col items-end">
+                                                            <span className="text-[10px] text-slate-400 font-medium">Work Time</span>
+                                                            <span className="text-xs font-semibold text-slate-700">
+                                                                {!isNonWorkingStatus(day.status) && day.workDurationMinutes ? `${Math.floor(day.workDurationMinutes / 60)}h ${day.workDurationMinutes % 60}m` : '—'}
+                                                            </span>
                                                         </div>
-                                                    )}
+                                                        <div className="flex flex-col items-end min-w-[90px]">
+                                                            <span className="text-[10px] text-slate-400 font-medium">Punches</span>
+                                                            <span className="text-xs font-bold text-slate-600">
+                                                                {!isNonWorkingStatus(day.status) && day.checkIn ? new Date(day.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '—'}
+                                                                {!isNonWorkingStatus(day.status) && day.checkOut ? ` → ${new Date(day.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' })}` : ''}
+                                                            </span>
+                                                        </div>
+                                                        {canEditAttendance && (
+                                                            <div className="p-1 rounded-lg text-slate-300 group-hover:text-indigo-600 group-hover:bg-indigo-50 transition-colors">
+                                                                <Edit2 size={13} />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </>
                         ) : (

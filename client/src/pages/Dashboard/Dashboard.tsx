@@ -19,7 +19,8 @@ import {
     Check,
     AlertCircle,
     X,
-    Banknote
+    Banknote,
+    Phone
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -116,7 +117,7 @@ const Dashboard = () => {
 
         const steps = [
             { id: 'personal', label: 'Personal Information', completed: !!(empData.firstName && empData.lastName && (empData.cnic || empData.nationalId) && empData.dateOfBirth) },
-            { id: 'contact', label: 'Contact & Emergency', completed: !!((empData.address?.city || empData.address?.streetAddress || empData.address?.street || empData.phone) && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone || ec.relation)) },
+            { id: 'contact', label: 'Contact & Emergency', completed: !!(empData.phone && (empData.address?.city || empData.address?.streetAddress || empData.address?.street) && empData.emergencyContacts?.some((ec: any) => ec.name || ec.phone || ec.relation)) },
             { id: 'history', label: 'Employment & Education', completed: !!(empData.education?.some((edu: any) => edu.level || edu.institute) || empData.employmentHistory?.some((eh: any) => eh.companyName || eh.jobTitle)) },
             { id: 'skills', label: 'Skills & Profiles', completed: !!(empData.skills?.length > 0 || empData.socialProfiles?.some((sp: any) => sp.link || sp.url)) },
             { id: 'documents', label: 'Identity Documents (CNIC Front, CNIC Back, Degree, Picture)', completed: hasDocs }
@@ -538,6 +539,27 @@ const Dashboard = () => {
                         login((prev: any) => prev ? ({ ...prev, needsPasswordSetup: false }) : prev);
                     }}
                 />
+            )}
+
+            {/* Contact Details Reminder Banner */}
+            {!loading && onboardingData && (!onboardingData.phone || !onboardingData.phone.trim()) && (
+                <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-amber-500/10 border border-amber-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
+                    <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-amber-200">
+                            <Phone size={18} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-bold text-slate-800">Action Required: Update Personal Contact Number</h4>
+                            <p className="text-xs text-slate-500">Please provide your personal phone number in your profile so colleagues and HR can reach you.</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => navigate('/my-info?step=2')}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-indigo-100 whitespace-nowrap active:scale-95"
+                    >
+                        Update Contact Info
+                    </button>
+                </div>
             )}
             {/* Onboarding Progress Card — only shown when employee record exists and has incomplete steps */}
             {!loading && onboarding && onboarding.steps.length > 0 && !onboardingDismissed && (

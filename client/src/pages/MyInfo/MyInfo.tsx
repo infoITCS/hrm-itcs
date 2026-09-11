@@ -243,13 +243,16 @@ const MyInfo = () => {
     }, []);
 
     const validateField = (name: string, value: string): string => {
+        if (name === 'phone') {
+            if (!value.trim()) return 'Personal Phone is required';
+            return /^[\+]?[0-9 \-\(\)]{7,15}$/.test(value.replace(/\s/g, '')) ? '' : 'Enter a valid phone number (7-15 digits)';
+        }
         if (!value.trim()) return ''; // empty = no error
         switch (name) {
             case 'email':
             case 'workEmail':
             case 'otherEmail':
                 return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Enter a valid email address (e.g. name@domain.com)';
-            case 'phone':
             case 'simNumber':
                 return /^[\+]?[0-9 \-\(\)]{7,15}$/.test(value.replace(/\s/g, '')) ? '' : 'Enter a valid phone number (7-15 digits)';
             case 'cnic':
@@ -348,6 +351,16 @@ const MyInfo = () => {
             if (!hasCNICFront) err.push('CNIC Front Image');
             if (!hasCNICBack) err.push('CNIC Back Image');
         }
+        return err;
+    };
+
+    const isStep2RequiredValid = () => {
+        return !!formData.phone?.trim();
+    };
+
+    const getStep2RequiredErrors = (): string[] => {
+        const err: string[] = [];
+        if (!formData.phone?.trim()) err.push('Personal Phone');
         return err;
     };
 
@@ -814,6 +827,12 @@ const MyInfo = () => {
                 return;
             }
             setStepErrors([]);
+        } else if (step === 2) {
+            if (!isStep2RequiredValid()) {
+                setStepErrors(getStep2RequiredErrors());
+                return;
+            }
+            setStepErrors([]);
         }
 
         // Trigger background save without awaiting so UI is instant
@@ -842,6 +861,12 @@ const MyInfo = () => {
                 return;
             }
             setStepErrors([]);
+        } else if (step === 2 && targetStepId > 2) {
+            if (!isStep2RequiredValid()) {
+                setStepErrors(getStep2RequiredErrors());
+                return;
+            }
+            setStepErrors([]);
         }
 
         // Fire off background save silently
@@ -866,6 +891,10 @@ const MyInfo = () => {
     const handleSubmit = async (shouldNavigate = true, isBackground = false) => {
         if (!isStep1RequiredValid()) {
             setStepErrors(getStep1RequiredErrors());
+            return;
+        }
+        if (!isStep2RequiredValid()) {
+            setStepErrors(getStep2RequiredErrors());
             return;
         }
         if (duplicateError) {
@@ -1445,7 +1474,8 @@ const MyInfo = () => {
                                 {renderField('License Number', rawEmployee.licenseNumber)}
                                 {renderField('Work Email', rawEmployee.workEmail)}
                                 {renderField('Other Email', rawEmployee.otherEmail)}
-                                {renderField('SIM Number', rawEmployee.simNumber)}
+                                {renderField('Personal Phone', rawEmployee.phone)}
+                                {renderField('Official Number (Company SIM)', rawEmployee.simNumber)}
                             </div>
 
                             {/* Skills Section */}
@@ -1546,7 +1576,8 @@ const MyInfo = () => {
                         <div className="space-y-10 animate-fadeIn">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                 {renderField('Personal Email', rawEmployee.email)}
-                                {renderField('Phone', rawEmployee.phone)}
+                                {renderField('Personal Phone', rawEmployee.phone)}
+                                {renderField('Official Number (Company SIM)', rawEmployee.simNumber)}
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -2253,7 +2284,7 @@ const MyInfo = () => {
 
                         {stepErrors.length > 0 && (
                             <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl">
-                                <p className="font-medium mb-2">Please fill all required fields in Step 1 (Personal) before continuing:</p>
+                                <p className="font-medium mb-2">Please fill all required fields before continuing:</p>
                                 <ul className="list-disc list-inside text-sm space-y-1">
                                     {stepErrors.map((err, i) => (
                                         <li key={i}>{err}</li>
@@ -2606,25 +2637,65 @@ const MyInfo = () => {
                                             {fieldErrors.otherEmail && <p className="text-xs text-red-500 mt-1">{fieldErrors.otherEmail}</p>}
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-600">Personal Phone</label>
-                                            <input type="text" name="phone" value={formData.phone} onChange={handleChange} onBlur={(e) => handleFieldBlur('phone', e.target.value)} placeholder="e.g. +92 300 1234567" className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.phone ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} />
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Personal Phone <span className="text-red-500 font-bold">*</span>
+                                            </label>
+                                            <input 
+                                                type="text" 
+                                                name="phone" 
+                                                value={formData.phone} 
+                                                onChange={handleChange} 
+                                                onBlur={(e) => handleFieldBlur('phone', e.target.value)} 
+                                                placeholder="e.g. +92 300 1234567" 
+                                                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 bg-white transition-all ${fieldErrors.phone ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'}`} 
+                                            />
                                             {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-600">Company SIM Number</label>
-                                            <input
-                                                type="text"
-                                                name="simNumber"
-                                                value={formData.simNumber}
-                                                onChange={canEditJob ? handleChange : undefined}
-                                                onBlur={canEditJob ? (e) => handleFieldBlur('simNumber', e.target.value) : undefined}
-                                                readOnly={!canEditJob}
-                                                placeholder="e.g. +92 301 9876543"
-                                                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all ${fieldErrors.simNumber ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${!canEditJob ? 'bg-gray-50 cursor-default select-none' : 'bg-white'}`}
-                                            />
+                                            <div className="flex items-center justify-between">
+                                                <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                                                    Official Number (Company SIM)
+                                                </label>
+                                                {!canEditJob ? (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                                        <Lock size={10} /> Locked
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                                                        Admin Editable
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    name="simNumber"
+                                                    value={formData.simNumber}
+                                                    onChange={canEditJob ? handleChange : undefined}
+                                                    onBlur={canEditJob ? (e) => handleFieldBlur('simNumber', e.target.value) : undefined}
+                                                    readOnly={!canEditJob}
+                                                    disabled={!canEditJob}
+                                                    placeholder={canEditJob ? "e.g. +92 301 9876543" : "Company SIM is assigned & managed by HR"}
+                                                    className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all ${fieldErrors.simNumber ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : 'border-gray-300 focus:border-primary-500 focus:ring-primary-200'} ${!canEditJob ? 'bg-slate-100/80 text-slate-500 cursor-not-allowed select-none pr-10' : 'bg-white'}`}
+                                                />
+                                                {!canEditJob && (
+                                                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                                                        <Lock size={15} />
+                                                    </div>
+                                                )}
+                                            </div>
                                             {fieldErrors.simNumber && <p className="text-xs text-red-500 mt-1">{fieldErrors.simNumber}</p>}
-                                            {!canEditJob && <p className="text-xs text-gray-500 mt-1">This field can only be updated by HR</p>}
-                                            {canEditJob && <p className="text-xs text-indigo-500 mt-1">Admin: You can edit this field</p>}
+                                            {!canEditJob && (
+                                                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                                    <Lock size={12} className="text-slate-400 shrink-0" />
+                                                    Company SIM is assigned and managed directly by HR / Administration.
+                                                </p>
+                                            )}
+                                            {canEditJob && (
+                                                <p className="text-xs text-indigo-500 mt-1 font-medium">
+                                                    Admin: Fill out the official company SIM assigned to this employee.
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -4225,11 +4296,11 @@ const MyInfo = () => {
                                 {step !== steps[steps.length - 1].id ? (
                                     <button
                                         onClick={handleNext}
-                                        disabled={saving || (step === 1 && !isStep1RequiredValid())}
+                                        disabled={saving || (step === 1 && !isStep1RequiredValid()) || (step === 2 && !isStep2RequiredValid())}
                                         className={`px-8 py-2.5 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm ${
                                             saving
                                                 ? 'bg-indigo-400 text-white cursor-wait'
-                                                : step === 1 && !isStep1RequiredValid()
+                                                : ((step === 1 && !isStep1RequiredValid()) || (step === 2 && !isStep2RequiredValid()))
                                                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                     : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white hover:shadow-md'
                                         }`}

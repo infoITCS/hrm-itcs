@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, AlertCircle, Info, Phone, Copy, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, Phone, Copy, X, Check, Building2, User } from 'lucide-react';
 
 interface AlertModalProps {
     isOpen: boolean;
@@ -13,6 +14,7 @@ interface AlertModalProps {
     showCancel?: boolean;
     contactInfo?: {
         phone?: string;
+        workPhone?: string;
         email?: string;
         name?: string;
     };
@@ -30,6 +32,7 @@ const AlertModal: React.FC<AlertModalProps> = ({
     showCancel = false,
     contactInfo
 }) => {
+    const [copiedKey, setCopiedKey] = useState<string | null>(null);
     if (!isOpen) return null;
 
     const getIcon = () => {
@@ -52,8 +55,10 @@ const AlertModal: React.FC<AlertModalProps> = ({
         }
     };
 
-    const handleCopy = (text: string) => {
+    const handleCopy = (text: string, key: string = 'default') => {
         navigator.clipboard.writeText(text);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey(null), 2000);
     };
 
     const renderFormattedMessage = () => {
@@ -117,60 +122,153 @@ const AlertModal: React.FC<AlertModalProps> = ({
                     {renderFormattedMessage()}
 
                     {type === 'contact' && contactInfo && (
-                        <div className="bg-slate-50 rounded-2xl p-3 mb-5 space-y-2">
-                            {contactInfo.phone && (
-                                <div className="flex items-center justify-between gap-3 p-2.5 bg-white rounded-xl border border-slate-200">
-                                    <div className="flex items-center gap-2.5">
-                                        <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                                            <Phone size={14} />
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-700">{contactInfo.phone}</span>
-                                    </div>
-                                    <button 
-                                        onClick={() => handleCopy(contactInfo.phone!)}
-                                        className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
-                                        title="Copy number"
-                                    >
-                                        <Copy size={14} />
-                                    </button>
+                        <div className="space-y-3 my-4 text-left">
+                            {/* Category 1: Personal Number */}
+                            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 transition-all hover:border-indigo-200">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                        <User size={12} className="text-slate-400" />
+                                        Personal Number
+                                    </span>
+                                    {contactInfo.phone ? (
+                                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                                            Available
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                            Not Provided
+                                        </span>
+                                    )}
                                 </div>
-                            )}
+                                <div className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                                    <span className={`text-sm font-bold tracking-tight px-1 ${contactInfo.phone ? 'text-slate-800 font-mono' : 'text-slate-400 italic text-xs'}`}>
+                                        {contactInfo.phone || 'No personal number recorded'}
+                                    </span>
+                                    {contactInfo.phone && (
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleCopy(contactInfo.phone!, 'personal')}
+                                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors relative"
+                                                title="Copy personal number"
+                                            >
+                                                {copiedKey === 'personal' ? (
+                                                    <span className="flex items-center text-[10px] font-bold text-emerald-600 gap-1 px-1">
+                                                        <Check size={13} className="text-emerald-500" /> Copied!
+                                                    </span>
+                                                ) : (
+                                                    <Copy size={14} />
+                                                )}
+                                            </button>
+                                            <a
+                                                href={`tel:${contactInfo.phone}`}
+                                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5"
+                                                title="Call personal number"
+                                            >
+                                                <Phone size={12} />
+                                                <span>Call</span>
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Category 2: Official Number (Company SIM) */}
+                            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 transition-all hover:border-indigo-200">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 uppercase tracking-wider">
+                                        <Building2 size={12} className="text-indigo-500" />
+                                        Official Number (Company SIM)
+                                    </span>
+                                    {contactInfo.workPhone ? (
+                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                                            Assigned SIM
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                                            Pending HR Assignment
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                                    <span className={`text-sm font-bold tracking-tight px-1 ${contactInfo.workPhone ? 'text-indigo-900 font-mono' : 'text-slate-400 italic text-xs'}`}>
+                                        {contactInfo.workPhone || 'No company SIM assigned yet'}
+                                    </span>
+                                    {contactInfo.workPhone && (
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleCopy(contactInfo.workPhone!, 'work')}
+                                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors relative"
+                                                title="Copy official number"
+                                            >
+                                                {copiedKey === 'work' ? (
+                                                    <span className="flex items-center text-[10px] font-bold text-emerald-600 gap-1 px-1">
+                                                        <Check size={13} className="text-emerald-500" /> Copied!
+                                                    </span>
+                                                ) : (
+                                                    <Copy size={14} />
+                                                )}
+                                            </button>
+                                            <a
+                                                href={`tel:${contactInfo.workPhone}`}
+                                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5"
+                                                title="Call official number"
+                                            >
+                                                <Phone size={12} />
+                                                <span>Call</span>
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     <div className="flex gap-2.5 pt-2">
-                        {(showCancel || type === 'contact') && (
+                        {type === 'contact' ? (
                             <button
                                 onClick={onClose}
-                                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs tracking-wide uppercase hover:bg-slate-200 transition-all active:scale-95"
+                                className="w-full py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs tracking-wide uppercase hover:bg-slate-200 transition-all active:scale-95"
                             >
-                                {type === 'contact' ? 'Close' : cancelText}
-                            </button>
-                        )}
-
-                        {onConfirm ? (
-                            <button
-                                onClick={() => {
-                                    onConfirm();
-                                    onClose();
-                                }}
-                                className={`flex-1 py-2.5 rounded-xl font-bold text-xs tracking-wide uppercase transition-all shadow-md active:scale-95 text-white ${
-                                    type === 'error' ? 'bg-rose-600 shadow-rose-200 hover:bg-rose-700' :
-                                    type === 'success' ? 'bg-emerald-600 shadow-emerald-200 hover:bg-emerald-700' :
-                                    'bg-indigo-600 shadow-indigo-200 hover:bg-indigo-700'
-                                }`}
-                            >
-                                {confirmText}
+                                Done
                             </button>
                         ) : (
-                            !showCancel && type !== 'contact' && (
-                                <button
-                                    onClick={onClose}
-                                    className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs tracking-wide uppercase hover:bg-slate-800 transition-all shadow-md active:scale-95"
-                                >
-                                    {confirmText}
-                                </button>
-                            )
+                            <>
+                                {showCancel && (
+                                    <button
+                                        onClick={onClose}
+                                        className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs tracking-wide uppercase hover:bg-slate-200 transition-all active:scale-95"
+                                    >
+                                        {cancelText}
+                                    </button>
+                                )}
+
+                                {onConfirm ? (
+                                    <button
+                                        onClick={() => {
+                                            onConfirm();
+                                            onClose();
+                                        }}
+                                        className={`flex-1 py-2.5 rounded-xl font-bold text-xs tracking-wide uppercase transition-all shadow-md active:scale-95 text-white ${
+                                            type === 'error' ? 'bg-rose-600 shadow-rose-200 hover:bg-rose-700' :
+                                            type === 'success' ? 'bg-emerald-600 shadow-emerald-200 hover:bg-emerald-700' :
+                                            'bg-indigo-600 shadow-indigo-200 hover:bg-indigo-700'
+                                        }`}
+                                    >
+                                        {confirmText}
+                                    </button>
+                                ) : (
+                                    !showCancel && (
+                                        <button
+                                            onClick={onClose}
+                                            className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs tracking-wide uppercase hover:bg-slate-800 transition-all shadow-md active:scale-95"
+                                        >
+                                            {confirmText}
+                                        </button>
+                                    )
+                                )}
+                            </>
                         )}
                     </div>
                 </div>

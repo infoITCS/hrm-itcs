@@ -59,7 +59,7 @@ import orgConfigRoutes from './routes/orgConfigRoutes';
 // NEW: Clean modular attendance routes (v2 — side-by-side testing)
 import attendanceV2Routes from './modules/attendance/attendance.routes';
 import admsRoutes from './modules/attendance/adms.routes';
-import claimRoutes from './routes/claimRoutes';
+import claimRoutes, { syncPendingClaimsToCurrentManager } from './routes/claimRoutes';
 import expenseCategoryRoutes from './routes/expenseCategoryRoutes';
 import leaveRoutes from './routes/leaveRoutes';
 import workShiftRoutes from './routes/workShiftRoutes';
@@ -245,6 +245,7 @@ async function connectDB(): Promise<void> {
             await seedRequestCategories();
             const { seedFuelAllowanceForAllEmployees } = require('./utils/seedFuelAllowance');
             await seedFuelAllowanceForAllEmployees();
+            await syncPendingClaimsToCurrentManager();
         } catch (seedErr) {
             logger.warn('Initial seeding notice (non-fatal):', (seedErr as any)?.message || seedErr);
         }
