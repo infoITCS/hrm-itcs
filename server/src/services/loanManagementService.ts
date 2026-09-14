@@ -51,6 +51,7 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
     }));
 
     const loans: IndividualLoanItem[] = [...existingRecordLoans];
+    const pairedLoanIds = new Set<string>();
 
     for (const req of loanRequests || []) {
         const cat = (req.category || '').toLowerCase();
@@ -58,33 +59,72 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
         if (cat.includes('pause') || reqType.includes('pause')) continue;
 
         const reqIdStr = req._id.toString();
-        const alreadyInRecord = loans.some(l => l.loanId.includes(reqIdStr) || (l.notes && l.notes.includes(reqIdStr)));
-        if (!alreadyInRecord) {
-            const reqAmt = Number((req as any).details?.requestedAmount || 0);
-            const duration = Number((req as any).details?.paybackDuration) || 12;
-            const monthlyCut = Number((req as any).details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / duration);
+        const reqAmt = Number((req as any).details?.requestedAmount || 0);
+        if (reqAmt <= 0) continue;
 
-            loans.push({
-                loanId: `LOAN-REQ-${reqIdStr}`,
-                totalAmount: reqAmt,
-                remainingAmount: reqAmt,
-                monthlyInstallment: monthlyCut,
-                status: 'Active',
-                issueDate: (req as any).requestedAt || (req as any).createdAt,
-                category: req.requestType || req.category,
-                notes: (req as any).reason || (req as any).adminComments || `Approved Request ${reqIdStr}`,
-                paybackDuration: duration,
-            });
+        // 1. Direct ID match in loanId or notes
+        let matchedLoan = loans.find(l => 
+            !pairedLoanIds.has(l.loanId) && 
+            (l.loanId.includes(reqIdStr) || (l.notes && l.notes.includes(reqIdStr)))
+        );
+
+        // 2. If no direct ID match, check if there's an existing record loan with matching totalAmount
+        if (!matchedLoan) {
+            matchedLoan = loans.find(l => 
+                !pairedLoanIds.has(l.loanId) && 
+                Math.abs(Number(l.totalAmount || 0) - reqAmt) < 1
+            );
         }
+
+        if (matchedLoan) {
+            pairedLoanIds.add(matchedLoan.loanId);
+            continue;
+        }
+
+        const duration = Number((req as any).details?.paybackDuration) || 12;
+        const monthlyCut = Number((req as any).details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / duration);
+
+        loans.push({
+            loanId: `LOAN-REQ-${reqIdStr}`,
+            totalAmount: reqAmt,
+            remainingAmount: reqAmt,
+            monthlyInstallment: monthlyCut,
+            status: 'Active',
+            issueDate: (req as any).requestedAt || (req as any).createdAt,
+            category: req.requestType || req.category,
+            notes: (req as any).reason || (req as any).adminComments || `Approved Request ${reqIdStr}`,
+            paybackDuration: duration,
+        });
     }
 
-    if (existingRecordLoans.length === 0 && repayments.length > 0) {
-        let totalPaid = repayments.reduce((s, r) => s + r.amount, 0);
+    // Sort loans chronologically (oldest first)
+    loans.sort((a, b) => {
+        const dateA = a.issueDate ? new Date(a.issueDate).getTime() : 0;
+        const dateB = b.issueDate ? new Date(b.issueDate).getTime() : 0;
+        return dateA - dateB;
+    });
+
+    // Calculate total finalized repayment deductions from payslips
+    const totalRepayments = repayments.reduce((s, r) => s + r.amount, 0);
+
+    // Calculate how much repayment is ALREADY reflected in employee.loans record
+    // (i.e. where remainingAmount < totalAmount)
+    const alreadyReflectedDeduction = existingRecordLoans.reduce(
+        (s, l) => s + Math.max(0, Number(l.totalAmount || 0) - Number(l.remainingAmount || 0)),
+        0
+    );
+
+    // Unapplied repayments that must be deducted across loans
+    let unappliedRepayments = Math.max(0, totalRepayments - alreadyReflectedDeduction);
+
+    if (unappliedRepayments > 0) {
         for (const l of loans) {
-            if (totalPaid <= 0) break;
-            const deduct = Math.min(l.remainingAmount, totalPaid);
+            if (unappliedRepayments <= 0) break;
+            if (l.remainingAmount <= 0) continue;
+
+            const deduct = Math.min(l.remainingAmount, unappliedRepayments);
             l.remainingAmount = Math.max(0, l.remainingAmount - deduct);
-            totalPaid -= deduct;
+            unappliedRepayments -= deduct;
             if (l.remainingAmount <= 0) {
                 l.status = 'Paid';
             }
@@ -401,63 +441,7 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         }
     }
 
-    const existingRecordLoans: IndividualLoanItem[] = ((employee as any).loans || []).map((l: any) => ({
-        loanId: l.loanId || `LOAN-${employeeId}`,
-        totalAmount: Number(l.totalAmount || l.remainingAmount || 0),
-        remainingAmount: Number(l.remainingAmount || 0),
-        monthlyInstallment: Number(l.monthlyInstallment || 0),
-        status: (l.status || (Number(l.remainingAmount) > 0 ? 'Active' : 'Paid')) as any,
-        issueDate: l.issueDate,
-        notes: l.notes || '',
-        category: 'Loan',
-    }));
-
-    const loans: IndividualLoanItem[] = [...existingRecordLoans];
-
-    // Add approved EmployeeRequest loans that are not already present in employee.loans
-    for (const req of loanRequests) {
-        const cat = (req.category || '').toLowerCase();
-        const reqType = (req.requestType || '').toLowerCase();
-        if (cat.includes('pause') || reqType.includes('pause')) continue;
-
-        const reqIdStr = req._id.toString();
-        const alreadyInRecord = loans.some(l => l.loanId.includes(reqIdStr) || (l.notes && l.notes.includes(reqIdStr)));
-        if (!alreadyInRecord) {
-            const reqAmt = Number((req as any).details?.requestedAmount || 0);
-            const duration = Number((req as any).details?.paybackDuration) || 12;
-            const monthlyCut = Number((req as any).details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / duration);
-
-            loans.push({
-                loanId: `LOAN-REQ-${reqIdStr}`,
-                totalAmount: reqAmt,
-                remainingAmount: reqAmt,
-                monthlyInstallment: monthlyCut,
-                status: 'Active',
-                issueDate: (req as any).requestedAt || (req as any).createdAt,
-                category: req.requestType || req.category,
-                notes: (req as any).reason || (req as any).adminComments || `Approved Request ${reqIdStr}`,
-                paybackDuration: duration,
-            });
-        }
-    }
-
-    // Apply finalized repayments to adjust remaining amounts if loans were loaded without previous record deduction
-    if (existingRecordLoans.length === 0 && repayments.length > 0) {
-        let totalPaid = repayments.reduce((s, r) => s + r.amount, 0);
-        for (const l of loans) {
-            if (totalPaid <= 0) break;
-            const deduct = Math.min(l.remainingAmount, totalPaid);
-            l.remainingAmount = Math.max(0, l.remainingAmount - deduct);
-            totalPaid -= deduct;
-            if (l.remainingAmount <= 0) {
-                l.status = 'Paid';
-            }
-        }
-    }
-
-    const totalDisbursed = loans.reduce((s, l) => s + Number(l.totalAmount || 0), 0);
-    const remainingBalance = loans.reduce((s, l) => s + Number(l.remainingAmount || 0), 0);
-    const activeMonthlyInstallment = loans.filter(l => l.status === 'Active').reduce((s, l) => s + Number(l.monthlyInstallment || 0), 0);
+    const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(employee, loanRequests, payslips);
 
     return {
         employeeId: employee.employeeId,
@@ -466,12 +450,12 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         designation: (employee as any).jobInfo?.designation,
         department: (employee as any).jobInfo?.department,
         summary: {
-            totalDisbursed,
-            remainingBalance,
-            monthlyInstallment: activeMonthlyInstallment,
-            status: remainingBalance > 0 ? 'Active' : (totalDisbursed > 0 ? 'Paid' : 'None'),
+            totalDisbursed: computed.totalDisbursed,
+            remainingBalance: computed.remainingBalance,
+            monthlyInstallment: computed.monthlyInstallment,
+            status: computed.status,
         },
-        loans,
+        loans: computed.loans,
         repayments: repayments.reverse(), // most recent repayments first
     };
 }
