@@ -26,6 +26,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; border: string; 
     Incomplete:    { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', label: 'Incomplete' },
     'Early Leave': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', label: 'Early Leave' },
     'Half-Day':    { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', label: 'Half Day' },
+    'Half-Day Leave': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', label: 'Half Day Leave' },
     Weekend:       { bg: 'bg-slate-50', text: 'text-slate-400', border: 'border-slate-100', label: 'Weekend' },
     Holiday:       { bg: 'cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', label: 'Holiday' },
 };
@@ -54,8 +55,8 @@ export default function AttendanceCalendarView({
         present: days.filter(d => d.status === 'Present').length,
         late: days.filter(d => d.status === 'Late' || d.lateMinutes > 0).length,
         absent: days.filter(d => d.status === 'Absent').length,
-        halfDay: days.filter(d => d.status === 'Half-Day').length,
-        onLeave: days.filter(d => d.status === 'On Leave').length,
+        halfDay: days.filter(d => d.status === 'Half-Day' || d.status === 'Half-Day Leave').length,
+        onLeave: days.filter(d => d.status === 'On Leave' || d.status === 'Half-Day Leave').length,
         weekend: days.filter(d => d.status === 'Weekend').length,
     };
 

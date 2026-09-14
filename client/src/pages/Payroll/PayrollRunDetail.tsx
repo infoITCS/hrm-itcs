@@ -107,9 +107,11 @@ const PRESET_EARNINGS = [
     'Medical Allowance',
     'Travel Allowance',
     'Mobile Allowance',
+    'Medical Expense Reimbursement',
+    'Travel Expense Reimbursement',
+    'Expense Reimbursements',
     'PF Withdrawal (Non-Taxable)',
     'Anniversary Bonus',
-    'Expense Reimbursements',
     'Special Allowance',
     'Custom / Other'
 ];
@@ -403,6 +405,7 @@ const PayslipEditPanel = ({
                         <div className="space-y-1.5">
                             {earnings.map((e, i) => {
                                 const isPreset = presetEarnings.includes(e.component) && e.component !== 'Custom / Other';
+                                const isClaim = (e as any).expenseClaim === true || isExpenseClaimPayrollEarning(e);
                                 return (
                                     <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
                                         <select
@@ -427,7 +430,15 @@ const PayslipEditPanel = ({
                                             />
                                         )}
 
-                                        {isPreset && <div className="flex-1" />}
+                                        {isPreset && (
+                                            <div className="flex-1 flex items-center">
+                                                {isClaim && (
+                                                    <span className="text-[10px] bg-sky-50 text-sky-700 font-bold px-2 py-0.5 rounded border border-sky-200 uppercase tracking-wider">
+                                                        Claim Reimbursement
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <div className="relative w-28 shrink-0">
                                             <input

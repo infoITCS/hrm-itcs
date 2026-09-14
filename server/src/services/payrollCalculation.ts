@@ -130,7 +130,7 @@ export async function buildPayrollPayslips(
             { 'employmentStatus.status': { $nin: PAYROLL_EXCLUDED_STATUSES } },
             { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
         ],
-    }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo loans');
+    }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo loans salaryHistory');
 
     if (!employees.length) {
         throw Object.assign(new Error('No active employees found to generate payslips.'), { status: 400 });
@@ -214,6 +214,7 @@ export async function buildPayrollPayslips(
         if (r.status === 'Present') employeeAttendanceMap[r.employeeId].presentDays++;
         else if (r.status === 'Late') employeeAttendanceMap[r.employeeId].lateDays++;
         else if (r.status === 'Half-Day') employeeAttendanceMap[r.employeeId].halfDays++;
+        else if (r.status === 'Half-Day Leave') employeeAttendanceMap[r.employeeId].leaveDays += 0.5;
         else if (r.status === 'Absent') employeeAttendanceMap[r.employeeId].absentDays++;
         else if (r.status === 'On Leave') employeeAttendanceMap[r.employeeId].leaveDays++;
 
@@ -390,7 +391,7 @@ export async function buildPayrollPayslips(
 
         const isEntitledToMeal = emp.financeInfo?.entitledForMealAllowance !== false;
         const mealDays = isEntitledToMeal ? (mealDaysMap[emp.employeeId] ?? 0) : 0;
-        if (isEntitledToMeal) {
+        if (isEntitledToMeal && mealDays > 0) {
             earnings.push({
                 component: 'Meal Allowance',
                 amount: mealDays * MEAL_RATE,
@@ -398,6 +399,66 @@ export async function buildPayrollPayslips(
             });
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Retroactive Salary Arrears & PF Adjustment Calculation
+        // ─────────────────────────────────────────────────────────────────────
+        let totalArrearsAmount = 0;
+        let retroactiveArrearsNote = '';
+        const runMonthStart = new Date(Date.UTC(run.periodYear, run.periodMonth - 1, 1));
+
+        if (Array.isArray(emp.salaryHistory) && emp.salaryHistory.length > 0) {
+            for (const hist of emp.salaryHistory) {
+                if (hist && !hist.arrearsProcessed && hist.effectiveDate) {
+                    const effDate = new Date(hist.effectiveDate);
+                    // Only process revisions whose effective date is prior to the current payroll month
+                    if (effDate < runMonthStart) {
+                        const newAmt = Number(hist.amount) || 0;
+                        const prevAmt = Number(hist.previousAmount) || 0;
+                        const diff = newAmt - prevAmt;
+
+                        if (diff > 0) {
+                            const effYear = effDate.getUTCFullYear();
+                            const effMonth = effDate.getUTCMonth() + 1; // 1-12
+                            const effDay = effDate.getUTCDate();
+
+                            // Iterate each retroactive month from (effYear, effMonth) up to month before current run
+                            let iterYear = effYear;
+                            let iterMonth = effMonth;
+
+                            while (
+                                iterYear < run.periodYear || 
+                                (iterYear === run.periodYear && iterMonth < run.periodMonth)
+                            ) {
+                                const daysInMonth = new Date(Date.UTC(iterYear, iterMonth, 0)).getUTCDate();
+                                let monthArrears = diff;
+
+                                // Prorate if revision started mid-month
+                                if (iterYear === effYear && iterMonth === effMonth && effDay > 1) {
+                                    const activeDays = daysInMonth - effDay + 1;
+                                    monthArrears = Math.round((activeDays / daysInMonth) * diff);
+                                }
+
+                                if (monthArrears > 0) {
+                                    totalArrearsAmount += monthArrears;
+                                    const mName = MONTH_NAMES[iterMonth] || `Month ${iterMonth}`;
+                                    earnings.push({
+                                        component: `Salary Arrears (${mName} ${iterYear})`,
+                                        amount: monthArrears,
+                                        type: 'variable',
+                                    });
+                                }
+
+                                iterMonth++;
+                                if (iterMonth > 12) {
+                                    iterMonth = 1;
+                                    iterYear++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         const grossPay = earnings.reduce((sum: number, e: any) => sum + e.amount, 0);
 
@@ -461,6 +522,28 @@ export async function buildPayrollPayslips(
             }
         }
 
+        // Provident Fund calculation (Regular + Arrears Adjustment)
+        const empStatus = getEmploymentStatus(emp);
+        const isPermanent = empStatus === 'Permanent';
+        let pfContributionAmount = 0;
+        let pfArrearsAdjustment = 0;
+
+        if (isPermanent) {
+            const pfRate = (companyDoc?.payrollSettings?.pfContributionRate ?? 15) / 100;
+            const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
+            const baseAmount = basicComp ? basicComp.amount : (Number(emp.financeInfo?.confirmedSalary) || 0);
+
+            const regularPf = Math.round(baseAmount * pfRate);
+            pfArrearsAdjustment = Math.round(totalArrearsAmount * pfRate);
+            pfContributionAmount = regularPf + pfArrearsAdjustment;
+
+            if (totalArrearsAmount > 0) {
+                retroactiveArrearsNote = `Salary Arrears of PKR ${totalArrearsAmount.toLocaleString()} added. PF contribution includes PKR ${pfArrearsAdjustment.toLocaleString()} arrears adjustment (Total PF: PKR ${pfContributionAmount.toLocaleString()}).`;
+            }
+        } else if (totalArrearsAmount > 0) {
+            retroactiveArrearsNote = `Salary Arrears of PKR ${totalArrearsAmount.toLocaleString()} added.`;
+        }
+
         const netPay = grossPay - totalDeductions;
         const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
         nextSeq++;
@@ -479,7 +562,7 @@ export async function buildPayrollPayslips(
             leaveDays: 0,
         };
 
-        const payslipNotes = [notes, loanPauseNote, attendancePenaltyNote].filter(Boolean).join(' • ');
+        const payslipNotes = [notes, loanPauseNote, attendancePenaltyNote, retroactiveArrearsNote].filter(Boolean).join(' • ');
 
         payslips.push({
             payslipNo,
@@ -495,6 +578,8 @@ export async function buildPayrollPayslips(
             taxDeduction: 0,
             loanDeduction: loanDeductAmount,
             pfPayout: pfPayoutAmount,
+            pfContribution: pfContributionAmount,
+            pfArrearsAdjustment: pfArrearsAdjustment,
             earnings,
             deductions,
             grossPay,

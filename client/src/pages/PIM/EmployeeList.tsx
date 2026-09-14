@@ -551,7 +551,7 @@ const EmployeeList = () => {
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-2 text-slate-600">
                                                     <Users size={14} className="text-slate-400" />
-                                                    <span className="font-medium">{emp.jobInfo?.reportingManager || '-'}</span>
+                                                    <span className="font-medium">{emp.jobInfo?.reportingManagerName || emp.jobInfo?.reportingManager || '-'}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-right">

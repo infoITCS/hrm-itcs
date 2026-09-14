@@ -9,6 +9,7 @@ export type AttendanceStatus =
     | 'Absent'
     | 'Late'
     | 'Half-Day'
+    | 'Half-Day Leave'
     | 'Early Leave'
     | 'On Leave'
     | 'Holiday'
@@ -63,7 +64,7 @@ const AttendanceRecordSchema: Schema = new Schema(
         // Status & Details
         status:              {
             type: String,
-            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'Early Leave', 'On Leave', 'Holiday', 'Weekend', 'Incomplete'],
+            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'Half-Day Leave', 'Early Leave', 'On Leave', 'Holiday', 'Weekend', 'Incomplete'],
             default: 'Incomplete'
         },
         isHalfDay:           { type: Boolean, default: false },

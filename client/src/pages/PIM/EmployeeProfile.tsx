@@ -5,7 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
-    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock
+    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock, Utensils
 } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -88,22 +88,19 @@ const EmployeeProfile = () => {
     }, [id, role]);
 
     const fetchAllEmployees = useCallback(async () => {
-        if (!isAdmin) return; // only admins need the full list for name resolution
         const token = localStorage.getItem('token');
         try {
-            const res = await fetch(api.employees, {
+            const res = await fetch(api.employeesDropdown, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
-                // Handle paginated response { employees } or plain array
-                const empArray = Array.isArray(data) ? data : (data.employees || []);
-                setAllEmployees(empArray);
+                setAllEmployees(Array.isArray(data) ? data : []);
             }
         } catch (err) {
             console.error('Error fetching employees list:', err);
         }
-    }, [isAdmin]);
+    }, []);
 
     useEffect(() => {
         fetchEmployee();
@@ -122,12 +119,13 @@ const EmployeeProfile = () => {
     // Resolve manager ID/name to a display name
     const resolveManagerName = (managerValue: string) => {
         if (!managerValue) return '-';
-        // Check if value looks like an employee ID (itcs-xxx format) or a name
+        if (employee?.jobInfo?.reportingManagerName) return employee.jobInfo.reportingManagerName;
+        // Check if value matches employee ID (itcs-xxx format) or dropdown value
         const found = allEmployees.find(
-            e => e.employeeId === managerValue || 
-                 formatEmployeeFullName(e, '').toLowerCase() === managerValue.toLowerCase()
+            (e: any) => e.value === managerValue || e.employeeId === managerValue ||
+                 (e.firstName && formatEmployeeFullName(e, '').toLowerCase() === managerValue.toLowerCase())
         );
-        if (found) return `${formatEmployeeFullName(found, found.employeeId)} (${found.employeeId})`;
+        if (found) return found.label || `${formatEmployeeFullName(found, found.employeeId)} (${found.employeeId})`;
         return managerValue; // Return as-is if we can't resolve
     };
 
@@ -617,7 +615,7 @@ const EmployeeProfile = () => {
                         <Field label="Designation" value={employee.jobInfo?.designation} />
                         <Field label="Department" value={employee.jobInfo?.department} />
                         {/* #2 FIX: Resolve manager name instead of showing raw ID */}
-                        <Field label="Reporting Manager" value={resolveManagerName(employee.jobInfo?.reportingManager)} />
+                        <Field label="Reporting Manager" value={employee.jobInfo?.reportingManagerName || resolveManagerName(employee.jobInfo?.reportingManager)} />
                         <Field label="Work Location" value={employee.jobInfo?.workLocation} />
                         <Field label="Joining Date" value={formatDate(employee.jobInfo?.joiningDate)} />
 
@@ -739,6 +737,49 @@ const EmployeeProfile = () => {
                                 </button>
                             </div>
 
+                            {/* Allowances & Statutory Entitlements */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2.5 rounded-xl ${employee.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <Utensils size={18} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-gray-800">Meal Allowance</h4>
+                                            <p className="text-[11px] text-gray-400">Office attendance meal stipend</p>
+                                        </div>
+                                    </div>
+                                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                        employee.financeInfo?.entitledForMealAllowance !== false
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                        {employee.financeInfo?.entitledForMealAllowance !== false ? '✓ Entitled' : '✕ Excluded'}
+                                    </span>
+                                </div>
+
+                                {!((employee.employmentStatus?.status === 'Internship' || (typeof employee.employmentStatus === 'string' && employee.employmentStatus === 'Internship')) || (employee.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
+                                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2.5 rounded-xl ${employee.financeInfo?.entitledForEobi === true ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Shield size={18} />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-gray-800">EOBI Entitlement</h4>
+                                                <p className="text-[11px] text-gray-400">Statutory pension contribution</p>
+                                            </div>
+                                        </div>
+                                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                            employee.financeInfo?.entitledForEobi === true
+                                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                        }`}>
+                                            {employee.financeInfo?.entitledForEobi === true ? '✓ Entitled' : '✕ Excluded'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                                     <DollarSign size={16} /> Salary Structure
@@ -781,6 +822,64 @@ const EmployeeProfile = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Salary Revision History */}
+                            {employee.salaryHistory && employee.salaryHistory.length > 0 && (
+                                <div className="pt-8 border-t border-slate-100 animate-fadeIn">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                            <History size={16} className="text-indigo-500" /> Salary Revision History
+                                        </h3>
+                                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                                            {employee.salaryHistory.length} Logged
+                                        </span>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {[...employee.salaryHistory].reverse().map((sh: any, idx: number) => {
+                                            const isSettled = sh.arrearsProcessed === true;
+                                            const isRetroactive = sh.effectiveDate && new Date(sh.effectiveDate) < new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1));
+                                            return (
+                                                <div key={idx} className="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-base font-black text-slate-800">
+                                                                PKR {Number(sh.amount || 0).toLocaleString()}
+                                                            </span>
+                                                            {sh.previousAmount > 0 && (
+                                                                <span className="text-xs text-slate-400">
+                                                                    (from PKR {Number(sh.previousAmount).toLocaleString()})
+                                                                </span>
+                                                            )}
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                                                                {sh.changeType || 'Increment'}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-1">
+                                                            Effective: <strong className="text-slate-700">{sh.effectiveDate ? new Date(sh.effectiveDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</strong>
+                                                            {sh.reason ? ` • ${sh.reason}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        {isSettled ? (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                ✓ Settled in Payroll
+                                                            </span>
+                                                        ) : isRetroactive ? (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                                                                ⏳ Arrears Pending Payroll
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                                                                ℹ Current Cycle
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Provident Fund Balance */}
                             <div className="pt-8 border-t border-slate-100 animate-fadeIn">

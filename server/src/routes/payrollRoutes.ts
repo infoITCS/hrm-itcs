@@ -297,6 +297,7 @@ async function getOrComputeAttendanceSummary(employeeId: string, year: number, m
         if (r.status === 'Present') presentDays++;
         else if (r.status === 'Late') lateDays++;
         else if (r.status === 'Half-Day') halfDays++;
+        else if (r.status === 'Half-Day Leave') leaveDays += 0.5;
         else if (r.status === 'Absent') absentDays++;
         else if (r.status === 'On Leave') leaveDays++;
     }
@@ -1165,22 +1166,27 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
             );
 
             if (!existingPF) {
-                // Determine base salary for PF calculation (Basic Salary or grossPay fallback)
-                const basicSalaryComponent = employee.salaryComponents?.find(
-                    (c: any) => c.component === 'Basic Salary' || c.component === 'Basic'
-                );
-                const baseAmount = basicSalaryComponent ? basicSalaryComponent.amount : payslip.grossPay;
                 const companyDoc = await Company.findOne().lean() as any;
                 const pfRate = (companyDoc?.payrollSettings?.pfContributionRate ?? 15) / 100;
-                const pfContribution = Math.round(baseAmount * pfRate);
+                let pfContribution = Number(payslip.pfContribution) || 0;
+                const pfArrears = Number(payslip.pfArrearsAdjustment) || 0;
+
+                if (pfContribution <= 0) {
+                    const basicSalaryComponent = employee.salaryComponents?.find(
+                        (c: any) => c.component === 'Basic Salary' || c.component === 'Basic'
+                    );
+                    const baseAmount = basicSalaryComponent ? basicSalaryComponent.amount : payslip.grossPay;
+                    pfContribution = Math.round(baseAmount * pfRate);
+                }
 
                 if (pfContribution > 0) {
+                    const arrearsDesc = pfArrears > 0 ? ` (includes PKR ${pfArrears.toLocaleString()} PF Arrears)` : '';
                     const historyEntry = {
                         amount: pfContribution,
                         type: 'credit',
                         source: 'payroll',
                         date: new Date(),
-                        description: `Payroll Contribution - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`,
+                        description: `Payroll Contribution - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear}${arrearsDesc}`,
                         periodMonth: run.periodMonth,
                         periodYear: run.periodYear,
                         payrollRunId: run._id.toString()
@@ -1191,9 +1197,25 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                     }
                     employee.providentFundHistory.push(historyEntry as any);
                     employee.providentFundBalance = (employee.providentFundBalance || 0) + pfContribution;
-                    await employee.save();
                 }
             }
+
+            // Mark employee.salaryHistory arrears as processed for this run
+            if (Array.isArray(employee.salaryHistory)) {
+                let historyUpdated = false;
+                employee.salaryHistory.forEach((sh: any) => {
+                    if (!sh.arrearsProcessed && new Date(sh.effectiveDate) < new Date(Date.UTC(run.periodYear, run.periodMonth - 1, 1))) {
+                        sh.arrearsProcessed = true;
+                        sh.processedInPayrollRunId = run._id.toString();
+                        historyUpdated = true;
+                    }
+                });
+                if (historyUpdated) {
+                    employee.markModified('salaryHistory');
+                }
+            }
+
+            await employee.save();
 
             // Update Employee loans remainingAmount and status
             const loanDed = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction');
@@ -1377,6 +1399,21 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
             for (const slip of payslips) {
                 const emp = await Employee.findOne({ employeeId: slip.employeeId });
                 if (!emp) continue;
+
+                // Rollback salaryHistory arrearsProcessed flag
+                if (Array.isArray(emp.salaryHistory)) {
+                    let historyRollback = false;
+                    emp.salaryHistory.forEach((sh: any) => {
+                        if (sh.processedInPayrollRunId === run._id.toString()) {
+                            sh.arrearsProcessed = false;
+                            delete sh.processedInPayrollRunId;
+                            historyRollback = true;
+                        }
+                    });
+                    if (historyRollback) {
+                        emp.markModified('salaryHistory');
+                    }
+                }
 
                 // Rollback PF contribution credited during approve
                 if (emp.providentFundHistory && emp.providentFundHistory.length > 0) {

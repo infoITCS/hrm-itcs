@@ -32,6 +32,8 @@ export interface IPayslip extends Document {
     loanDeduction?: number;
     loanDeductionErpId?: string;
     pfPayout?: number;
+    pfContribution?: number;
+    pfArrearsAdjustment?: number;
 
     // Earnings — auto-populated from Employee.salaryComponents[]
     earnings: IPayslipEarning[];
@@ -97,6 +99,8 @@ const PayslipSchema: Schema = new Schema(
         loanDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         loanDeductionErpId: { type: String, trim: true },
         pfPayout: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
+        pfContribution: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
+        pfArrearsAdjustment: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
 
         // Populated from Employee.salaryComponents[] on generation
         earnings: { type: [EarningSchema], default: [] },

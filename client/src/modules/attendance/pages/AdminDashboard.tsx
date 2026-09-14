@@ -50,6 +50,7 @@ const STATUS_BADGE: Record<string, string> = {
     'Missing Checkout': 'bg-rose-100 text-rose-700 border border-rose-200',
     'Early Leave': 'bg-orange-100 text-orange-700',
     'Half-Day':    'bg-yellow-100 text-yellow-700',
+    'Half-Day Leave': 'bg-teal-100 text-teal-800 border border-teal-200',
     Weekend:       'bg-slate-100 text-slate-500',
     Holiday:       'bg-cyan-100 text-cyan-700',
 };

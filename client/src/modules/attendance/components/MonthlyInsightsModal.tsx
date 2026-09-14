@@ -22,6 +22,7 @@ const STATUS_CLASS_MAP: Record<string, string> = {
     Incomplete: 'bg-indigo-50 text-indigo-600 border-indigo-100',
     'Early Leave': 'bg-orange-50 text-orange-600 border-orange-100',
     'Half-Day': 'bg-yellow-50 text-yellow-600 border-yellow-100',
+    'Half-Day Leave': 'bg-teal-50 text-teal-700 border-teal-200',
     Weekend: 'bg-slate-50 text-slate-500 border-slate-100',
     Holiday: 'bg-cyan-50 text-cyan-600 border-cyan-100',
 };

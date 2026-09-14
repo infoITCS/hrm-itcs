@@ -26,6 +26,7 @@ import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocumen
 import logger from '../utils/logger';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../utils/defaultSalaryComponents';
 import { ensureProbationUpgraded, upgradeCompletedProbations } from '../services/probationUpgradeService';
+import { decryptEmployeeFields } from '../utils/encryption';
 
 
 
@@ -99,9 +100,51 @@ function sanitizeEmployeeForRole(employee: any, requesterRole: string, requester
         delete sanitized.providentFundBalance;
         delete sanitized.providentFundHistory;
         delete sanitized.loans;
+        delete sanitized.salaryHistory;
         return sanitized;
     }
     return employee;
+}
+
+/**
+ * Resolves and attaches reportingManagerName (e.g. "FirstName LastName (itcs-xxx)")
+ * directly onto employee.jobInfo for all employees in a single batch query.
+ */
+async function populateReportingManagerNames(employees: any[]): Promise<void> {
+    if (!employees || employees.length === 0) return;
+    const managerIds = Array.from(new Set(
+        employees
+            .map(e => e?.jobInfo?.reportingManager)
+            .filter(Boolean)
+    ));
+    if (managerIds.length === 0) return;
+
+    const validObjectIds = managerIds.filter(id => mongoose.isValidObjectId(id));
+    const managers = await Employee.find({
+        $or: [
+            { employeeId: { $in: managerIds } },
+            ...(validObjectIds.length > 0 ? [{ _id: { $in: validObjectIds } }] : []),
+            { userId: { $in: managerIds } }
+        ]
+    }).select('firstName lastName employeeId userId _id').lean();
+
+    const managerMap = new Map<string, string>();
+    for (const m of managers) {
+        const nameWithId = `${m.firstName} ${m.lastName} (${m.employeeId})`;
+        if (m.employeeId) managerMap.set(m.employeeId, nameWithId);
+        if (m._id) managerMap.set(String(m._id), nameWithId);
+        if (m.userId) managerMap.set(String(m.userId), nameWithId);
+    }
+
+    for (const e of employees) {
+        if (e?.jobInfo?.reportingManager) {
+            const name = managerMap.get(e.jobInfo.reportingManager);
+            if (name) {
+                if (!e.jobInfo) e.jobInfo = {};
+                e.jobInfo.reportingManagerName = name;
+            }
+        }
+    }
 }
 
 // Helper to create audit log
@@ -340,6 +383,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
             total = employees.length;
         }
 
+        await populateReportingManagerNames(employees || []);
         const sanitizedEmployees = (employees || []).map((emp: any) => sanitizeEmployeeForRole(emp, role, userId));
         res.json({ employees: sanitizedEmployees, total, page, totalPages: Math.ceil(total / limit) });
     } catch (err: any) {
@@ -381,7 +425,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
-            'employeeId', 'biometricPin', 'providentFundBalance'
+            'employeeId', 'biometricPin', 'providentFundBalance', 'salaryHistory'
         ];
 
         const allowedFields = (['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role))
@@ -390,8 +434,25 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         const employeeData = pick(req.body, allowedFields) as any;
 
+        const canEditFinancials = ['super-admin', 'hr'].includes(role);
+        if (!canEditFinancials) {
+            delete employeeData.salaryComponents;
+            delete employeeData.financeInfo;
+            delete employeeData.providentFundBalance;
+            delete employeeData.salaryHistory;
+        }
+
         if (!canEditBankDetails(role)) {
             delete employeeData.bankDetails;
+        }
+
+        // Intern staff are never entitled to EOBI
+        const createEmpStatus = employeeData.employmentStatus?.status || employeeData.employmentStatus;
+        const createEmpDesig = employeeData.jobInfo?.designation || '';
+        if (createEmpStatus === 'Internship' || createEmpDesig.toLowerCase().includes('intern')) {
+            if (employeeData.financeInfo) {
+                employeeData.financeInfo.entitledForEobi = false;
+            }
         }
 
         // Basic validation
@@ -1598,6 +1659,9 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: Funct
         employee = await ensureProbationUpgraded(employee);
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
 
+        decryptEmployeeFields(employee);
+
+        await populateReportingManagerNames([employee]);
         res.json(sanitizeEmployeeForRole(employee, authReq.user?.role || '', authReq.user?.userId));
     } catch (err: any) {
         next(err);
@@ -1941,7 +2005,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
-            'employeeId', 'biometricPin', 'avatar', 'providentFundBalance'
+            'employeeId', 'biometricPin', 'avatar', 'providentFundBalance', 'salaryHistory'
         ];
 
         const allowedFields = isAdmin
@@ -1953,13 +2017,14 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
-        // Only super-admin and finance can edit salary / financial components
-        const canEditFinancials = ['super-admin', 'finance'].includes(role);
+        // Only super-admin and hr can edit salary / financial components
+        const canEditFinancials = ['super-admin', 'hr'].includes(role);
         if (!canEditFinancials) {
             delete updates.salaryComponents;
             delete updates.financeInfo;
             delete updates.providentFundBalance;
             delete updates.loans;
+            delete updates.salaryHistory;
         }
 
         // Bank account details may only be updated by HR / Finance / Admin — not by employees themselves
@@ -2036,6 +2101,68 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             ...(employee.financeInfo?.toObject?.() ?? employee.financeInfo ?? {}),
             ...(updates.financeInfo ?? {}),
         };
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Salary Revision Tracking & History Logging
+        // ─────────────────────────────────────────────────────────────────────────
+        if (canEditFinancials && updates.financeInfo) {
+            const oldConfirmedSalary = Number(employee.financeInfo?.confirmedSalary) || 0;
+            const newConfirmedSalary = Number(updates.financeInfo.confirmedSalary);
+
+            if (newConfirmedSalary > 0 && newConfirmedSalary !== oldConfirmedSalary) {
+                const rawDate = updates.financeInfo.salaryEffectiveDate || req.body.salaryEffectiveDate;
+                const effectiveDate = rawDate && !isNaN(new Date(rawDate).getTime()) ? new Date(rawDate) : new Date();
+                const reason = updates.financeInfo.salaryRevisionReason || req.body.salaryRevisionReason || (oldConfirmedSalary === 0 ? 'Initial Salary' : (newConfirmedSalary > oldConfirmedSalary ? 'Salary Increment' : 'Salary Revision'));
+                const changeType = oldConfirmedSalary === 0 ? 'Initial' : (newConfirmedSalary > oldConfirmedSalary ? 'Increment' : 'Revision');
+
+                const existingHistory = Array.isArray(updates.salaryHistory) 
+                    ? [...updates.salaryHistory] 
+                    : (Array.isArray(employee.salaryHistory) ? [...employee.salaryHistory] : []);
+
+                const validHistory = existingHistory.filter((h: any) => h && h.amount !== undefined && h.effectiveDate);
+                const dateStr = effectiveDate.toISOString().split('T')[0];
+                const alreadyExists = validHistory.some((h: any) => 
+                    h.effectiveDate && new Date(h.effectiveDate).toISOString().split('T')[0] === dateStr && Number(h.amount) === newConfirmedSalary
+                );
+
+                if (!alreadyExists) {
+                    validHistory.push({
+                        effectiveDate,
+                        revisedAt: new Date(),
+                        amount: newConfirmedSalary,
+                        previousAmount: oldConfirmedSalary,
+                        changeType,
+                        reason,
+                        arrearsProcessed: false
+                    });
+                }
+                updates.salaryHistory = validHistory;
+
+                // Sync salary components with the new salary
+                const currentComponents = updates.salaryComponents ?? employee.salaryComponents ?? [];
+                const basicCompIdx = currentComponents.findIndex((c: any) => 
+                    (c.component || '').toLowerCase().includes('basic') || (c.component || '').toLowerCase().includes('salary')
+                );
+                if (basicCompIdx >= 0) {
+                    updates.salaryComponents = currentComponents.map((c: any, idx: number) => 
+                        idx === basicCompIdx ? { ...c, amount: newConfirmedSalary } : c
+                    );
+                } else if (currentComponents.length > 0) {
+                    updates.salaryComponents = currentComponents.map((c: any, idx: number) => 
+                        idx === 0 ? { ...c, amount: newConfirmedSalary } : c
+                    );
+                } else {
+                    updates.salaryComponents = [{ component: 'Basic Salary', amount: newConfirmedSalary, type: 'fixed' }];
+                }
+            } else if (updates.salaryHistory && Array.isArray(updates.salaryHistory)) {
+                updates.salaryHistory = updates.salaryHistory.filter((h: any) => h && h.amount !== undefined && h.effectiveDate);
+            }
+
+            // Remove transient helper fields from updates.financeInfo before save
+            delete updates.financeInfo.salaryEffectiveDate;
+            delete updates.financeInfo.salaryRevisionReason;
+        }
+
         const mergedComponents = updates.salaryComponents ?? employee.salaryComponents ?? [];
         const componentTotal = (mergedComponents as any[]).reduce(
             (sum: number, c: any) => sum + (Number(c?.amount) || 0),
@@ -2069,6 +2196,15 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // to avoid BSONError/CastError when converting to ObjectId
         if (updates.jobInfo && updates.jobInfo.shift === '') {
             updates.jobInfo.shift = null;
+        }
+
+        // Intern staff are never entitled to EOBI
+        const activeStatus = updates.employmentStatus?.status ?? (typeof employee.employmentStatus === 'string' ? employee.employmentStatus : employee.employmentStatus?.status);
+        const activeDesig = updates.jobInfo?.designation ?? employee.jobInfo?.designation ?? '';
+        if (activeStatus === 'Internship' || activeDesig.toLowerCase().includes('intern')) {
+            if (updates.financeInfo) {
+                updates.financeInfo.entitledForEobi = false;
+            }
         }
 
         // Capture original state for diff

@@ -19,7 +19,8 @@ const STATUS_OPTIONS: { value: StatusSelectValue; label: string }[] = [
     { value: 'Present', label: 'Present' },
     { value: 'Present (WFH)', label: 'Present (WFH)' },
     { value: 'Late', label: 'Late' },
-    { value: 'Half-Day', label: 'Half-Day Absent (0.5 Cut)' },
+    { value: 'Half-Day', label: 'Half-Day Absent (0.5 Salary Cut)' },
+    { value: 'Half-Day Leave', label: 'Half-Day Leave (0.5 Leave Cut - Full Salary)' },
     { value: 'Early Leave', label: 'Early Leave' },
     { value: 'On Leave', label: 'On Leave' },
     { value: 'Absent', label: 'Absent' },
@@ -216,6 +217,18 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                             {status === 'Present (WFH)' && (
                                 <p className="text-xs text-sky-700 mt-1">
                                     Work from home — no meal allowance for this day.
+                                </p>
+                            )}
+                            {status === 'Half-Day' && (
+                                <p className="text-xs text-amber-700 mt-1 font-medium flex items-center gap-1.5">
+                                    <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                                    Half-Day Absent: Deducts a 0.5 salary cut penalty in payroll. Leave balance is untouched.
+                                </p>
+                            )}
+                            {status === 'Half-Day Leave' && (
+                                <p className="text-xs text-teal-700 mt-1 font-medium flex items-center gap-1.5">
+                                    <Info size={13} className="text-teal-600 shrink-0" />
+                                    Half-Day Leave: Pays full salary (0 penalty). Automatically cuts 0.5 days from available leave balance.
                                 </p>
                             )}
                         </div>

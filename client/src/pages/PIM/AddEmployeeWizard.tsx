@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock, Utensils } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock, Utensils, Calendar, History, Loader2 } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -130,7 +130,7 @@ const AddEmployeeWizard = () => {
     const { showToast } = useToast();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
-    const canEditFinancials = ['super-admin', 'finance', 'hr'].includes(role);
+    const canEditFinancials = ['super-admin', 'hr'].includes(role);
     const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
     const [showMasterPinModal, setShowMasterPinModal] = useState(false);
     const [step, setStep] = useState(1);
@@ -445,10 +445,13 @@ const AddEmployeeWizard = () => {
             confirmedSalary: 0,
             probationMonths: 3,
             probationDays: 90,
-            entitledForMealAllowance: true
+            entitledForMealAllowance: true,
+            entitledForEobi: false,
+            salaryEffectiveDate: new Date().toISOString().split('T')[0],
+            salaryRevisionReason: ''
         },
         benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
-        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number }[],
+        salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number; arrearsProcessed?: boolean; revisedAt?: string }[],
         providentFundBalance: 0
     });
 
@@ -618,7 +621,10 @@ const AddEmployeeWizard = () => {
                                 confirmedSalary: found.financeInfo?.confirmedSalary || 0,
                                 probationMonths: found.financeInfo?.probationMonths || 0,
                                 probationDays: found.financeInfo?.probationDays || 0,
-                                entitledForMealAllowance: found.financeInfo?.entitledForMealAllowance !== false
+                                entitledForMealAllowance: found.financeInfo?.entitledForMealAllowance !== false,
+                                entitledForEobi: found.financeInfo?.entitledForEobi === true,
+                                salaryEffectiveDate: new Date().toISOString().split('T')[0],
+                                salaryRevisionReason: ''
                             },
                             benefits: found.benefits?.length
                                 ? found.benefits.map((b: any) => ({
@@ -779,6 +785,17 @@ const AddEmployeeWizard = () => {
             const savedEmp = await response.json();
             const employeeId = isEditMode ? id : savedEmp.employeeId;
 
+            // Sync updated server data (especially salaryHistory, salaryComponents, benefits, financeInfo) into formData
+            if (savedEmp) {
+                setFormData(prev => ({
+                    ...prev,
+                    salaryHistory: savedEmp.salaryHistory || prev.salaryHistory,
+                    salaryComponents: savedEmp.salaryComponents || prev.salaryComponents,
+                    benefits: savedEmp.benefits || prev.benefits,
+                    financeInfo: savedEmp.financeInfo ? { ...prev.financeInfo, ...savedEmp.financeInfo } : prev.financeInfo
+                }));
+            }
+
             // 2. Upload Files (Parallelize for speed)
             if (files.length > 0) {
                 const uploadPromises = files.map(async (fileObj) => {
@@ -870,6 +887,27 @@ const AddEmployeeWizard = () => {
             setError(error.message || 'Failed to submit employee. Please try again.');
         } finally {
             if (!isBackground) setLoading(false);
+        }
+    };
+
+    const [savingSalary, setSavingSalary] = useState(false);
+
+    const handleSaveSalaryRevision = async () => {
+        const salaryAmt = Number(formData.financeInfo?.confirmedSalary || 0);
+        if (!salaryAmt || salaryAmt <= 0) {
+            showToast('Please enter a valid salary amount before confirming.', 'warning');
+            return;
+        }
+        setSavingSalary(true);
+        try {
+            const saved = await handleSubmit(false, true);
+            if (saved) {
+                showToast(`Salary revision of PKR ${salaryAmt.toLocaleString()} confirmed and saved!`, 'success');
+            }
+        } catch (err: any) {
+            showToast(err.message || 'Failed to save salary revision', 'error');
+        } finally {
+            setSavingSalary(false);
         }
     };
 
@@ -2273,6 +2311,31 @@ const AddEmployeeWizard = () => {
                                             Standard monthly gross base salary for permanent / confirmed staff.
                                         </p>
                                     </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                            Salary Effective Date <span className="text-xs text-indigo-500 font-normal lowercase">(defaults to today)</span>
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                value={formData.financeInfo?.salaryEffectiveDate || new Date().toISOString().split('T')[0]}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        financeInfo: {
+                                                            ...prev.financeInfo,
+                                                            salaryEffectiveDate: val
+                                                        }
+                                                    }));
+                                                }}
+                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-semibold text-slate-900"
+                                            />
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
+                                            Date from which revised salary applies. Retroactive changes calculate arrears and PF difference in next payroll cycle.
+                                        </p>
+                                    </div>
                                 </div>
                             ) : (
                                 /* Probation Terms Breakdown Fields */
@@ -2346,16 +2409,176 @@ const AddEmployeeWizard = () => {
                                                 placeholder="90"
                                             />
                                         </div>
+                                        <div className="md:col-span-2 lg:col-span-4 pt-2 border-t border-slate-100">
+                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                                Salary Effective Date <span className="text-xs text-indigo-500 font-normal lowercase">(defaults to today)</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={formData.financeInfo?.salaryEffectiveDate || new Date().toISOString().split('T')[0]}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        financeInfo: {
+                                                            ...prev.financeInfo,
+                                                            salaryEffectiveDate: val
+                                                        }
+                                                    }));
+                                                }}
+                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-bold text-slate-800"
+                                            />
+                                            <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                                                Effective date for confirmed salary revision. Retroactive changes calculate arrears and PF difference in next payroll.
+                                            </p>
+                                        </div>
                                     </div>
                                     <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl mt-3 font-medium border border-amber-200/60">
                                         ⏳ Employee will start at Probation Salary and automatically switch to Confirmed Salary upon probation completion.
                                     </p>
                                 </div>
                             )}
+
+                            {/* Dedicated Confirm & Save Revision Action Bar */}
+                            {isEditMode && canEditFinancials && (
+                                <div className="mt-5 pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-indigo-100 shadow-xs">
+                                    <div className="text-xs text-slate-700 font-medium flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        {Number(formData.financeInfo?.confirmedSalary || 0) > 0 ? (
+                                            <span>
+                                                Salary to apply: <strong className="text-slate-900 font-bold">PKR {Number(formData.financeInfo?.confirmedSalary || 0).toLocaleString()}</strong>
+                                                {formData.financeInfo?.salaryEffectiveDate && (
+                                                    <> effective <strong className="text-indigo-600 font-bold">{formData.financeInfo.salaryEffectiveDate}</strong></>
+                                                )}
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-400">Enter a salary amount above to confirm.</span>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveSalaryRevision}
+                                        disabled={savingSalary || !formData.financeInfo?.confirmedSalary || Number(formData.financeInfo?.confirmedSalary) <= 0}
+                                        className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-100 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {savingSalary ? (
+                                            <>
+                                                <Loader2 className="animate-spin" size={15} /> Saving Revision...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Check size={16} /> Confirm & Save Revision
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
+                        {/* Salary Revision History (When editing existing employee) */}
+                        {isEditMode && (
+                            <div className="bg-slate-50/90 border border-slate-200/80 rounded-2xl p-5 mb-4 shadow-xs">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700">
+                                            <History size={16} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-800">Salary Revision History</h4>
+                                            <p className="text-[11px] text-slate-500">Tracked salary changes and payroll arrears settlement status</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                                            {formData.salaryHistory?.length || 0} Revision{(formData.salaryHistory?.length || 0) !== 1 ? 's' : ''}
+                                        </span>
+                                        {canEditFinancials && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const sortedHist = [...(formData.salaryHistory || [])].sort((a, b) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime());
+                                                    const lastBalance = sortedHist.length > 0 ? sortedHist[0].amount : (formData.financeInfo?.confirmedSalary || 0);
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        salaryHistory: [...(p.salaryHistory || []), {
+                                                            effectiveDate: new Date().toISOString().split('T')[0],
+                                                            amount: p.financeInfo?.confirmedSalary || 0,
+                                                            changeType: sortedHist.length === 0 ? 'Joining Salary' : 'Increment',
+                                                            reason: '',
+                                                            previousAmount: lastBalance,
+                                                            arrearsProcessed: false
+                                                        }]
+                                                    }));
+                                                }}
+                                                className="text-xs font-bold text-indigo-600 bg-white hover:bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                            >
+                                                <Plus size={14} /> Add History Entry
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                {formData.salaryHistory && formData.salaryHistory.length > 0 ? (
+                                    <div className="space-y-2.5">
+                                        {[...formData.salaryHistory].reverse().map((sh: any, idx: number) => {
+                                            const isSettled = sh.arrearsProcessed === true;
+                                            const isRetroactive = sh.effectiveDate && new Date(sh.effectiveDate) < new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1));
+                                            return (
+                                                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-white border border-slate-200/60 rounded-xl gap-2 hover:border-indigo-200 transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-slate-600">
+                                                            <Calendar size={15} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-black text-slate-800">
+                                                                    PKR {Number(sh.amount || 0).toLocaleString()}
+                                                                </span>
+                                                                {sh.previousAmount > 0 && (
+                                                                    <span className="text-[11px] text-slate-400 font-medium">
+                                                                        (from PKR {Number(sh.previousAmount).toLocaleString()})
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
+                                                                    {sh.changeType || 'Increment'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                                                Effective: <strong className="text-slate-700">{sh.effectiveDate ? new Date(sh.effectiveDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</strong>
+                                                                {sh.reason ? ` • ${sh.reason}` : ''}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="shrink-0">
+                                                        {isSettled ? (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                                                ✓ Settled in Payroll
+                                                            </span>
+                                                        ) : isRetroactive ? (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                                                ⏳ Arrears Pending Payroll
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                                                                ℹ Current Cycle
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="p-6 bg-white rounded-xl border border-dashed border-slate-200 text-center">
+                                        <p className="text-xs text-slate-400 font-medium italic">
+                                            No salary progression history logged yet. When you revise the salary above and save, an automatic revision entry will appear here.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Meal Allowance Entitlement Toggle */}
-                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-start gap-3">
                                 <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
                                     <Utensils size={18} />
@@ -2395,6 +2618,50 @@ const AddEmployeeWizard = () => {
                                 </button>
                             </div>
                         </div>
+
+                        {/* EOBI Entitlement Toggle — Excluded for intern staff */}
+                        {!(formData.employmentStatus?.status === 'Internship' || (formData.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
+                            <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                    <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>
+                                        <Shield size={18} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-gray-800">EOBI Entitlement</h4>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            Employees' Old-Age Benefits Institution (EOBI) statutory pension contribution. If enabled, employee is marked eligible for EOBI deduction tracking on payroll.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <span className={`text-xs font-bold ${formData.financeInfo?.entitledForEobi === true ? 'text-indigo-700' : 'text-slate-500'}`}>
+                                        {formData.financeInfo?.entitledForEobi === true ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const currentVal = formData.financeInfo?.entitledForEobi === true;
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                financeInfo: {
+                                                    ...prev.financeInfo,
+                                                    entitledForEobi: !currentVal
+                                                }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-600' : 'bg-slate-300'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                formData.financeInfo?.entitledForEobi === true ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Salary Structure & Bank Details (Restricted to Super-Admin & Finance) */}
                         {canEditFinancials ? (
@@ -2595,6 +2862,11 @@ const AddEmployeeWizard = () => {
                             </div>
                             
                             <div className="space-y-4">
+                                {formData.benefits.length === 0 && (
+                                    <div className="p-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
+                                        <p className="text-sm text-slate-400 italic">No benefits assigned yet. Click "+ Add Benefit" to assign company benefits.</p>
+                                    </div>
+                                )}
                                 {formData.benefits.map((benefit, index) => (
                                     <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
                                         

@@ -2,7 +2,7 @@
 // Components and hooks import from here — never use `any`.
 
 export type AttendanceStatus =
-    | 'Present' | 'Absent' | 'Late' | 'Half-Day' | 'Early Leave'
+    | 'Present' | 'Absent' | 'Late' | 'Half-Day' | 'Half-Day Leave' | 'Early Leave'
     | 'On Leave' | 'Holiday' | 'Weekend' | 'Incomplete';
 
 export type StatusFilter =
@@ -124,6 +124,7 @@ export const STATUS_COLORS: Record<Exclude<StatusFilter, ''>, string> = {
     Weekend:        'slate',
     Holiday:        'cyan',
     'Half-Day':     'yellow',
+    'Half-Day Leave': 'teal',
     OnTime:         'emerald',
     StillIn:        'indigo',
 };
@@ -136,8 +137,9 @@ export const STATUS_LABELS: Record<Exclude<StatusFilter, ''>, string> = {
     Incomplete:    'Still In',
     'Early Leave': 'Early Leave',
     Weekend:       'Weekend',
-    Holiday:       'Holiday',
-    'Half-Day':    'Half Day',
+    Holiday:        'Holiday',
+    'Half-Day':    'Half Day Absent',
+    'Half-Day Leave': 'Half-Day Leave',
     OnTime:        'On Time',
     StillIn:       'Still In',
 };

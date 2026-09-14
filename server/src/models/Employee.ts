@@ -65,6 +65,7 @@ export interface IEmployee extends Document {
         probationMonths?: number;
         probationDays?: number;
         entitledForMealAllowance?: boolean;
+        entitledForEobi?: boolean;
     };
     bankDetails?: {
         bankName?: string;
@@ -167,11 +168,15 @@ export interface IEmployee extends Document {
         reviewedAt?: Date;
     }[];
     salaryHistory?: {
+        _id?: any;
         effectiveDate: Date;
+        revisedAt?: Date;
         amount: number;
         changeType: string;
         reason: string;
         previousAmount: number;
+        arrearsProcessed?: boolean;
+        processedInPayrollRunId?: string;
         components?: {
             component: string;
             amount: number;
@@ -248,7 +253,8 @@ const EmployeeSchema: Schema = new Schema({
         confirmedSalary: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
         probationMonths: { type: Number, default: 3 },
         probationDays: { type: Number, default: 90 },
-        entitledForMealAllowance: { type: Boolean, default: true }
+        entitledForMealAllowance: { type: Boolean, default: true },
+        entitledForEobi: { type: Boolean, default: false }
     },
     bankDetails: {
         bankName: { type: String },
@@ -350,10 +356,13 @@ const EmployeeSchema: Schema = new Schema({
     }],
     salaryHistory: [{
         effectiveDate: { type: Date },
+        revisedAt: { type: Date, default: Date.now },
         amount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
-        changeType: { type: String },
-        reason: { type: String },
+        changeType: { type: String, default: 'Increment' },
+        reason: { type: String, default: '' },
         previousAmount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },
+        arrearsProcessed: { type: Boolean, default: false },
+        processedInPayrollRunId: { type: String },
         components: [{
             component: { type: String },
             amount: { type: Schema.Types.Mixed, get: decryptNumber, set: encryptNumber },

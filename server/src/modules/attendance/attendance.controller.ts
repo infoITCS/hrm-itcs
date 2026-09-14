@@ -9,15 +9,72 @@ import { generateCSV } from '../../utils/csv';
 import { pktHHMMtoUtc } from '../../shared/utils/dateUtils';
 import logger from '../../utils/logger';
 import type { RecordFilter } from './attendance.types';
-import { AttendanceStatus } from '../../models/AttendanceRecord';
+import AttendanceRecord, { AttendanceStatus } from '../../models/AttendanceRecord';
+import LeaveBalance from '../../models/LeaveBalance';
+import Employee from '../../models/Employee';
 
 const VALID_STATUSES: AttendanceStatus[] = [
-    'Present','Absent','Late','Half-Day','Early Leave','On Leave','Holiday','Weekend','Incomplete'
+    'Present','Absent','Late','Half-Day','Half-Day Leave','Early Leave','On Leave','Holiday','Weekend','Incomplete'
 ];
 
 export const NON_WORKING_STATUSES: AttendanceStatus[] = ['Absent', 'On Leave', 'Holiday', 'Weekend'];
 export const isNonWorkingStatus = (status?: string | null): boolean =>
     Boolean(status && NON_WORKING_STATUSES.includes(status as AttendanceStatus));
+
+async function adjustLeaveBalanceForHalfDayLeave(
+    employeeId: string,
+    dateStr: string,
+    oldStatus: string | undefined,
+    newStatus: string
+) {
+    if (oldStatus === newStatus) return;
+    const year = new Date(dateStr).getFullYear() || new Date().getFullYear();
+
+    const isAdding = newStatus === 'Half-Day Leave' && oldStatus !== 'Half-Day Leave';
+    const isRemoving = oldStatus === 'Half-Day Leave' && newStatus !== 'Half-Day Leave';
+    if (!isAdding && !isRemoving) return;
+
+    try {
+        const emp = await Employee.findOne({ $or: [{ employeeId }, { userId: employeeId }] }).lean() as any;
+        const lookupIds = [employeeId];
+        if (emp?.employeeId && !lookupIds.includes(emp.employeeId)) lookupIds.push(emp.employeeId);
+        if (emp?.userId && !lookupIds.includes(String(emp.userId))) lookupIds.push(String(emp.userId));
+
+        let balanceDoc = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
+        if (!balanceDoc && isAdding) {
+            balanceDoc = new LeaveBalance({
+                employeeId: emp?.employeeId || employeeId,
+                year,
+                balances: [
+                    { leaveTypeCode: 'casual', total: 10, used: 0, pending: 0 },
+                    { leaveTypeCode: 'annual', total: 20, used: 0, pending: 0 },
+                    { leaveTypeCode: 'sick', total: 8, used: 0, pending: 0 }
+                ]
+            });
+        }
+        if (!balanceDoc || !Array.isArray(balanceDoc.balances)) return;
+
+        let cat = balanceDoc.balances.find((b: any) => /casual/i.test(b.leaveTypeCode))
+               || balanceDoc.balances.find((b: any) => /annual/i.test(b.leaveTypeCode))
+               || balanceDoc.balances[0];
+
+        if (!cat) {
+            cat = { leaveTypeCode: 'casual', total: 10, used: 0, pending: 0 };
+            balanceDoc.balances.push(cat);
+        }
+
+        if (isAdding) {
+            cat.used = Number(((Number(cat.used) || 0) + 0.5).toFixed(1));
+        } else if (isRemoving) {
+            cat.used = Math.max(0, Number(((Number(cat.used) || 0) - 0.5).toFixed(1)));
+        }
+
+        balanceDoc.markModified('balances');
+        await balanceDoc.save();
+    } catch (err) {
+        logger.error('Error adjusting leave balance for half-day leave:', err);
+    }
+}
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -147,9 +204,15 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         const finalStatus = status || (record as any).status;
         const isNonWorking = isNonWorkingStatus(finalStatus);
 
+        const previousStatus = (record as any).status;
         if (status) (record as any).status = status;
         if (note !== undefined) (record as any).note = note;
         if (typeof isWfh === 'boolean') (record as any).isWfh = isNonWorking ? false : isWfh;
+
+        if (finalStatus === 'Half-Day Leave') {
+            (record as any).isHalfDay = true;
+            if (!(record as any).leaveType) (record as any).leaveType = 'Casual';
+        }
 
         if (isNonWorking) {
             // Absent, On Leave, Weekend, Holiday: clear all punch timestamps and zero out work minutes
@@ -208,6 +271,7 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         (record as any).manuallyAdjusted = true;
         (record as any).adjustedBy = req.user?.userId;
         await record.save();
+        await adjustLeaveBalanceForHalfDayLeave((record as any).employeeId, (record as any).date, previousStatus, finalStatus);
         res.json({ success: true, data: record });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
 }
@@ -265,6 +329,9 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             }
         }
 
+        const existingRecord = await AttendanceRecord.findOne({ employeeId, date }).lean() as any;
+        const oldStatus = existingRecord?.status;
+
         const record = await repo.upsertRecord(employeeId, date, {
             location: location ?? 'ISB-Office',
             checkIn: isNonWorking ? null : (dIn ?? null),
@@ -274,11 +341,15 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             overtimeMinutes,
             allPunches,
             status: effectiveStatus,
+            isHalfDay: effectiveStatus === 'Half-Day' || effectiveStatus === 'Half-Day Leave',
+            leaveType: effectiveStatus === 'Half-Day Leave' ? 'Casual' : undefined,
             note,
             isWfh: isNonWorking ? false : Boolean(isWfh),
             manuallyAdjusted: true,
             adjustedBy: req.user?.userId,
         });
+
+        await adjustLeaveBalanceForHalfDayLeave(employeeId, date, oldStatus, effectiveStatus);
         res.json({ success: true, data: record });
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
 }

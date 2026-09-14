@@ -30,6 +30,7 @@ const STATUS_BADGE: Record<string, string> = {
     Incomplete:    'bg-indigo-100/50 text-indigo-700 border-indigo-200',
     'Early Leave': 'bg-orange-100/50 text-orange-700 border-orange-200',
     'Half-Day':    'bg-yellow-100/50 text-yellow-700 border-yellow-200',
+    'Half-Day Leave': 'bg-teal-100/50 text-teal-800 border-teal-200',
     Weekend:       'bg-slate-100/50 text-slate-500 border-slate-200',
     Holiday:       'bg-cyan-100/50 text-cyan-700 border-cyan-200',
 };

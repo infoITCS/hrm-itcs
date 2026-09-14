@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock, Utensils, CheckCircle2, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock, Utensils, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -14,7 +14,6 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
 import type { User as UserType } from '../../types';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS } from '../../utils/defaultSalaryComponents';
-import { formatEmployeeFullName } from '../../utils/nameHelper';
 import EntryAttachmentsEditor from '../../components/PIM/EntryAttachmentsEditor';
 import { buildPimLinkOptions } from '../../utils/pimAttachmentKeys';
 import { EMPLOYMENT_STATUS_OPTIONS } from '../../utils/employmentStatus';
@@ -210,7 +209,7 @@ const MyInfo = () => {
                     fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${api.baseURL}/api/config/designations`, { headers: { 'Authorization': `Bearer ${token}` } }),
                     fetch(`${api.baseURL}/api/config/salary-components?activeOnly=true&type=earning`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(`${api.baseURL}/api/employees`, { headers: { 'Authorization': `Bearer ${token}` } })
+                    fetch(api.employeesDropdown, { headers: { 'Authorization': `Bearer ${token}` } })
                 ]);
                 
                 if (deptRes.ok) {
@@ -229,11 +228,7 @@ const MyInfo = () => {
                 }
                 if (empRes.ok) {
                     const data = await empRes.json();
-                    const empArray = Array.isArray(data) ? data : (data.employees || []);
-                    setEmployeesList(empArray.map((emp: any) => ({
-                        value: emp.employeeId,
-                        label: `${formatEmployeeFullName(emp, emp.employeeId)} (${emp.employeeId})`
-                    })));
+                    setEmployeesList(Array.isArray(data) ? data : []);
                 }
             } catch (err) {
                 console.error('Failed to fetch configuration data:', err);
@@ -469,7 +464,10 @@ const MyInfo = () => {
             confirmedSalary: 0,
             probationMonths: 3,
             probationDays: 90,
-            entitledForMealAllowance: true
+            entitledForMealAllowance: true,
+            entitledForEobi: false,
+            salaryEffectiveDate: new Date().toISOString().split('T')[0],
+            salaryRevisionReason: ''
         },
         providentFundBalance: 0,
         benefits: [] as { name: string; description: string; eligibleDate: string; status: string }[],
@@ -675,7 +673,10 @@ const MyInfo = () => {
                                 confirmedSalary: employee.financeInfo?.confirmedSalary || 0,
                                 probationMonths: employee.financeInfo?.probationMonths || 0,
                                 probationDays: employee.financeInfo?.probationDays || 0,
-                                entitledForMealAllowance: employee.financeInfo?.entitledForMealAllowance !== false
+                                entitledForMealAllowance: employee.financeInfo?.entitledForMealAllowance !== false,
+                                entitledForEobi: employee.financeInfo?.entitledForEobi === true,
+                                salaryEffectiveDate: new Date().toISOString().split('T')[0],
+                                salaryRevisionReason: ''
                             },
                             benefits: employee.benefits?.length ? employee.benefits.map((b: any) => ({
                                 name: b.name || '',
@@ -987,6 +988,15 @@ const MyInfo = () => {
 
             const savedEmployee = await response.json();
             setRawEmployee(savedEmployee); // Update raw data to refresh profile view immediately
+            if (savedEmployee) {
+                setFormData(prev => ({
+                    ...prev,
+                    salaryHistory: savedEmployee.salaryHistory || prev.salaryHistory,
+                    salaryComponents: savedEmployee.salaryComponents || prev.salaryComponents,
+                    benefits: savedEmployee.benefits || prev.benefits,
+                    financeInfo: savedEmployee.financeInfo ? { ...prev.financeInfo, ...savedEmployee.financeInfo } : prev.financeInfo
+                }));
+            }
             if (savedEmployee.employeeId && !employeeId) {
                 setEmployeeId(savedEmployee.employeeId);
             }
@@ -1084,6 +1094,27 @@ const MyInfo = () => {
             setError(err.message || 'Failed to save your information. Please try again.');
         } finally {
             if (!isBackground) setSaving(false);
+        }
+    };
+
+    const [savingSalary, setSavingSalary] = useState(false);
+
+    const handleSaveSalaryRevision = async () => {
+        const salaryAmt = Number(formData.financeInfo?.confirmedSalary || 0);
+        if (!salaryAmt || salaryAmt <= 0) {
+            showToast('Please enter a valid salary amount before confirming.', 'warning');
+            return;
+        }
+        setSavingSalary(true);
+        try {
+            const saved = await handleSubmit(false, true);
+            if (saved) {
+                showToast(`Salary revision of PKR ${salaryAmt.toLocaleString()} confirmed and saved!`, 'success');
+            }
+        } catch (err: any) {
+            showToast(err.message || 'Failed to save salary revision', 'error');
+        } finally {
+            setSavingSalary(false);
         }
     };
 
@@ -1300,8 +1331,9 @@ const MyInfo = () => {
         { id: 8, title: 'Documents', icon: FileText }
     ];
 
-    const isAdmin = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
-    const canEditJob = user?.role === 'admin' || user?.role === 'super-admin' || user?.role === 'manager';
+    const isAdmin = ['admin', 'super-admin', 'hr', 'manager'].includes(user?.role || '');
+    const canEditJob = ['admin', 'super-admin', 'hr', 'manager'].includes(user?.role || '');
+    const canEditFinancials = ['super-admin', 'hr'].includes(user?.role || '');
     const canEditBankDetails = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
     const disabledJobClass = !canEditJob ? 'bg-gray-50 cursor-not-allowed' : 'bg-white';
     const steps = allSteps.filter(s => !s.roleRestricted || isAdmin);
@@ -1634,7 +1666,7 @@ const MyInfo = () => {
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                                             {renderField('Designation', rawEmployee.jobInfo?.designation)}
                                             {renderField('Department', rawEmployee.jobInfo?.department)}
-                                            {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManager)}
+                                            {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManagerName || employeesList.find((e: any) => e.value === rawEmployee.jobInfo?.reportingManager)?.label || rawEmployee.jobInfo?.reportingManager)}
                                             {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
                                             {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
                                             {renderField('Status', (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) || '-')}
@@ -1757,6 +1789,32 @@ const MyInfo = () => {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* EOBI Entitlement — Excluded for intern staff */}
+                                    {!((rawEmployee.employmentStatus?.status === 'Internship' || (typeof rawEmployee.employmentStatus === 'string' && rawEmployee.employmentStatus === 'Internship')) || (rawEmployee.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4">
+                                            <div className="flex items-center gap-3.5">
+                                                <div className={`p-2.5 rounded-xl ${rawEmployee.financeInfo?.entitledForEobi === true ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <Shield size={20} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-gray-900">EOBI Entitlement</h4>
+                                                    <p className="text-xs text-gray-500">Employees' Old-Age Benefits Institution (EOBI) statutory pension contribution status</p>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                {rawEmployee.financeInfo?.entitledForEobi === true ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                        <CheckCircle2 size={13} /> Entitled (EOBI Enrolled)
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                                        <XCircle size={13} /> Not Entitled (Excluded)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <div>
                                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Breakdown Components</h3>
@@ -3396,8 +3454,8 @@ const MyInfo = () => {
                         {/* Step 7: Finance */}
                         {step === 7 && (
                             <div className="space-y-8 animate-slide-up pb-20">
-                                {/* Salary Structure */}
-                                {isAdmin && (
+                                {/* Salary Structure (Super-Admin & HR Only) */}
+                                {canEditFinancials ? (
                                     <div>
                                         {/* Salary & Employment Terms */}
                                         <div className="mb-8 p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
@@ -3477,6 +3535,31 @@ const MyInfo = () => {
                                                             Standard monthly gross base salary for permanent / confirmed staff.
                                                         </p>
                                                     </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                                            Salary Effective Date <span className="text-xs text-indigo-500 font-normal lowercase">(defaults to today)</span>
+                                                        </label>
+                                                        <div className="relative">
+                                                            <input
+                                                                type="date"
+                                                                value={formData.financeInfo?.salaryEffectiveDate || new Date().toISOString().split('T')[0]}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        financeInfo: {
+                                                                            ...prev.financeInfo,
+                                                                            salaryEffectiveDate: val
+                                                                        }
+                                                                    }));
+                                                                }}
+                                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-semibold text-slate-900"
+                                                            />
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
+                                                            Date from which revised salary applies. Retroactive changes calculate arrears and PF difference in next payroll cycle.
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 /* Probation Terms Breakdown Fields */
@@ -3550,16 +3633,74 @@ const MyInfo = () => {
                                                                 placeholder="90"
                                                             />
                                                         </div>
+                                                        <div className="md:col-span-2 lg:col-span-4 pt-2 border-t border-slate-100">
+                                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                                                Salary Effective Date <span className="text-xs text-indigo-500 font-normal lowercase">(defaults to today)</span>
+                                                            </label>
+                                                            <input
+                                                                type="date"
+                                                                value={formData.financeInfo?.salaryEffectiveDate || new Date().toISOString().split('T')[0]}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        financeInfo: {
+                                                                            ...prev.financeInfo,
+                                                                            salaryEffectiveDate: val
+                                                                        }
+                                                                    }));
+                                                                }}
+                                                                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-base focus:ring-2 focus:ring-indigo-200 outline-none bg-white font-semibold text-slate-900"
+                                                            />
+                                                            <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
+                                                                Date from which revised salary applies. Retroactive changes calculate arrears and PF difference in next payroll cycle.
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                     <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl mt-3 font-medium border border-amber-200/60">
                                                         ⏳ Employee will start at Probation Salary and automatically switch to Confirmed Salary upon probation completion.
                                                     </p>
                                                 </div>
                                             )}
+
+                                            {/* Dedicated Confirm & Save Revision Action Bar */}
+                                            {canEditFinancials && (
+                                                <div className="mt-5 pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-indigo-100 shadow-xs">
+                                                    <div className="text-xs text-slate-700 font-medium flex items-center gap-2">
+                                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                        {Number(formData.financeInfo?.confirmedSalary || 0) > 0 ? (
+                                                            <span>
+                                                                Salary to apply: <strong className="text-slate-900 font-bold">PKR {Number(formData.financeInfo?.confirmedSalary || 0).toLocaleString()}</strong>
+                                                                {formData.financeInfo?.salaryEffectiveDate && (
+                                                                    <> effective <strong className="text-indigo-600 font-bold">{formData.financeInfo.salaryEffectiveDate}</strong></>
+                                                                )}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400">Enter a salary amount above to confirm.</span>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSaveSalaryRevision}
+                                                        disabled={savingSalary || !formData.financeInfo?.confirmedSalary || Number(formData.financeInfo?.confirmedSalary) <= 0}
+                                                        className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-100 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {savingSalary ? (
+                                                            <>
+                                                                <Loader2 className="animate-spin" size={15} /> Saving Revision...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Check size={16} /> Confirm & Save Revision
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Meal Allowance Entitlement Toggle */}
-                                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                             <div className="flex items-start gap-3">
                                                 <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
                                                     <Utensils size={18} />
@@ -3599,6 +3740,50 @@ const MyInfo = () => {
                                                 </button>
                                             </div>
                                         </div>
+
+                                        {/* EOBI Entitlement Toggle — Excluded for intern staff */}
+                                        {!(formData.employmentStatus?.status === 'Internship' || (formData.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
+                                            <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                <div className="flex items-start gap-3">
+                                                    <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>
+                                                        <Shield size={18} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-gray-800">EOBI Entitlement</h4>
+                                                        <p className="text-xs text-gray-500 mt-0.5">
+                                                            Employees' Old-Age Benefits Institution (EOBI) statutory pension contribution. If enabled, employee is marked eligible for EOBI deduction tracking on payroll.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3 shrink-0">
+                                                    <span className={`text-xs font-bold ${formData.financeInfo?.entitledForEobi === true ? 'text-indigo-700' : 'text-slate-500'}`}>
+                                                        {formData.financeInfo?.entitledForEobi === true ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const currentVal = formData.financeInfo?.entitledForEobi === true;
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                financeInfo: {
+                                                                    ...prev.financeInfo,
+                                                                    entitledForEobi: !currentVal
+                                                                }
+                                                            }));
+                                                        }}
+                                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                            formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-600' : 'bg-slate-300'
+                                                        }`}
+                                                    >
+                                                        <span
+                                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                                formData.financeInfo?.entitledForEobi === true ? 'translate-x-5' : 'translate-x-0'
+                                                            }`}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
 
                                         <div className="flex justify-between items-end mb-6">
                                             <div>
@@ -3704,6 +3889,16 @@ const MyInfo = () => {
                                                 <Plus size={16} />
                                                 Add Other Component
                                             </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-amber-50/70 border border-amber-200/80 p-5 rounded-2xl flex items-center gap-3.5 mb-6">
+                                        <Shield size={22} className="text-amber-600 shrink-0" />
+                                        <div>
+                                            <h4 className="text-sm font-bold text-amber-900">Confidential Compensation & Financials</h4>
+                                            <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                                                Salary structure, compensation packages, and revisions are strictly restricted and managed directly by HR & Super-Admin.
+                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -3939,8 +4134,31 @@ const MyInfo = () => {
                                         </div>
 
                                         <div className="space-y-4">
-                                            {formData.salaryHistory.map((hist: any, index: number) => (
+                                            {formData.salaryHistory.map((hist: any, index: number) => {
+                                                const isSettled = hist.arrearsProcessed === true;
+                                                const isRetroactive = hist.effectiveDate && new Date(hist.effectiveDate) < new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1));
+                                                return (
                                                 <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl relative group hover:border-indigo-200 transition-all">
+                                                    <div className="md:col-span-4 flex items-center justify-between pb-2 border-b border-slate-200/60 mb-1">
+                                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                                            Revision Entry #{index + 1}
+                                                        </span>
+                                                        <div>
+                                                            {isSettled ? (
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                                    ✓ Settled in Payroll
+                                                                </span>
+                                                            ) : isRetroactive ? (
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                                                                    ⏳ Arrears Pending Payroll
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                                                                    ℹ Current Cycle
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                     <div className="space-y-1">
                                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Effective Date</label>
                                                         <input
@@ -4023,7 +4241,8 @@ const MyInfo = () => {
                                                         </button>
                                                     </div>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                             {formData.salaryHistory.length === 0 && (
                                                 <div className="text-center py-6 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
                                                     <p className="text-sm text-slate-400 italic">No historical records. Add a entry to track salary changes.</p>

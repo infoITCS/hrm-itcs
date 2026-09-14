@@ -177,6 +177,8 @@ export function decryptPayslipFields(payslip: any): any {
     if (payslip.taxDeduction !== undefined) payslip.taxDeduction = decryptNumber(payslip.taxDeduction);
     if (payslip.loanDeduction !== undefined) payslip.loanDeduction = decryptNumber(payslip.loanDeduction);
     if (payslip.pfPayout !== undefined) payslip.pfPayout = decryptNumber(payslip.pfPayout);
+    if (payslip.pfContribution !== undefined) payslip.pfContribution = decryptNumber(payslip.pfContribution);
+    if (payslip.pfArrearsAdjustment !== undefined) payslip.pfArrearsAdjustment = decryptNumber(payslip.pfArrearsAdjustment);
 
     if (Array.isArray(payslip.earnings)) {
         payslip.earnings.forEach((e: any) => {

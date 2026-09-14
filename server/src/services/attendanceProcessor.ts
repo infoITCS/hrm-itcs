@@ -37,8 +37,14 @@ export async function checkHoliday(dateStr: string, location?: string): Promise<
     return lookupHolidayForDate(dateStr, location);
 }
 
+export interface ApprovedLeaveInfo {
+    type: string;
+    isHalfDay: boolean;
+    duration?: string;
+}
+
 /** Check if an employee is on approved leave for a specific date */
-export async function checkLeave(employeeId: string, dateStr: string): Promise<string | null> {
+export async function checkLeave(employeeId: string, dateStr: string): Promise<ApprovedLeaveInfo | null> {
     let readableId = employeeId;
     let userId = employeeId;
 
@@ -59,7 +65,19 @@ export async function checkLeave(employeeId: string, dateStr: string): Promise<s
         endDate: { $gte: dateStr },
         status: LeaveStatus.APPROVED
     }).lean() as any;
-    return leave?.type || null;
+
+    if (!leave) return null;
+
+    const isHalf = Boolean(
+        (leave.duration && leave.duration.toLowerCase().includes('half')) ||
+        leave.totalDays === 0.5
+    );
+
+    return {
+        type: leave.type,
+        isHalfDay: isHalf,
+        duration: leave.duration
+    };
 }
 
 /**
@@ -100,12 +118,12 @@ export async function processEmployeePunches(
 
         if (punches.length === 0) {
             const holidayName = await checkHoliday(dateStr, locationName);
-            const leaveType   = await checkLeave(resolvedEmployeeId, dateStr);
+            const leaveInfo   = await checkLeave(resolvedEmployeeId, dateStr);
             const weekend     = isWeekend(dateStr);
 
             let zeroStatus: AttendanceStatus = 'Absent';
             if (holidayName) zeroStatus = 'Holiday';
-            else if (leaveType)   zeroStatus = 'On Leave';
+            else if (leaveInfo)   zeroStatus = leaveInfo.isHalfDay ? 'Half-Day Leave' : 'On Leave';
             else if (weekend)     zeroStatus = 'Weekend';
 
             await AttendanceRecord.findOneAndUpdate(
@@ -118,9 +136,9 @@ export async function processEmployeePunches(
                         status: zeroStatus,
                         shiftStart,
                         shiftEnd,
-                        leaveType: leaveType || undefined,
-                        isHalfDay: false,
-                        note: holidayName || leaveType || (weekend ? 'Weekend' : undefined),
+                        leaveType: leaveInfo?.type || undefined,
+                        isHalfDay: leaveInfo?.isHalfDay ?? false,
+                        note: holidayName || (leaveInfo ? (leaveInfo.isHalfDay ? `${leaveInfo.type} (Half-Day)` : leaveInfo.type) : undefined) || (weekend ? 'Weekend' : undefined),
                         workDurationMinutes: 0,
                         lateMinutes: 0,
                         overtimeMinutes: 0,
@@ -176,7 +194,9 @@ export async function processEmployeePunches(
         if (checkOut) {
             const otDiff = Math.floor((checkOut.getTime() - shiftEndTime.getTime()) / 60000);
             if (otDiff > 0) overtimeMinutes = otDiff;
-        }        const leaveType = await checkLeave(resolvedEmployeeId, dateStr);
+        }
+
+        const leaveInfo = await checkLeave(resolvedEmployeeId, dateStr);
 
         let status: AttendanceStatus;
         let note: string | undefined = undefined;
@@ -199,9 +219,14 @@ export async function processEmployeePunches(
             });
         }
 
-        if (leaveType) {
-            status = 'On Leave';
-            note = leaveType;
+        if (leaveInfo) {
+            if (leaveInfo.isHalfDay) {
+                status = 'Half-Day Leave';
+                note = `${leaveInfo.type} (Half-Day)`;
+            } else {
+                status = 'On Leave';
+                note = leaveInfo.type;
+            }
         } else if (!checkOut) {
             status = 'Incomplete';
         } else if (checkIn.getTime() >= fullDayCutoff.getTime()) {
@@ -240,8 +265,8 @@ export async function processEmployeePunches(
                     status,
                     lateMinutes,
                     overtimeMinutes,
-                    leaveType: leaveType || undefined,
-                    isHalfDay: status === 'Half-Day' || (workDurationMinutes > 0 && workDurationMinutes < (halfDayHrs * 60)),
+                    leaveType: leaveInfo?.type || undefined,
+                    isHalfDay: status === 'Half-Day' || status === 'Half-Day Leave' || (workDurationMinutes > 0 && workDurationMinutes < (halfDayHrs * 60)),
                     note,
                     isAutoClosed,
                     allPunches: allPunchTimes,
@@ -479,7 +504,7 @@ export async function syncFromMachineReport(dateStr: string): Promise<number> {
             if (!hrmEmpId) continue;
 
             const holidayName = await checkHoliday(dateStr);
-            const leaveType   = await checkLeave(hrmEmpId, dateStr);
+            const leaveInfo   = await checkLeave(hrmEmpId, dateStr);
             const weekend     = isWeekend(dateStr);
 
             let finalStatus: AttendanceStatus;
@@ -488,9 +513,14 @@ export async function syncFromMachineReport(dateStr: string): Promise<number> {
             if (holidayName) {
                 finalStatus = 'Holiday';
                 note = holidayName;
-            } else if (leaveType) {
-                finalStatus = 'On Leave';
-                note = leaveType;
+            } else if (leaveInfo) {
+                if (leaveInfo.isHalfDay) {
+                    finalStatus = 'Half-Day Leave';
+                    note = `${leaveInfo.type} (Half-Day)`;
+                } else {
+                    finalStatus = 'On Leave';
+                    note = leaveInfo.type;
+                }
             } else if (entry.status === 'Absent' && weekend) {
                 finalStatus = 'Weekend';
                 note = 'Weekend';
