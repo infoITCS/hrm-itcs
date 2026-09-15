@@ -123,6 +123,11 @@ export interface IEmployee extends Document {
         status: 'Active' | 'Paid' | 'Suspended';
         issueDate?: Date;
         notes?: string;
+        isCustomPlan?: boolean;
+        customPlanReason?: string;
+        customPlanSetBy?: string;
+        customPlanSetAt?: Date;
+        paybackDuration?: number;
     }[];
     // [NEW] Sub-documents
     emergencyContacts?: {
@@ -321,7 +326,12 @@ const EmployeeSchema: Schema = new Schema({
         remainingAmount: { type: Number, required: true },
         status: { type: String, enum: ['Active', 'Paid', 'Suspended'], default: 'Active' },
         issueDate: { type: Date, default: Date.now },
-        notes: { type: String }
+        notes: { type: String },
+        isCustomPlan: { type: Boolean, default: false },
+        customPlanReason: { type: String },
+        customPlanSetBy: { type: String },
+        customPlanSetAt: { type: Date },
+        paybackDuration: { type: Number }
     }],
     education: [{
         level: { type: String },

@@ -31,6 +31,8 @@ export interface IPayslip extends Document {
     taxDeduction?: number;
     loanDeduction?: number;
     loanDeductionErpId?: string;
+    loanDeductionStatus?: 'Deducted' | 'Skipped' | 'Paused' | 'None';
+    loanDeductionSkipReason?: string;
     pfPayout?: number;
     pfContribution?: number;
     pfArrearsAdjustment?: number;
@@ -98,6 +100,8 @@ const PayslipSchema: Schema = new Schema(
         taxDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         loanDeduction: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         loanDeductionErpId: { type: String, trim: true },
+        loanDeductionStatus: { type: String, enum: ['Deducted', 'Skipped', 'Paused', 'None'], default: 'None' },
+        loanDeductionSkipReason: { type: String },
         pfPayout: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         pfContribution: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },
         pfArrearsAdjustment: { type: Schema.Types.Mixed, default: 0, get: decryptNumber, set: encryptNumber },

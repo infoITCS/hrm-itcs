@@ -30,6 +30,8 @@ interface Payslip {
     customerReference?: string;
     taxDeduction?: number;
     loanDeduction?: number;
+    loanDeductionStatus?: 'Deducted' | 'Skipped' | 'Paused' | 'None';
+    loanDeductionSkipReason?: string;
     pfPayout?: number;
     earnings: Earning[];
     deductions: Deduction[];
@@ -219,11 +221,18 @@ const PayslipEditPanel = ({
         setSaving(true);
         setError('');
         try {
+            const origLoanDed = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction')?.amount || (payslip.loanDeduction || 0);
+            const curLoanDedItem = deductions.find((d: any) => d.component === 'Loan Deduction');
+            const curLoanDed = curLoanDedItem ? Number(curLoanDedItem.amount) || 0 : 0;
+            const isLoanSkipped = origLoanDed > 0 && curLoanDed === 0;
+
             await axios.put(api.payslip(payslip._id), {
                 earnings,
                 deductions,
                 paymentMethod,
                 notes,
+                loanDeduction: curLoanDed,
+                loanDeductionSkipReason: isLoanSkipped ? 'Removed or zeroed out during payroll draft review' : undefined,
                 beneficiaryAccount: isProxyMode ? beneficiaryAccount : empOwnAccount,
                 beneficiaryName: isProxyMode ? beneficiaryName : empOwnName,
                 beneficiaryBank: isProxyMode ? beneficiaryBank : empOwnBank,
@@ -533,6 +542,26 @@ const PayslipEditPanel = ({
                                 );
                             })}
                         </div>
+
+                        {(() => {
+                            const origLoanDed = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction')?.amount || (payslip.loanDeduction || 0);
+                            const curLoanDedItem = deductions.find((d: any) => d.component === 'Loan Deduction');
+                            const curLoanDed = curLoanDedItem ? Number(curLoanDedItem.amount) || 0 : 0;
+                            const wasRemovedOrZeroed = origLoanDed > 0 && curLoanDed === 0;
+
+                            if (!wasRemovedOrZeroed) return null;
+
+                            return (
+                                <div className="mt-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                                    <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                                        <span>⏸</span> Loan Deduction Removed / Paused for This Payroll
+                                    </p>
+                                    <p className="text-[11px] text-amber-800">
+                                        Loan deduction is set to Rs. 0. The employee's outstanding loan balance will <strong>NOT</strong> be deducted, no repayment will be recorded, and this month will be tracked as Skipped in the monthly loan ledger.
+                                    </p>
+                                </div>
+                            );
+                        })()}
                     </div>
 
                     {/* Live Totals Card */}

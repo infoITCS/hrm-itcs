@@ -15,6 +15,7 @@ import { upload } from '../middleware/upload';
 import { sendEmployeeRequestSubmittedEmail, sendEmployeeRequestStatusEmail } from '../utils/email';
 import logger from '../utils/logger';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { getEmployeeLoanDetails, calculateConsolidatedMonthlyInstallment } from '../services/loanManagementService';
 
 const router = express.Router();
 
@@ -71,16 +72,29 @@ router.get('/attachments/:attachmentId', authenticate, async (req: Request, res:
     }
 });
 
-// Fetch current user's PF balance
+// Fetch current user's PF balance and active loan info
 router.get('/pf-balance', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const userId = authReq.user?.userId;
-        const employee = await Employee.findOne({ userId }).select('providentFundBalance');
+        const employee = await Employee.findOne({ userId }).select('providentFundBalance employeeId');
         if (!employee) {
             return res.status(404).json({ message: 'Employee profile not found' });
         }
-        res.json({ pfBalance: employee.providentFundBalance || 0 });
+        let activeLoanBalance = 0;
+        let currentMonthlyDeduction = 0;
+        try {
+            const loanDetails = await getEmployeeLoanDetails(employee.employeeId);
+            activeLoanBalance = Math.ceil(loanDetails.summary.remainingBalance || 0);
+            currentMonthlyDeduction = Math.ceil(loanDetails.summary.monthlyInstallment || 0);
+        } catch {
+            // fallback if loan details cannot be calculated
+        }
+        res.json({
+            pfBalance: employee.providentFundBalance || 0,
+            activeLoanBalance,
+            currentMonthlyDeduction
+        });
     } catch (err) {
         next(err);
     }
@@ -468,6 +482,27 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             if (details && details.paybackDuration && Number(details.paybackDuration) > 12) {
                 return res.status(400).json({ message: 'Loan payback duration cannot exceed 1 year (12 months).' });
             }
+            const reqAmt = Math.max(0, Math.ceil(Number(details?.requestedAmount || 0)));
+            let activeBalance = 0;
+            let currentRate = 0;
+            try {
+                const loanDetails = await getEmployeeLoanDetails(employee.employeeId);
+                activeBalance = Math.ceil(loanDetails.summary.remainingBalance || 0);
+                currentRate = Math.ceil(loanDetails.summary.monthlyInstallment || 0);
+            } catch {}
+
+            const totalConsolidated = activeBalance + reqAmt;
+            const requestedRate = Math.max(0, Math.ceil(Number(details?.recommendedMonthlyDeduction || 0)));
+            const baseRate = currentRate > 0 ? currentRate : requestedRate;
+            const consolidatedInstallment = calculateConsolidatedMonthlyInstallment(totalConsolidated, baseRate);
+
+            newRequest.details = {
+                ...details,
+                activeLoanBalance: activeBalance,
+                totalConsolidatedBalance: totalConsolidated,
+                recommendedMonthlyDeduction: consolidatedInstallment,
+                paybackDuration: Math.min(12, Number(details?.paybackDuration) || 12)
+            };
         }
 
         await newRequest.save();
@@ -710,7 +745,7 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
         const requests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).lean();
         
         const employeeIds = [...new Set(requests.map(r => r.employeeId))];
-        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName avatar department designation providentFundBalance attachments._id attachments.fileType').lean();
+        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName avatar department designation providentFundBalance loans attachments._id attachments.fileType').lean();
         
         const empMap = employees.reduce((acc: any, emp: any) => {
             acc[emp.employeeId] = emp;
@@ -727,6 +762,106 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
         next(err);
     }
 });
+
+async function syncLoanDisbursement(request: any) {
+    const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+    if (!isLoan) return;
+
+    const cat = (request.category || '').toLowerCase();
+    const reqType = (request.requestType || '').toLowerCase();
+    const isPause = cat.includes('pause') || reqType.includes('pause');
+    if (isPause) return;
+
+    const emp = await Employee.findOne({ employeeId: request.employeeId });
+    if (!emp) return;
+
+    emp.loans = emp.loans || [];
+    const reqIdStr = request._id.toString();
+    const existingLoan = emp.loans.find((l: any) => l.loanId === `LOAN-REQ-${reqIdStr}` || (l.notes && l.notes.includes(reqIdStr)));
+
+    const reqAmt = Math.max(0, Math.ceil(Number(request.details?.requestedAmount || 0)));
+    if (reqAmt <= 0) return;
+
+    // Identify other active loans on this employee record
+    const otherActiveLoans = emp.loans.filter((l: any) => 
+        l.status === 'Active' && 
+        Number(l.remainingAmount) > 0 &&
+        l.loanId !== `LOAN-REQ-${reqIdStr}` &&
+        !(l.notes && l.notes.includes(reqIdStr))
+    );
+
+    const existingRemainingBal = otherActiveLoans.reduce((s: number, l: any) => s + Math.max(0, Number(l.remainingAmount || 0)), 0);
+    const totalConsolidatedBalance = Math.ceil(existingRemainingBal + reqAmt);
+
+    const isCustomPlan = Boolean(request.details?.isCustomPlan);
+    const customPlanReason = request.details?.customPlanReason;
+    const customPaybackDuration = request.details?.paybackDuration;
+
+    // Current monthly payback rate from existing active loans
+    const existingRate = otherActiveLoans.length > 0 
+        ? Math.max(...otherActiveLoans.map((l: any) => Number(l.monthlyInstallment || 0)))
+        : 0;
+
+    const requestedMonthlyDeduct = Number(request.details?.recommendedMonthlyDeduction || 0);
+    const baseMonthlyRate = isCustomPlan && requestedMonthlyDeduct > 0 
+        ? requestedMonthlyDeduct 
+        : (existingRate > 0 ? existingRate : requestedMonthlyDeduct);
+
+    // Enforce 1-year payback policy unless isCustomPlan is true: Math.ceil with no decimals
+    const consolidatedInstallment = calculateConsolidatedMonthlyInstallment(totalConsolidatedBalance, baseMonthlyRate, isCustomPlan);
+    const paybackDuration = isCustomPlan && customPaybackDuration
+        ? Number(customPaybackDuration)
+        : (consolidatedInstallment > 0 ? Math.ceil(totalConsolidatedBalance / consolidatedInstallment) : 12);
+
+    // Zero out monthly installment on previous active loans so deductions NEVER double
+    for (const l of otherActiveLoans) {
+        l.monthlyInstallment = 0;
+    }
+
+    if (!existingLoan) {
+        emp.loans.push({
+            loanId: `LOAN-REQ-${reqIdStr}`,
+            totalAmount: reqAmt,
+            monthlyInstallment: consolidatedInstallment,
+            remainingAmount: reqAmt,
+            status: 'Active',
+            issueDate: new Date(),
+            isCustomPlan: isCustomPlan,
+            customPlanReason: customPlanReason,
+            customPlanSetBy: request.approvedBy ? String(request.approvedBy) : undefined,
+            customPlanSetAt: isCustomPlan ? new Date() : undefined,
+            paybackDuration: paybackDuration,
+            notes: `Approved Request ${reqIdStr} (${request.requestType || request.category})`
+        } as any);
+    } else {
+        existingLoan.status = 'Active';
+        existingLoan.totalAmount = reqAmt;
+        existingLoan.monthlyInstallment = consolidatedInstallment;
+        if (isCustomPlan) {
+            existingLoan.isCustomPlan = true;
+            existingLoan.customPlanReason = customPlanReason;
+            existingLoan.customPlanSetBy = request.approvedBy ? String(request.approvedBy) : undefined;
+            existingLoan.customPlanSetAt = new Date();
+            existingLoan.paybackDuration = paybackDuration;
+        }
+        if (existingLoan.remainingAmount === undefined || existingLoan.remainingAmount <= 0) {
+            existingLoan.remainingAmount = reqAmt;
+        }
+    }
+
+    // Reflect consolidated values in the request document as well
+    if (request.details) {
+        request.details.recommendedMonthlyDeduction = consolidatedInstallment;
+        request.details.totalConsolidatedBalance = totalConsolidatedBalance;
+        if (isCustomPlan) {
+            request.details.isCustomPlan = true;
+            if (customPlanReason) request.details.customPlanReason = customPlanReason;
+            request.details.paybackDuration = paybackDuration;
+        }
+    }
+
+    await emp.save();
+}
 
 // Toggle or set Payout Status (Paid / Unpaid) for a request (Finance, Admin, Super Admin)
 router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admin', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
@@ -745,6 +880,10 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
         if (payoutStatus === 'Paid') {
             request.paidAt = paidAt ? new Date(paidAt) : new Date();
             if (erpReferenceId) request.erpReferenceId = erpReferenceId.trim();
+            const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+            if (isLoan) {
+                await syncLoanDisbursement(request);
+            }
         } else if (payoutStatus === 'Unpaid') {
             request.paidAt = undefined;
         }
@@ -811,6 +950,21 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         if (req.body.erpReferenceId !== undefined) {
             request.erpReferenceId = req.body.erpReferenceId;
         }
+        if (isLoan) {
+            request.details = request.details || {};
+            if (req.body.isCustomPlan !== undefined) {
+                request.details.isCustomPlan = Boolean(req.body.isCustomPlan);
+            }
+            if (req.body.customPlanReason !== undefined) {
+                request.details.customPlanReason = req.body.customPlanReason;
+            }
+            if (req.body.customMonthlyInstallment !== undefined && Number(req.body.customMonthlyInstallment) > 0) {
+                request.details.recommendedMonthlyDeduction = Math.ceil(Number(req.body.customMonthlyInstallment));
+            }
+            if (req.body.customPaybackDuration !== undefined && Number(req.body.customPaybackDuration) > 0) {
+                request.details.paybackDuration = Math.ceil(Number(req.body.customPaybackDuration));
+            }
+        }
         request.approvedBy = userId;
         request.updatedAt = new Date();
 
@@ -868,43 +1022,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         if (isLoan && (status === 'Completed' || req.body.payoutStatus === 'Paid')) {
             request.payoutStatus = 'Paid';
             if (!request.paidAt) request.paidAt = new Date();
-            const cat = (request.category || '').toLowerCase();
-            const reqType = (request.requestType || '').toLowerCase();
-            const isPause = cat.includes('pause') || reqType.includes('pause');
-
-            if (!isPause) {
-                const emp = await Employee.findOne({ employeeId: request.employeeId });
-                if (emp) {
-                    emp.loans = emp.loans || [];
-                    const reqIdStr = request._id.toString();
-                    const existingLoan = emp.loans.find((l: any) => l.loanId === `LOAN-REQ-${reqIdStr}` || (l.notes && l.notes.includes(reqIdStr)));
-
-                    const reqAmt = Number(request.details?.requestedAmount || 0);
-                    const paybackMonths = Number(request.details?.paybackDuration) || 12;
-                    const monthlyDeduct = Number(request.details?.recommendedMonthlyDeduction || 0) || Math.ceil(reqAmt / paybackMonths);
-
-                    if (!existingLoan && reqAmt > 0) {
-                        emp.loans.push({
-                            loanId: `LOAN-REQ-${reqIdStr}`,
-                            totalAmount: reqAmt,
-                            monthlyInstallment: monthlyDeduct,
-                            remainingAmount: reqAmt,
-                            status: 'Active',
-                            issueDate: new Date(),
-                            notes: `Approved Request ${reqIdStr} (${request.requestType || request.category})`
-                        } as any);
-                        await emp.save();
-                    } else if (existingLoan) {
-                        existingLoan.status = 'Active';
-                        existingLoan.totalAmount = reqAmt;
-                        existingLoan.monthlyInstallment = monthlyDeduct;
-                        if (existingLoan.remainingAmount === undefined || existingLoan.remainingAmount <= 0) {
-                            existingLoan.remainingAmount = reqAmt;
-                        }
-                        await emp.save();
-                    }
-                }
-            }
+            await syncLoanDisbursement(request);
         } else if (isLoan && (status === 'Rejected' || status === 'Cancelled')) {
             const reqIdStr = request._id.toString();
             const emp = await Employee.findOne({ employeeId: request.employeeId });
@@ -913,6 +1031,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                 if (loan) {
                     loan.status = 'Cancelled';
                     loan.remainingAmount = 0;
+                    loan.monthlyInstallment = 0;
                     await emp.save();
                 }
             }

@@ -28,6 +28,9 @@ const AdminRequests = () => {
     const [actionModal, setActionModal] = useState<any>(null);
     const [adminComments, setAdminComments] = useState('');
     const [erpReferenceId, setErpReferenceId] = useState('');
+    const [loanIsCustomPlan, setLoanIsCustomPlan] = useState(false);
+    const [loanCustomInstallment, setLoanCustomInstallment] = useState('');
+    const [loanCustomReason, setLoanCustomReason] = useState('');
     const [paymentModalTarget, setPaymentModalTarget] = useState<PaymentStatusTarget | null>(null);
 
     // Search and filter state
@@ -58,9 +61,26 @@ const AdminRequests = () => {
     const handleAction = async (status: 'Pending' | 'Approved' | 'Rejected' | 'Completed') => {
         try {
             const isLoan = actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan';
-            if (status === 'Completed' && isLoan && !erpReferenceId.trim()) {
+            const effectiveErpRef = (erpReferenceId || actionModal.erpReferenceId || '').trim();
+            if (status === 'Completed' && isLoan && !effectiveErpRef) {
                 showToast('ERP Transaction Reference ID is required to approve & disburse loan requests.', 'warning');
                 return;
+            }
+
+            const payload: any = { status, adminComments, erpReferenceId: effectiveErpRef };
+            if (isLoan) {
+                payload.isCustomPlan = loanIsCustomPlan;
+                if (loanIsCustomPlan) {
+                    const inst = Math.max(1, Math.ceil(Number(loanCustomInstallment) || 0));
+                    payload.customMonthlyInstallment = inst;
+                    payload.customPlanReason = loanCustomReason.trim();
+
+                    const activeLoans = (actionModal.employee?.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+                    const existingBal = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.remainingAmount || 0)), 0));
+                    const reqAmt = Math.ceil(Number(actionModal.details?.requestedAmount || 0));
+                    const totalBal = existingBal + reqAmt;
+                    payload.customPaybackDuration = Math.ceil(totalBal / inst);
+                }
             }
 
             const token = localStorage.getItem('token');
@@ -70,13 +90,16 @@ const AdminRequests = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ status, adminComments, erpReferenceId })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
                 setActionModal(null);
                 setAdminComments('');
                 setErpReferenceId('');
+                setLoanIsCustomPlan(false);
+                setLoanCustomInstallment('');
+                setLoanCustomReason('');
                 fetchRequests();
                 showToast(`Request updated to ${status}`, 'success');
             } else {
@@ -118,6 +141,9 @@ const AdminRequests = () => {
                     paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
                     erpReferenceId: erpRef || prev.erpReferenceId
                 }));
+                if (erpRef) {
+                    setErpReferenceId(erpRef);
+                }
             }
             showToast(
                 newStatus === 'Paid' 
@@ -361,6 +387,10 @@ const AdminRequests = () => {
                                                         setActionModal(req);
                                                         setAdminComments(req.adminComments || '');
                                                         setErpReferenceId(req.erpReferenceId || '');
+                                                        const isCustom = Boolean(req.details?.isCustomPlan);
+                                                        setLoanIsCustomPlan(isCustom);
+                                                        setLoanCustomInstallment(req.details?.recommendedMonthlyDeduction ? String(req.details.recommendedMonthlyDeduction) : '');
+                                                        setLoanCustomReason(req.details?.customPlanReason || '');
                                                     }}
                                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                                         (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') 
@@ -393,7 +423,7 @@ const AdminRequests = () => {
             {actionModal && (
                 <div 
                     className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
-                    onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }}
+                    onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); setLoanIsCustomPlan(false); setLoanCustomInstallment(''); setLoanCustomReason(''); }}
                 >
                     <div 
                         className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-slide-up my-auto"
@@ -401,7 +431,7 @@ const AdminRequests = () => {
                     >
                         <div className="shrink-0 px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <h3 className="text-lg font-bold text-gray-900">Review Request</h3>
-                            <button onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); setLoanIsCustomPlan(false); setLoanCustomInstallment(''); setLoanCustomReason(''); }} className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors">
                                 <XCircle size={20} />
                             </button>
                         </div>
@@ -520,7 +550,7 @@ const AdminRequests = () => {
                                         <div className="mt-3 grid grid-cols-3 gap-3 text-sm border-t border-gray-200/60 pt-2">
                                             <div>
                                                 <p className="text-gray-500 text-xs">Amount</p>
-                                                <p className="font-semibold text-gray-900">Rs. {actionModal.details?.requestedAmount?.toLocaleString()}</p>
+                                                <p className="font-semibold text-gray-900">Rs. {Math.ceil(Number(actionModal.details?.requestedAmount) || 0).toLocaleString()}</p>
                                             </div>
                                             <div>
                                                 <p className="text-gray-500 text-xs">Duration</p>
@@ -528,13 +558,61 @@ const AdminRequests = () => {
                                             </div>
                                             <div>
                                                 <p className="text-gray-500 text-xs">Deduction/mo</p>
-                                                <p className="font-semibold text-gray-900">Rs. {actionModal.details?.recommendedMonthlyDeduction?.toLocaleString()}</p>
+                                                <p className="font-semibold text-gray-900">Rs. {Math.ceil(Number(actionModal.details?.recommendedMonthlyDeduction) || 0).toLocaleString()}</p>
                                             </div>
                                         </div>
                                         {actionModal.employee && (
                                             (() => {
-                                                const pfBal = actionModal.employee.providentFundBalance ?? 0;
-                                                const reqAmt = actionModal.details?.requestedAmount ?? 0;
+                                                const activeLoans = (actionModal.employee.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+                                                const existingLoanBalance = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.remainingAmount || 0)), 0));
+                                                const existingRate = Math.ceil(activeLoans.length > 0 ? Math.max(...activeLoans.map((l: any) => Number(l.monthlyInstallment || 0))) : 0);
+                                                const reqAmt = Math.ceil(Number(actionModal.details?.requestedAmount || 0));
+                                                const totalConsolidated = existingLoanBalance + reqAmt;
+                                                const min1YearRate = Math.ceil(totalConsolidated / 12);
+                                                const willAutoAdjust = existingLoanBalance > 0 && (existingRate < min1YearRate);
+                                                const effectiveMonthly = Math.max(min1YearRate, existingRate > 0 ? existingRate : Math.ceil(reqAmt / Math.min(12, Number(actionModal.details?.paybackDuration) || 12)));
+
+                                                if (existingLoanBalance <= 0) return null;
+
+                                                return (
+                                                    <div className="mt-3 p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs space-y-2">
+                                                        <div className="flex justify-between items-center text-indigo-950 font-bold border-b border-indigo-100/80 pb-1.5">
+                                                            <span className="flex items-center gap-1.5">
+                                                                <Banknote size={14} className="text-indigo-600" /> Existing Active Loan Detected
+                                                            </span>
+                                                            <span className="text-indigo-700">Rs. {existingLoanBalance.toLocaleString()} remaining</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-indigo-900">
+                                                            <div>
+                                                                <span className="text-indigo-600 block text-[11px]">Consolidated Total Balance</span>
+                                                                <span className="font-bold text-sm">Rs. {totalConsolidated.toLocaleString()}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-indigo-600 block text-[11px]">
+                                                                    {willAutoAdjust ? '1-Year Payback Rate (Auto-Adjusted)' : 'Maintained Monthly Deduction'}
+                                                                </span>
+                                                                <span className="font-bold text-sm text-emerald-700">
+                                                                    Rs. {effectiveMonthly.toLocaleString()}/mo
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        {willAutoAdjust ? (
+                                                            <p className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                                                                ℹ️ Current deduction of Rs. {existingRate.toLocaleString()}/mo would exceed 12 months. Per 1-year payback policy, monthly deduction is adjusted to <strong>Rs. {min1YearRate.toLocaleString()}/mo</strong> with no installment doubling.
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-[11px] text-emerald-800 bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                                                                ✓ Existing rate of Rs. {existingRate.toLocaleString()}/mo clears consolidated balance within 12 months and will be maintained without doubling.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()
+                                        )}
+                                        {actionModal.employee && (
+                                            (() => {
+                                                const pfBal = Math.ceil(actionModal.employee.providentFundBalance ?? 0);
+                                                const reqAmt = Math.ceil(actionModal.details?.requestedAmount ?? 0);
                                                 const isExceeded = reqAmt > pfBal;
                                                 return isExceeded ? (
                                                     <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs space-y-1">
@@ -553,6 +631,88 @@ const AdminRequests = () => {
                                                     </div>
                                                 );
                                             })()
+                                        )}
+
+                                        {/* Management Repayment Plan Override (Super Admin & HR) */}
+                                        {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR' || actionModal.status === 'Approved') && (
+                                            <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Management Repayment Plan</p>
+                                                        <p className="text-[11px] text-slate-500">Standard 1-year policy or custom monthly schedule</p>
+                                                    </div>
+                                                    <div className="flex gap-1.5 p-1 bg-white border border-slate-200 rounded-lg">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setLoanIsCustomPlan(false)}
+                                                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                                                                !loanIsCustomPlan ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                                                            }`}
+                                                        >
+                                                            Standard (1-Yr)
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setLoanIsCustomPlan(true);
+                                                                if (!loanCustomInstallment) {
+                                                                    setLoanCustomInstallment(String(actionModal.details?.recommendedMonthlyDeduction || ''));
+                                                                }
+                                                            }}
+                                                            className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${
+                                                                loanIsCustomPlan ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                                                            }`}
+                                                        >
+                                                            Custom Plan
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {loanIsCustomPlan && (
+                                                    <div className="space-y-2 pt-1 border-t border-slate-200/80">
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div>
+                                                                <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Custom Monthly Cut (Rs.)</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min={1}
+                                                                    value={loanCustomInstallment}
+                                                                    onChange={(e) => setLoanCustomInstallment(e.target.value)}
+                                                                    placeholder="e.g. 25000"
+                                                                    className="w-full bg-white border border-purple-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Estimated Duration</label>
+                                                                {(() => {
+                                                                    const activeLoans = (actionModal.employee?.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+                                                                    const existingLoanBal = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.remainingAmount || 0)), 0));
+                                                                    const reqAmt = Math.ceil(Number(actionModal.details?.requestedAmount || 0));
+                                                                    const totalBal = existingLoanBal + reqAmt;
+                                                                    const inst = Math.max(1, Math.ceil(Number(loanCustomInstallment) || 0));
+                                                                    const months = Math.ceil(totalBal / inst);
+                                                                    const years = (months / 12).toFixed(1);
+                                                                    return (
+                                                                        <div className="bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1.5 text-xs text-purple-900 font-bold">
+                                                                            {months} Months (~{years} Yrs)
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[11px] font-bold text-slate-600 uppercase block mb-1">Override Reason / Note</label>
+                                                            <input
+                                                                type="text"
+                                                                value={loanCustomReason}
+                                                                onChange={(e) => setLoanCustomReason(e.target.value)}
+                                                                placeholder="e.g. High loan exceeding 12-month policy approved by management"
+                                                                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </>
                                 )}
@@ -686,11 +846,16 @@ const AdminRequests = () => {
                                 const modalCat = (actionModal.category || '').toLowerCase();
                                 const modalType = (actionModal.requestType || '').toLowerCase();
                                 const isModalPause = modalCat.includes('pause') || modalType.includes('pause');
+                                const isLoan = (modalCat.includes('loan') || modalType.includes('loan')) && !isModalPause;
                                 const isModalPayable = !isModalPause && (
                                     modalCat.includes('loan') || modalCat.includes('finance') || modalCat.includes('pf') || modalCat.includes('provident') || modalCat.includes('salary') || modalCat.includes('advance') ||
                                     modalType.includes('loan') || modalType.includes('finance') || modalType.includes('pf') || modalType.includes('salary') || modalType.includes('advance')
                                 );
-                                const showErpInput = isModalPayable && actionModal.status !== 'Cancelled' && actionModal.status !== 'Rejected' && (actionModal.status === 'Approved' || actionModal.status === 'Pending Finance');
+                                const showErpInput = isModalPayable && actionModal.status !== 'Cancelled' && actionModal.status !== 'Rejected' && (
+                                    actionModal.status === 'Approved' || 
+                                    actionModal.status === 'Pending Finance' ||
+                                    (isLoan && (actionModal.status === 'Pending' || actionModal.status === 'Pending HR'))
+                                );
 
                                 if (!showErpInput) return null;
 
@@ -713,7 +878,7 @@ const AdminRequests = () => {
 
                         <div className="shrink-0 px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2 flex-wrap">
                             <button 
-                                onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); }}
+                                onClick={() => { setActionModal(null); setAdminComments(''); setErpReferenceId(''); setLoanIsCustomPlan(false); setLoanCustomInstallment(''); setLoanCustomReason(''); }}
                                 className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors font-medium text-sm"
                             >
                                 Close

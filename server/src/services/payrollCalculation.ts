@@ -504,20 +504,28 @@ export async function buildPayrollPayslips(
 
         let loanDeductAmount = 0;
         let loanPauseNote = '';
+        let loanDeductionStatus: 'Deducted' | 'Skipped' | 'Paused' | 'None' = 'None';
+        let loanDeductionSkipReason = '';
         const loanInfo = getLoanInfoForPayroll(emp.employeeId, emp, loanBalanceMap);
         if (loanInfo && loanInfo.balance > 0) {
             if (pausedEmployeesMap[emp.employeeId]) {
                 loanDeductAmount = 0;
-                loanPauseNote = `Loan deduction paused for ${MONTH_NAMES[run.periodMonth] || 'month'} ${run.periodYear} (Approved Request)`;
+                loanDeductionStatus = 'Paused';
+                loanDeductionSkipReason = `Loan deduction paused for ${MONTH_NAMES[run.periodMonth] || 'month'} ${run.periodYear} (Approved Request)`;
+                loanPauseNote = loanDeductionSkipReason;
             } else {
                 const amountToDeduct = Math.min(loanInfo.balance, loanInfo.monthlyDeduction);
                 if (amountToDeduct > 0) {
                     loanDeductAmount = amountToDeduct;
+                    loanDeductionStatus = 'Deducted';
                     deductions.push({
                         component: 'Loan Deduction',
                         amount: amountToDeduct,
                     });
                     totalDeductions += amountToDeduct;
+                } else {
+                    loanDeductionStatus = 'Skipped';
+                    loanDeductionSkipReason = 'Zero monthly deduction calculated';
                 }
             }
         }
@@ -577,6 +585,8 @@ export async function buildPayrollPayslips(
             customerReference,
             taxDeduction: 0,
             loanDeduction: loanDeductAmount,
+            loanDeductionStatus,
+            loanDeductionSkipReason: loanDeductionSkipReason || undefined,
             pfPayout: pfPayoutAmount,
             pfContribution: pfContributionAmount,
             pfArrearsAdjustment: pfArrearsAdjustment,

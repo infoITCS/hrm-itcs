@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Search, Mail, Phone, Building2, User, Grid, List as ListIcon, Filter, X, FileText } from 'lucide-react';
+import { 
+    Search, Mail, Phone, Building2, User, Grid, List as ListIcon, Filter, X, FileText,
+    Network, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Download
+} from 'lucide-react';
 import api from '../../utils/api';
 import Avatar from '../../components/UI/Avatar';
 import { getAvatarUrl } from '../../utils/avatar';
@@ -31,6 +35,45 @@ const Directory = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDept, setSelectedDept] = useState('All');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    
+    // Organization Hierarchy Chart State
+    const [showOrgChart, setShowOrgChart] = useState(false);
+    const [chartZoom, setChartZoom] = useState(1);
+    const [chartPan, setChartPan] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - chartPan.x, y: e.clientY - chartPan.y });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging) return;
+        setChartPan({
+            x: e.clientX - dragStart.x,
+            y: e.clientY - dragStart.y
+        });
+    };
+
+    const handleMouseUp = () => setIsDragging(false);
+
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.15 : -0.15;
+        setChartZoom(prev => Math.min(4, Math.max(0.4, Number((prev + delta).toFixed(2)))));
+    };
+
+    useEffect(() => {
+        if (!showOrgChart) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setShowOrgChart(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [showOrgChart]);
+
     const [alertConfig, setAlertConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -126,13 +169,25 @@ const Directory = () => {
                     <p className="text-slate-500 font-medium tracking-wide">Connect with your colleagues across the company.</p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
                     <button 
                         onClick={() => navigate('/company-policy')}
                         className="px-4 py-2.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold rounded-xl text-sm transition-all shadow-sm border border-indigo-200 flex items-center gap-2"
                     >
                         <FileText size={16} />
                         <span className="hidden sm:inline">Company Policy</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            setChartZoom(1);
+                            setChartPan({ x: 0, y: 0 });
+                            setShowOrgChart(true);
+                        }}
+                        className="px-4 py-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold rounded-xl text-sm transition-all shadow-sm border border-emerald-200 flex items-center gap-2"
+                        title="View Organization Hierarchy & Reporting Lines"
+                    >
+                        <Network size={16} />
+                        <span className="hidden sm:inline">Org Hierarchy</span>
                     </button>
                     <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block"></div>
                     
@@ -369,6 +424,124 @@ const Directory = () => {
                         Reset All Filters
                     </button>
                 </div>
+            )}
+
+            {/* Organization Hierarchy Diagram Modal */}
+            {showOrgChart && createPortal(
+                <div 
+                    className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn"
+                    onClick={() => setShowOrgChart(false)}
+                >
+                    <div 
+                        className="bg-slate-900 text-white rounded-3xl w-full max-w-6xl h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-700/60"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header Bar */}
+                        <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                                    <Network size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-sm sm:text-base text-slate-100 leading-tight">Organization Hierarchy</h3>
+                                    <p className="text-[11px] text-slate-400">Corporate reporting lines, departments & team structure</p>
+                                </div>
+                            </div>
+
+                            {/* Center Controls (Zoom & Reset) */}
+                            <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700/70 p-1 rounded-2xl">
+                                <button
+                                    type="button"
+                                    onClick={() => setChartZoom(prev => Math.max(0.4, Number((prev - 0.25).toFixed(2))))}
+                                    className="p-1.5 hover:bg-slate-700 rounded-xl text-slate-300 hover:text-white transition-colors"
+                                    title="Zoom Out (-)"
+                                >
+                                    <ZoomOut size={16} />
+                                </button>
+                                <span className="px-2.5 text-xs font-mono font-bold text-emerald-400 min-w-[54px] text-center select-none">
+                                    {Math.round(chartZoom * 100)}%
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setChartZoom(prev => Math.min(4, Number((prev + 0.25).toFixed(2))))}
+                                    className="p-1.5 hover:bg-slate-700 rounded-xl text-slate-300 hover:text-white transition-colors"
+                                    title="Zoom In (+)"
+                                >
+                                    <ZoomIn size={16} />
+                                </button>
+                                <div className="w-px h-4 bg-slate-700 mx-0.5" />
+                                <button
+                                    type="button"
+                                    onClick={() => { setChartZoom(1); setChartPan({ x: 0, y: 0 }); }}
+                                    className="p-1.5 hover:bg-slate-700 rounded-xl text-slate-300 hover:text-white transition-colors"
+                                    title="Reset View"
+                                >
+                                    <RotateCcw size={15} />
+                                </button>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href="/org-chart.svg"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5"
+                                    title="Open full diagram in new browser tab"
+                                >
+                                    <ExternalLink size={14} />
+                                    <span className="hidden sm:inline">Open in Tab</span>
+                                </a>
+                                <a
+                                    href="/org-chart.svg"
+                                    download="ITCS_Organization_Chart.svg"
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                                    title="Download SVG file"
+                                >
+                                    <Download size={14} />
+                                    <span className="hidden sm:inline">Download</span>
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOrgChart(false)}
+                                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors ml-1"
+                                    title="Close (Esc)"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Interactive Viewer Canvas */}
+                        <div 
+                            className="relative flex-1 bg-slate-950 overflow-hidden flex items-center justify-center select-none"
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                            onWheel={handleWheel}
+                            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                        >
+                            <img 
+                                src="/org-chart.svg" 
+                                alt="Organization Hierarchy Chart"
+                                draggable={false}
+                                className="max-w-none transition-transform duration-75 ease-out select-none"
+                                style={{
+                                    transform: `translate(${chartPan.x}px, ${chartPan.y}px) scale(${chartZoom})`,
+                                    transformOrigin: 'center center',
+                                    maxHeight: '82vh',
+                                    maxWidth: '92%'
+                                }}
+                            />
+                            {/* Floating Helper Tip */}
+                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-slate-900/80 border border-slate-800/80 rounded-full text-[11px] text-slate-400 backdrop-blur-xs pointer-events-none">
+                                Click & drag to pan • Scroll or use buttons to zoom • Press Esc to close
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             <AlertModal 

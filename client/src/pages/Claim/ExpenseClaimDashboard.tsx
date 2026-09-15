@@ -20,6 +20,8 @@ import {
     Download,
     Eye,
     ZoomIn,
+    ZoomOut,
+    RotateCw,
     CheckCircle2,
     XCircle,
     Clock,
@@ -247,6 +249,7 @@ const ExpenseClaimDashboard = () => {
     const [filterStatus, setFilterStatus] = useState('');
     const [filterStartDate, setFilterStartDate] = useState('');
     const [filterEndDate, setFilterEndDate] = useState('');
+    const [filterErpRef, setFilterErpRef] = useState('');
 
     // Bulk actions state
     const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
@@ -682,21 +685,49 @@ const ExpenseClaimDashboard = () => {
                 end.setHours(23, 59, 59, 999);
                 matchesDate = matchesDate && claimDate <= end;
             }
+
+            const matchesErpRef = !filterErpRef || (c.erpReferenceId || '').toLowerCase().includes(filterErpRef.trim().toLowerCase());
             
-            return matchesClaimNo && matchesCategory && matchesStatus && matchesEmployee && matchesDate;
+            return matchesClaimNo && matchesCategory && matchesStatus && matchesEmployee && matchesDate && matchesErpRef;
         });
-    }, [filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate]);
+    }, [filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate, filterErpRef]);
 
     const filteredMine = useMemo(() => filterList(mine), [mine, filterList]);
     const filteredApprovals = useMemo(() => filterList(approvals), [approvals, filterList]);
     const filteredHistory = useMemo(() => filterList(history), [history, filterList]);
+
+    const computeTotals = (list: any[]) => {
+        let requested = 0;
+        let allowed = 0;
+        let approved = 0;
+        let activeCount = 0;
+        for (const c of list) {
+            // Do not count Cancelled or Declined claims in totals unless user explicitly filtered for that status
+            const isVoided = c.status === 'Cancelled' || c.status === 'Declined';
+            if (isVoided && filterStatus !== c.status) {
+                continue;
+            }
+
+            activeCount++;
+            requested += Number(c.amountRequested || 0);
+            allowed += Number(c.amountAllowed ?? c.amountRequested ?? 0);
+            if (c.status === 'Approved') {
+                approved += Number(c.approvedTotal ?? c.amountAllowed ?? c.amountRequested ?? 0);
+            }
+        }
+        return { requested, allowed, approved, activeCount };
+    };
+
+    const filteredHistoryTotals = useMemo(() => computeTotals(filteredHistory), [filteredHistory, filterStatus]);
+    const filteredMineTotals = useMemo(() => computeTotals(filteredMine), [filteredMine, filterStatus]);
+    const filteredApprovalsTotals = useMemo(() => computeTotals(filteredApprovals), [filteredApprovals, filterStatus]);
 
     const [currentPage, setCurrentPage] = useState<number>(1);
     const pageSize = 10;
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [tab, filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate]);
+    }, [tab, filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate, filterErpRef]);
 
     const paginatedMine = useMemo(() => {
         const start = (currentPage - 1) * pageSize;
@@ -992,6 +1023,33 @@ const ExpenseClaimDashboard = () => {
     const [receiptBlobs, setReceiptBlobs] = useState<Record<string, string>>({});
     const [loadingReceipts, setLoadingReceipts] = useState(false);
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const [lightboxRotation, setLightboxRotation] = useState<number>(0);
+    const [lightboxZoom, setLightboxZoom] = useState<number>(1);
+
+    // Keyboard navigation for image lightbox (Esc to close, Left/Right arrow to navigate)
+    useEffect(() => {
+        if (lightboxIndex === null) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setLightboxIndex(null);
+                setLightboxRotation(0);
+                setLightboxZoom(1);
+            } else if (e.key === 'ArrowLeft') {
+                setLightboxRotation(0);
+                setLightboxZoom(1);
+                setLightboxIndex(i => (i !== null ? Math.max(0, i - 1) : null));
+            } else if (e.key === 'ArrowRight') {
+                const total = (decisionClaim?.receipts || []).filter((r: any) => r.contentType?.startsWith('image/')).length;
+                setLightboxRotation(0);
+                setLightboxZoom(1);
+                setLightboxIndex(i => (i !== null ? Math.min(total - 1, i + 1) : null));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [lightboxIndex, decisionClaim]);
 
     const openDecision = async (c: any) => {
         setDecisionClaim(c);
@@ -1045,6 +1103,8 @@ const ExpenseClaimDashboard = () => {
         Object.values(receiptBlobs).forEach(u => window.URL.revokeObjectURL(u));
         setReceiptBlobs({});
         setLightboxIndex(null);
+        setLightboxRotation(0);
+        setLightboxZoom(1);
         setDecisionClaim(null);
         setDecisionErpId('');
     };
@@ -1457,85 +1517,107 @@ const ExpenseClaimDashboard = () => {
                 </div>
 
                 {tab !== 'submit' && (
-                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                            <input
-                                type="text"
-                                placeholder="Search Claim #..."
-                                value={filterClaimNo}
-                                onChange={e => setFilterClaimNo(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                            />
-                        </div>
-
-                        {tab !== 'mine' && (
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                                 <input
                                     type="text"
-                                    placeholder="Search Employee..."
-                                    value={filterEmployeeName}
-                                    onChange={e => setFilterEmployeeName(e.target.value)}
+                                    placeholder="Search Claim #..."
+                                    value={filterClaimNo}
+                                    onChange={e => setFilterClaimNo(e.target.value)}
                                     className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                                 />
                             </div>
-                        )}
 
-                        <select
-                            value={filterCategory}
-                            onChange={e => setFilterCategory(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                        >
-                            <option value="">All Categories</option>
-                            {Array.from(new Set([
-                                'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage and Delivery', 'Meal Allowance / Kitchen Expenses', 'Other',
-                                ...categories.map((c: any) => c.name)
-                            ])).map(c => (
-                                <option key={c} value={c}>{c}</option>
-                            ))}
-                        </select>
+                            {tab !== 'mine' && (
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search Employee..."
+                                        value={filterEmployeeName}
+                                        onChange={e => setFilterEmployeeName(e.target.value)}
+                                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                    />
+                                </div>
+                            )}
 
-                        <select
-                            value={filterStatus}
-                            onChange={e => setFilterStatus(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                        >
-                            <option value="">All Statuses</option>
-                            {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
+                            <select
+                                value={filterCategory}
+                                onChange={e => setFilterCategory(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                            >
+                                <option value="">All Categories</option>
+                                {Array.from(new Set([
+                                    'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage and Delivery', 'Meal Allowance / Kitchen Expenses', 'Other',
+                                    ...categories.map((c: any) => c.name)
+                                ])).map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                            </select>
 
-                        <input
-                            type="date"
-                            value={filterStartDate}
-                            onChange={e => setFilterStartDate(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                            title="Start Date"
-                        />
+                            <select
+                                value={filterStatus}
+                                onChange={e => setFilterStatus(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                            >
+                                <option value="">All Statuses</option>
+                                {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                ))}
+                            </select>
 
-                        <input
-                            type="date"
-                            value={filterEndDate}
-                            onChange={e => setFilterEndDate(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-                            title="End Date"
-                        />
-                        
-                        <button
-                            onClick={() => {
-                                setFilterClaimNo('');
-                                setFilterEmployeeName('');
-                                setFilterCategory('');
-                                setFilterStatus('');
-                                setFilterStartDate('');
-                                setFilterEndDate('');
-                            }}
-                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
-                        >
-                            <X size={12} /> Clear
-                        </button>
+                            <input
+                                type="date"
+                                value={filterStartDate}
+                                onChange={e => setFilterStartDate(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                title="Start Date"
+                            />
+
+                            <input
+                                type="date"
+                                value={filterEndDate}
+                                onChange={e => setFilterEndDate(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                title="End Date"
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <button
+                                onClick={() => {
+                                    setFilterClaimNo('');
+                                    setFilterEmployeeName('');
+                                    setFilterCategory('');
+                                    setFilterStatus('');
+                                    setFilterStartDate('');
+                                    setFilterEndDate('');
+                                    setFilterErpRef('');
+                                }}
+                                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                            >
+                                <X size={12} /> Clear
+                            </button>
+
+                            <div className="relative w-full sm:w-64">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                <input
+                                    type="text"
+                                    placeholder="Search ERP Ref #..."
+                                    value={filterErpRef}
+                                    onChange={e => setFilterErpRef(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                                />
+                            </div>
+
+                            {(filterClaimNo || filterEmployeeName || filterCategory || filterStatus || filterStartDate || filterEndDate || filterErpRef) && (
+                                <span className="text-[11px] font-medium text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                                    Filtered: {tab === 'history' ? filteredHistory.length : tab === 'approvals' ? filteredApprovals.length : filteredMine.length} results
+                                </span>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -1934,21 +2016,42 @@ const ExpenseClaimDashboard = () => {
                                 <p className="text-sm mt-1">Submit your first expense claim from the “Submit Claim” tab.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm min-w-[1100px]">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-100">
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
-                                        </tr>
-                                    </thead>
+                            <div>
+                                <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <span className="font-bold text-slate-700 mr-1">
+                                        Summary ({filteredMineTotals.activeCount} active {filteredMineTotals.activeCount === 1 ? 'claim' : 'claims'}
+                                        {filteredMine.length > filteredMineTotals.activeCount && (
+                                            <span className="text-slate-400 font-normal"> · {filteredMine.length - filteredMineTotals.activeCount} declined/cancelled excluded</span>
+                                        )}):
+                                    </span>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Requested:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredMineTotals.requested.toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredMineTotals.allowed.toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Approved:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredMineTotals.approved.toLocaleString('en-PK')}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                    <table className="w-full text-sm min-w-[1100px]">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-100">
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
+                                            </tr>
+                                        </thead>
                                     <tbody>
                                         {paginatedMine.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
@@ -2058,9 +2161,29 @@ const ExpenseClaimDashboard = () => {
                                             </tr>
                                         ))}
                                     </tbody>
+                                    {filteredMine.length > 0 && (
+                                        <tfoot>
+                                            <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                                                <td colSpan={2} className="px-4 py-3 text-right text-xs uppercase tracking-wider text-slate-500">
+                                                    Filtered Total ({filteredMineTotals.activeCount} claim{filteredMineTotals.activeCount !== 1 ? 's' : ''}):
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredMineTotals.requested)}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredMineTotals.allowed)}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredMineTotals.approved)}
+                                                </td>
+                                                <td colSpan={4} className="px-4 py-3 text-xs text-slate-400"></td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
                                 </table>
                             </div>
-                        )}
+                        </div>
+                    )}
                         {renderPagination(filteredMine.length)}
                     </div>
                 )}
@@ -2076,34 +2199,51 @@ const ExpenseClaimDashboard = () => {
                                 <p className="text-sm mt-1">New claims will appear here automatically.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm min-w-[1100px]">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-100">
-                                            <th className="px-4 py-3 w-10 text-center">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                                    checked={filteredApprovals.length > 0 && selectedClaimIds.length === filteredApprovals.length}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setSelectedClaimIds(filteredApprovals.map((c: any) => c._id));
-                                                        } else {
-                                                            setSelectedClaimIds([]);
-                                                        }
-                                                    }}
-                                                />
-                                            </th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
-                                        </tr>
-                                    </thead>
+                            <div>
+                                <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <span className="font-bold text-slate-700 mr-1">
+                                        Summary ({filteredApprovalsTotals.activeCount} active {filteredApprovalsTotals.activeCount === 1 ? 'claim' : 'claims'}
+                                        {filteredApprovals.length > filteredApprovalsTotals.activeCount && (
+                                            <span className="text-slate-400 font-normal"> · {filteredApprovals.length - filteredApprovalsTotals.activeCount} declined/cancelled excluded</span>
+                                        )}):
+                                    </span>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Requested:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredApprovalsTotals.requested.toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredApprovalsTotals.allowed.toLocaleString('en-PK')}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                    <table className="w-full text-sm min-w-[1100px]">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-100">
+                                                <th className="px-4 py-3 w-10 text-center">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        checked={filteredApprovals.length > 0 && selectedClaimIds.length === filteredApprovals.length}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedClaimIds(filteredApprovals.map((c: any) => c._id));
+                                                            } else {
+                                                                setSelectedClaimIds([]);
+                                                            }
+                                                        }}
+                                                    />
+                                                </th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
+                                            </tr>
+                                        </thead>
                                     <tbody>
                                         {paginatedApprovals.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
@@ -2196,9 +2336,26 @@ const ExpenseClaimDashboard = () => {
                                             </tr>
                                         ))}
                                     </tbody>
+                                    {filteredApprovals.length > 0 && (
+                                        <tfoot>
+                                            <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                                                <td colSpan={4} className="px-4 py-3 text-right text-xs uppercase tracking-wider text-slate-500">
+                                                    Filtered Total ({filteredApprovalsTotals.activeCount} claim{filteredApprovalsTotals.activeCount !== 1 ? 's' : ''}):
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredApprovalsTotals.requested)}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredApprovalsTotals.allowed)}
+                                                </td>
+                                                <td colSpan={3} className="px-4 py-3 text-xs text-slate-400"></td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
                                 </table>
                             </div>
-                        )}
+                        </div>
+                    )}
                         {renderPagination(filteredApprovals.length)}
                         
                         {/* Bulk Action Floating Toolbar */}
@@ -2282,23 +2439,44 @@ const ExpenseClaimDashboard = () => {
                                 <p className="font-semibold">No claims in history.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-sm min-w-[1100px]">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-100">
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">ERP Ref #</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
-                                            <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
-                                        </tr>
-                                    </thead>
+                            <div>
+                                <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <span className="font-bold text-slate-700 mr-1">
+                                        Summary ({filteredHistoryTotals.activeCount} active {filteredHistoryTotals.activeCount === 1 ? 'claim' : 'claims'}
+                                        {filteredHistory.length > filteredHistoryTotals.activeCount && (
+                                            <span className="text-slate-400 font-normal"> · {filteredHistory.length - filteredHistoryTotals.activeCount} declined/cancelled excluded</span>
+                                        )}):
+                                    </span>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Requested:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.requested.toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.allowed.toLocaleString('en-PK')}</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
+                                        <span className="text-slate-500 font-medium">Total Approved:</span>
+                                        <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.approved.toLocaleString('en-PK')}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                    <table className="w-full text-sm min-w-[1100px]">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-100">
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">ERP Ref #</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
+                                            </tr>
+                                        </thead>
                                     <tbody>
                                         {paginatedHistory.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
@@ -2453,9 +2631,29 @@ const ExpenseClaimDashboard = () => {
                                             </tr>
                                         ))}
                                     </tbody>
+                                    {filteredHistory.length > 0 && (
+                                        <tfoot>
+                                            <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                                                <td colSpan={3} className="px-4 py-3 text-right text-xs uppercase tracking-wider text-slate-500">
+                                                    Filtered Total ({filteredHistoryTotals.activeCount} claim{filteredHistoryTotals.activeCount !== 1 ? 's' : ''}):
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredHistoryTotals.requested)}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredHistoryTotals.allowed)}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
+                                                    {formatMoney(filteredHistoryTotals.approved)}
+                                                </td>
+                                                <td colSpan={5} className="px-4 py-3 text-xs text-slate-400"></td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
                                 </table>
                             </div>
-                        )}
+                        </div>
+                    )}
                         {renderPagination(filteredHistory.length)}
                     </div>
                 )}
@@ -3233,97 +3431,111 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            {(decisionClaim.receipts as any[]).map((r: any, idx: number) => {
-                                                const blobUrl = receiptBlobs[r._id];
-                                                const isImage = r.contentType?.startsWith('image/');
-                                                const isPdf = r.contentType === 'application/pdf';
+                                            {(() => {
+                                                const allReceipts = (decisionClaim.receipts as any[]) || [];
+                                                const imageReceipts = allReceipts.filter((item: any) => item.contentType?.startsWith('image/'));
 
-                                                return (
-                                                    <div key={r._id} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                                                        {/* File header bar */}
-                                                        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
-                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                <div className={`p-1.5 rounded-lg flex-shrink-0 ${
-                                                                    isImage ? 'bg-indigo-100' : isPdf ? 'bg-rose-100' : 'bg-slate-100'
-                                                                }`}>
-                                                                    <FileText size={12} className={isImage ? 'text-indigo-600' : isPdf ? 'text-rose-600' : 'text-slate-600'} />
+                                                return allReceipts.map((r: any) => {
+                                                    const blobUrl = receiptBlobs[r._id];
+                                                    const isImage = r.contentType?.startsWith('image/');
+                                                    const isPdf = r.contentType === 'application/pdf';
+                                                    const imgIndex = isImage ? imageReceipts.findIndex((img: any) => img._id === r._id) : -1;
+
+                                                    return (
+                                                        <div key={r._id} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                                                            {/* File header bar */}
+                                                            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <div className={`p-1.5 rounded-lg flex-shrink-0 ${
+                                                                        isImage ? 'bg-indigo-100' : isPdf ? 'bg-rose-100' : 'bg-slate-100'
+                                                                    }`}>
+                                                                        <FileText size={12} className={isImage ? 'text-indigo-600' : isPdf ? 'text-rose-600' : 'text-slate-600'} />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="text-xs font-bold text-slate-700 truncate">{r.fileName}</div>
+                                                                        <div className="text-[10px] text-slate-400">{r.contentType}</div>
+                                                                        {(r.extractedAmount != null || r.extractedDate) && (
+                                                                            <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">
+                                                                                {r.extractedAmount != null && `Amount: ${formatMoney(r.extractedAmount, r.extractedCurrency || decisionClaim.currency)}`}
+                                                                                {r.extractedAmount != null && r.extractedDate && ' · '}
+                                                                                {r.extractedDate && `Date: ${new Date(r.extractedDate).toLocaleDateString('en-PK')}`}
+                                                                                {typeof r.receiptAgeDays === 'number' && (
+                                                                                    <span className={r.receiptAgeDays > 45 ? ' text-rose-600' : ' text-slate-500'}>
+                                                                                        {' '}({r.receiptAgeDays}d old)
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                        {r.extractionStatus === 'failed' && (
+                                                                            <div className="text-[10px] text-amber-600 font-semibold mt-0.5">Could not read receipt — verify manually</div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                                <div className="min-w-0">
-                                                                    <div className="text-xs font-bold text-slate-700 truncate">{r.fileName}</div>
-                                                                    <div className="text-[10px] text-slate-400">{r.contentType}</div>
-                                                                    {(r.extractedAmount != null || r.extractedDate) && (
-                                                                        <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">
-                                                                            {r.extractedAmount != null && `Amount: ${formatMoney(r.extractedAmount, r.extractedCurrency || decisionClaim.currency)}`}
-                                                                            {r.extractedAmount != null && r.extractedDate && ' · '}
-                                                                            {r.extractedDate && `Date: ${new Date(r.extractedDate).toLocaleDateString('en-PK')}`}
-                                                                            {typeof r.receiptAgeDays === 'number' && (
-                                                                                <span className={r.receiptAgeDays > 45 ? ' text-rose-600' : ' text-slate-500'}>
-                                                                                    {' '}({r.receiptAgeDays}d old)
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
+                                                                <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                                                                    {blobUrl && isPdf && (
+                                                                        <a
+                                                                            href={blobUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold hover:bg-rose-100 transition-colors"
+                                                                        >
+                                                                            <Eye size={11} /> View PDF
+                                                                        </a>
                                                                     )}
-                                                                    {r.extractionStatus === 'failed' && (
-                                                                        <div className="text-[10px] text-amber-600 font-semibold mt-0.5">Could not read receipt — verify manually</div>
+                                                                    {blobUrl && isImage && (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setLightboxRotation(0);
+                                                                                setLightboxZoom(1);
+                                                                                setLightboxIndex(imgIndex >= 0 ? imgIndex : 0);
+                                                                            }}
+                                                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold hover:bg-indigo-100 transition-colors cursor-pointer"
+                                                                        >
+                                                                            <ZoomIn size={11} /> Enlarge
+                                                                        </button>
                                                                     )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                                                                {blobUrl && isPdf && (
-                                                                    <a
-                                                                        href={blobUrl}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold hover:bg-rose-100 transition-colors"
-                                                                    >
-                                                                        <Eye size={11} /> View PDF
-                                                                    </a>
-                                                                )}
-                                                                {blobUrl && isImage && (
                                                                     <button
-                                                                        onClick={() => setLightboxIndex(idx)}
-                                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold hover:bg-indigo-100 transition-colors"
+                                                                        onClick={() => downloadReceipt(decisionClaim._id, r._id, r.fileName)}
+                                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white text-slate-700 border border-slate-200 text-[11px] font-bold hover:bg-slate-50 transition-colors cursor-pointer"
                                                                     >
-                                                                        <ZoomIn size={11} /> Enlarge
+                                                                        <Download size={11} /> Download
                                                                     </button>
-                                                                )}
-                                                                <button
-                                                                    onClick={() => downloadReceipt(decisionClaim._id, r._id, r.fileName)}
-                                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white text-slate-700 border border-slate-200 text-[11px] font-bold hover:bg-slate-50 transition-colors"
-                                                                >
-                                                                    <Download size={11} /> Download
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Preview area */}
-                                                        {loadingReceipts && !blobUrl ? (
-                                                            <div className="flex items-center justify-center h-40 bg-slate-50">
-                                                                <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                                                            </div>
-                                                        ) : blobUrl && isImage ? (
-                                                            <img
-                                                                src={blobUrl}
-                                                                alt={r.fileName}
-                                                                className="w-full max-h-72 object-contain bg-slate-100 cursor-zoom-in hover:opacity-90 transition-opacity"
-                                                                onClick={() => setLightboxIndex(idx)}
-                                                                title="Click to enlarge"
-                                                            />
-                                                        ) : blobUrl && isPdf ? (
-                                                            <div className="flex flex-col items-center justify-center h-36 gap-3 bg-slate-50">
-                                                                <div className="p-4 bg-rose-50 rounded-2xl">
-                                                                    <FileText size={32} className="text-rose-400" />
                                                                 </div>
-                                                                <div className="text-xs font-semibold text-slate-500">PDF — click "View PDF" above to open</div>
                                                             </div>
-                                                        ) : !loadingReceipts ? (
-                                                            <div className="flex items-center justify-center h-24 bg-slate-50 text-slate-300 text-xs">
-                                                                Preview unavailable — use Download
-                                                            </div>
-                                                        ) : null}
-                                                    </div>
-                                                );
-                                            })}
+
+                                                            {/* Preview area */}
+                                                            {loadingReceipts && !blobUrl ? (
+                                                                <div className="flex items-center justify-center h-40 bg-slate-50">
+                                                                    <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                                                                </div>
+                                                            ) : blobUrl && isImage ? (
+                                                                <img
+                                                                    src={blobUrl}
+                                                                    alt={r.fileName}
+                                                                    className="w-full max-h-72 object-contain bg-slate-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+                                                                    onClick={() => {
+                                                                        setLightboxRotation(0);
+                                                                        setLightboxZoom(1);
+                                                                        setLightboxIndex(imgIndex >= 0 ? imgIndex : 0);
+                                                                    }}
+                                                                    title="Click to enlarge"
+                                                                />
+                                                            ) : blobUrl && isPdf ? (
+                                                                <div className="flex flex-col items-center justify-center h-36 gap-3 bg-slate-50">
+                                                                    <div className="p-4 bg-rose-50 rounded-2xl">
+                                                                        <FileText size={32} className="text-rose-400" />
+                                                                    </div>
+                                                                    <div className="text-xs font-semibold text-slate-500">PDF — click "View PDF" above to open</div>
+                                                                </div>
+                                                            ) : !loadingReceipts ? (
+                                                                <div className="flex items-center justify-center h-24 bg-slate-50 text-slate-300 text-xs">
+                                                                    Preview unavailable — use Download
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
                                     )}
 
@@ -3580,51 +3792,154 @@ const ExpenseClaimDashboard = () => {
                 , document.body)}
 
                     {/* ── Full-screen image lightbox ──────────────────────────── */}
-                    {lightboxIndex !== null && (() => {
+                    {lightboxIndex !== null && decisionClaim && (() => {
                         const receipts: any[] = decisionClaim.receipts || [];
                         const imageReceipts = receipts.filter((r: any) => r.contentType?.startsWith('image/'));
                         const lr = imageReceipts[lightboxIndex];
                         const lrUrl = lr ? receiptBlobs[lr._id] : null;
-                        return lrUrl ? (
+                        if (!lrUrl) return null;
+
+                        return createPortal(
                             <div
-                                className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-[60] flex items-center justify-center bg-black/95 p-4"
-                                onClick={() => setLightboxIndex(null)}
+                                className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fadeIn select-none"
+                                onClick={() => {
+                                    setLightboxIndex(null);
+                                    setLightboxRotation(0);
+                                    setLightboxZoom(1);
+                                }}
                             >
-                                <button
-                                    className="absolute top-4 right-4 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-colors"
-                                    onClick={() => setLightboxIndex(null)}
+                                {/* Top bar with receipt info and controls */}
+                                <div
+                                    className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-auto z-20"
+                                    onClick={e => e.stopPropagation()}
                                 >
-                                    <X size={20} />
-                                </button>
+                                    <div className="bg-black/60 backdrop-blur-md text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 border border-white/10 shadow-lg">
+                                        <span className="truncate max-w-[180px] sm:max-w-[380px] font-bold">{lr.fileName}</span>
+                                        <span className="text-white/40">•</span>
+                                        <span className="text-white/70">{lightboxIndex + 1} / {imageReceipts.length}</span>
+                                        {lightboxZoom !== 1 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-indigo-500/30 text-indigo-300 text-[10px] font-bold">
+                                                {Math.round(lightboxZoom * 100)}%
+                                            </span>
+                                        )}
+                                        {lightboxRotation !== 0 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 text-[10px] font-bold">
+                                                {lightboxRotation}°
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                        {/* Zoom Controls */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setLightboxZoom(z => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                                            title="Zoom Out"
+                                            className="p-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white transition-all cursor-pointer"
+                                        >
+                                            <ZoomOut size={18} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setLightboxZoom(z => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                                            title="Zoom In"
+                                            className="p-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white transition-all cursor-pointer"
+                                        >
+                                            <ZoomIn size={18} />
+                                        </button>
+                                        {/* Rotate Control */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setLightboxRotation(r => (r + 90) % 360)}
+                                            title="Rotate Image 90°"
+                                            className="p-2 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white transition-all cursor-pointer"
+                                        >
+                                            <RotateCw size={18} />
+                                        </button>
+                                        {/* Reset Zoom & Rotation */}
+                                        {(lightboxZoom !== 1 || lightboxRotation !== 0) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => { setLightboxZoom(1); setLightboxRotation(0); }}
+                                                title="Reset View"
+                                                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-white text-xs font-bold transition-all cursor-pointer"
+                                            >
+                                                Reset
+                                            </button>
+                                        )}
+                                        {/* Close Button */}
+                                        <button
+                                            type="button"
+                                            className="p-2 bg-white/10 hover:bg-rose-600 active:scale-95 rounded-xl text-white transition-all cursor-pointer ml-2"
+                                            onClick={() => {
+                                                setLightboxIndex(null);
+                                                setLightboxRotation(0);
+                                                setLightboxZoom(1);
+                                            }}
+                                            title="Close (Esc)"
+                                        >
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Previous / Next Buttons */}
                                 {imageReceipts.length > 1 && (
                                     <>
                                         <button
-                                            className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                            type="button"
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-white/20 active:scale-95 rounded-2xl text-white disabled:opacity-20 transition-all cursor-pointer z-20"
                                             disabled={lightboxIndex === 0}
-                                            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.max(0, (i ?? 1) - 1)); }}
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                setLightboxRotation(0);
+                                                setLightboxZoom(1);
+                                                setLightboxIndex(i => Math.max(0, (i ?? 1) - 1));
+                                            }}
+                                            title="Previous Image (Left Arrow)"
                                         >
-                                            <ChevronLeft size={24} />
+                                            <ChevronLeft size={28} />
                                         </button>
                                         <button
-                                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white disabled:opacity-30 transition-colors"
+                                            type="button"
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/60 hover:bg-white/20 active:scale-95 rounded-2xl text-white disabled:opacity-20 transition-all cursor-pointer z-20"
                                             disabled={lightboxIndex === imageReceipts.length - 1}
-                                            onClick={e => { e.stopPropagation(); setLightboxIndex(i => Math.min(imageReceipts.length - 1, (i ?? 0) + 1)); }}
+                                            onClick={e => {
+                                                e.stopPropagation();
+                                                setLightboxRotation(0);
+                                                setLightboxZoom(1);
+                                                setLightboxIndex(i => Math.min(imageReceipts.length - 1, (i ?? 0) + 1));
+                                            }}
+                                            title="Next Image (Right Arrow)"
                                         >
-                                            <ChevronRight size={24} />
+                                            <ChevronRight size={28} />
                                         </button>
                                     </>
                                 )}
-                                <img
-                                    src={lrUrl}
-                                    alt={lr.fileName}
-                                    className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+
+                                {/* Image view */}
+                                <div
+                                    className="max-w-full max-h-[85vh] flex items-center justify-center overflow-hidden transition-all duration-200"
                                     onClick={e => e.stopPropagation()}
-                                />
-                                <div className="absolute bottom-4 left-0 right-0 text-center text-white/50 text-xs">
-                                    {lr.fileName} • {lightboxIndex + 1} / {imageReceipts.length} • Click outside to close
+                                >
+                                    <img
+                                        src={lrUrl}
+                                        alt={lr.fileName}
+                                        style={{
+                                            transform: `scale(${lightboxZoom}) rotate(${lightboxRotation}deg)`,
+                                            transition: 'transform 0.2s ease-out'
+                                        }}
+                                        className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl"
+                                    />
                                 </div>
-                            </div>
-                        ) : null;
+
+                                {/* Bottom Hint */}
+                                <div className="absolute bottom-4 left-0 right-0 text-center text-white/50 text-xs pointer-events-none">
+                                    Click outside or press Escape to close • Use arrow keys to navigate
+                                </div>
+                            </div>,
+                            document.body
+                        );
                     })()}
 
             {/* Submit form — receipt preview lightbox */}
@@ -3635,7 +3950,7 @@ const ExpenseClaimDashboard = () => {
                 const isPdf = f.type === 'application/pdf';
                 return createPortal(
                     <div
-                        className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-[60] flex items-center justify-center bg-black/95 p-4"
+                        className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fadeIn select-none"
                         onClick={() => setSubmitPreviewIndex(null)}
                     >
                         <button

@@ -77,8 +77,10 @@ const MyRequests = () => {
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [activeCategory, setActiveCategory] = useState<any>(null);
 
-    // Provident Fund Balance state
+    // Provident Fund Balance & Active Loan state
     const [pfBalance, setPfBalance] = useState<number | null>(null);
+    const [activeLoanBalance, setActiveLoanBalance] = useState<number>(0);
+    const [currentMonthlyDeduction, setCurrentMonthlyDeduction] = useState<number>(0);
 
     // File attachments state
     const [uploadedFiles, setUploadedFiles] = useState<{ fileId: string; fileName: string }[]>([]);
@@ -108,7 +110,9 @@ const MyRequests = () => {
             });
             if (res.ok) {
                 const data = await res.json();
-                setPfBalance(data.pfBalance);
+                setPfBalance(Math.ceil(Number(data.pfBalance) || 0));
+                setActiveLoanBalance(Math.ceil(Number(data.activeLoanBalance) || 0));
+                setCurrentMonthlyDeduction(Math.ceil(Number(data.currentMonthlyDeduction) || 0));
             }
         } catch (err) {
             console.error('Failed to fetch PF balance', err);
@@ -270,21 +274,30 @@ const MyRequests = () => {
         
         const shouldProceedAnyways = anyways === true;
         
-        // Loan PF Cap Validation
+        // Loan PF Cap & 1-Year Payback Validation
         if (activeCategory.systemType === 'loan') {
-            if (!loanAmount || Number(loanAmount) <= 0) {
+            const amt = Math.ceil(Number(loanAmount) || 0);
+            const ded = Math.ceil(Number(monthlyDeduction) || 0);
+            const totalBal = activeLoanBalance + amt;
+            const min1YearDed = Math.ceil(totalBal / 12);
+
+            if (!loanAmount || amt <= 0) {
                 triggerAlert('Validation Error', 'Please enter a valid loan amount.', 'warning');
                 return;
             }
-            if (!monthlyDeduction || Number(monthlyDeduction) <= 0) {
+            if (!monthlyDeduction || ded <= 0) {
                 triggerAlert('Validation Error', 'Please enter a valid monthly deduction amount.', 'warning');
+                return;
+            }
+            if (ded < min1YearDed) {
+                triggerAlert('Validation Error', `Per company policy, loans must be paid back within 1 year (12 months maximum). Minimum monthly deduction for a total balance of Rs. ${totalBal.toLocaleString()} is Rs. ${min1YearDed.toLocaleString()}.`, 'warning');
                 return;
             }
             if (!paybackDuration || Number(paybackDuration) > 12) {
                 triggerAlert('Validation Error', 'Loan duration cannot exceed 12 months. Please increase your monthly deduction.', 'warning');
                 return;
             }
-            if (!shouldProceedAnyways && pfBalance !== null && Number(loanAmount) > pfBalance) {
+            if (!shouldProceedAnyways && pfBalance !== null && amt > pfBalance) {
                 setShowLoanConfirm(true);
                 return;
             }
@@ -346,11 +359,15 @@ const MyRequests = () => {
                 };
             } else if (activeCategory.systemType === 'loan') {
                 type = 'Loan';
+                const amt = Math.ceil(Number(loanAmount));
+                const totalBal = activeLoanBalance + amt;
                 details = { 
                     ...details,
-                    requestedAmount: Number(loanAmount), 
-                    paybackDuration: Number(paybackDuration),
-                    recommendedMonthlyDeduction: Number(monthlyDeduction) 
+                    requestedAmount: amt, 
+                    activeLoanBalance: activeLoanBalance,
+                    totalConsolidatedBalance: totalBal,
+                    paybackDuration: Math.min(12, Number(paybackDuration) || 12),
+                    recommendedMonthlyDeduction: Math.ceil(Number(monthlyDeduction)) 
                 };
             } else {
                 details = { 
@@ -899,6 +916,29 @@ const MyRequests = () => {
                                             <span>Warning: Requested amount exceeds your Provident Fund balance.</span>
                                         </div>
                                     )}
+
+                                    {/* Existing Active Loan Balance Notice & Consolidation */}
+                                    {activeLoanBalance > 0 && (
+                                        <div className="bg-indigo-50/70 border border-indigo-100 text-indigo-900 p-3.5 rounded-xl text-xs space-y-2">
+                                            <div className="flex justify-between items-center font-bold border-b border-indigo-100 pb-1.5">
+                                                <span className="flex items-center gap-1 text-indigo-800">
+                                                    <Banknote size={14} className="text-indigo-600" /> Existing Loan Balance:
+                                                </span>
+                                                <span className="text-indigo-700">Rs. {activeLoanBalance.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-slate-600">
+                                                <span>Current Monthly Deduction:</span>
+                                                <span className="font-semibold text-slate-800">Rs. {currentMonthlyDeduction.toLocaleString()}/mo</span>
+                                            </div>
+                                            {loanAmount && Number(loanAmount) > 0 && (
+                                                <div className="pt-1 border-t border-indigo-100 flex justify-between items-center font-bold text-indigo-950">
+                                                    <span>Total Consolidated Balance:</span>
+                                                    <span className="text-emerald-700 text-sm">Rs. {(activeLoanBalance + Math.ceil(Number(loanAmount))).toLocaleString()}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Requested Loan Amount (Rs.)</label>
                                         <input 
@@ -908,15 +948,23 @@ const MyRequests = () => {
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setLoanAmount(val);
-                                                if (monthlyDeduction) {
-                                                    const amt = Number(val);
-                                                    const ded = Number(monthlyDeduction);
-                                                    if (ded > 0) {
-                                                        setPaybackDuration(Math.ceil(amt / ded).toString());
-                                                    }
+                                                const reqAmt = Math.max(0, Math.ceil(Number(val) || 0));
+                                                const totalBal = activeLoanBalance + reqAmt;
+                                                const min1YearRate = Math.ceil(totalBal / 12);
+
+                                                if (reqAmt > 0) {
+                                                    // Auto-set 1-year compliant rate: maintain current rate if >= min1YearRate, else adjust to min1YearRate
+                                                    const autoRate = currentMonthlyDeduction >= min1YearRate ? currentMonthlyDeduction : min1YearRate;
+                                                    setMonthlyDeduction(String(autoRate));
+                                                    const dur = Math.min(12, Math.ceil(totalBal / autoRate));
+                                                    setPaybackDuration(String(dur));
+                                                } else {
+                                                    setMonthlyDeduction('');
+                                                    setPaybackDuration('');
                                                 }
                                             }}
                                             placeholder="e.g. 50000"
+                                            min="1"
                                         />
                                     </div>
                                     <div>
@@ -930,23 +978,26 @@ const MyRequests = () => {
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 setMonthlyDeduction(val);
-                                                if (loanAmount) {
-                                                    const amt = Number(loanAmount);
-                                                    const ded = Number(val);
-                                                    if (ded > 0) {
-                                                        setPaybackDuration(Math.ceil(amt / ded).toString());
-                                                    } else {
-                                                        setPaybackDuration('');
-                                                    }
+                                                const amt = Math.max(0, Math.ceil(Number(loanAmount) || 0));
+                                                const totalBal = activeLoanBalance + amt;
+                                                const ded = Math.max(0, Math.ceil(Number(val) || 0));
+                                                if (totalBal > 0 && ded > 0) {
+                                                    setPaybackDuration(Math.ceil(totalBal / ded).toString());
+                                                } else {
+                                                    setPaybackDuration('');
                                                 }
                                             }}
                                             placeholder="e.g. 5000"
                                             min="1"
                                         />
                                         {paybackDuration && Number(paybackDuration) > 12 ? (
-                                            <p className="text-xs text-rose-500 mt-1 font-medium">Loans must be returned within 1 year (12 months maximum). Please increase your monthly deduction.</p>
+                                            <p className="text-xs text-rose-500 mt-1 font-medium">
+                                                ⚠️ Loans must be returned within 1 year (12 months maximum). Minimum deduction is Rs. {Math.ceil((activeLoanBalance + Math.ceil(Number(loanAmount) || 0)) / 12).toLocaleString()}/mo.
+                                            </p>
                                         ) : (
-                                            <p className="text-xs text-gray-500 mt-1">This installment will be automatically deducted from your monthly salary.</p>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                This installment will be automatically deducted from your monthly salary (12 months max payback duration).
+                                            </p>
                                         )}
                                     </div>
                                 </>

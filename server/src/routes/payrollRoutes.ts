@@ -752,6 +752,22 @@ router.put('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
         if (loanDeduction !== undefined) payslip.loanDeduction = Number(loanDeduction) || 0;
         if (pfPayout !== undefined) payslip.pfPayout = Number(pfPayout) || 0;
 
+        // Check deductions for Loan Deduction and sync status & skip reason
+        const loanDedItem = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction');
+        const loanDedAmt = loanDedItem ? (Number(loanDedItem.amount) || 0) : (payslip.loanDeduction || 0);
+        payslip.loanDeduction = loanDedAmt;
+
+        if (loanDedAmt <= 0) {
+            // If loan deduction is 0 or removed, ensure it is recorded as Skipped (or Paused if previously paused)
+            if (payslip.loanDeductionStatus !== 'Paused') {
+                payslip.loanDeductionStatus = 'Skipped';
+                payslip.loanDeductionSkipReason = req.body.loanDeductionSkipReason || 'Removed or zeroed out during payroll draft review';
+            }
+        } else {
+            payslip.loanDeductionStatus = 'Deducted';
+            payslip.loanDeductionSkipReason = undefined;
+        }
+
         const grossPay = (payslip.earnings || []).reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
         const totalDeductions = (payslip.deductions || []).reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
         payslip.grossPay = grossPay;
@@ -1219,8 +1235,9 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
 
             // Update Employee loans remainingAmount and status
             const loanDed = (payslip.deductions || []).find((d: any) => d.component === 'Loan Deduction');
-            if (loanDed && loanDed.amount > 0 && employee.loans && employee.loans.length > 0) {
-                let remDeduction = loanDed.amount;
+            const loanDedAmount = Number(loanDed?.amount) || 0;
+            if (loanDed && loanDedAmount > 0 && employee.loans && employee.loans.length > 0) {
+                let remDeduction = loanDedAmount;
                 for (const loan of employee.loans) {
                     if (loan.status === 'Active' && loan.remainingAmount > 0 && remDeduction > 0) {
                         const deductThis = Math.min(loan.remainingAmount, remDeduction);
@@ -1232,8 +1249,19 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                         }
                     }
                 }
+                payslip.loanDeduction = loanDedAmount;
+                payslip.loanDeductionStatus = 'Deducted';
                 await employee.save();
+            } else if (employee.loans && employee.loans.some((l: any) => l.status === 'Active' && l.remainingAmount > 0)) {
+                // Active loan exists but no deduction was applied in this approved payroll run!
+                // Loan remaining balance is strictly preserved and deduction recorded as Skipped or Paused.
+                payslip.loanDeduction = 0;
+                if (payslip.loanDeductionStatus !== 'Paused') {
+                    payslip.loanDeductionStatus = 'Skipped';
+                    payslip.loanDeductionSkipReason = payslip.loanDeductionSkipReason || 'Deduction omitted in approved payroll';
+                }
             }
+            await payslip.save();
         }
 
         run.status = 'Approved';

@@ -20,6 +20,8 @@ interface LoanRow {
     status: 'Active' | 'Paid' | 'Suspended' | 'None';
     source: 'employee_record' | 'computed';
     loanId?: string;
+    isCustomPlan?: boolean;
+    customPlanReason?: string;
 }
 
 interface IndividualLoanItem {
@@ -32,6 +34,10 @@ interface IndividualLoanItem {
     category?: string;
     notes?: string;
     paybackDuration?: number;
+    isCustomPlan?: boolean;
+    customPlanReason?: string;
+    customPlanSetBy?: string;
+    customPlanSetAt?: string;
 }
 
 interface LoanRepaymentItem {
@@ -42,6 +48,8 @@ interface LoanRepaymentItem {
     amount: number;
     date: string;
     erpReferenceId?: string;
+    repaymentStatus?: string;
+    note?: string;
 }
 
 interface EmployeeLoanDetailResult {
@@ -55,6 +63,8 @@ interface EmployeeLoanDetailResult {
         remainingBalance: number;
         monthlyInstallment: number;
         status: LoanRow['status'];
+        isCustomPlan?: boolean;
+        customPlanReason?: string;
     };
     loans: IndividualLoanItem[];
     repayments: LoanRepaymentItem[];
@@ -73,6 +83,7 @@ interface MonthlyLoanDeductionItem {
     deductionDate: string;
     repaymentStatus: string;
     loanDeductionErpId?: string;
+    note?: string;
 }
 
 interface MonthlyLoanLedgerResult {
@@ -90,7 +101,7 @@ interface MonthlyLoanLedgerResult {
     items: MonthlyLoanDeductionItem[];
 }
 
-const fmtPKR = (n: number) => `Rs. ${(n || 0).toLocaleString('en-PK')}`;
+const fmtPKR = (n: number) => `Rs. ${Math.ceil(Number(n) || 0).toLocaleString('en-PK')}`;
 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const YEARS = [2024, 2025, 2026, 2027, 2028];
@@ -107,6 +118,8 @@ export default function LoanManagement() {
     const [editing, setEditing] = useState<LoanRow | null>(null);
     const [editBalance, setEditBalance] = useState('');
     const [editInstallment, setEditInstallment] = useState('');
+    const [editIsCustomPlan, setEditIsCustomPlan] = useState(false);
+    const [editCustomReason, setEditCustomReason] = useState('');
     const [saving, setSaving] = useState(false);
 
     // Detail Modal State
@@ -241,6 +254,8 @@ export default function LoanManagement() {
         setEditing(row);
         setEditBalance(String(row.remainingBalance ?? 0));
         setEditInstallment(String(row.monthlyInstallment ?? 0));
+        setEditIsCustomPlan(Boolean(row.isCustomPlan));
+        setEditCustomReason(row.customPlanReason || '');
     };
 
     const openViewDetails = async (employeeId: string) => {
@@ -268,6 +283,11 @@ export default function LoanManagement() {
     const saveEdit = async () => {
         if (!editing) return;
         setSaving(true);
+        const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+        const minRate = Math.ceil(bal / 12);
+        const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
+        const finalInst = bal > 0 ? (editIsCustomPlan ? (inst > 0 ? Math.min(bal, inst) : minRate) : (inst >= minRate ? inst : minRate)) : 0;
+
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.admin}/loans/${editing.employeeId}`, {
@@ -277,8 +297,10 @@ export default function LoanManagement() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    remainingBalance: Number(editBalance),
-                    monthlyInstallment: Number(editInstallment),
+                    remainingBalance: bal,
+                    monthlyInstallment: finalInst,
+                    isCustomPlan: editIsCustomPlan,
+                    customPlanReason: editIsCustomPlan ? editCustomReason.trim() : undefined,
                 }),
             });
             const body = await res.json().catch(() => ({}));
@@ -293,7 +315,7 @@ export default function LoanManagement() {
                 await openViewDetails(editing.employeeId);
             }
         } catch {
-            showToast('Network error saving loan', false);
+            showToast('Network error updating loan', false);
         } finally {
             setSaving(false);
         }
@@ -487,8 +509,18 @@ export default function LoanManagement() {
                                                 </td>
                                                 <td className="px-5 py-4 text-slate-600">{row.department || row.designation || '—'}</td>
                                                 <td className="px-5 py-4 text-right font-medium text-slate-700">{fmtPKR(row.totalDisbursed)}</td>
-                                                <td className="px-5 py-4 text-right font-black text-emerald-700">{fmtPKR(row.remainingBalance)}</td>
-                                                <td className="px-5 py-4 text-right font-semibold text-slate-800">{fmtPKR(row.monthlyInstallment)}</td>
+                                                <td className="px-5 py-4 text-right font-bold text-emerald-600">{fmtPKR(row.remainingBalance)}</td>
+                                                <td className="px-5 py-4 text-right font-semibold text-slate-800">
+                                                    <div>{fmtPKR(row.monthlyInstallment)}</div>
+                                                    {row.isCustomPlan && (
+                                                        <span 
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 mt-1 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200" 
+                                                            title={row.customPlanReason || 'Custom repayment plan approved by management'}
+                                                        >
+                                                            Custom Plan
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td className="px-5 py-4">
                                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
                                                         row.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
@@ -720,8 +752,21 @@ export default function LoanManagement() {
                                                 <td className="px-5 py-4 font-mono text-xs text-slate-500">
                                                     {item.payslipNo || `#${item.payslipId.slice(-6)}`}
                                                 </td>
-                                                <td className="px-5 py-4 text-right font-black text-rose-600">
-                                                    - {fmtPKR(item.amountDeducted)}
+                                                <td className="px-5 py-4 text-right">
+                                                    {item.amountDeducted > 0 ? (
+                                                        <span className="font-black text-rose-600">- {fmtPKR(item.amountDeducted)}</span>
+                                                    ) : (
+                                                        <div className="flex flex-col items-end">
+                                                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                                                item.repaymentStatus === 'Paused' 
+                                                                    ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                                                                    : 'bg-blue-100 text-blue-800 border border-blue-300'
+                                                            }`}>
+                                                                {item.repaymentStatus === 'Paused' ? '⏸ Paused (Rs. 0)' : '⏭ Skipped (Rs. 0)'}
+                                                            </span>
+                                                            {item.note && <span className="text-[10px] text-slate-400 mt-0.5 text-right">{item.note}</span>}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-5 py-4 text-right font-bold text-emerald-700">
                                                     {fmtPKR(item.currentLoanBalance)}
@@ -843,7 +888,14 @@ export default function LoanManagement() {
                                             <p className="text-base font-black text-emerald-800 mt-1">{fmtPKR(detailData.summary.remainingBalance)}</p>
                                         </div>
                                         <div className="p-3.5 bg-indigo-50 border border-indigo-100 rounded-2xl">
-                                            <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Monthly Cut</p>
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Monthly Cut</p>
+                                                {detailData.summary.isCustomPlan && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                                        Custom
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-base font-bold text-indigo-800 mt-1">{fmtPKR(detailData.summary.monthlyInstallment)}</p>
                                         </div>
                                         <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col justify-between">
@@ -914,7 +966,14 @@ export default function LoanManagement() {
                                                                         <p className="text-[11px] text-slate-400 truncate">{loan.notes || loan.loanId}</p>
                                                                     </td>
                                                                     <td className="px-4 py-3 text-right font-bold text-slate-800">{fmtPKR(loan.totalAmount)}</td>
-                                                                    <td className="px-4 py-3 text-right font-medium text-slate-600">{fmtPKR(loan.monthlyInstallment)}</td>
+                                                                    <td className="px-4 py-3 text-right font-medium text-slate-600">
+                                                                        <div>{fmtPKR(loan.monthlyInstallment)}</div>
+                                                                        {loan.isCustomPlan && (
+                                                                            <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                                                                Custom Plan
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
                                                                     <td className="px-4 py-3 text-right font-black text-emerald-700">{fmtPKR(loan.remainingAmount)}</td>
                                                                     <td className="px-4 py-3 text-center">
                                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
@@ -969,8 +1028,18 @@ export default function LoanManagement() {
                                                                     <td className="px-4 py-3 text-slate-600">
                                                                         {fmtDate(rep.date)}
                                                                     </td>
-                                                                    <td className="px-4 py-3 text-right font-black text-rose-600">
-                                                                        - {fmtPKR(rep.amount)}
+                                                                    <td className="px-4 py-3 text-right">
+                                                                        {rep.amount > 0 ? (
+                                                                            <span className="font-black text-rose-600">- {fmtPKR(rep.amount)}</span>
+                                                                        ) : (
+                                                                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                                                                rep.repaymentStatus === 'Paused' 
+                                                                                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                                                                    : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                                                            }`}>
+                                                                                {rep.repaymentStatus || 'Skipped'} (Rs. 0)
+                                                                            </span>
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-4 py-3">
                                                                         {rep.erpReferenceId ? (
@@ -1035,17 +1104,63 @@ export default function LoanManagement() {
                                 <X size={20} />
                             </button>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             <div>
                                 <label className="text-xs font-semibold text-slate-500 uppercase">Remaining Balance (PKR)</label>
                                 <input
                                     type="number"
                                     min={0}
                                     value={editBalance}
-                                    onChange={(e) => setEditBalance(e.target.value)}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEditBalance(val);
+                                        const bal = Math.max(0, Math.ceil(Number(val) || 0));
+                                        const minRate = Math.ceil(bal / 12);
+                                        if (!editIsCustomPlan && bal > 0 && (!editInstallment || Number(editInstallment) < minRate)) {
+                                            setEditInstallment(String(minRate));
+                                        }
+                                    }}
                                     className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
                                 />
                             </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-slate-500 uppercase block mb-1.5">Repayment Plan Policy</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setEditIsCustomPlan(false);
+                                            const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                                            const minRate = Math.ceil(bal / 12);
+                                            if (Number(editInstallment) < minRate) {
+                                                setEditInstallment(String(minRate));
+                                            }
+                                        }}
+                                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                            !editIsCustomPlan 
+                                                ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-400/20' 
+                                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <p className={`text-xs font-bold ${!editIsCustomPlan ? 'text-emerald-900' : 'text-slate-700'}`}>Standard 1-Year</p>
+                                        <p className="text-[10px] text-slate-500 mt-0.5">Payable within 12 months max</p>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditIsCustomPlan(true)}
+                                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                            editIsCustomPlan 
+                                                ? 'bg-purple-50/80 border-purple-300 ring-2 ring-purple-400/20' 
+                                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                    >
+                                        <p className={`text-xs font-bold ${editIsCustomPlan ? 'text-purple-900' : 'text-slate-700'}`}>Custom Plan</p>
+                                        <p className="text-[10px] text-slate-500 mt-0.5">Management / HR override</p>
+                                    </button>
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="text-xs font-semibold text-slate-500 uppercase">Monthly Installment (PKR)</label>
                                 <input
@@ -1056,6 +1171,62 @@ export default function LoanManagement() {
                                     className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
                                 />
                             </div>
+
+                            {editIsCustomPlan && (
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Approval Reason / Management Note</label>
+                                    <input
+                                        type="text"
+                                        value={editCustomReason}
+                                        onChange={(e) => setEditCustomReason(e.target.value)}
+                                        placeholder="e.g. Special high-balance loan approved by CEO"
+                                        className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2 text-xs focus:ring-2 focus:ring-purple-200 outline-none"
+                                    />
+                                </div>
+                            )}
+
+                            {(() => {
+                                const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                                const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
+                                const minRate = Math.ceil(bal / 12);
+                                if (bal <= 0) return null;
+
+                                if (editIsCustomPlan) {
+                                    const months = inst > 0 ? Math.ceil(bal / inst) : 0;
+                                    const years = months > 0 ? (months / 12).toFixed(1) : '0';
+                                    return (
+                                        <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 space-y-1">
+                                            <p className="font-bold flex items-center gap-1 text-purple-950">
+                                                <span>⚙️</span> Custom Management Plan Active
+                                            </p>
+                                            <div className="grid grid-cols-2 gap-2 mt-1 text-[11px]">
+                                                <div>
+                                                    <span className="text-purple-600 block">Total Payback Months:</span>
+                                                    <span className="font-bold text-sm text-purple-950">{months} Months (~{years} Years)</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-purple-600 block">Monthly Deduction:</span>
+                                                    <span className="font-bold text-sm text-purple-950">{fmtPKR(inst)}/mo</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-purple-700 mt-1">
+                                                This custom installment will be linked and synchronized across payroll runs without being forced to 12 months.
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1">
+                                        <p className="font-bold flex items-center gap-1">
+                                            <span>✓</span> Standard 1-Year (12 Months) Payback Rule
+                                        </p>
+                                        <p className="text-[11px] text-emerald-700">
+                                            Minimum installment required is <strong>Rs. {minRate.toLocaleString()}/mo</strong>. Decimals are rounded off to whole numbers.
+                                        </p>
+                                    </div>
+                                );
+                            })()}
                         </div>
                         <div className="flex gap-2 pt-2">
                             <button

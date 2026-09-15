@@ -16,6 +16,37 @@ export interface EmployeeLoanSummary {
     status: 'Active' | 'Paid' | 'Suspended' | 'None';
     source: 'employee_record' | 'computed';
     loanId?: string;
+    isCustomPlan?: boolean;
+    customPlanReason?: string;
+}
+
+/**
+ * Calculates the consolidated monthly loan installment.
+ * - If isCustomPlan is true (set by Super Admin / HR), honors the custom monthly installment rate
+ *   without forcefully clamping it to 12 months (e.g. for loans of 3M where 12 months exceeds salary).
+ * - Otherwise enforces the default strict 1-year (12 months max) payback rule.
+ * - Always rounds up to whole rupees (Math.ceil, zero decimals).
+ */
+export function calculateConsolidatedMonthlyInstallment(
+    totalBalance: number,
+    currentMonthlyRate: number,
+    isCustomPlan: boolean = false
+): number {
+    const bal = Math.max(0, Math.ceil(Number(totalBalance) || 0));
+    if (bal <= 0) return 0;
+
+    const rate = Math.max(0, Math.ceil(Number(currentMonthlyRate) || 0));
+
+    // Admin/HR Custom Plan Override:
+    if (isCustomPlan && rate > 0) {
+        return Math.min(bal, rate);
+    }
+
+    const minRequired1YearRate = Math.ceil(bal / 12);
+    if (rate >= minRequired1YearRate) {
+        return rate;
+    }
+    return minRequired1YearRate;
 }
 
 export function computeSingleEmployeeLoanSummaryFromPreloadedData(
@@ -48,6 +79,9 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
         issueDate: l.issueDate,
         notes: l.notes || '',
         category: 'Loan',
+        isCustomPlan: Boolean(l.isCustomPlan),
+        customPlanReason: l.customPlanReason || '',
+        paybackDuration: l.paybackDuration,
     }));
 
     const loans: IndividualLoanItem[] = [...existingRecordLoans];
@@ -132,8 +166,16 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
     }
 
     const totalDisbursed = loans.reduce((s, l) => s + Number(l.totalAmount || 0), 0);
-    const remainingBalance = loans.reduce((s, l) => s + Number(l.remainingAmount || 0), 0);
-    const activeMonthlyInstallment = loans.filter(l => l.status === 'Active').reduce((s, l) => s + Number(l.monthlyInstallment || 0), 0);
+    const remainingBalance = Math.ceil(loans.reduce((s, l) => s + Number(l.remainingAmount || 0), 0));
+    
+    // Determine the base rate from active loans without naive sum-doubling
+    const activeLoans = loans.filter(l => l.status === 'Active' && Number(l.remainingAmount) > 0);
+    const baseActiveRate = activeLoans.length > 0
+        ? Math.max(...activeLoans.map(l => Number(l.monthlyInstallment || 0)))
+        : 0;
+
+    const hasCustomPlan = activeLoans.some(l => Boolean(l.isCustomPlan));
+    const activeMonthlyInstallment = calculateConsolidatedMonthlyInstallment(remainingBalance, baseActiveRate, hasCustomPlan);
 
     return {
         totalDisbursed,
@@ -198,13 +240,17 @@ export async function buildComputedLoanMap(): Promise<Record<string, { balance: 
     return map;
 }
 
-export function loanInfoFromEmployeeRecord(emp: any): { balance: number; monthlyDeduction: number; totalDisbursed: number; status: EmployeeLoanSummary['status']; loanId?: string } | null {
+export function loanInfoFromEmployeeRecord(emp: any): { balance: number; monthlyDeduction: number; totalDisbursed: number; status: EmployeeLoanSummary['status']; loanId?: string; isCustomPlan?: boolean } | null {
     if (!emp.loans || emp.loans.length === 0) return null;
 
     const activeLoans = (emp.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
     const totalDisbursed = (emp.loans || []).reduce((s: number, l: any) => s + Number(l.totalAmount || l.remainingAmount || 0), 0);
-    const totalRemaining = activeLoans.reduce((s: number, l: any) => s + Number(l.remainingAmount || 0), 0);
-    const monthlyDeduction = activeLoans.reduce((s: number, l: any) => s + Number(l.monthlyInstallment || 0), 0);
+    const totalRemaining = Math.ceil(activeLoans.reduce((s: number, l: any) => s + Number(l.remainingAmount || 0), 0));
+    const baseActiveRate = activeLoans.length > 0
+        ? Math.max(...activeLoans.map((l: any) => Number(l.monthlyInstallment || 0)))
+        : 0;
+    const hasCustomPlan = activeLoans.some((l: any) => Boolean(l.isCustomPlan));
+    const monthlyDeduction = calculateConsolidatedMonthlyInstallment(totalRemaining, baseActiveRate, hasCustomPlan);
 
     return {
         balance: totalRemaining,
@@ -212,6 +258,7 @@ export function loanInfoFromEmployeeRecord(emp: any): { balance: number; monthly
         totalDisbursed: Math.max(totalDisbursed, totalRemaining),
         status: totalRemaining > 0 ? 'Active' : (totalDisbursed > 0 ? 'Paid' : 'None'),
         loanId: activeLoans[0]?.loanId || emp.loans[0]?.loanId,
+        isCustomPlan: hasCustomPlan,
     };
 }
 
@@ -229,6 +276,9 @@ export async function buildAllEmployeeLoanSummaries(options: { activeOnly?: bool
         if (computed.status === 'None' && (!computed.loans || computed.loans.length === 0)) continue;
         if (options.activeOnly && computed.status !== 'Active') continue;
 
+        const hasCustomPlan = computed.loans.some(l => l.status === 'Active' && Boolean(l.isCustomPlan));
+        const customReason = computed.loans.find(l => l.status === 'Active' && Boolean(l.isCustomPlan))?.customPlanReason;
+
         summaries.push({
             employeeId: emp.employeeId,
             firstName: emp.firstName,
@@ -241,6 +291,8 @@ export async function buildAllEmployeeLoanSummaries(options: { activeOnly?: bool
             status: computed.status,
             source: 'employee_record',
             loanId: computed.loans[0]?.loanId,
+            isCustomPlan: hasCustomPlan,
+            customPlanReason: customReason,
         });
     }
 
@@ -255,7 +307,12 @@ export async function buildAllEmployeeLoanSummaries(options: { activeOnly?: bool
 
 export async function updateEmployeeLoan(
     employeeId: string,
-    payload: { remainingBalance: number; monthlyInstallment: number },
+    payload: {
+        remainingBalance: number;
+        monthlyInstallment: number;
+        isCustomPlan?: boolean;
+        customPlanReason?: string;
+    },
     updatedBy: string
 ) {
     const employee = await Employee.findOne({ employeeId });
@@ -263,8 +320,19 @@ export async function updateEmployeeLoan(
         throw Object.assign(new Error('Employee not found.'), { status: 404 });
     }
 
-    const remainingBalance = Math.max(0, Number(payload.remainingBalance) || 0);
-    const monthlyInstallment = Math.max(0, Number(payload.monthlyInstallment) || 0);
+    const remainingBalance = Math.max(0, Math.ceil(Number(payload.remainingBalance) || 0));
+    let monthlyInstallment = Math.max(0, Math.ceil(Number(payload.monthlyInstallment) || 0));
+
+    // Admin/HR Custom Plan Override detection
+    const min1YearRate = Math.ceil(remainingBalance / 12);
+    const isCustomPlan = Boolean(
+        payload.isCustomPlan ||
+        (remainingBalance > 0 && monthlyInstallment > 0 && monthlyInstallment < min1YearRate)
+    );
+
+    if (remainingBalance > 0) {
+        monthlyInstallment = calculateConsolidatedMonthlyInstallment(remainingBalance, monthlyInstallment, isCustomPlan);
+    }
 
     if (!employee.loans) {
         (employee as any).loans = [];
@@ -300,12 +368,22 @@ export async function updateEmployeeLoan(
                 status: 'Active',
                 issueDate: new Date(),
                 notes: `Updated by admin (${updatedBy})`,
+                isCustomPlan,
+                customPlanReason: payload.customPlanReason || (isCustomPlan ? `Admin override by ${updatedBy}` : ''),
+                customPlanSetBy: updatedBy,
+                customPlanSetAt: new Date(),
+                paybackDuration: monthlyInstallment > 0 ? Math.ceil(remainingBalance / monthlyInstallment) : 12,
             } as any;
             employee.loans!.push(newLoan);
         } else if (activeLoans.length === 1) {
             activeLoans[0].remainingAmount = remainingBalance;
             activeLoans[0].monthlyInstallment = monthlyInstallment;
             activeLoans[0].status = 'Active';
+            activeLoans[0].isCustomPlan = isCustomPlan;
+            activeLoans[0].customPlanReason = payload.customPlanReason || (isCustomPlan ? `Admin override by ${updatedBy}` : '');
+            activeLoans[0].customPlanSetBy = updatedBy;
+            activeLoans[0].customPlanSetAt = new Date();
+            activeLoans[0].paybackDuration = monthlyInstallment > 0 ? Math.ceil(remainingBalance / monthlyInstallment) : 12;
             if (!activeLoans[0].totalAmount || activeLoans[0].totalAmount < remainingBalance) {
                 activeLoans[0].totalAmount = remainingBalance;
             }
@@ -324,11 +402,39 @@ export async function updateEmployeeLoan(
                     bal -= amt;
                 }
             }
-            activeLoans[activeLoans.length - 1].monthlyInstallment = monthlyInstallment;
+            for (let i = 0; i < activeLoans.length; i++) {
+                activeLoans[i].monthlyInstallment = (i === activeLoans.length - 1) ? monthlyInstallment : 0;
+                activeLoans[i].isCustomPlan = (i === activeLoans.length - 1) ? isCustomPlan : false;
+                activeLoans[i].customPlanReason = payload.customPlanReason || '';
+                activeLoans[i].customPlanSetBy = updatedBy;
+                activeLoans[i].customPlanSetAt = new Date();
+                activeLoans[i].paybackDuration = monthlyInstallment > 0 ? Math.ceil(remainingBalance / monthlyInstallment) : 12;
+            }
         }
     }
 
     await employee.save();
+
+    // Synchronize active EmployeeRequest loan items for this employee so terms stay linked everywhere
+    await EmployeeRequest.updateMany(
+        {
+            employeeId,
+            status: { $in: ['Approved', 'Completed'] },
+            $or: [
+                { category: { $in: ['Loan', 'Request Loan'] } },
+                { requestType: { $in: ['Loan', 'Request Loan'] } },
+                { category: { $regex: /loan/i } }
+            ]
+        },
+        {
+            $set: {
+                'details.recommendedMonthlyDeduction': monthlyInstallment,
+                'details.isCustomPlan': isCustomPlan,
+                'details.paybackDuration': monthlyInstallment > 0 ? Math.ceil(remainingBalance / monthlyInstallment) : 12,
+                'details.customPlanReason': payload.customPlanReason || (isCustomPlan ? `Admin override by ${updatedBy}` : ''),
+            }
+        }
+    );
 
     // If zeroed out, also mark any pending/approved EmployeeRequest loan items as Completed
     if (remainingBalance === 0) {
@@ -365,6 +471,10 @@ export interface IndividualLoanItem {
     category?: string;
     notes?: string;
     paybackDuration?: number;
+    isCustomPlan?: boolean;
+    customPlanReason?: string;
+    customPlanSetBy?: string;
+    customPlanSetAt?: Date | string;
 }
 
 export interface LoanRepaymentItem {
@@ -375,6 +485,8 @@ export interface LoanRepaymentItem {
     amount: number;
     date: Date | string;
     erpReferenceId?: string;
+    status?: 'Deducted' | 'Skipped' | 'Paused';
+    notes?: string;
 }
 
 export interface EmployeeLoanDetailResult {
@@ -388,6 +500,8 @@ export interface EmployeeLoanDetailResult {
         remainingBalance: number;
         monthlyInstallment: number;
         status: EmployeeLoanSummary['status'];
+        isCustomPlan?: boolean;
+        customPlanReason?: string;
     };
     loans: IndividualLoanItem[];
     repayments: LoanRepaymentItem[];
@@ -427,16 +541,36 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
     const repayments: LoanRepaymentItem[] = [];
     for (const ps of payslips) {
         const loanDeds = (ps.deductions || []).filter((d: any) => d.component === 'Loan Deduction' && Number(d.amount) > 0);
-        for (const d of loanDeds) {
-            const key = `${ps.periodYear}-${ps.periodMonth}`;
+        const dedAmount = loanDeds.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
+        const key = `${ps.periodYear}-${ps.periodMonth}`;
+
+        if (dedAmount > 0) {
             repayments.push({
                 payslipId: String((ps as any)._id || ''),
                 payslipNo: ps.payslipNo || '',
                 periodMonth: ps.periodMonth,
                 periodYear: ps.periodYear,
-                amount: Number(d.amount),
+                amount: dedAmount,
                 date: (ps as any).finalizedAt || ps.createdAt,
                 erpReferenceId: runErpMap[key] || undefined,
+                status: 'Deducted',
+            });
+        } else if (
+            (ps as any).loanDeductionStatus === 'Paused' ||
+            (ps as any).loanDeductionStatus === 'Skipped' ||
+            (ps.notes && ps.notes.toLowerCase().includes('loan deduction paused'))
+        ) {
+            const isPaused = (ps as any).loanDeductionStatus === 'Paused' || (ps.notes && ps.notes.toLowerCase().includes('loan deduction paused'));
+            repayments.push({
+                payslipId: String((ps as any)._id || ''),
+                payslipNo: ps.payslipNo || '',
+                periodMonth: ps.periodMonth,
+                periodYear: ps.periodYear,
+                amount: 0,
+                date: (ps as any).finalizedAt || ps.createdAt,
+                erpReferenceId: runErpMap[key] || undefined,
+                status: isPaused ? 'Paused' : 'Skipped',
+                notes: (ps as any).loanDeductionSkipReason || (isPaused ? 'Approved Loan Pause Request' : 'Loan deduction removed/skipped by HR in payroll'),
             });
         }
     }
@@ -454,6 +588,8 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
             remainingBalance: computed.remainingBalance,
             monthlyInstallment: computed.monthlyInstallment,
             status: computed.status,
+            isCustomPlan: computed.loans.some(l => l.status === 'Active' && Boolean(l.isCustomPlan)),
+            customPlanReason: computed.loans.find(l => l.status === 'Active' && Boolean(l.isCustomPlan))?.customPlanReason,
         },
         loans: computed.loans,
         repayments: repayments.reverse(), // most recent repayments first
@@ -493,8 +629,10 @@ export interface MonthlyLoanDeductionItem {
     amountDeducted: number;
     currentLoanBalance: number;
     deductionDate: Date | string;
-    repaymentStatus: 'Deducted' | 'Completed' | 'Pending';
+    repaymentStatus: 'Deducted' | 'Completed' | 'Pending' | 'Skipped' | 'Paused';
     loanDeductionErpId?: string;
+    notes?: string;
+    isCustomPlan?: boolean;
 }
 
 export interface MonthlyLoanLedgerResult {
@@ -542,14 +680,16 @@ export async function getMonthlyLoanDeductionsLedger(
     let totalDeducted = 0;
 
     for (const ps of payslips) {
+        const emp = empMap[ps.employeeId];
+        const loanInfo = getLoanInfoForPayroll(ps.employeeId, emp || {}, computedLoanMap);
         const loanDeds = (ps.deductions || []).filter((d: any) => d.component === 'Loan Deduction' && Number(d.amount) > 0);
         const dedAmount = loanDeds.reduce((s: number, d: any) => s + Number(d.amount || 0), 0);
         
+        const isLoanPause = (ps as any).loanDeductionStatus === 'Paused' || (ps.notes && ps.notes.toLowerCase().includes('loan deduction paused'));
+        const isLoanSkipped = (ps as any).loanDeductionStatus === 'Skipped' || (dedAmount === 0 && loanInfo && loanInfo.balance > 0);
+
         if (dedAmount > 0) {
             totalDeducted += dedAmount;
-            const emp = empMap[ps.employeeId];
-            const loanInfo = getLoanInfoForPayroll(ps.employeeId, emp || {}, computedLoanMap);
-
             items.push({
                 employeeId: ps.employeeId,
                 firstName: emp?.firstName || ps.employeeName?.split(' ')[0] || 'Employee',
@@ -563,6 +703,31 @@ export async function getMonthlyLoanDeductionsLedger(
                 deductionDate: ps.finalizedAt || ps.createdAt || new Date(),
                 repaymentStatus: 'Deducted',
                 loanDeductionErpId: ps.loanDeductionErpId || '',
+                notes: ps.notes || '',
+                isCustomPlan: Boolean((emp as any)?.loans?.some((l: any) => l.isCustomPlan)),
+            });
+        } else if (isLoanPause || isLoanSkipped) {
+            // Explicitly record that the loan deduction was paused / skipped for this month
+            // The loan balance is NOT minused, and repayment is NOT counted as received.
+            const statusLabel = isLoanPause ? 'Paused' : 'Skipped';
+            const skipReason = (ps as any).loanDeductionSkipReason || 
+                (isLoanPause ? 'Approved Loan Pause Request' : 'Loan deduction removed/skipped by HR in payroll review');
+
+            items.push({
+                employeeId: ps.employeeId,
+                firstName: emp?.firstName || ps.employeeName?.split(' ')[0] || 'Employee',
+                lastName: emp?.lastName || ps.employeeName?.split(' ').slice(1).join(' ') || '',
+                department: emp?.jobInfo?.department || ps.department || '—',
+                designation: emp?.jobInfo?.designation || ps.designation || '—',
+                payslipId: String(ps._id || ''),
+                payslipNo: ps.payslipNo || '',
+                amountDeducted: 0,
+                currentLoanBalance: loanInfo.balance,
+                deductionDate: ps.finalizedAt || ps.createdAt || new Date(),
+                repaymentStatus: statusLabel,
+                loanDeductionErpId: ps.loanDeductionErpId || '',
+                notes: skipReason,
+                isCustomPlan: Boolean((emp as any)?.loans?.some((l: any) => l.isCustomPlan)),
             });
         }
     }
