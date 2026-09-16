@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import {
     PiggyBank, Search, Download,
     BadgeCheck, Clock, CheckCircle2, FileText,
     ArrowUpRight, ArrowDownLeft, Wallet, AlertCircle,
-    Eye, EyeOff, Banknote, History, Calendar, PlusCircle,
+    Eye, EyeOff,
     Scale, Handshake, ShieldCheck, PenTool, RotateCcw, X,
     ExternalLink, Loader2, BookOpen, Check
 } from 'lucide-react';
@@ -51,37 +50,6 @@ interface MyPFData {
     eligibilityMessage?: string;
 }
 
-interface IndividualLoanItem {
-    loanId: string;
-    totalAmount: number;
-    remainingAmount: number;
-    monthlyInstallment: number;
-    status: 'Active' | 'Paid' | 'Cancelled';
-    issueDate?: string;
-    category?: string;
-    notes?: string;
-    paybackDuration?: number;
-}
-
-interface LoanRepaymentItem {
-    payslipId: string;
-    payslipNo?: string;
-    periodMonth: number;
-    periodYear: number;
-    amount: number;
-    date: string;
-}
-
-interface MyLoanData {
-    summary: {
-        totalDisbursed: number;
-        remainingBalance: number;
-        monthlyInstallment: number;
-        status: 'Active' | 'Paid' | 'Suspended' | 'None';
-    };
-    loans: IndividualLoanItem[];
-    repayments: LoanRepaymentItem[];
-}
 
 const fmtDate = (d: string | undefined | null) =>
     d ? new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
@@ -99,10 +67,7 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function MyProvidentFund() {
-    const navigate = useNavigate();
-    const [activeView, setActiveView] = useState<'pf' | 'loans'>('pf');
     const [data, setData] = useState<MyPFData | null>(null);
-    const [loanData, setLoanData] = useState<MyLoanData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState('');
@@ -314,26 +279,16 @@ export default function MyProvidentFund() {
         setError(null);
         try {
             const token = localStorage.getItem('token');
-            const [pfRes, loanRes] = await Promise.all([
-                fetch(`${api.baseURL}/api/employees/my-pf`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-                fetch(`${api.baseURL}/api/employees/my-loans`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).catch(() => null)
-            ]);
+            const res = await fetch(`${api.baseURL}/api/employees/my-pf`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
 
-            if (pfRes.ok) {
-                const body = await pfRes.json();
+            if (res.ok) {
+                const body = await res.json();
                 setData(body);
             } else {
-                const body = await pfRes.json().catch(() => ({}));
+                const body = await res.json().catch(() => ({}));
                 setError(body.message || 'Failed to load Provident Fund data.');
-            }
-
-            if (loanRes && loanRes.ok) {
-                const loanBody = await loanRes.json();
-                setLoanData(loanBody);
             }
         } catch {
             setError('Network error occurred while fetching Provident Fund details.');
@@ -438,8 +393,6 @@ export default function MyProvidentFund() {
 
     const paginatedHistory = filteredHistory.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-    const totalRepaidAmount = (loanData?.repayments || []).reduce((s, r) => s + r.amount, 0);
-
     return (
         <div className="space-y-6 animate-fadeIn">
             
@@ -466,243 +419,26 @@ export default function MyProvidentFund() {
                             </button>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-                            {activeView === 'pf' ? 'My Provident Fund Statement' : 'My Loans & Salary Deductions'}
+                            My Provident Fund Statement
                         </h1>
                         <p className="text-indigo-100 text-xs sm:text-sm max-w-xl">
-                            {activeView === 'pf'
-                                ? 'Track your monthly payroll contributions, fund growth, maturity status, and official ledger.'
-                                : 'View your active loan balances, approved loan dates, and monthly payroll repayment deductions.'}
+                            Track your monthly payroll contributions, fund growth, maturity status, and official ledger.
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
-                        {activeView === 'pf' && (
-                            <button
-                                onClick={handleDownloadPDF}
-                                className="px-5 py-3 rounded-2xl bg-white text-indigo-700 hover:bg-indigo-50 transition-all font-bold text-xs shadow-lg flex items-center gap-2 group"
-                            >
-                                <Download size={16} className="group-hover:translate-y-0.5 transition-transform" />
-                                Download Statement
-                            </button>
-                        )}
-
                         <button
-                            onClick={() => navigate('/my-requests', { state: { openNew: true } })}
-                            className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white transition-all font-bold text-xs border border-white/20 flex items-center gap-2"
+                            onClick={handleDownloadPDF}
+                            className="px-5 py-3 rounded-2xl bg-white text-indigo-700 hover:bg-indigo-50 transition-all font-bold text-xs shadow-lg flex items-center gap-2 group cursor-pointer"
                         >
-                            <PlusCircle size={16} />
-                            Request New Loan
+                            <Download size={16} className="group-hover:translate-y-0.5 transition-transform" />
+                            Download Statement
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* View Selector Tabs */}
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit gap-1 text-xs font-bold shadow-inner">
-                <button
-                    type="button"
-                    onClick={() => setActiveView('pf')}
-                    className={`px-5 py-2.5 rounded-xl transition-all flex items-center gap-2 ${
-                        activeView === 'pf'
-                            ? 'bg-white text-indigo-700 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                >
-                    <PiggyBank size={16} /> Provident Fund Ledger
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveView('loans')}
-                    className={`px-5 py-2.5 rounded-xl transition-all flex items-center gap-2 relative ${
-                        activeView === 'loans'
-                            ? 'bg-white text-emerald-700 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                >
-                    <Banknote size={16} /> My Loans & Deductions
-                    {loanData && loanData.summary.remainingBalance > 0 && (
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    )}
-                </button>
-            </div>
-
-            {activeView === 'loans' ? (
-                /* My Loans & Repayment View */
-                <div className="space-y-6 animate-fadeIn">
-                    {/* Loan Summary Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Remaining Loan Balance</span>
-                                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                                    <Banknote size={18} />
-                                </div>
-                            </div>
-                            <div className="mt-3">
-                                <div className="text-2xl font-black text-emerald-700">{fmtPKR(loanData?.summary.remainingBalance || 0)}</div>
-                                <p className="text-[11px] text-slate-500 mt-1 font-medium">Outstanding to be repaid</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Monthly Salary Cut</span>
-                                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                                    <Clock size={18} />
-                                </div>
-                            </div>
-                            <div className="mt-3">
-                                <div className="text-2xl font-black text-indigo-700">{fmtPKR(loanData?.summary.monthlyInstallment || 0)}</div>
-                                <p className="text-[11px] text-slate-500 mt-1 font-medium">Deducted from monthly payroll</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Loan Granted</span>
-                                <div className="w-9 h-9 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center">
-                                    <Wallet size={18} />
-                                </div>
-                            </div>
-                            <div className="mt-3">
-                                <div className="text-2xl font-black text-slate-900">{fmtPKR(loanData?.summary.totalDisbursed || 0)}</div>
-                                <p className="text-[11px] text-slate-500 mt-1 font-medium">Accumulated loans approved</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Salary Repaid</span>
-                                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                                    <CheckCircle2 size={18} />
-                                </div>
-                            </div>
-                            <div className="mt-3">
-                                <div className="text-2xl font-black text-amber-700">{fmtPKR(totalRepaidAmount)}</div>
-                                <p className="text-[11px] text-slate-500 mt-1 font-medium">{(loanData?.repayments || []).length} monthly deductions</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Individual Approved Loans Breakdown */}
-                    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-900">Approved Loans Breakdown</h2>
-                                <p className="text-xs text-slate-500 mt-0.5">Details of each loan granted, approval dates, installments, and remaining amounts.</p>
-                            </div>
-                            <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
-                                {loanData?.loans.length || 0} Loans
-                            </span>
-                        </div>
-
-                        {(!loanData || loanData.loans.length === 0) ? (
-                            <div className="p-10 text-center space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                                <Banknote size={32} className="mx-auto text-slate-300" />
-                                <p className="text-sm font-semibold text-slate-600">No loan records found</p>
-                                <p className="text-xs text-slate-400">You do not have any active or past company loans.</p>
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase border-b border-slate-100">
-                                            <th className="px-5 py-3">Date Approved</th>
-                                            <th className="px-5 py-3">Category / Reference</th>
-                                            <th className="px-5 py-3 text-right">Loan Amount</th>
-                                            <th className="px-5 py-3 text-right">Monthly Installment</th>
-                                            <th className="px-5 py-3 text-right">Remaining Balance</th>
-                                            <th className="px-5 py-3 text-center">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {loanData.loans.map((loan, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                                                <td className="px-5 py-3.5 font-medium text-slate-800 flex items-center gap-1.5">
-                                                    <Calendar size={13} className="text-slate-400" />
-                                                    {fmtDate(loan.issueDate)}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-slate-600">
-                                                    <p className="font-bold text-slate-800">{loan.category || 'Loan'}</p>
-                                                    <p className="text-[11px] text-slate-400">{loan.notes || loan.loanId}</p>
-                                                </td>
-                                                <td className="px-5 py-3.5 text-right font-bold text-slate-900">{fmtPKR(loan.totalAmount)}</td>
-                                                <td className="px-5 py-3.5 text-right font-medium text-slate-700">{fmtPKR(loan.monthlyInstallment)}</td>
-                                                <td className="px-5 py-3.5 text-right font-black text-emerald-700">{fmtPKR(loan.remainingAmount)}</td>
-                                                <td className="px-5 py-3.5 text-center">
-                                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                                                        loan.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                                        loan.status === 'Paid' ? 'bg-slate-100 text-slate-600' :
-                                                        'bg-rose-50 text-rose-700'
-                                                    }`}>
-                                                        {loan.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Monthly Salary Deductions / Repayments Ledger */}
-                    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-900">Salary Repayment History</h2>
-                                <p className="text-xs text-slate-500 mt-0.5">Record of each month's loan repayment deducted automatically from your salary.</p>
-                            </div>
-                            <span className="px-3 py-1 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
-                                {loanData?.repayments.length || 0} Deductions
-                            </span>
-                        </div>
-
-                        {(!loanData || loanData.repayments.length === 0) ? (
-                            <div className="p-10 text-center space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                                <History size={32} className="mx-auto text-slate-300" />
-                                <p className="text-sm font-semibold text-slate-600">No salary deductions recorded yet</p>
-                                <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                                    Loan installments are automatically logged here when monthly payrolls are finalized.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase border-b border-slate-100">
-                                            <th className="px-5 py-3">Payroll Month</th>
-                                            <th className="px-5 py-3">Payslip Reference</th>
-                                            <th className="px-5 py-3">Deduction Date</th>
-                                            <th className="px-5 py-3 text-right">Amount Cut from Salary</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {loanData.repayments.map((rep, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                                                <td className="px-5 py-3.5 font-bold text-slate-800">
-                                                    {MONTH_NAMES[rep.periodMonth] || rep.periodMonth} {rep.periodYear}
-                                                </td>
-                                                <td className="px-5 py-3.5 font-mono text-slate-600">
-                                                    {rep.payslipNo || `#${rep.payslipId.slice(-6)}`}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-slate-600">
-                                                    {fmtDate(rep.date)}
-                                                </td>
-                                                <td className="px-5 py-3.5 text-right font-black text-rose-600">
-                                                    - {fmtPKR(rep.amount)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ) : (
-                /* Original Provident Fund View */
-                <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-6 animate-fadeIn">
                     {/* Maturity Status Alert */}
                     {data.pfClaimed ? (
                         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 sm:p-5 flex items-center gap-4 text-emerald-900 shadow-sm">
@@ -1093,7 +829,6 @@ export default function MyProvidentFund() {
 
             </div>
             </div>
-            )}
 
             {/* MODAL 1: Musharakah Opt-In Agreement Modal */}
             {showOptInModal && createPortal(

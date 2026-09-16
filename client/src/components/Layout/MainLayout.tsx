@@ -24,6 +24,7 @@ const MainLayout = () => {
     else if (location.pathname.includes('directory')) title = 'Directory';
     else if (location.pathname.includes('claim')) title = 'Expense Claim';
     else if (location.pathname.includes('my-payslips')) title = 'My Payslips';
+    else if (location.pathname.includes('my-loans')) title = 'My Loans';
     else if (location.pathname.includes('payroll')) title = 'Payroll Management';
     else if (location.pathname.includes('my-requests')) title = 'Requests';
     else if (location.pathname.includes('provident-fund')) title = 'Provident Fund';

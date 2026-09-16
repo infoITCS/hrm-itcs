@@ -43,6 +43,7 @@ import PayrollRunDetail from './pages/Payroll/PayrollRunDetail';
 import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
 import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
+import MyLoans from './pages/Payroll/MyLoans';
 
 // Dynamic Page Titles Mapping
 const ROUTE_TITLES: Record<string, string> = {
@@ -55,6 +56,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/attendance': 'Attendance',
   '/leave': 'Leave Management',
   '/my-payslips': 'My Payslips',
+  '/my-loans': 'My Loans',
   '/payroll': 'Payroll Management',
   '/provident-fund': 'Provident Fund Report',
   '/my-requests': 'My Requests',
@@ -197,6 +199,7 @@ function AppRoutes() {
         <Route path="attendance" element={<ModuleProtectedRoute moduleName="attendance"><AttendanceRouter /></ModuleProtectedRoute>} />
         <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />
         <Route path="my-payslips" element={<MyPayslips />} />
+        <Route path="my-loans" element={<MyLoans />} />
         <Route path="payroll" element={<ModuleProtectedRoute moduleName="payroll"><PayrollDashboard /></ModuleProtectedRoute>} />
         <Route path="provident-fund" element={<ProvidentFundReport />} />
         
