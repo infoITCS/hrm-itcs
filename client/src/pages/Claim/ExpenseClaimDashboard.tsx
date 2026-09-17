@@ -35,6 +35,9 @@ import {
     ChevronLeft,
     ChevronRight,
     Edit2,
+    HeartHandshake,
+    BookOpen,
+    ExternalLink,
 } from 'lucide-react';
 
 type ForWhom = 'Self' | 'Dependent';
@@ -1479,6 +1482,15 @@ const ExpenseClaimDashboard = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
+                        <a
+                            href="/company-policy#sec-10"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white text-indigo-700 hover:bg-indigo-50 font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                        >
+                            <BookOpen size={15} />
+                            OPD Policy Manual
+                        </a>
 
                         <button
                             onClick={() => { fetchMine(); fetchApprovals(); fetchHistory(); }}
@@ -1657,6 +1669,44 @@ const ExpenseClaimDashboard = () => {
                                     <span className="text-sm font-extrabold">
                                         {(selectedEmployeeId ? loadingHistory : loadingMine) ? 'Loading...' : formatMoney(remainingMedicalLimit)}
                                     </span>
+                                </div>
+                            )}
+
+                            {category === 'Medical' && (
+                                <div className="lg:col-span-2 p-4 sm:p-5 bg-gradient-to-br from-emerald-50/80 via-teal-50/40 to-white border border-emerald-200 rounded-2xl space-y-3 shadow-xs animate-fadeIn">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-2.5">
+                                        <div className="flex items-center gap-2 text-emerald-950 font-bold text-xs">
+                                            <HeartHandshake size={16} className="text-emerald-600" />
+                                            <span>OPD Medical Reimbursement Rules (ITCS-HR-POL-OPD-004)</span>
+                                        </div>
+                                        <a
+                                            href="/company-policy#sec-10"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 transition-colors w-fit group cursor-pointer"
+                                        >
+                                            <span>Read Complete OPD Policy</span>
+                                            <ExternalLink size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                                        </a>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                                        <div className="bg-white/90 border border-emerald-100 p-2.5 rounded-xl">
+                                            <span className="font-bold text-slate-800 block text-[10px] uppercase text-emerald-700">Accrual & Limit</span>
+                                            <span className="text-slate-600">PKR 5,000/mo (Max PKR 60,000/yr). Unused balance lapses on Dec 31.</span>
+                                        </div>
+                                        <div className="bg-white/90 border border-emerald-100 p-2.5 rounded-xl">
+                                            <span className="font-bold text-slate-800 block text-[10px] uppercase text-emerald-700">Pre-Registered Dependents</span>
+                                            <span className="text-slate-600">Spouse & children must be pre-registered in HRM profile prior to treatment.</span>
+                                        </div>
+                                        <div className="bg-white/90 border border-emerald-100 p-2.5 rounded-xl">
+                                            <span className="font-bold text-slate-800 block text-[10px] uppercase text-emerald-700">Mandatory Documents</span>
+                                            <span className="text-slate-600">Itemized bill + prescription. Detail each medicine/test in Purpose/Notes.</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-[11px] text-emerald-800/90 flex items-center gap-1.5 font-medium">
+                                        <Clock size={13} className="text-emerald-600 shrink-0" />
+                                        <span>Deadlines: Submit within 30 days of expense date, and at least 10 days before month-end for payroll processing.</span>
+                                    </div>
                                 </div>
                             )}
                             <div>
@@ -2682,6 +2732,16 @@ const ExpenseClaimDashboard = () => {
                                         className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
                                     />
                                 </div>
+                                <a
+                                    href="/company-policy#sec-10"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl transition-colors shrink-0"
+                                    title="View OPD Policy"
+                                >
+                                    <BookOpen size={14} className="text-emerald-700" />
+                                    <span>OPD Policy Guidelines</span>
+                                </a>
                                 <button
                                     onClick={fetchMedicalRecords}
                                     className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors"

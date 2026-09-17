@@ -21,6 +21,11 @@ import {
     Users,
     DollarSign,
     Lock,
+    Stethoscope,
+    Pill,
+    AlertTriangle,
+    ArrowRight,
+    Check,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import CompanyProfileModal from '../../components/CompanyProfileModal';
@@ -43,6 +48,7 @@ const SECTIONS: Section[] = [
     { id: 'sec-07', num: '07', title: 'Employee Tardiness & Leave Policy', icon: Clock, keywords: ['tardiness', 'late', 'grace period', 'leave', 'sick', 'annual', 'half-day', 'maternity', 'paternity', 'meal allowance'] },
     { id: 'sec-08', num: '08', title: 'Performance Management', icon: Award, keywords: ['performance', 'training', 'development', 'certifications', 'career', 'appraisal', 'smart'] },
     { id: 'sec-09', num: '09', title: 'Grievance and Discipline', icon: AlertOctagon, keywords: ['grievance', 'discipline', 'procedure', 'negligence', 'misconduct', 'committee'] },
+    { id: 'sec-10', num: '10', title: 'OPD Medical Policy', icon: Stethoscope, keywords: ['opd', 'medical', 'reimbursement', 'health', 'clinic', 'doctor', 'prescription', 'pharmacy', 'dependents', 'allowance', 'claims', 'consultation', 'diagnostics', 'hospital', '5000', '60000', 'inpatient', 'outpatient', 'dental', 'vision', 'maternity', 'appeal', 'itcs-hr-pol-opd-004'] },
 ];
 
 export default function CompanyPolicy() {
@@ -75,6 +81,19 @@ export default function CompanyPolicy() {
 
         window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    // Deep-linking support on mount (handles #sec-10 or ?section=sec-10)
+    useEffect(() => {
+        const hash = window.location.hash.replace('#', '');
+        const params = new URLSearchParams(window.location.search);
+        const target = hash || params.get('section') || '';
+        if (target) {
+            const resolvedId = (target === 'opd-policy' || target === 'sec-10' || target === 'opd') ? 'sec-10' : target;
+            setTimeout(() => {
+                scrollToSection(resolvedId);
+            }, 300);
+        }
     }, []);
 
     const scrollToSection = (id: string) => {
@@ -502,10 +521,20 @@ export default function CompanyPolicy() {
                                             <div className="font-bold text-white text-xs">Salary & Wages</div>
                                             <div className="text-[11px] text-purple-200/70 mt-1">Competitive, benchmarked against industry standards. Reviewed annually.</div>
                                         </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3.5">
-                                            <HeartHandshake size={16} className="text-pink-400 mb-1" />
-                                            <div className="font-bold text-white text-xs">OPD Medical Coverage</div>
-                                            <div className="text-[11px] text-purple-200/70 mt-1">Up to <b>PKR 60,000/year</b> (accruing at PKR 5,000/month) claimable via expense claim portal.</div>
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col justify-between">
+                                            <div>
+                                                <HeartHandshake size={16} className="text-pink-400 mb-1" />
+                                                <div className="font-bold text-white text-xs">OPD Medical Coverage</div>
+                                                <div className="text-[11px] text-purple-200/70 mt-1">Up to <b>PKR 60,000/year</b> (accruing at PKR 5,000/month) claimable via expense claim portal.</div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => scrollToSection('sec-10')}
+                                                className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-bold text-pink-400 hover:text-pink-300 transition-colors cursor-pointer group w-fit"
+                                            >
+                                                <span>View Full OPD Policy (Section 10)</span>
+                                                <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
+                                            </button>
                                         </div>
                                         <div className="bg-white/5 border border-white/10 rounded-xl p-3.5">
                                             <Building2 size={16} className="text-purple-400 mb-1" />
@@ -731,6 +760,21 @@ export default function CompanyPolicy() {
                                     </div>
                                 </div>
 
+                                <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                    <div className="flex items-center gap-2.5 text-emerald-200">
+                                        <HeartHandshake size={16} className="text-emerald-400 shrink-0" />
+                                        <span>Clinical consultations and prescription medicines incurred during sick leaves can be claimed under the <b>OPD Medical Reimbursement Policy</b>.</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => scrollToSection('sec-10')}
+                                        className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                    >
+                                        <span>View OPD Policy</span>
+                                        <ArrowRight size={12} />
+                                    </button>
+                                </div>
+
                                 <div className="bg-amber-950/30 border border-amber-500/20 rounded-2xl p-4 space-y-2 text-xs">
                                     <h4 className="font-bold text-amber-300 uppercase tracking-wide">Tardiness Rules & Grace Period</h4>
                                     <ul className="list-disc list-inside space-y-1 text-purple-100">
@@ -865,6 +909,314 @@ export default function CompanyPolicy() {
                                         <p className="text-purple-200/70">Fraudulent behavior, forging signatures, breach of confidentiality, violence, or misuse of authority.</p>
                                     </div>
                                 </div>
+                            </div>
+                        </section>
+
+                        {/* SECTION 10 */}
+                        <section id="sec-10" className="bg-[#170f29] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 scroll-mt-24">
+                            {/* Section Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-md">
+                                        <Stethoscope size={20} />
+                                    </div>
+                                    <div>
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Section 10</div>
+                                        <h2 className="text-xl sm:text-2xl font-bold text-white">OPD Medical Reimbursement Policy</h2>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-mono font-bold tracking-wide">
+                                        ITCS-HR-POL-OPD-004
+                                    </span>
+                                    <span className="px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-200 text-[11px] font-semibold">
+                                        Version 2.0 • Effective Jan 1, 2026
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6 text-sm text-purple-100/85 leading-relaxed">
+                                
+                                {/* 1. Objective & Policy Statement */}
+                                <div>
+                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> 1. Policy Objective & Scope
+                                    </h3>
+                                    <p className="text-xs text-purple-100/80 leading-relaxed mb-3">
+                                        IT Consulting & Services (ITCS) is committed to safeguarding the health and well-being of its workforce. This policy establishes a standardized, transparent, and fair process for reimbursing eligible <b>Outpatient Department (OPD)</b> medical expenses incurred by permanent full-time employees and their declared eligible dependents.
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                        <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5">
+                                            <div className="font-bold text-emerald-300 mb-1 flex items-center gap-1.5">
+                                                <DollarSign size={14} /> Monthly Accrual
+                                            </div>
+                                            <div className="text-lg font-black text-white">PKR 5,000</div>
+                                            <p className="text-[11px] text-purple-200/70 mt-0.5">Accrues automatically on the 1st of each calendar month</p>
+                                        </div>
+                                        <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5">
+                                            <div className="font-bold text-emerald-300 mb-1 flex items-center gap-1.5">
+                                                <Sparkles size={14} /> Annual Entitlement
+                                            </div>
+                                            <div className="text-lg font-black text-white">PKR 60,000</div>
+                                            <p className="text-[11px] text-purple-200/70 mt-0.5">Maximum claimable limit per employee across calendar year</p>
+                                        </div>
+                                        <div className="bg-purple-950/30 border border-purple-500/20 rounded-2xl p-3.5">
+                                            <div className="font-bold text-purple-300 mb-1 flex items-center gap-1.5">
+                                                <Clock size={14} /> Year-End Lapsing
+                                            </div>
+                                            <div className="text-lg font-black text-white">Dec 31</div>
+                                            <p className="text-[11px] text-purple-200/70 mt-0.5">Unused balance lapses annually; no encashment or cross-year rollover</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 2. Covered Dependents & Mandatory Pre-Registration */}
+                                <div>
+                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> 2. Eligible Beneficiaries & Mandatory Pre-Registration
+                                    </h3>
+                                    <p className="text-xs text-purple-100/80 leading-relaxed mb-3">
+                                        OPD benefits may be claimed for the employee personally or on behalf of their immediate lawful family members:
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1">
+                                            <div className="font-bold text-white flex items-center gap-1.5">
+                                                <Users size={14} className="text-emerald-400" /> Covered Dependents
+                                            </div>
+                                            <ul className="text-xs space-y-1 text-purple-200/80 list-disc list-inside pt-1">
+                                                <li><b>Lawful Spouse</b> (One spouse registered in HR records).</li>
+                                                <li><b>Unmarried Dependent Children</b> (Up to 25 years of age, residing with the employee, and not gainfully employed).</li>
+                                            </ul>
+                                        </div>
+                                        <div className="bg-rose-950/20 border border-rose-500/25 rounded-2xl p-4 space-y-1">
+                                            <div className="font-bold text-rose-300 flex items-center gap-1.5">
+                                                <AlertTriangle size={14} /> Mandatory Pre-Registration Rule
+                                            </div>
+                                            <p className="text-xs text-rose-200/80 leading-relaxed pt-1">
+                                                <b>All dependents must be officially registered in the employee's HRM profile prior to incurring medical expenses.</b> Any medical claim submitted for an unregistered family member will be automatically declined without review.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. Financial Limits & Accumulation Rules */}
+                                <div>
+                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> 3. Financial Limits & Accumulation Rules
+                                    </h3>
+                                    <div className="overflow-x-auto border border-white/10 rounded-2xl">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                                <tr className="bg-white/5 text-purple-300 font-bold border-b border-white/10">
+                                                    <th className="p-3.5">Provision</th>
+                                                    <th className="p-3.5">Terms / Details</th>
+                                                    <th className="p-3.5">Operational Guidance</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-white/5 text-purple-200/80">
+                                                <tr>
+                                                    <td className="p-3.5 font-bold text-white">Monthly Accrual</td>
+                                                    <td className="p-3.5 text-emerald-300 font-bold">PKR 5,000 / month</td>
+                                                    <td className="p-3.5">Credited on the 1st of every month during active employment.</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-3.5 font-bold text-white">Calendar Year Cap</td>
+                                                    <td className="p-3.5 text-emerald-300 font-bold">PKR 60,000 / year</td>
+                                                    <td className="p-3.5">Calculated from Jan 1 through Dec 31 of each year.</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-3.5 font-bold text-white">Intra-Year Carry Forward</td>
+                                                    <td className="p-3.5 text-cyan-300 font-bold">Permitted within Year</td>
+                                                    <td className="p-3.5">Unused monthly allowance rolls forward into subsequent months of the same year (e.g., PKR 15,000 available in Month 3 if unused).</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-3.5 font-bold text-white">Year-End Expiration</td>
+                                                    <td className="p-3.5 text-rose-300 font-bold">Lapses Dec 31</td>
+                                                    <td className="p-3.5">Balances cannot be carried into the next calendar year, encashed, or paid out upon resignation.</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="p-3.5 font-bold text-white">Mid-Year Joiners</td>
+                                                    <td className="p-3.5 text-amber-300 font-bold">Pro-Rated Accrual</td>
+                                                    <td className="p-3.5">Accrual begins from the formal appointment / joining month through Dec 31.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* 4. Approved vs Non-Approved Expenses Breakdown */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    
+                                    {/* Approved Expenses */}
+                                    <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-2xl p-4 sm:p-5 space-y-3">
+                                        <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs uppercase tracking-wider border-b border-emerald-500/20 pb-2.5">
+                                            <CheckCircle2 size={16} className="text-emerald-400" /> Approved Medical Expenses (Reimbursable)
+                                        </div>
+                                        <ul className="text-xs space-y-2 text-purple-100/80">
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Doctor Consultations:</strong> General Physician (GP) and recognized Medical Specialists at registered clinics and hospitals.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Basic Pathology Diagnostics:</strong> Complete Blood Count (CBC), Urine Analysis, Blood Sugar/Glucose, Lipid Profile, LFT, RFT, and prescribed lab tests.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Diagnostic Imaging & ECG:</strong> Prescribed X-Rays, Ultrasounds, ECG, and echocardiography for clinical diagnosis.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Prescription Medicines:</strong> Allopathic pharmaceutical medications prescribed directly by a licensed medical practitioner.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Emergency Outpatient Care:</strong> Minor emergency treatment, wound dressings, sutures, and acute injection administration not requiring hospitalization.
+                                                </div>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    {/* Non-Approved Expenses */}
+                                    <div className="bg-rose-950/20 border border-rose-500/25 rounded-2xl p-4 sm:p-5 space-y-3">
+                                        <div className="flex items-center gap-2 text-rose-300 font-bold text-xs uppercase tracking-wider border-b border-rose-500/20 pb-2.5">
+                                            <AlertOctagon size={16} className="text-rose-400" /> Excluded & Non-Reimbursable Expenses
+                                        </div>
+                                        <ul className="text-xs space-y-2 text-purple-100/80">
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Supplements & Tonics:</strong> Multivitamins, calcium/vitamin D, nutritional powders, protein shakes, and immunity boosters (unless prescribed for acute pathology).
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Routine Checkups:</strong> Executive general screenings or annual wellness tests without active medical symptoms or diagnosis.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Dental & Vision:</strong> Teeth cleaning, scaling, cosmetic dentistry, braces, eye refractions, contact lenses, sunglasses, or designer frames.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Aesthetic & Cosmetic:</strong> Dermatology for cosmetic/anti-aging purposes, hair treatments, plastic surgery, or skin whitening.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Over-The-Counter (OTC) & Unprescribed:</strong> Self-medication or purchases without a valid doctor's prescription slip.
+                                                </div>
+                                            </li>
+                                            <li className="flex items-start gap-2">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                                                <div>
+                                                    <strong className="text-white">Alternative Medicine:</strong> Homeopathic, herbal, Unani, Ayurvedic, or non-certified alternative treatments.
+                                                </div>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                {/* 5. Claim Submission SOP & Documentation */}
+                                <div>
+                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> 5. Mandatory Claim Submission SOP & Documentation
+                                    </h3>
+                                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3 text-xs">
+                                        <p className="text-purple-200/90 leading-relaxed">
+                                            To ensure fair review and prevent processing delays, all medical claims must strictly satisfy the following three criteria:
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                                            <div className="bg-purple-950/40 border border-purple-500/20 rounded-xl p-3 space-y-1">
+                                                <span className="font-bold text-white flex items-center gap-1.5">
+                                                    <FileText size={14} className="text-cyan-400" /> 1. Itemized Invoices
+                                                </span>
+                                                <p className="text-[11px] text-purple-200/70">
+                                                    Original printed cash memo with clinic/pharmacy name, date, patient name, and itemized unit prices. Hand-written slips without stamps are unacceptable.
+                                                </p>
+                                            </div>
+                                            <div className="bg-purple-950/40 border border-purple-500/20 rounded-xl p-3 space-y-1">
+                                                <span className="font-bold text-white flex items-center gap-1.5">
+                                                    <Pill size={14} className="text-emerald-400" /> 2. Doctor Prescription
+                                                </span>
+                                                <p className="text-[11px] text-purple-200/70">
+                                                    Valid clinical prescription from a licensed doctor (PMDC/PMC registered) with diagnostic remarks, patient name, date, and signature.
+                                                </p>
+                                            </div>
+                                            <div className="bg-purple-950/40 border border-purple-500/20 rounded-xl p-3 space-y-1">
+                                                <span className="font-bold text-white flex items-center gap-1.5">
+                                                    <Check size={14} className="text-amber-400" /> 3. Detailed Description
+                                                </span>
+                                                <p className="text-[11px] text-purple-200/70">
+                                                    Employee <b>must type the exact names of medicines, lab tests, and procedures</b> into the description field on the portal when submitting the claim.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Deadlines Banner */}
+                                        <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 flex items-start gap-2.5">
+                                            <Clock size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                                            <div>
+                                                <strong className="text-amber-300">Strict Deadlines: </strong>
+                                                All OPD claims must be submitted in the HRMS within <b>30 calendar days</b> of the expense date. Furthermore, claims must be submitted at least <b>10 days before month-end</b> to be included in that month's payroll reimbursement disbursement.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 6. Verification, Appeals & FAQs */}
+                                <div>
+                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> 6. Audit, Verification & Appeal Process
+                                    </h3>
+                                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-2 text-xs">
+                                        <p className="text-purple-200/85 leading-relaxed">
+                                            Every claim undergoes two-tiered verification by <b>Human Resources (compliance & prescription review)</b> and <b>Finance (voucher & payment reconciliation)</b>.
+                                        </p>
+                                        <p className="text-purple-200/85 leading-relaxed">
+                                            <b>Rejection & Discrepancy Resolution:</b> If a claim is rejected or partially approved, the reviewing officer must record the specific reason in the system. If an employee believes their claim was rejected in error, they may submit a formal appeal / re-evaluation request through HRMS within <b>7 working days</b> of the rejection notice.
+                                        </p>
+                                        <p className="text-[11px] text-purple-300/80 italic pt-1">
+                                            Note: Submission of fabricated, altered, or fraudulent invoices constitutes gross misconduct under Section 09 of the Company Policy Manual, resulting in immediate disciplinary action.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Direct CTA to Medical Claims */}
+                                <div className="bg-gradient-to-r from-emerald-900/60 via-teal-900/40 to-purple-950/60 border border-emerald-500/30 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+                                    <div className="space-y-1 text-center sm:text-left">
+                                        <h4 className="text-base font-bold text-white flex items-center justify-center sm:justify-start gap-2">
+                                            <HeartHandshake size={18} className="text-emerald-400" /> Ready to Submit an OPD Medical Claim?
+                                        </h4>
+                                        <p className="text-xs text-emerald-200/80">
+                                            Have your itemized pharmacy receipt and doctor prescription ready.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate('/claim?tab=submit')}
+                                        className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2 shrink-0 cursor-pointer"
+                                    >
+                                        <span>Submit Medical Claim</span>
+                                        <ArrowRight size={14} />
+                                    </button>
+                                </div>
+
                             </div>
                         </section>
 

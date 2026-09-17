@@ -57,6 +57,21 @@ const MONTH_NAMES = [
     'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+const getLoanTitle = (loan: IndividualLoanItem) => {
+    if (!loan.category || loan.category.trim().toLowerCase() === 'loan') {
+        return 'Company Loan';
+    }
+    return loan.category;
+};
+
+const getLoanSubtitle = (loan: IndividualLoanItem) => {
+    // If notes contains internal debug strings or raw MongoDB ObjectIDs, format cleanly
+    if (!loan.notes || /updated by admin|zeroed by admin|[0-9a-f]{24}/i.test(loan.notes)) {
+        return 'Approved by HR Administration';
+    }
+    return loan.notes;
+};
+
 export default function MyLoans() {
     const navigate = useNavigate();
     const [loanData, setLoanData] = useState<MyLoanData | null>(null);
@@ -271,8 +286,8 @@ export default function MyLoans() {
                                             {fmtDate(loan.issueDate)}
                                         </td>
                                         <td className="px-5 py-3.5 text-slate-600">
-                                            <p className="font-bold text-slate-800">{loan.category || 'Loan'}</p>
-                                            <p className="text-[11px] text-slate-400">{loan.notes || loan.loanId}</p>
+                                            <p className="font-bold text-slate-800">{getLoanTitle(loan)}</p>
+                                            <p className="text-[11px] text-slate-400 font-medium">{getLoanSubtitle(loan)}</p>
                                         </td>
                                         <td className="px-5 py-3.5 text-right font-bold text-slate-900">{fmtPKR(loan.totalAmount)}</td>
                                         <td className="px-5 py-3.5 text-right font-medium text-slate-700">{fmtPKR(loan.monthlyInstallment)}</td>

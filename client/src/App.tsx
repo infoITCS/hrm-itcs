@@ -62,6 +62,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/my-requests': 'My Requests',
   '/my-requests/manage': 'Manage Requests',
   '/company-policy': 'Company Policy Manual',
+  '/opd-policy': 'OPD Medical Reimbursement Policy',
   '/privacy-policy': 'Privacy Policy',
   '/terms': 'Terms of Service',
   '/admin/loans': 'Loan Management',
@@ -195,6 +196,7 @@ function AppRoutes() {
         <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
         <Route path="directory" element={<Directory />} />
         <Route path="company-policy" element={<CompanyPolicy />} />
+        <Route path="opd-policy" element={<Navigate to="/company-policy#sec-10" replace />} />
         <Route path="claim" element={<ModuleProtectedRoute moduleName="claim"><ExpenseClaimDashboard /></ModuleProtectedRoute>} />
         <Route path="attendance" element={<ModuleProtectedRoute moduleName="attendance"><AttendanceRouter /></ModuleProtectedRoute>} />
         <Route path="leave" element={<ModuleProtectedRoute moduleName="leave"><LeaveDashboard /></ModuleProtectedRoute>} />
