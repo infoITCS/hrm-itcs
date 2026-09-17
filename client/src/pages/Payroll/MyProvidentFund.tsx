@@ -87,6 +87,7 @@ export default function MyProvidentFund() {
     // Opt-In Modal Form States
     const [agreedCheckbox, setAgreedCheckbox] = useState(false);
     const [signatureType, setSignatureType] = useState<'draw' | 'type'>('draw');
+    const [scriptStyle, setScriptStyle] = useState<'dancing' | 'caveat'>('dancing');
     const [typedSignature, setTypedSignature] = useState('');
     const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -94,16 +95,26 @@ export default function MyProvidentFund() {
 
     const isEnrolledInMusharakah = Boolean(data?.musharakahAgreement?.enrolled);
 
+    const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    };
+
     const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        const rect = canvas.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        const { x, y } = getCanvasCoords(e);
 
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -116,13 +127,9 @@ export default function MyProvidentFund() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        const rect = canvas.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        const { x, y } = getCanvasCoords(e);
 
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 4; // Crisp stroke on 2x retina canvas (maps to 2px on screen)
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.strokeStyle = '#0f172a';
@@ -145,38 +152,43 @@ export default function MyProvidentFund() {
         setTypedSignature('');
     };
 
-    const handleTypedSignatureChange = (val: string) => {
-        setTypedSignature(val);
+    const renderTypedSignature = (val: string, style: 'dancing' | 'caveat' = scriptStyle) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (val.trim()) {
-            ctx.font = 'italic 32px "Brush Script MT", "Segoe Script", "Dancing Script", cursive, serif';
+        const trimmed = val.trim();
+        if (trimmed) {
+            let fontSize = 60;
+            if (trimmed.length > 25) fontSize = 40;
+            else if (trimmed.length > 18) fontSize = 48;
+
+            const fontStack = style === 'dancing'
+                ? `'Dancing Script', 'Brush Script MT', cursive`
+                : `'Caveat', 'Segoe Script', cursive`;
+
+            ctx.font = `600 ${fontSize}px ${fontStack}`;
             ctx.fillStyle = '#0f172a';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(val.trim(), canvas.width / 2, canvas.height / 2);
+            ctx.fillText(trimmed, canvas.width / 2, canvas.height / 2 - 8);
             setHasDrawnSignature(true);
         } else {
             setHasDrawnSignature(false);
         }
     };
 
+    const handleTypedSignatureChange = (val: string, style: 'dancing' | 'caveat' = scriptStyle) => {
+        setTypedSignature(val);
+        renderTypedSignature(val, style);
+    };
+
     const getSignatureData = (): string => {
         const canvas = canvasRef.current;
         if (!canvas) return '';
         if (signatureType === 'type' && typedSignature.trim()) {
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.font = 'italic 32px "Brush Script MT", "Segoe Script", "Dancing Script", cursive, serif';
-                ctx.fillStyle = '#0f172a';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(typedSignature.trim(), canvas.width / 2, canvas.height / 2);
-            }
+            renderTypedSignature(typedSignature, scriptStyle);
         }
         return canvas.toDataURL('image/png');
     };
@@ -188,7 +200,9 @@ export default function MyProvidentFund() {
             setAgreedCheckbox(false);
             setHasDrawnSignature(false);
             setSignatureType('draw');
-            setTypedSignature(`${data?.firstName || ''} ${data?.lastName || ''}`.trim());
+            setScriptStyle('dancing');
+            const defaultName = `${data?.firstName || ''} ${data?.lastName || ''}`.trim();
+            setTypedSignature(defaultName);
             setShowOptInModal(true);
             setTimeout(() => {
                 clearCanvas();
@@ -922,7 +936,11 @@ export default function MyProvidentFund() {
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => { setSignatureType('type'); handleTypedSignatureChange(typedSignature || `${data.firstName} ${data.lastName}`); }}
+                                            onClick={() => {
+                                                setSignatureType('type');
+                                                const defaultName = typedSignature || `${data?.firstName || ''} ${data?.lastName || ''}`.trim();
+                                                handleTypedSignatureChange(defaultName, scriptStyle);
+                                            }}
                                             className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                                                 signatureType === 'type' ? 'bg-white shadow-xs text-emerald-800' : 'text-slate-600 hover:text-slate-900'
                                             }`}
@@ -934,45 +952,88 @@ export default function MyProvidentFund() {
 
                                 {signatureType === 'type' ? (
                                     <div className="space-y-2">
-                                        <input
-                                            type="text"
-                                            value={typedSignature}
-                                            onChange={e => handleTypedSignatureChange(e.target.value)}
-                                            placeholder="Type your full legal name"
-                                            className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                                        />
-                                        <p className="text-[11px] text-slate-500">Preview of your digital signature script:</p>
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={typedSignature}
+                                                onChange={e => handleTypedSignatureChange(e.target.value, scriptStyle)}
+                                                placeholder="Type your full legal name"
+                                                className="flex-1 px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium bg-white"
+                                            />
+                                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setScriptStyle('dancing');
+                                                        handleTypedSignatureChange(typedSignature, 'dancing');
+                                                    }}
+                                                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                                                        scriptStyle === 'dancing'
+                                                            ? 'bg-white shadow-xs text-emerald-800 font-bold'
+                                                            : 'text-slate-600 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    Formal Script
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setScriptStyle('caveat');
+                                                        handleTypedSignatureChange(typedSignature, 'caveat');
+                                                    }}
+                                                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                                                        scriptStyle === 'caveat'
+                                                            ? 'bg-white shadow-xs text-emerald-800 font-bold'
+                                                            : 'text-slate-600 hover:text-slate-900'
+                                                    }`}
+                                                >
+                                                    Modern Hand
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">Preview of your digital signature:</p>
                                     </div>
                                 ) : (
-                                    <p className="text-[11px] text-slate-500">Sign with your mouse or fingertip on the canvas below:</p>
+                                    <p className="text-[11px] text-slate-500">Sign with your mouse or fingertip on the standard signing slip below:</p>
                                 )}
 
-                                {/* Canvas drawing area */}
-                                <div className="relative bg-white border border-slate-300 rounded-2xl overflow-hidden shadow-inner">
-                                    <canvas
-                                        ref={canvasRef}
-                                        width={500}
-                                        height={120}
-                                        onMouseDown={startDrawing}
-                                        onMouseMove={draw}
-                                        onMouseUp={stopDrawing}
-                                        onMouseLeave={stopDrawing}
-                                        onTouchStart={startDrawing}
-                                        onTouchMove={draw}
-                                        onTouchEnd={stopDrawing}
-                                        className="w-full h-[120px] cursor-crosshair touch-none bg-slate-50/50"
-                                    />
-                                    <div className="absolute bottom-2 left-4 pointer-events-none text-slate-400 text-xs font-mono select-none">
-                                        ✕ Sign here
+                                {/* Standard Signature Pad Box */}
+                                <div className="w-full max-w-[480px] mx-auto">
+                                    <div className="relative bg-white border-2 border-slate-300/80 rounded-2xl overflow-hidden shadow-xs hover:border-emerald-500/50 transition-colors">
+                                        <canvas
+                                            ref={canvasRef}
+                                            width={960}
+                                            height={280}
+                                            onMouseDown={startDrawing}
+                                            onMouseMove={draw}
+                                            onMouseUp={stopDrawing}
+                                            onMouseLeave={stopDrawing}
+                                            onTouchStart={startDrawing}
+                                            onTouchMove={draw}
+                                            onTouchEnd={stopDrawing}
+                                            className="w-full h-[140px] cursor-crosshair touch-none bg-slate-50/40 block"
+                                        />
+                                        {/* Baseline signing line */}
+                                        <div className="absolute bottom-9 left-6 right-6 border-b border-dashed border-slate-300 pointer-events-none" />
+
+                                        {/* Baseline guide label */}
+                                        <div className="absolute bottom-2.5 left-5 pointer-events-none flex items-center gap-1.5 text-slate-400 text-xs select-none">
+                                            <span className="font-bold text-slate-500 font-mono">✕</span>
+                                            <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400">
+                                                {signatureType === 'type' ? 'Digital Signature Preview' : 'Sign on the line'}
+                                            </span>
+                                        </div>
+
+                                        {/* Clear button */}
+                                        <button
+                                            type="button"
+                                            onClick={clearCanvas}
+                                            className="absolute top-2.5 right-2.5 px-2.5 py-1 text-[11px] font-bold text-slate-600 bg-white/90 backdrop-blur-xs border border-slate-200 rounded-lg hover:bg-slate-100 hover:text-rose-600 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                                            title="Clear signature"
+                                        >
+                                            <RotateCcw size={11} /> Clear
+                                        </button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={clearCanvas}
-                                        className="absolute top-2 right-2 px-2 py-1 text-[11px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                                        title="Clear signature"
-                                    >
-                                        <RotateCcw size={11} /> Clear
-                                    </button>
                                 </div>
 
                                 {/* Signature Status Badge */}
