@@ -604,6 +604,7 @@ router.get('/check-duplicate', authenticate, async (req: Request, res: Response,
 router.get('/today-specials', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const today = new Date();
+        const currentDay = today.getDate();
         const currentMonth = today.getMonth() + 1; // 1-12
         const currentYear = today.getFullYear();
 
@@ -627,43 +628,49 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
             const employeeFullName = [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ') || 'Employee';
 
             if (isBirthdayInMonth && emp.dateOfBirth) {
-                const dateStr = emp.dateOfBirth.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-                specials.push({
-                    id: `${emp.employeeId}-birthday`,
-                    name: employeeFullName,
-                    avatar: emp.avatar,
-                    type: 'birthday',
-                    date: dateStr,
-                    rawDay: emp.dateOfBirth.getDate(),
-                    rawMonth: emp.dateOfBirth.getMonth() + 1
-                });
+                const bDay = emp.dateOfBirth.getDate();
+                if (bDay >= currentDay) {
+                    const dateStr = emp.dateOfBirth.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                    specials.push({
+                        id: `${emp.employeeId}-birthday`,
+                        name: employeeFullName,
+                        avatar: emp.avatar,
+                        type: 'birthday',
+                        date: dateStr,
+                        rawDay: bDay,
+                        rawMonth: emp.dateOfBirth.getMonth() + 1
+                    });
+                }
             }
 
             if (isAnniversaryInMonth && emp.jobInfo?.joiningDate) {
-                const yearsCompleted = currentYear - emp.jobInfo.joiningDate.getFullYear();
-                const dateStr = emp.jobInfo.joiningDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-                if (yearsCompleted > 0) {
-                    specials.push({
-                        id: `${emp.employeeId}-anniversary`,
-                        name: employeeFullName,
-                        avatar: emp.avatar,
-                        type: 'anniversary',
-                        yearsCompleted,
-                        date: dateStr,
-                        rawDay: emp.jobInfo.joiningDate.getDate(),
-                        rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
-                    });
-                } else {
-                    specials.push({
-                        id: `${emp.employeeId}-newjoiner`,
-                        name: employeeFullName,
-                        avatar: emp.avatar,
-                        type: 'new_joiner',
-                        designation: emp.jobInfo?.designation || emp.jobInfo?.jobTitle || 'New Joiner',
-                        date: dateStr,
-                        rawDay: emp.jobInfo.joiningDate.getDate(),
-                        rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
-                    });
+                const aDay = emp.jobInfo.joiningDate.getDate();
+                if (aDay >= currentDay) {
+                    const yearsCompleted = currentYear - emp.jobInfo.joiningDate.getFullYear();
+                    const dateStr = emp.jobInfo.joiningDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                    if (yearsCompleted > 0) {
+                        specials.push({
+                            id: `${emp.employeeId}-anniversary`,
+                            name: employeeFullName,
+                            avatar: emp.avatar,
+                            type: 'anniversary',
+                            yearsCompleted,
+                            date: dateStr,
+                            rawDay: aDay,
+                            rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
+                        });
+                    } else {
+                        specials.push({
+                            id: `${emp.employeeId}-newjoiner`,
+                            name: employeeFullName,
+                            avatar: emp.avatar,
+                            type: 'new_joiner',
+                            designation: emp.jobInfo?.designation || emp.jobInfo?.jobTitle || 'New Joiner',
+                            date: dateStr,
+                            rawDay: aDay,
+                            rawMonth: emp.jobInfo.joiningDate.getMonth() + 1
+                        });
+                    }
                 }
             }
         }
@@ -678,17 +685,21 @@ router.get('/today-specials', authenticate, async (req: Request, res: Response, 
 
         for (const h of holidays) {
             const start = new Date(h.startDate);
+            const end = h.endDate ? new Date(h.endDate) : start;
             const day = start.getDate();
-            const dateStr = start.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-            specials.push({
-                id: `holiday-${h._id}`,
-                name: h.name,
-                type: 'holiday',
-                date: dateStr,
-                designation: h.location || 'All Offices',
-                rawDay: day,
-                rawMonth: currentMonth
-            });
+            const isUpcomingOrOngoing = day >= currentDay || end >= today;
+            if (isUpcomingOrOngoing) {
+                const dateStr = start.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+                specials.push({
+                    id: `holiday-${h._id}`,
+                    name: h.name,
+                    type: 'holiday',
+                    date: dateStr,
+                    designation: h.location || 'All Offices',
+                    rawDay: day,
+                    rawMonth: currentMonth
+                });
+            }
         }
 
         // Sort chronologically by the day of the month

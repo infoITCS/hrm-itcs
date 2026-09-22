@@ -483,7 +483,7 @@ const Directory = () => {
                             {/* Action Buttons */}
                             <div className="flex items-center gap-2">
                                 <a
-                                    href="/org-chart.svg"
+                                    href="/org-chart.png"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5"
@@ -493,10 +493,10 @@ const Directory = () => {
                                     <span className="hidden sm:inline">Open in Tab</span>
                                 </a>
                                 <a
-                                    href="/org-chart.svg"
-                                    download="ITCS_Organization_Chart.svg"
+                                    href="/org-chart.png"
+                                    download="ITCS_Organization_Chart.png"
                                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-1.5"
-                                    title="Download SVG file"
+                                    title="Download organization chart image"
                                 >
                                     <Download size={14} />
                                     <span className="hidden sm:inline">Download</span>
@@ -523,7 +523,7 @@ const Directory = () => {
                             style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
                         >
                             <img 
-                                src="/org-chart.svg" 
+                                src="/org-chart.png" 
                                 alt="Organization Hierarchy Chart"
                                 draggable={false}
                                 className="max-w-none transition-transform duration-75 ease-out select-none"

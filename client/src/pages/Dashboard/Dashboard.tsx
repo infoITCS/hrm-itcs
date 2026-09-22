@@ -255,7 +255,13 @@ const Dashboard = () => {
                         const currentDay = today.getDate();
                         const currentMonth = today.getMonth() + 1;
 
-                        const items2 = specialData.map((s: any) => ({
+                        // Only show celebrations today or upcoming later this month
+                        const upcomingEvents = specialData.filter((s: any) => {
+                            if (s.day === undefined || s.day === null) return true;
+                            return s.day >= currentDay;
+                        });
+
+                        const items2 = upcomingEvents.map((s: any) => ({
                             id: s.id,
                             type: s.type,
                             name: s.name,
@@ -268,7 +274,7 @@ const Dashboard = () => {
                             bg: s.type === 'birthday' ? 'bg-rose-50' : s.type === 'anniversary' ? 'bg-amber-50' : s.type === 'holiday' ? 'bg-emerald-50' : 'bg-indigo-50'
                         }));
                         if (items2.length === 0) {
-                            items2.push({ id: 'empty', type: 'info', name: 'No special events this month', years: undefined, role: 'Quiet month!', date: '-', isToday: false, icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
+                            items2.push({ id: 'empty', type: 'info', name: 'No upcoming celebrations this month', years: undefined, role: 'All caught up!', date: '-', isToday: false, icon: Sparkles, color: 'text-slate-400', bg: 'bg-slate-50' });
                         }
                         setHighlights(items2.slice(0, 6));
                     }
@@ -682,7 +688,7 @@ const Dashboard = () => {
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-slate-800 tracking-tight">This Month's Highlights</h2>
-                            <p className="text-sm text-slate-500 font-medium">Teammate celebrations for the current month</p>
+                            <p className="text-sm text-slate-500 font-medium">Upcoming teammate celebrations this month</p>
                         </div>
                     </div>
                     <div className="hidden sm:block">
@@ -697,8 +703,8 @@ const Dashboard = () => {
                         <div className="w-12 h-12 bg-indigo-50 text-indigo-500 border border-indigo-100/50 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
                             <Sparkles size={24} />
                         </div>
-                        <p className="text-sm font-bold text-slate-700">Quiet Month!</p>
-                        <p className="text-xs text-slate-400 mt-1">No birthdays, anniversaries, new joiners, or public holidays this month.</p>
+                        <p className="text-sm font-bold text-slate-700">All Caught Up!</p>
+                        <p className="text-xs text-slate-400 mt-1">No more birthdays, anniversaries, or public holidays remaining this month.</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
