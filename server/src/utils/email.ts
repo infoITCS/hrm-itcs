@@ -19,27 +19,20 @@ const transporter = nodemailer.createTransport({
 /**
  * Helper to determine the frontend URL.
  * Priority: 
- * 1. Provided URL (e.g. from request headers)
+ * 1. Provided URL (e.g. from request headers / origin)
  * 2. process.env.FRONTEND_URL
  * 3. process.env.CLIENT_URL
- * 4. Default localhost
+ * 4. Default http://localhost:5173
  */
 const getBaseUrl = (providedUrl?: string) => {
+    if (providedUrl) {
+        return providedUrl.replace(/\/+$/, '');
+    }
     const envUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
-
-    // 1. Prioritize any configured URL that ISN'T localhost (from .env)
-    if (envUrl && !envUrl.includes('localhost')) {
-        return envUrl;
+    if (envUrl) {
+        return envUrl.replace(/\/+$/, '');
     }
-
-    // 2. Fallback to provided URL (from request headers) ONLY if it's not localhost
-    if (providedUrl && !providedUrl.includes('localhost')) {
-        return providedUrl;
-    }
-
-    // 3. Absolute fallback: The production live link
-    // This ensures that even when testing locally, emails contain working live links.
-    return 'https://hrm-itcs-client.vercel.app';
+    return 'http://localhost:5173';
 };
 
 const getSenderName = (defaultSuffix: string = 'Team') => {
@@ -73,7 +66,7 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string, bas
         logger.warn('⚠️ SMTP_USER is not configured. Email will not be actually sent.');
         logger.info(`\n================= PASSWORD RESET EMAIL ===================`);
         logger.info(`To: ${to}`);
-        logger.info(`Reset URL: [REDACTED]`);
+        logger.info(`Reset URL: ${resetUrl}`);
         logger.info(`==========================================================\n`);
         return { success: process.env.NODE_ENV !== 'production' };
     }

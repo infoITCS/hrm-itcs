@@ -5,7 +5,7 @@ import APIService from '../services/api';
 import { api } from '../utils/api';
 import itcsLogo from '../assets/logo.png';
 import { ForgotPasswordModal } from '../components/ForgotPasswordModal';
-import { Mail, AlertCircle, ArrowLeft, Headphones } from 'lucide-react';
+import { Mail, AlertCircle, ArrowLeft, Headphones, Eye, EyeOff } from 'lucide-react';
 interface SignInProps {
     onLogin: (user: User) => void;
 }
@@ -13,6 +13,7 @@ interface SignInProps {
 export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [showEmailForm, setShowEmailForm] = useState(false);
@@ -234,14 +235,24 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                                                    Forgot password?
                                                 </button>
                                             </div>
-                                            <input
-                                                type="password"
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                required
-                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white outline-none transition-all duration-200"
-                                                placeholder="Enter your password"
-                                            />
+                                            <div className="relative">
+                                                <input
+                                                    type={showPassword ? "text" : "password"}
+                                                    value={password}
+                                                    onChange={(e) => setPassword(e.target.value)}
+                                                    required
+                                                    className="w-full pl-4 pr-11 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white outline-none transition-all duration-200"
+                                                    placeholder="Enter your password"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none"
+                                                    aria-label={showPassword ? "Hide password" : "Show password"}
+                                                >
+                                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 

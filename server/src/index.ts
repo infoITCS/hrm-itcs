@@ -92,11 +92,12 @@ const corsOptions: cors.CorsOptions = {
             process.env.FRONTEND_URL?.trim(),
             process.env.CLIENT_URL?.trim(),
             'http://localhost:5173',
+            'https://hrms.itcs.com.pk',
             'https://hrm-itcs-client.vercel.app'
         ].filter(Boolean) as string[];
 
         // Allow if no origin (like mobile apps or curl) or if it matches our list
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost') || origin.endsWith('itcs.com.pk')) {
             callback(null, true);
         }
         else {
@@ -127,6 +128,7 @@ app.use(helmet({
                 "'self'",
                 "blob:",
                 "http://localhost:5173",
+                "https://hrms.itcs.com.pk",
                 "https://hrm-itcs-client.vercel.app",
                 process.env.FRONTEND_URL,
                 process.env.CLIENT_URL
@@ -135,6 +137,7 @@ app.use(helmet({
             frameAncestors: [
                 "'self'",
                 "http://localhost:5173",
+                "https://hrms.itcs.com.pk",
                 "https://hrm-itcs-client.vercel.app",
                 process.env.FRONTEND_URL,
                 process.env.CLIENT_URL

@@ -234,11 +234,28 @@ router.post("/forgot-password", async (req: Request, res: Response, next: NextFu
         user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
         await user.save();
 
+        const clientUrl = req.headers.origin || process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173';
+        const resetLink = `${clientUrl}/reset-password?token=${resetToken}`;
+
+        // Prominently log the reset link to the server console/log so the developer/tester can test it immediately
+        logger.info(`\n🔑 ================= FORGOT PASSWORD RESET LINK ===================`);
+        logger.info(`📧 To: ${user.email}`);
+        logger.info(`🔗 Reset URL: ${resetLink}`);
+        logger.info(`🎫 Token: ${resetToken}`);
+        logger.info(`⏰ Expires: 1 hour (${user.resetPasswordExpires.toISOString()})`);
+        logger.info(`===================================================================\n`);
+
         // Send plain (unhashed) token in the email link
         const emailResult = await sendPasswordResetEmail(user.email, resetToken, req.headers.origin as string) as any;
 
         if (!emailResult.success) {
-            logger.error(`❌ Forgot Password: Failed to send reset email to ${email}. Error: ${emailResult.error}`);
+            logger.warn(`⚠️ Forgot Password: SMTP delivery failed for ${email} (${emailResult.error}). Reset link was logged above for testing.`);
+            if (process.env.NODE_ENV !== 'production') {
+                return res.json({ 
+                    message: "If an account with that email exists, a password reset link has been sent.",
+                    devResetUrl: resetLink
+                });
+            }
             // Roll back the token save so they can try again fresh
             user.resetPasswordToken = undefined;
             user.resetPasswordExpires = undefined;
