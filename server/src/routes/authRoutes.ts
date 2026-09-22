@@ -657,10 +657,8 @@ router.post("/master-pin/request-otp", authenticate, async (req: Request, res: R
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Target email is strictly locked to the server environment Super Admin email
-    // This guarantees that even if someone maliciously edits their MongoDB role to super-admin,
-    // the OTP is ONLY sent to the real owner's inbox (abdul.raheem@itcs.com.pk), never to the attacker's email!
-    const targetEmail = process.env.SUPER_ADMIN_EMAIL || 'abdul.raheem@itcs.com.pk';
+    // Target email: uses SUPER_ADMIN_EMAIL if set in .env; otherwise automatically sends to the logged-in Super Admin's account email!
+    const targetEmail = process.env.SUPER_ADMIN_EMAIL || user.email;
 
     // Generate secure 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();

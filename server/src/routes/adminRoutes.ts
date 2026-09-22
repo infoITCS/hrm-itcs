@@ -449,7 +449,7 @@ router.post('/users/:id/impersonate', authenticate, requireAdmin, async (req: Re
 router.post('/test-email', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { to } = req.body;
-        const targetEmail = to || process.env.HR_EMAIL || process.env.SMTP_USER;
+        const targetEmail = to || (req as any).user?.email || process.env.HR_EMAIL || process.env.SMTP_USER;
         if (!targetEmail) {
             return res.status(400).json({ message: 'Recipient email address is required.' });
         }

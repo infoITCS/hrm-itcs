@@ -5,6 +5,7 @@ import LeaveRequest from '../models/LeaveRequest';
 import LeaveBalance from '../models/LeaveBalance';
 import LeaveType from '../models/LeaveType';
 import Employee from '../models/Employee';
+import { User } from '../models/User.model';
 import { processEmployeePunches } from '../services/attendanceProcessor';
 import { sendLeaveSubmittedEmail, sendLeaveStatusEmail } from '../utils/email';
 import { formatEmployeeFullName } from '../utils/nameHelper';
@@ -793,7 +794,10 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         ]
                     });
                     const employeeName = formatEmployeeFullName(emp, 'Employee');
-                    const hrEmail = process.env.HR_EMAIL || process.env.SMTP_USER || '';
+                    
+                    // Auto-fetch active HR and Admin emails from database
+                    const hrUsers = await User.find({ role: { $in: ['admin', 'super-admin', 'hr'] } }).select('email').lean();
+                    const hrEmails = hrUsers.map((u: any) => u.email).filter(Boolean);
 
                     let managerEmail: string | undefined = undefined;
                     if (emp && emp.jobInfo?.reportingManager) {
@@ -801,7 +805,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         managerEmail = manager?.workEmail || manager?.email;
                     }
 
-                    const recipients = Array.from(new Set([hrEmail, managerEmail].filter(Boolean) as string[]));
+                    const recipients = Array.from(new Set([...hrEmails, managerEmail, process.env.HR_EMAIL].filter(Boolean) as string[]));
                     for (const to of recipients) {
                         await sendLeaveSubmittedEmail(
                             to,

@@ -39,12 +39,268 @@ const getSenderName = (defaultSuffix: string = 'Team') => {
     return process.env.EMAIL_FROM_NAME || `ITCS HRM ${defaultSuffix}`;
 };
 
+// ── Microsoft Graph API Integration ──────────────────────────────────────────
+let cachedGraphToken: string | null = null;
+let graphTokenExpiresAt = 0;
+
+async function getGraphAccessToken(): Promise<string | null> {
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'organizations';
+    const clientId = process.env.MICROSOFT_CLIENT_ID;
+    const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) return null;
+
+    if (cachedGraphToken && Date.now() < graphTokenExpiresAt - 60000) {
+        return cachedGraphToken;
+    }
+
+    try {
+        const body = new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: 'client_credentials',
+            scope: 'https://graph.microsoft.com/.default'
+        });
+
+        const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            logger.warn(`[Microsoft Graph] Token error (${res.status}): ${errText}`);
+            return null;
+        }
+
+        const data: any = await res.json();
+        if (data.access_token) {
+            cachedGraphToken = data.access_token;
+            graphTokenExpiresAt = Date.now() + ((data.expires_in || 3600) * 1000);
+            return cachedGraphToken;
+        }
+        return null;
+    } catch (err: any) {
+        logger.warn(`[Microsoft Graph] Token request failed: ${err?.message || err}`);
+        return null;
+    }
+}
+
+export interface DispatchMailOptions {
+    to: string | string[];
+    subject: string;
+    html: string;
+    from?: string;
+    attachments?: Array<{
+        filename: string;
+        content: any;
+        contentType?: string;
+    }>;
+}
+
+async function sendViaGraph(mailOptions: DispatchMailOptions): Promise<{ success: boolean; error?: string }> {
+    const token = await getGraphAccessToken();
+    if (!token) return { success: false, error: 'Graph access token unavailable' };
+
+    const senderEmail = process.env.MICROSOFT_SENDER_EMAIL || process.env.SMTP_USER || 'abdul.raheem@itcs.com.pk';
+    const recipients = (Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to])
+        .filter(Boolean)
+        .map(email => ({ emailAddress: { address: email.trim() } }));
+
+    if (recipients.length === 0) return { success: false, error: 'No recipients provided' };
+
+    const messagePayload: any = {
+        subject: mailOptions.subject,
+        body: {
+            contentType: 'HTML',
+            content: mailOptions.html
+        },
+        toRecipients: recipients
+    };
+
+    if (mailOptions.attachments && mailOptions.attachments.length > 0) {
+        messagePayload.attachments = mailOptions.attachments.map(att => {
+            const base64 = Buffer.isBuffer(att.content)
+                ? att.content.toString('base64')
+                : Buffer.from(att.content || '').toString('base64');
+            return {
+                '@odata.type': '#microsoft.graph.fileAttachment',
+                name: att.filename,
+                contentType: att.contentType || 'application/octet-stream',
+                contentBytes: base64
+            };
+        });
+    }
+
+    try {
+        const res = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(senderEmail)}/sendMail`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                message: messagePayload,
+                saveToSentItems: false
+            })
+        });
+
+        if (res.status === 202 || (res.status >= 200 && res.status < 300)) {
+            logger.info(`✅ [Microsoft Graph] Email sent to ${recipients.map(r => r.emailAddress.address).join(', ')}: "${mailOptions.subject}"`);
+            return { success: true };
+        }
+
+        const errText = await res.text();
+        logger.warn(`⚠️ [Microsoft Graph] sendMail failed (${res.status}): ${errText}`);
+        return { success: false, error: `Graph API (${res.status}): ${errText}` };
+    } catch (err: any) {
+        logger.warn(`⚠️ [Microsoft Graph] sendMail exception: ${err?.message || err}`);
+        return { success: false, error: err?.message || String(err) };
+    }
+}
+
+async function sendViaBrevo(mailOptions: DispatchMailOptions): Promise<{ success: boolean; error?: string }> {
+    const apiKey = process.env.BREVO_API_KEY;
+    if (!apiKey) return { success: false, error: 'Brevo API key not set' };
+
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || 'hrms@itcs.com.pk';
+    const senderName = process.env.BREVO_SENDER_NAME || getSenderName('Team');
+
+    const recipients = (Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to])
+        .filter(Boolean)
+        .map(email => ({ email: email.trim() }));
+
+    if (recipients.length === 0) return { success: false, error: 'No recipients provided' };
+
+    const body: any = {
+        sender: { name: senderName, email: senderEmail },
+        to: recipients,
+        subject: mailOptions.subject,
+        htmlContent: mailOptions.html
+    };
+
+    if (mailOptions.attachments && mailOptions.attachments.length > 0) {
+        body.attachment = mailOptions.attachments.map(att => {
+            const base64 = Buffer.isBuffer(att.content)
+                ? att.content.toString('base64')
+                : Buffer.from(att.content || '').toString('base64');
+            return {
+                name: att.filename,
+                content: base64
+            };
+        });
+    }
+
+    try {
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'api-key': apiKey,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (res.status === 201 || (res.status >= 200 && res.status < 300)) {
+            const data: any = await res.json().catch(() => ({}));
+            logger.info(`✅ [Brevo API] Email sent to ${recipients.map(r => r.email).join(', ')}: "${mailOptions.subject}" (messageId: ${data.messageId || 'ok'})`);
+            return { success: true };
+        }
+
+        const errText = await res.text();
+        logger.warn(`⚠️ [Brevo API] sendMail failed (${res.status}): ${errText}`);
+        return { success: false, error: `Brevo API (${res.status}): ${errText}` };
+    } catch (err: any) {
+        logger.warn(`⚠️ [Brevo API] sendMail exception: ${err?.message || err}`);
+        return { success: false, error: err?.message || String(err) };
+    }
+}
+
+/**
+ * Unified email dispatcher:
+ * 1. Tries Brevo (Sendinblue) API first (fast, secure, isolated from M365, 300 free/day).
+ * 2. Falls back to Microsoft Graph API if Brevo is not configured or fails.
+ * 3. Falls back to Nodemailer SMTP if neither is configured.
+ * 4. Falls back to console mock in development if none is configured.
+ */
+export async function dispatchEmail(
+    mailOptions: DispatchMailOptions,
+    debugNote?: string
+): Promise<{ success: boolean; error?: string }> {
+    // ── Local Development Terminal Mock ──────────────────────────────────────
+    // In local development, all emails print directly to terminal without calling Brevo.
+    // This protects employee mailboxes and preserves Brevo daily quota.
+    // (Set ENABLE_REAL_EMAILS_IN_DEV=true in .env if you ever want real emails sent from local)
+    if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_REAL_EMAILS_IN_DEV !== 'true') {
+        const recipients = Array.isArray(mailOptions.to) ? mailOptions.to.join(', ') : mailOptions.to;
+        logger.info(`\n📧 ================= [DEV TERMINAL EMAIL] =================`);
+        logger.info(`To: ${recipients}`);
+        logger.info(`Subject: ${mailOptions.subject}`);
+        if (debugNote) {
+            logger.info(`Note: ${debugNote}`);
+        }
+        const linkMatch = mailOptions.html.match(/href="([^"]+)"/);
+        if (linkMatch && linkMatch[1]) {
+            logger.info(`🔗 Action Link: ${linkMatch[1]}`);
+        }
+        logger.info(`==========================================================\n`);
+        return { success: true };
+    }
+
+    // 1. Try Brevo API first (Recommended for security & zero M365 dependency)
+    if (process.env.BREVO_API_KEY) {
+        const brevoResult = await sendViaBrevo(mailOptions);
+        if (brevoResult.success) {
+            return { success: true };
+        }
+        logger.info(`🔄 [Email Dispatcher] Brevo failed (${brevoResult.error}). Trying next provider...`);
+    }
+
+    // 2. Try Microsoft Graph API
+    if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
+        const graphResult = await sendViaGraph(mailOptions);
+        if (graphResult.success) {
+            return { success: true };
+        }
+        logger.info(`🔄 [Email Dispatcher] Falling back to SMTP...`);
+    }
+
+    // 3. Try Nodemailer SMTP
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+            await transporter.sendMail(mailOptions);
+            logger.info(`✅ [SMTP] Email sent to ${Array.isArray(mailOptions.to) ? mailOptions.to.join(', ') : mailOptions.to}: "${mailOptions.subject}"`);
+            return { success: true };
+        } catch (smtpErr: any) {
+            logger.error(`❌ [SMTP] Failed to send email:`, smtpErr.message);
+            if (process.env.NODE_ENV === 'production') {
+                return { success: false, error: smtpErr.message };
+            }
+        }
+    }
+
+    // 4. Dev mock fallback
+    if (process.env.NODE_ENV !== 'production') {
+        logger.info(`\n📧 [EMAIL MOCK] (${debugNote || mailOptions.subject})`);
+        logger.info(`To: ${Array.isArray(mailOptions.to) ? mailOptions.to.join(', ') : mailOptions.to}`);
+        logger.info(`Subject: ${mailOptions.subject}`);
+        logger.info(`====================================================\n`);
+        return { success: true };
+    }
+
+    return {
+        success: false,
+        error: 'No working email transport configured. Please configure BREVO_API_KEY or SMTP.'
+    };
+}
+
 export const sendPasswordResetEmail = async (to: string, resetToken: string, baseUrl?: string) => {
     const clientUrl = getBaseUrl(baseUrl);
     const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
     const mailOptions = {
-        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        from: `"${getSenderName('Team')}" <${process.env.SMTP_USER || process.env.MICROSOFT_SENDER_EMAIL || 'abdul.raheem@itcs.com.pk'}>`,
         to,
         subject: 'Password Reset Request',
         html: `
@@ -62,22 +318,12 @@ export const sendPasswordResetEmail = async (to: string, resetToken: string, bas
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.warn('⚠️ SMTP_USER is not configured. Email will not be actually sent.');
-        logger.info(`\n================= PASSWORD RESET EMAIL ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Reset URL: ${resetUrl}`);
-        logger.info(`==========================================================\n`);
-        return { success: process.env.NODE_ENV !== 'production' };
-    }
+    logger.info(`\n🔑 ================= PASSWORD RESET EMAIL ===================`);
+    logger.info(`To: ${to}`);
+    logger.info(`Reset URL: ${resetUrl}`);
+    logger.info(`==========================================================\n`);
 
-    try {
-        await transporter.sendMail(mailOptions);
-        return { success: true };
-    } catch (error: any) {
-        logger.error(`❌ Email sending failed to ${to}:`, error.message);
-        return { success: false, error: error.message };
-    }
+    return await dispatchEmail(mailOptions, `Password reset link: ${resetUrl}`);
 };
 
 export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUrl?: string) => {
@@ -111,23 +357,8 @@ export const sendWelcomeEmail = async (to: string, tempPassword?: string, baseUr
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= WELCOME EMAIL ===================`);
-        logger.info(`To: ${to}`);
-        // H6 FIX: Do NOT log tempPassword — it may appear in shared/exported logs
-        logger.info(`Has temporary password: ${!!tempPassword}`);
-        logger.info(`Login URL: ${loginUrl}`);
-        logger.info(`====================================================\n`);
-        return process.env.NODE_ENV !== 'production';
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Email sending error:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Welcome Email: ${to}`);
+    return dispatchResult.success;
 };
 
 export const sendHRNotificationEmail = async (to: string, employeeName: string, actionDesc: string, baseUrl?: string) => {
@@ -148,21 +379,8 @@ export const sendHRNotificationEmail = async (to: string, employeeName: string, 
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= HR NOTIFICATION EMAIL ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Action: ${employeeName} has ${actionDesc}`);
-        logger.info(`===========================================================\n`);
-        return process.env.NODE_ENV !== 'production';
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Email sending error:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `HR Alert: ${employeeName}`);
+    return dispatchResult.success;
 };
 
 export const sendProfileReminderEmail = async (to: string, userName: string, baseUrl?: string) => {
@@ -184,20 +402,8 @@ export const sendProfileReminderEmail = async (to: string, userName: string, bas
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= PROFILE REMINDER EMAIL ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`===========================================================\n`);
-        return process.env.NODE_ENV !== 'production';
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Email sending error:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Profile Reminder: ${to}`);
+    return dispatchResult.success;
 };
 
 export const sendBirthdayEmail = async (to: string, firstName: string) => {
@@ -219,20 +425,8 @@ export const sendBirthdayEmail = async (to: string, firstName: string) => {
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= BIRTHDAY EMAIL ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`====================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending birthday email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Birthday: ${firstName}`);
+    return dispatchResult.success;
 };
 
 export const sendWorkAnniversaryEmail = async (to: string, firstName: string, years: number) => {
@@ -254,20 +448,8 @@ export const sendWorkAnniversaryEmail = async (to: string, firstName: string, ye
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= ANNIVERSARY EMAIL ===================`);
-        logger.info(`To: ${to} (${years} years)`);
-        logger.info(`========================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending anniversary email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Anniversary: ${firstName}`);
+    return dispatchResult.success;
 };
 
 export const sendLeaveSubmittedEmail = async (
@@ -303,21 +485,8 @@ export const sendLeaveSubmittedEmail = async (
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= LEAVE SUBMITTED EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Leave Type: ${leaveType}, Days: ${totalDays}, Reason: ${reason}`);
-        logger.info(`==================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending leave submitted email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Leave Submitted: ${employeeName}`);
+    return dispatchResult.success;
 };
 
 export const sendLeaveStatusEmail = async (
@@ -356,21 +525,8 @@ export const sendLeaveStatusEmail = async (
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= LEAVE STATUS EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Note: ${adminNote}`);
-        logger.info(`================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending leave status email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Leave Status: ${employeeName} - ${status}`);
+    return dispatchResult.success;
 };
 
 export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: string, category: string, amount: number, baseUrl?: string) => {
@@ -394,21 +550,8 @@ export const sendExpenseClaimSubmittedEmail = async (to: string, employeeName: s
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= EXPENSE CLAIM SUBMITTED EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Category: ${category}, Amount: PKR ${amount}`);
-        logger.info(`========================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending expense claim submitted email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Expense Submitted: ${employeeName}`);
+    return dispatchResult.success;
 };
 
 export const sendExpenseClaimStatusEmail = async (
@@ -464,21 +607,8 @@ export const sendExpenseClaimStatusEmail = async (
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= EXPENSE CLAIM STATUS EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Approved Amount: ${approvedAmount}, Note: ${adminNote}`);
-        logger.info(`======================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending expense claim status email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Expense Status: ${employeeName} - ${status}`);
+    return dispatchResult.success;
 };
 
 export const sendExpenseClaimActionRequiredEmail = async (to: string, employeeName: string, claimNo: string, category: string, amount: number, reviewerComments: string, baseUrl?: string) => {
@@ -504,21 +634,8 @@ export const sendExpenseClaimActionRequiredEmail = async (to: string, employeeNa
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= EXPENSE CLAIM ACTION REQUIRED EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Claim: ${claimNo}, Employee: ${employeeName}, Feedback: ${reviewerComments}`);
-        logger.info(`===============================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending action required email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Claim Action Required: ${claimNo}`);
+    return dispatchResult.success;
 };
 
 export const sendExpenseClaimAmendedEmail = async (to: string, employeeName: string, claimNo: string, category: string, amount: number, employeeNote?: string, baseUrl?: string) => {
@@ -543,21 +660,8 @@ export const sendExpenseClaimAmendedEmail = async (to: string, employeeName: str
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= EXPENSE CLAIM AMENDED & RESUBMITTED EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Claim: ${claimNo}, Employee: ${employeeName}, Note: ${employeeNote}`);
-        logger.info(`====================================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending claim resubmitted email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Claim Resubmitted: ${claimNo}`);
+    return dispatchResult.success;
 };
 
 export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dateStr: string, autoCheckOutTime: string) => {
@@ -578,21 +682,8 @@ export const sendAutoCloseAlertEmail = async (to: string, firstName: string, dat
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= AUTO CLOSE ALERT EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${firstName}, Date: ${dateStr}, Closed At: ${autoCheckOutTime}`);
-        logger.info(`===================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending auto close alert email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Auto Close Alert: ${firstName}`);
+    return dispatchResult.success;
 };
 
 export const sendEmployeeRequestSubmittedEmail = async (to: string, employeeName: string, category: string, requestType: string, details: any, baseUrl?: string) => {
@@ -632,21 +723,8 @@ export const sendEmployeeRequestSubmittedEmail = async (to: string, employeeName
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= REQUEST SUBMITTED EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Category: ${category}, Type: ${requestType}`);
-        logger.info(`====================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending request submitted email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Request Submitted: ${employeeName}`);
+    return dispatchResult.success;
 };
 
 export const sendEmployeeRequestStatusEmail = async (
@@ -683,21 +761,8 @@ export const sendEmployeeRequestStatusEmail = async (
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= REQUEST STATUS EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Status: ${status}, ActionBy: ${actionBy}, Comments: ${adminComments}`);
-        logger.info(`==================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending request status email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Request Status: ${employeeName} - ${status}`);
+    return dispatchResult.success;
 };
 
 export const sendPendingErpTasksReminderEmail = async (to: string, pendingCount: number, taskItems: Array<{ type: string; description: string; ageHours: number }>, baseUrl?: string) => {
@@ -733,21 +798,8 @@ export const sendPendingErpTasksReminderEmail = async (to: string, pendingCount:
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= PENDING ERP TASKS EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Pending Tasks (${pendingCount}): ${JSON.stringify(taskItems)}`);
-        logger.info(`====================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        logger.error('Error sending pending ERP tasks email:', error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Pending ERP Tasks (${pendingCount})`);
+    return dispatchResult.success;
 };
 
 export const sendTestEmail = async (to: string) => {
@@ -768,13 +820,11 @@ export const sendTestEmail = async (to: string) => {
         `,
     };
 
-    try {
-        await transporter.sendMail(mailOptions);
+    const dispatchResult = await dispatchEmail(mailOptions, 'Test Email');
+    if (dispatchResult.success) {
         return { success: true, message: `Test email sent successfully to ${to}` };
-    } catch (error: any) {
-        logger.error('Error sending test email:', error);
-        return { success: false, error: error.message || String(error) };
     }
+    return { success: false, error: dispatchResult.error || 'Failed to send test email' };
 };
 
 export const sendPayslipDisbursedEmail = async (
@@ -827,23 +877,8 @@ export const sendPayslipDisbursedEmail = async (
         ],
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= PAYSLIP EMAIL (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`Employee: ${employeeName}, Period: ${monthYear}, Net: ${netPayFormatted}`);
-        logger.info(`Attachment: ${filename} (${pdfBuffer.length} bytes)`);
-        logger.info(`=========================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        logger.info(`✅ Payslip email sent successfully to ${to} (${employeeName})`);
-        return true;
-    } catch (error) {
-        logger.error(`❌ Error sending payslip email to ${to}:`, error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, `Payslip Email: ${employeeName}`);
+    return dispatchResult.success;
 };
 
 export const sendMasterPinResetOtpEmail = async (to: string, otp: string) => {
@@ -887,20 +922,6 @@ export const sendMasterPinResetOtpEmail = async (to: string, otp: string) => {
         `,
     };
 
-    if (!process.env.SMTP_USER) {
-        logger.info(`\n================= MASTER PIN RESET OTP (MOCK) ===================`);
-        logger.info(`To: ${to}`);
-        logger.info(`OTP Code: ${otp}`);
-        logger.info(`=================================================================\n`);
-        return true;
-    }
-
-    try {
-        await transporter.sendMail(mailOptions);
-        logger.info(`✅ Master PIN OTP email sent successfully to ${to}`);
-        return true;
-    } catch (error) {
-        logger.error(`❌ Error sending Master PIN OTP email to ${to}:`, error);
-        return false;
-    }
+    const dispatchResult = await dispatchEmail(mailOptions, 'Master PIN Reset OTP');
+    return dispatchResult.success;
 };
