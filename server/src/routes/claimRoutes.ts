@@ -11,7 +11,8 @@ import {
     sendExpenseClaimSubmittedEmail,
     sendExpenseClaimStatusEmail,
     sendExpenseClaimActionRequiredEmail,
-    sendExpenseClaimAmendedEmail
+    sendExpenseClaimAmendedEmail,
+    sendExpenseClaimCommentEmail
 } from '../utils/email';
 import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
 import { formatEmployeeFullName } from '../utils/nameHelper';
@@ -1342,7 +1343,7 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
         const role = authReq.user?.role || 'employee';
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-        const { message } = req.body || {};
+        const { message, isActionRequest } = req.body || {};
         if (!message || !String(message).trim()) {
             return res.status(400).json({ message: 'Comment message is required' });
         }
@@ -1358,6 +1359,21 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
         const userDoc = await User.findById(userId).select('firstName lastName role').lean() as any;
         const authorName = userDoc ? `${userDoc.firstName || ''} ${userDoc.lastName || ''}`.trim() || userDoc.role || 'User' : 'User';
 
+        const shouldRequestAmendment = !isOwner && !!isActionRequest && !isFinalStatus(claim.status);
+
+        if (shouldRequestAmendment) {
+            claim.status = 'Action Required';
+            if (Array.isArray(claim.approvals)) {
+                const pendingAppr = claim.approvals.find((a: any) => a.status === 'Pending');
+                if (pendingAppr) {
+                    pendingAppr.status = 'Action Required' as any;
+                    pendingAppr.comments = String(message).trim();
+                    pendingAppr.decidedAt = new Date();
+                    pendingAppr.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                }
+            }
+        }
+
         claim.comments = claim.comments || [];
         claim.comments.push({
             authorUserId: new mongoose.Types.ObjectId(String(userId)),
@@ -1365,7 +1381,7 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
             authorRole: role,
             message: String(message).trim(),
             createdAt: new Date(),
-            isActionRequest: false
+            isActionRequest: shouldRequestAmendment
         } as any);
 
         (claim as any).audit = (claim as any).audit || {};
@@ -1374,6 +1390,96 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
 
         await claim.save();
         await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+
+        // Asynchronously dispatch notification emails
+        (async () => {
+            try {
+                const emp = await Employee.findOne({
+                    $or: [
+                        { userId: claim.employeeUserId },
+                        { employeeId: claim.employeeId }
+                    ]
+                }).select('workEmail personalEmail firstName lastName jobInfo');
+
+                let employeeEmail = emp?.workEmail || emp?.personalEmail;
+                if (!employeeEmail && claim.employeeUserId) {
+                    const u = await User.findById(claim.employeeUserId).select('email').lean() as any;
+                    employeeEmail = u?.email;
+                }
+
+                const empName = formatEmployeeFullName(emp, 'Employee');
+
+                if (!isOwner) {
+                    // Reviewer commented -> Notify Employee
+                    if (employeeEmail) {
+                        if (shouldRequestAmendment) {
+                            await sendExpenseClaimActionRequiredEmail(
+                                employeeEmail,
+                                empName,
+                                claim.claimNo || 'Expense Claim',
+                                claim.category,
+                                claim.amountRequested,
+                                String(message).trim(),
+                                req.headers.origin as string
+                            );
+                        } else {
+                            await sendExpenseClaimCommentEmail(
+                                employeeEmail,
+                                empName,
+                                claim.claimNo || 'Expense Claim',
+                                claim.category,
+                                authorName,
+                                role,
+                                String(message).trim(),
+                                'mine',
+                                req.headers.origin as string
+                            );
+                        }
+                    }
+                } else {
+                    // Employee commented -> Notify Reviewers (HR / Manager / Finance)
+                    const recipientEmails: string[] = [];
+
+                    // 1. Manager if currently at manager review stage
+                    if (['Pending Team Lead', 'Pending Line Manager'].includes(claim.status) && emp?.jobInfo?.reportingManager) {
+                        const mgr = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager }).select('workEmail personalEmail');
+                        if (mgr?.workEmail || mgr?.personalEmail) {
+                            recipientEmails.push((mgr.workEmail || mgr.personalEmail) as string);
+                        }
+                    }
+
+                    // 2. Finance if at finance review stage
+                    if (claim.status === 'Pending Finance') {
+                        const finEmails = await getFinanceEmails();
+                        recipientEmails.push(...finEmails);
+                    }
+
+                    // 3. HR & Admin fallback / general review
+                    if (recipientEmails.length === 0 || claim.status === 'Pending HR' || claim.status === 'Action Required') {
+                        const hrEmails = await getHrEmails();
+                        recipientEmails.push(...hrEmails);
+                    }
+
+                    const uniqueRecipients = Array.from(new Set(recipientEmails.filter(Boolean)));
+                    if (uniqueRecipients.length > 0) {
+                        await sendExpenseClaimCommentEmail(
+                            uniqueRecipients,
+                            'Review Team',
+                            claim.claimNo || 'Expense Claim',
+                            claim.category,
+                            authorName,
+                            'Employee',
+                            String(message).trim(),
+                            'approvals',
+                            req.headers.origin as string
+                        );
+                    }
+                }
+            } catch (notifyErr: any) {
+                logger.error('[Claim Comment] Failed to dispatch notification email:', notifyErr.message);
+            }
+        })();
+
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);

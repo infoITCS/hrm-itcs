@@ -26,6 +26,7 @@ import {
     XCircle,
     Clock,
     AlertTriangle,
+    AlertCircle,
     Receipt,
     Upload,
     User,
@@ -302,6 +303,7 @@ const ExpenseClaimDashboard = () => {
 
     // Modal quick comment
     const [modalQuickComment, setModalQuickComment] = useState('');
+    const [modalRequestAmendment, setModalRequestAmendment] = useState(false);
     const [postingComment, setPostingComment] = useState(false);
 
     const canApprovalsSubAccess = role === 'super-admin' || hasSubAccess('claim', 'approvals');
@@ -646,13 +648,23 @@ const ExpenseClaimDashboard = () => {
             const r = await fetch(api.claimComments(decisionClaim._id), {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ message: modalQuickComment.trim() })
+                body: JSON.stringify({
+                    message: modalQuickComment.trim(),
+                    isActionRequest: modalRequestAmendment
+                })
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d?.message || 'Failed to post comment');
             setDecisionClaim(d.data);
             setModalQuickComment('');
-            showToast('Comment posted', 'success');
+            const wasAmended = modalRequestAmendment;
+            setModalRequestAmendment(false);
+            if (wasAmended) {
+                showToast('Claim sent back to employee for review & amendment', 'success');
+                setDecisionOpen(false);
+            } else {
+                showToast('Comment posted & notification sent', 'success');
+            }
             await fetchMine();
             await fetchApprovals();
             await fetchHistory();
@@ -1110,6 +1122,8 @@ const ExpenseClaimDashboard = () => {
         setLightboxZoom(1);
         setDecisionClaim(null);
         setDecisionErpId('');
+        setModalQuickComment('');
+        setModalRequestAmendment(false);
     };
 
     const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
@@ -3409,6 +3423,31 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                     )}
 
+                                    {/* Action Required Banner for Employee */}
+                                    {decisionClaim.status === 'Action Required' && (
+                                        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between gap-3 text-xs shadow-sm">
+                                            <div className="flex items-center gap-2 text-amber-900 font-medium">
+                                                <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                                                <div>
+                                                    <p className="font-bold text-amber-950">Amendment Requested by Reviewer</p>
+                                                    <p className="text-[11px] text-amber-800 mt-0.5">Please check the remarks below, update your claim details or re-upload receipts, and resubmit.</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const targetClaim = decisionClaim;
+                                                    closeDecision();
+                                                    openAmendModal(targetClaim);
+                                                }}
+                                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg shrink-0 flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                            >
+                                                <Edit2 size={12} />
+                                                Amend & Resubmit
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* Localized Comments Thread */}
                                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
                                         <div className="flex items-center justify-between text-xs font-bold text-slate-700">
@@ -3438,10 +3477,29 @@ const ExpenseClaimDashboard = () => {
                                                 ))
                                             )}
                                         </div>
+
+                                        {/* Reviewer Amendment Checkbox Option */}
+                                        {(isApprover || isAdminLike) && !['Approved', 'Declined', 'Cancelled', 'Action Required'].includes(decisionClaim.status) && (
+                                            <div className="px-2.5 py-1.5 bg-amber-50/80 border border-amber-200/90 rounded-lg">
+                                                <label className="flex items-center gap-2 text-[11px] font-semibold text-amber-900 cursor-pointer select-none">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={modalRequestAmendment}
+                                                        onChange={e => setModalRequestAmendment(e.target.checked)}
+                                                        className="w-3.5 h-3.5 rounded text-amber-600 border-amber-300 focus:ring-amber-400 cursor-pointer"
+                                                    />
+                                                    <span className="flex items-center gap-1">
+                                                        <Edit2 size={11} className="text-amber-700" />
+                                                        Request Amendment (Send back to employee for editing & re-upload)
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        )}
+
                                         <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
                                             <input
                                                 type="text"
-                                                placeholder="Post a remark on this claim..."
+                                                placeholder={modalRequestAmendment ? "Explain what the employee needs to edit / re-upload..." : "Post a remark on this claim..."}
                                                 value={modalQuickComment}
                                                 onChange={e => setModalQuickComment(e.target.value)}
                                                 onKeyDown={async (e) => {
@@ -3450,15 +3508,32 @@ const ExpenseClaimDashboard = () => {
                                                         await postModalComment();
                                                     }
                                                 }}
-                                                className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                                className={`flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white focus:outline-none focus:ring-2 ${
+                                                    modalRequestAmendment
+                                                        ? 'border-amber-300 focus:ring-amber-300'
+                                                        : 'border-slate-200 focus:ring-indigo-300'
+                                                }`}
                                             />
                                             <button
                                                 type="button"
                                                 onClick={postModalComment}
                                                 disabled={postingComment || !modalQuickComment.trim()}
-                                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg disabled:opacity-50 transition-colors shrink-0"
+                                                className={`px-3 py-1.5 text-white font-bold text-xs rounded-lg disabled:opacity-50 transition-colors shrink-0 flex items-center gap-1.5 ${
+                                                    modalRequestAmendment
+                                                        ? 'bg-amber-600 hover:bg-amber-700 shadow-sm'
+                                                        : 'bg-indigo-600 hover:bg-indigo-700'
+                                                }`}
                                             >
-                                                {postingComment ? '...' : 'Post'}
+                                                {postingComment ? (
+                                                    '...'
+                                                ) : modalRequestAmendment ? (
+                                                    <>
+                                                        <Edit2 size={12} />
+                                                        Post & Request Amendment
+                                                    </>
+                                                ) : (
+                                                    'Post'
+                                                )}
                                             </button>
                                         </div>
                                     </div>

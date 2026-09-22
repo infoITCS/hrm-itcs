@@ -282,6 +282,50 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 }
             }
 
+            // --- Employee Comments on Claims Pending Reviewer Attention ---
+            const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            let commentClaimQuery: any = null;
+            if (role === 'manager' && employee && reportIds.length > 0) {
+                commentClaimQuery = {
+                    employeeId: { $in: reportIds },
+                    'comments.createdAt': { $gte: fortyEightHoursAgo },
+                    'comments.authorRole': 'employee'
+                };
+            } else if (isHrOrAdmin) {
+                commentClaimQuery = {
+                    'comments.createdAt': { $gte: fortyEightHoursAgo },
+                    'comments.authorRole': 'employee'
+                };
+            } else if (isFinanceOnly) {
+                commentClaimQuery = {
+                    status: 'Pending Finance',
+                    'comments.createdAt': { $gte: fortyEightHoursAgo },
+                    'comments.authorRole': 'employee'
+                };
+            }
+
+            if (commentClaimQuery) {
+                const claimsWithEmpComments = await ExpenseClaim.find(commentClaimQuery).sort({ updatedAt: -1 }).limit(10).lean();
+                for (const claim of claimsWithEmpComments) {
+                    const empComments = (claim.comments || []).filter((cm: any) =>
+                        cm.authorRole === 'employee' &&
+                        String(cm.authorUserId) !== String(userId) &&
+                        new Date(cm.createdAt) >= fortyEightHoursAgo
+                    );
+                    if (empComments.length > 0) {
+                        const latest = empComments[empComments.length - 1];
+                        notifications.push({
+                            id: `claim-emp-comment-${latest._id || claim._id}`,
+                            title: `💬 Comment on Claim ${claim.claimNo || claim.category}`,
+                            message: `${latest.authorName}: "${latest.message}"`,
+                            time: latest.createdAt,
+                            type: 'task',
+                            path: '/claim?tab=approvals'
+                        });
+                    }
+                }
+            }
+
             // --- Payroll Approvals / ERP Tasks ---
             if (role === 'admin' || role === 'super-admin' || role === 'finance') {
                 const pendingPayroll = await PayrollRun.find({
@@ -432,6 +476,53 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     type: claim.status === 'Approved' ? 'success' : 'alert',
                     path: '/claim?tab=mine'
                 });
+            }
+
+            // Claims requiring Employee Action (Amendment requested by reviewer)
+            const actionReqClaims = await ExpenseClaim.find({
+                employeeId: employee.employeeId,
+                status: 'Action Required'
+            }).sort({ updatedAt: -1 }).limit(5).lean();
+
+            for (const claim of actionReqClaims) {
+                const actionComments = (claim.comments || []).filter((cm: any) => cm.isActionRequest);
+                const latestAction = actionComments[actionComments.length - 1];
+                const commentText = latestAction ? `: "${latestAction.message}"` : '';
+                notifications.push({
+                    id: `claim-action-${claim._id}`,
+                    title: `⚠️ Action Required: ${claim.category} Claim`,
+                    message: `Reviewer requested amendment on claim ${claim.claimNo || ''}${commentText}. Click to amend and resubmit.`,
+                    time: latestAction?.createdAt || claim.updatedAt || claim.createdAt,
+                    type: 'task',
+                    path: '/claim?tab=mine'
+                });
+            }
+
+            // Reviewer remarks on Employee's Claims (within last 48 hours)
+            const fortyEightHoursAgoEmp = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            const claimsWithReviewerComments = await ExpenseClaim.find({
+                employeeId: employee.employeeId,
+                'comments.createdAt': { $gte: fortyEightHoursAgoEmp },
+                'comments.authorUserId': { $ne: new mongoose.Types.ObjectId(String(userId)) }
+            }).sort({ updatedAt: -1 }).limit(10).lean();
+
+            for (const claim of claimsWithReviewerComments) {
+                const reviewerComments = (claim.comments || []).filter((cm: any) =>
+                    String(cm.authorUserId) !== String(userId) &&
+                    !cm.isActionRequest &&
+                    new Date(cm.createdAt) >= fortyEightHoursAgoEmp
+                );
+                if (reviewerComments.length > 0) {
+                    const latest = reviewerComments[reviewerComments.length - 1];
+                    notifications.push({
+                        id: `claim-rev-comment-${latest._id || claim._id}`,
+                        title: `💬 New Remark: Claim ${claim.claimNo || claim.category}`,
+                        message: `${latest.authorName} (${latest.authorRole.toUpperCase()}): "${latest.message}"`,
+                        time: latest.createdAt,
+                        type: 'alert',
+                        path: '/claim?tab=mine'
+                    });
+                }
             }
 
             // Reminder to update personal contact number if missing

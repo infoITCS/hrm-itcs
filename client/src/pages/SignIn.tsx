@@ -56,20 +56,26 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
         try {
             const response = await APIService.login(email, password);
 
+            const rawUser = response.data.user;
             const user: User = {
-                id: response.data.user._id || response.data.user.id,
-                name: [response.data.user.firstName, response.data.user.lastName].filter(Boolean).join(' ') || response.data.user.email.split('@')[0],
-                email: response.data.user.email,
-                role: response.data.user.role as UserRole,
-                avatar: response.data.user.avatar 
-                    ? (response.data.user.avatar.startsWith('http') || response.data.user.avatar.startsWith('data:')
-                        ? response.data.user.avatar 
-                        : `${api.baseURL.replace(/\/$/, '')}${response.data.user.avatar}`)
+                id: rawUser._id || rawUser.id,
+                name: [rawUser.firstName, rawUser.lastName].filter(Boolean).join(' ') || rawUser.email.split('@')[0],
+                email: rawUser.email,
+                role: rawUser.role as UserRole,
+                avatar: rawUser.avatar 
+                    ? (rawUser.avatar.startsWith('http') || rawUser.avatar.startsWith('data:')
+                        ? rawUser.avatar 
+                        : `${api.baseURL.replace(/\/$/, '')}${rawUser.avatar}`)
                     : null,
-                firstName: response.data.user.firstName,
-                lastName: response.data.user.lastName,
-                hasProfile: response.data.user.hasProfile,
-                permissions: response.data.user.permissions || {}
+                firstName: rawUser.firstName,
+                lastName: rawUser.lastName,
+                hasProfile: rawUser.hasProfile,
+                permissions: rawUser.permissions || {},
+                scopes: rawUser.scopes || {},
+                subPermissions: rawUser.subPermissions || {},
+                customPermissions: rawUser.customPermissions || {},
+                customScopes: rawUser.customScopes || {},
+                customSubPermissions: rawUser.customSubPermissions || {}
             };
 
             // Save the token to local storage so page refresh doesn't log the user out

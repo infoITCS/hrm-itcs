@@ -925,3 +925,49 @@ export const sendMasterPinResetOtpEmail = async (to: string, otp: string) => {
     const dispatchResult = await dispatchEmail(mailOptions, 'Master PIN Reset OTP');
     return dispatchResult.success;
 };
+
+export const sendExpenseClaimCommentEmail = async (
+    to: string | string[],
+    recipientName: string,
+    claimNo: string,
+    category: string,
+    authorName: string,
+    authorRole: string,
+    commentMessage: string,
+    targetTab: 'mine' | 'approvals' = 'mine',
+    baseUrl?: string
+) => {
+    const clientUrl = getBaseUrl(baseUrl);
+    const targetUrl = `${clientUrl}/claim?tab=${targetTab}`;
+
+    const mailOptions = {
+        from: `"${getSenderName('Alerts')}" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
+        to,
+        subject: `New Remark on Expense Claim ${claimNo} - ${category}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #ffffff;">
+                <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px;">
+                    <h2 style="color: #4f46e5; margin: 0; font-size: 20px;">💬 New Comment on Expense Claim</h2>
+                    <p style="color: #6b7280; font-size: 13px; margin: 4px 0 0 0;">Claim #${claimNo} • ${category}</p>
+                </div>
+                <p style="color: #4b5563; font-size: 15px;">Hello <strong>${recipientName}</strong>,</p>
+                <p style="color: #4b5563; font-size: 15px;"><strong>${authorName}</strong> (${authorRole.toUpperCase()}) has dropped a remark on expense claim <strong>${claimNo}</strong>:</p>
+                
+                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
+                    <p style="margin: 0; font-size: 14px; color: #1e293b; font-style: italic;">"${commentMessage}"</p>
+                </div>
+                
+                <div style="text-align: center; margin: 25px 0;">
+                    <a href="${targetUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 15px; display: inline-block;">Open Claim Details</a>
+                </div>
+                <p style="color: #94a3b8; font-size: 12px; text-align: center; margin-top: 25px;">
+                    ITCS HRM Automated Notification • Please do not reply directly to this email.
+                </p>
+            </div>
+        `,
+    };
+
+    const dispatchResult = await dispatchEmail(mailOptions, `Claim Comment: ${claimNo}`);
+    return dispatchResult.success;
+};
+

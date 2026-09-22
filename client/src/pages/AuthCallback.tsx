@@ -58,7 +58,12 @@ export const AuthCallback: React.FC = () => {
                     microsoftId: userData.microsoftId,
                     hasProfile: userData.hasProfile,
                     needsPasswordSetup: userData.needsPasswordSetup,
-                    permissions: userData.permissions || {}
+                    permissions: userData.permissions || {},
+                    scopes: userData.scopes || {},
+                    subPermissions: userData.subPermissions || {},
+                    customPermissions: userData.customPermissions || {},
+                    customScopes: userData.customScopes || {},
+                    customSubPermissions: userData.customSubPermissions || {}
                 };
 
                 // Persist session data
