@@ -508,7 +508,7 @@ const ExpenseClaimDashboard = () => {
 
     const fetchCategories = useCallback(async () => {
         try {
-            const endpoint = isAdminLike ? api.expenseCategoriesAll : api.expenseCategories;
+            const endpoint = (isAdminLike || role === 'finance') ? api.expenseCategoriesAll : api.expenseCategories;
             const r = await fetch(endpoint, { headers });
             const d = await r.json();
             if (d?.success) {
@@ -520,7 +520,7 @@ const ExpenseClaimDashboard = () => {
         } catch {
             // ignore
         }
-    }, [headers, isAdminLike, category]);
+    }, [headers, isAdminLike, role, category]);
 
     const fetchMedicalRecords = useCallback(async () => {
         if (!isAdminLike && role !== 'finance') return;
@@ -987,6 +987,13 @@ const ExpenseClaimDashboard = () => {
     const [deciding, setDeciding] = useState(false);
     const [rescanning, setRescanning] = useState(false);
 
+    // In-review Category Change State (for HR, Finance, Super Admin, Admin)
+    const [isChangingCategory, setIsChangingCategory] = useState(false);
+    const [editCategoryName, setEditCategoryName] = useState('');
+    const [editSubCategory, setEditSubCategory] = useState('');
+    const [editCategoryReason, setEditCategoryReason] = useState('');
+    const [changingCategoryLoading, setChangingCategoryLoading] = useState(false);
+
     const handleRescanClaim = async (claimId: string) => {
         if (!claimId) return;
         setRescanning(true);
@@ -1012,6 +1019,113 @@ const ExpenseClaimDashboard = () => {
             showToast(err.message || 'Failed to re-scan receipts', 'error');
         } finally {
             setRescanning(false);
+        }
+    };
+
+    const canChangeCategory = ['super-admin', 'admin', 'hr', 'finance'].includes(role) && !['Approved', 'Declined', 'Cancelled'].includes(decisionClaim?.status);
+
+    const selectedEditCatDoc = useMemo(() => {
+        return categories.find(c => c.name === editCategoryName);
+    }, [categories, editCategoryName]);
+
+    const editSubCatOptions = useMemo<string[]>(() => {
+        if (!selectedEditCatDoc || !Array.isArray(selectedEditCatDoc.subCategories)) return [];
+        return selectedEditCatDoc.subCategories;
+    }, [selectedEditCatDoc]);
+
+    const routingPreview = useMemo(() => {
+        if (!selectedEditCatDoc || !decisionClaim) return null;
+        const assigned = selectedEditCatDoc.assignedTo || 'HR';
+        const currentStatus = decisionClaim.status;
+
+        if (assigned === 'Finance' && currentStatus === 'Pending HR') {
+            return {
+                reRoute: true,
+                target: 'Finance',
+                badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
+                description: 'Updating will re-route this claim to Finance for review.'
+            };
+        }
+        if ((assigned === 'HR' || !assigned) && currentStatus === 'Pending Finance') {
+            return {
+                reRoute: true,
+                target: 'HR',
+                badgeClass: 'bg-purple-100 text-purple-900 border-purple-300',
+                description: 'Updating will re-route this claim to HR for review.'
+            };
+        }
+        if (assigned === 'Manager' && !['Pending Line Manager', 'Pending Team Lead'].includes(currentStatus)) {
+            return {
+                reRoute: true,
+                target: 'Line Manager',
+                badgeClass: 'bg-blue-100 text-blue-900 border-blue-300',
+                description: 'Updating will re-route this claim to Line Manager for review.'
+            };
+        }
+        return {
+            reRoute: false,
+            target: assigned,
+            badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+            description: `Review remains with ${assigned}. No workflow re-routing.`
+        };
+    }, [selectedEditCatDoc, decisionClaim]);
+
+    const handleSaveCategoryChange = async () => {
+        if (!decisionClaim?._id) return;
+        if (!editCategoryName) {
+            showToast('Please select a category', 'error');
+            return;
+        }
+        const currentSubCat = decisionClaim.subCategories?.[0] || '';
+        if (editCategoryName === decisionClaim.category && (editSubCategory || '') === currentSubCat) {
+            showToast('No changes made to category or sub-category', 'warning');
+            setIsChangingCategory(false);
+            return;
+        }
+
+        setChangingCategoryLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(api.claimChangeCategory(decisionClaim._id), {
+                method: 'PATCH',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    category: editCategoryName,
+                    subCategories: editSubCategory ? [editSubCategory] : [],
+                    reason: editCategoryReason.trim() || undefined
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to update category');
+            }
+
+            showToast(data.message || 'Category updated successfully', 'success');
+
+            // Refresh claims lists in background
+            fetchApprovals();
+            fetchMine();
+            fetchHistory();
+
+            if (data.reRouted) {
+                closeDecision();
+            } else {
+                if (data.data) {
+                    setDecisionClaim(data.data);
+                    const allowed = typeof data.data.amountAllowed === 'number' ? data.data.amountAllowed : data.data.amountRequested;
+                    setDecisionApprovedAmount(Math.min(data.data.amountRequested || 0, allowed || 0));
+                }
+                setIsChangingCategory(false);
+                setEditCategoryReason('');
+            }
+        } catch (err: any) {
+            showToast(err.message || 'Failed to update category', 'error');
+        } finally {
+            setChangingCategoryLoading(false);
         }
     };
 
@@ -1079,6 +1193,11 @@ const ExpenseClaimDashboard = () => {
         setDecisionClaim(c);
         setDecision('Approved');
         setDecisionComments('');
+        setIsChangingCategory(false);
+        setEditCategoryName(c?.category || '');
+        setEditSubCategory(c?.subCategories?.[0] || '');
+        setEditCategoryReason('');
+        setChangingCategoryLoading(false);
 
         const hrApproval = c?.approvals?.find((a: any) => a.stage === 'hr' && a.status === 'Approved');
         const currentPendingStage = c?.approvals?.find((a: any) => a.status === 'Pending')?.stage;
@@ -1133,6 +1252,11 @@ const ExpenseClaimDashboard = () => {
         setDecisionErpId('');
         setModalQuickComment('');
         setModalRequestAmendment(false);
+        setIsChangingCategory(false);
+        setEditCategoryName('');
+        setEditSubCategory('');
+        setEditCategoryReason('');
+        setChangingCategoryLoading(false);
     };
 
     const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
@@ -1555,7 +1679,7 @@ const ExpenseClaimDashboard = () => {
                     </div>
                 </div>
 
-                {tab !== 'submit' && (
+                {['mine', 'approvals', 'history'].includes(tab) && (
                     <div className="p-4 bg-slate-50/50 border-b border-slate-100 space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                             <div className="relative">
@@ -2994,7 +3118,7 @@ const ExpenseClaimDashboard = () => {
                     </div>
                 )}
 
-                {tab === 'settings' && isAdminLike && (
+                {tab === 'settings' && canSettingsTab && (
                     <div className="p-6">
                         <div className="flex justify-between items-center mb-6">
                             <div>
@@ -3218,11 +3342,155 @@ const ExpenseClaimDashboard = () => {
 
                                     {/* Summary cards */}
                                     <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><Tag size={11} />CATEGORY</div>
-                                            <div className="font-bold text-slate-800 text-sm">{decisionClaim.category}</div>
-                                            {decisionClaim.subCategories && decisionClaim.subCategories.length > 0 && <div className="text-xs text-slate-500 mt-0.5">{decisionClaim.subCategories.join(', ')}</div>}
-                                        </div>
+                                        {isChangingCategory ? (
+                                            <div className="col-span-2 bg-indigo-50/70 border-2 border-indigo-200 rounded-xl p-3.5 shadow-xs space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-1.5 text-indigo-950 text-xs font-bold">
+                                                        <Tag size={13} className="text-indigo-600" />
+                                                        <span>Change Category & Re-route Workflow</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsChangingCategory(false)}
+                                                        disabled={changingCategoryLoading}
+                                                        className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200/50 transition-colors"
+                                                        title="Cancel"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                                    <div>
+                                                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                                            Expense Category <span className="text-rose-500">*</span>
+                                                        </label>
+                                                        <select
+                                                            value={editCategoryName}
+                                                            onChange={e => {
+                                                                const newCat = e.target.value;
+                                                                setEditCategoryName(newCat);
+                                                                const catObj = categories.find(c => c.name === newCat);
+                                                                if (catObj && Array.isArray(catObj.subCategories) && catObj.subCategories.length > 0) {
+                                                                    setEditSubCategory(catObj.subCategories[0]);
+                                                                } else {
+                                                                    setEditSubCategory('');
+                                                                }
+                                                            }}
+                                                            className="w-full text-xs font-semibold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                                                        >
+                                                            {categories.map(c => (
+                                                                <option key={c._id || c.name} value={c.name}>
+                                                                    {c.name} ({c.assignedTo || 'HR'})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                                            Sub-Category
+                                                        </label>
+                                                        {editSubCatOptions.length > 0 ? (
+                                                            <select
+                                                                value={editSubCategory}
+                                                                onChange={e => setEditSubCategory(e.target.value)}
+                                                                className="w-full text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                                                            >
+                                                                <option value="">None / Select...</option>
+                                                                {editSubCatOptions.map((sub: string) => (
+                                                                    <option key={sub} value={sub}>{sub}</option>
+                                                                ))}
+                                                            </select>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={editSubCategory}
+                                                                onChange={e => setEditSubCategory(e.target.value)}
+                                                                placeholder="None or enter subcategory"
+                                                                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                                        Reason for Re-categorization (Optional)
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={editCategoryReason}
+                                                        onChange={e => setEditCategoryReason(e.target.value)}
+                                                        placeholder="e.g. Employee incorrectly submitted under kitchen expenses"
+                                                        className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                                                    />
+                                                </div>
+
+                                                {routingPreview && (
+                                                    <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${routingPreview.badgeClass}`}>
+                                                        <span className="font-semibold text-[11px] leading-tight">{routingPreview.description}</span>
+                                                        {routingPreview.reRoute && (
+                                                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-white shadow-xs border shrink-0">
+                                                                Re-routes to {routingPreview.target}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-indigo-100">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsChangingCategory(false)}
+                                                        disabled={changingCategoryLoading}
+                                                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSaveCategoryChange}
+                                                        disabled={changingCategoryLoading}
+                                                        className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                                                    >
+                                                        {changingCategoryLoading ? (
+                                                            <>
+                                                                <RefreshCw size={12} className="animate-spin" />
+                                                                Updating...
+                                                            </>
+                                                        ) : routingPreview?.reRoute ? (
+                                                            `Update & Re-route to ${routingPreview.target}`
+                                                        ) : (
+                                                            'Update Category'
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                                                <div className="flex items-center justify-between gap-1.5 text-slate-400 text-[11px] font-bold mb-1">
+                                                    <span className="flex items-center gap-1.5"><Tag size={11} />CATEGORY</span>
+                                                    {canChangeCategory && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (categories.length === 0) fetchCategories();
+                                                                setEditCategoryName(decisionClaim.category || '');
+                                                                setEditSubCategory(decisionClaim.subCategories?.[0] || '');
+                                                                setEditCategoryReason('');
+                                                                setIsChangingCategory(true);
+                                                            }}
+                                                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 transition-colors"
+                                                            title="Change category & re-route workflow"
+                                                        >
+                                                            <Edit2 size={11} /> Change
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="font-bold text-slate-800 text-sm">{decisionClaim.category}</div>
+                                                {decisionClaim.subCategories && decisionClaim.subCategories.length > 0 && <div className="text-xs text-slate-500 mt-0.5">{decisionClaim.subCategories.join(', ')}</div>}
+                                            </div>
+                                        )}
                                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
                                             <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold mb-1"><CalendarDays size={11} />EXPENSE DATE</div>
                                             <div className="font-bold text-slate-800 text-sm">

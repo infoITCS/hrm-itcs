@@ -1097,6 +1097,178 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
     }
 });
 
+// HR / Finance / Admin: In-review category change & dynamic re-routing
+router.patch('/:id/change-category', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+        if (!['super-admin', 'admin', 'hr', 'finance'].includes(role)) {
+            return res.status(403).json({ message: 'Forbidden. HR or Finance access required.' });
+        }
+
+        const { category, subCategories, reason } = req.body || {};
+        if (!category || typeof category !== 'string' || !category.trim()) {
+            return res.status(400).json({ message: 'category is required' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id);
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        if (['Approved', 'Declined', 'Cancelled'].includes(claim.status)) {
+            return res.status(400).json({ message: `Cannot change category of a ${claim.status} claim` });
+        }
+
+        const newCatDoc = await ExpenseCategory.findOne({ name: category.trim() }).lean() as any;
+        if (!newCatDoc) {
+            return res.status(404).json({ message: `Expense category "${category}" not found` });
+        }
+
+        const oldCategory = claim.category;
+        const oldSubCategories = claim.subCategories || [];
+
+        // 1. Calculate new amountAllowed based on new category policyLimit
+        let amountAllowed = claim.amountRequested;
+        if (typeof newCatDoc.policyLimit === 'number' && newCatDoc.policyLimit > 0) {
+            amountAllowed = Math.min(claim.amountRequested, newCatDoc.policyLimit);
+        }
+        claim.amountAllowed = amountAllowed;
+
+        // 2. Build new workflow for this category & re-route if needed
+        let reRouted = false;
+        const originalStatus = claim.status;
+
+        // If new category requires Finance only
+        if (newCatDoc.assignedTo === 'Finance') {
+            if (claim.status === 'Pending HR') {
+                claim.status = 'Pending Finance';
+                reRouted = true;
+                (claim.approvals as any) = [
+                    { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                ];
+            } else if (claim.status === 'Pending Line Manager' || claim.status === 'Pending Team Lead') {
+                const managerApproval = claim.approvals.find((a: any) => a.stage === 'lineManager' || a.stage === 'teamLead');
+                if (managerApproval && managerApproval.status === 'Approved') {
+                    claim.status = 'Pending Finance';
+                    reRouted = true;
+                    (claim.approvals as any) = [
+                        managerApproval,
+                        { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                    ];
+                }
+            } else {
+                const pendingStage = claim.approvals.find((a: any) => a.status === 'Pending');
+                if (pendingStage) pendingStage.amountAllowed = claim.amountAllowed;
+            }
+        } 
+        // If new category requires HR (assignedTo: 'HR' or default)
+        else if (newCatDoc.assignedTo === 'HR' || !newCatDoc.assignedTo) {
+            if (claim.status === 'Pending Finance') {
+                // Re-route from Finance to HR!
+                claim.status = 'Pending HR';
+                reRouted = true;
+                (claim.approvals as any) = [
+                    { stage: 'hr', status: 'Pending', amountAllowed: claim.amountAllowed },
+                    { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                ];
+            } else if (claim.status === 'Pending Line Manager' || claim.status === 'Pending Team Lead') {
+                const managerApproval = claim.approvals.find((a: any) => a.stage === 'lineManager' || a.stage === 'teamLead');
+                if (managerApproval && managerApproval.status === 'Approved') {
+                    claim.status = 'Pending HR';
+                    reRouted = true;
+                    (claim.approvals as any) = [
+                        managerApproval,
+                        { stage: 'hr', status: 'Pending', amountAllowed: claim.amountAllowed },
+                        { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                    ];
+                }
+            } else {
+                const pendingStage = claim.approvals.find((a: any) => a.status === 'Pending');
+                if (pendingStage) pendingStage.amountAllowed = claim.amountAllowed;
+            }
+        }
+        // If new category requires Manager
+        else if (newCatDoc.assignedTo === 'Manager') {
+            const hasManagerApproval = claim.approvals.some((a: any) => (a.stage === 'lineManager' || a.stage === 'teamLead') && a.status === 'Approved');
+            if (!hasManagerApproval && claim.status !== 'Pending Line Manager' && claim.status !== 'Pending Team Lead') {
+                claim.status = 'Pending Line Manager';
+                reRouted = true;
+                (claim.approvals as any) = [
+                    { stage: 'lineManager', status: 'Pending', amountAllowed: claim.amountAllowed },
+                    { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                ];
+            }
+        }
+
+        // 3. Update category and subCategories
+        claim.category = newCatDoc.name;
+        claim.subCategories = Array.isArray(subCategories) ? subCategories : (subCategories ? [subCategories] : []);
+
+        // 4. Record audit comment
+        const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+        const roleLabel = role === 'admin' || role === 'super-admin'
+            ? 'Admin'
+            : (role === 'hr' ? 'HR Manager' : (role === 'finance' ? 'Finance Manager' : 'Approver'));
+        const authorName = approverEmp 
+            ? `${approverEmp.firstName} ${approverEmp.lastName}`.trim() 
+            : `${role.toUpperCase()}`;
+
+        const oldCatDisplay = oldCategory + (oldSubCategories.length ? ` (${oldSubCategories.join(', ')})` : '');
+        const newCatDisplay = claim.category + (claim.subCategories.length ? ` (${claim.subCategories.join(', ')})` : '');
+
+        claim.comments = claim.comments || [];
+        claim.comments.push({
+            authorUserId: new mongoose.Types.ObjectId(String(userId)),
+            authorName,
+            authorRole: roleLabel,
+            message: `Category updated from "${oldCatDisplay}" to "${newCatDisplay}".${reRouted ? ` Re-routed from ${originalStatus} to ${claim.status}.` : ''}${reason ? ` (Reason: ${reason})` : ''}`,
+            createdAt: new Date(),
+            isActionRequest: false
+        });
+
+        (claim as any).audit = (claim as any).audit || {};
+        (claim as any).audit.lastUpdatedAt = new Date();
+        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
+
+        await claim.save();
+
+        // 5. Send notification email asynchronously if re-routed
+        if (reRouted) {
+            (async () => {
+                try {
+                    const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
+                    const employeeName = formatEmployeeFullName(employee, claim.employeeId);
+                    if (claim.status === 'Pending HR') {
+                        const hrEmails = await getHrEmails();
+                        for (const to of hrEmails) {
+                            void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} was re-categorized to ${claim.category} and re-routed to HR for review`);
+                        }
+                    } else if (claim.status === 'Pending Finance') {
+                        const financeEmails = await getFinanceEmails();
+                        for (const to of financeEmails) {
+                            void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} was re-categorized to ${claim.category} and re-routed to Finance for review`);
+                        }
+                    }
+                } catch (emailErr) {
+                    console.error('[Expense Email] Failed to send re-routing notification email:', emailErr);
+                }
+            })();
+        }
+
+        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
+        res.json({
+            success: true,
+            data: sanitizeClaimForJson(claim),
+            reRouted,
+            newStatus: claim.status,
+            message: `Category updated to ${claim.category}.${reRouted ? ` Re-routed to ${claim.status}.` : ''}`
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // HR/admin post-submission correction (status + approvedTotal)
 router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
