@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertCircle, Calendar, Send } from 'lucide-react';
+import { X, AlertCircle, Send } from 'lucide-react';
 import { api } from '../../utils/api';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import FormattedDateInput from '../../components/Common/FormattedDateInput';
