@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
     Calendar, Plus, Eye, Filter, FileText, Clock,
-    Plane, Heart, Edit2
+    Plane, Heart, Edit2, XCircle
 } from 'lucide-react';
 import { api } from '../../utils/api';
+import AlertModal from '../../components/UI/AlertModal';
 import ApplyLeaveModal from './ApplyLeaveModal';
 import TeamRequestsTable from './TeamRequestsTable';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -94,6 +95,83 @@ const LeaveDashboard = () => {
     const isManagement = canTeamRequests;
     const isAdmin = canSettings || canHolidaySettings;
     const isAdminLike = ['super-admin', 'admin', 'hr'].includes(role);
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
+    const [cancelModal, setCancelModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error' | 'confirm';
+        onConfirm?: () => void;
+        confirmText?: string;
+        showCancel?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
+
+    const promptCancelLeave = (leaveId: string) => {
+        setCancelModal({
+            isOpen: true,
+            title: 'Cancel Leave Request',
+            message: 'Are you sure you want to cancel this pending leave request? This action cannot be undone.',
+            type: 'confirm',
+            confirmText: 'Yes, Cancel Request',
+            showCancel: true,
+            onConfirm: () => performCancelLeave(leaveId)
+        });
+    };
+
+    const performCancelLeave = async (leaveId: string) => {
+        setCancellingId(leaveId);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/leaves/${leaveId}/cancel`, {
+                method: 'PUT',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setCancelModal({
+                    isOpen: true,
+                    title: 'Request Cancelled',
+                    message: 'Your leave request has been cancelled successfully.',
+                    type: 'success',
+                    confirmText: 'OK',
+                    showCancel: false,
+                    onConfirm: () => {
+                        setCancelModal(prev => ({ ...prev, isOpen: false }));
+                        fetchLeaveData();
+                        setRefreshCounter(prev => prev + 1);
+                    }
+                });
+            } else {
+                setCancelModal({
+                    isOpen: true,
+                    title: 'Cancellation Failed',
+                    message: data.message || 'Unable to cancel this leave request.',
+                    type: 'error',
+                    confirmText: 'OK',
+                    showCancel: false
+                });
+            }
+        } catch (err: any) {
+            setCancelModal({
+                isOpen: true,
+                title: 'Error',
+                message: err.message || 'An error occurred while cancelling leave request.',
+                type: 'error',
+                confirmText: 'OK',
+                showCancel: false
+            });
+        } finally {
+            setCancellingId(null);
+        }
+    };
 
     const filteredHistory = history
         .filter(item => statusFilter === 'All' || item.status === statusFilter)
@@ -419,8 +497,8 @@ const STATUS_COLORS: any = {
                                         </td>
                                         <td className="px-6 py-5">
                                             <div className="flex flex-col">
-                                                <span className="text-sm font-bold text-slate-700">{new Date(leave.startDate).toLocaleDateString()}</span>
-                                                <span className="text-[10px] text-slate-400">to {new Date(leave.endDate).toLocaleDateString()}</span>
+                                                <span className="text-sm font-bold text-slate-700">{new Date(leave.startDate).toLocaleDateString('en-GB')}</span>
+                                                <span className="text-[10px] text-slate-400">to {new Date(leave.endDate).toLocaleDateString('en-GB')}</span>
                                                 {leave.duration && leave.duration !== 'Full Day' && (
                                                     <span className="text-[10px] text-indigo-500 font-bold mt-0.5">
                                                         {leave.duration} {leave.duration === 'Specify Time' ? `(${leave.startTime} - ${leave.endTime})` : ''}
@@ -446,17 +524,32 @@ const STATUS_COLORS: any = {
                                         <td className="px-6 py-5 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 {leave.status === 'Pending' && (
-                                                    <button 
-                                                        onClick={() => {
-                                                            setEditingLeave(leave);
-                                                            setShowApplyModal(true);
-                                                        }}
-                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
-                                                        title="Edit leave request"
-                                                    >
-                                                        <Edit2 size={12} />
-                                                        Edit
-                                                    </button>
+                                                    <>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setEditingLeave(leave);
+                                                                setShowApplyModal(true);
+                                                            }}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 transition-all cursor-pointer shadow-2xs"
+                                                            title="Edit leave request"
+                                                        >
+                                                            <Edit2 size={12} />
+                                                            Edit
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => promptCancelLeave(leave._id)}
+                                                            disabled={cancellingId === leave._id}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                                                            title="Cancel leave request"
+                                                        >
+                                                            {cancellingId === leave._id ? (
+                                                                <span className="w-3 h-3 border-2 border-rose-600 border-t-transparent rounded-full animate-spin" />
+                                                            ) : (
+                                                                <XCircle size={12} />
+                                                            )}
+                                                            Cancel
+                                                        </button>
+                                                    </>
                                                 )}
                                                 <button 
                                                     onClick={() => {
@@ -506,6 +599,7 @@ const STATUS_COLORS: any = {
                 balance={balance}
                 isAdminLike={isAdminLike}
                 allEmployees={allEmployees}
+                existingLeaves={history}
             />
 
             <LeaveDetailsModal 
@@ -525,6 +619,17 @@ const STATUS_COLORS: any = {
                     fetchLeaveData();
                     setRefreshCounter(prev => prev + 1);
                 }}
+            />
+
+            <AlertModal
+                isOpen={cancelModal.isOpen}
+                onClose={() => setCancelModal(prev => ({ ...prev, isOpen: false }))}
+                title={cancelModal.title}
+                message={cancelModal.message}
+                type={cancelModal.type}
+                confirmText={cancelModal.confirmText}
+                showCancel={cancelModal.showCancel}
+                onConfirm={cancelModal.onConfirm}
             />
         </div>
     );

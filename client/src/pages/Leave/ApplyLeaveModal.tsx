@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, AlertCircle, Calendar, Send } from 'lucide-react';
 import { api } from '../../utils/api';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
+import FormattedDateInput from '../../components/Common/FormattedDateInput';
 
 interface ApplyLeaveModalProps {
     isOpen: boolean;
@@ -12,9 +13,10 @@ interface ApplyLeaveModalProps {
     isAdminLike?: boolean;
     allEmployees?: any[];
     editLeave?: any;
+    existingLeaves?: any[];
 }
 
-const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees, editLeave }: ApplyLeaveModalProps) => {
+const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees, editLeave, existingLeaves }: ApplyLeaveModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -37,6 +39,62 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
     const balCategory = activeBalance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
     const availableDays = balCategory ? Math.max(0, balCategory.total - (balCategory.used || 0) - (balCategory.pending || 0)) : 0;
     const sandwichEnabled = selectedLeaveType ? selectedLeaveType.sandwichRuleEnabled !== false : true;
+
+    // Real-time duplicate & overlap conflict detection
+    const overlapConflict = (() => {
+        if (!formData.startDate || !formData.endDate || !existingLeaves || existingLeaves.length === 0) {
+            return null;
+        }
+        const reqStart = new Date(formData.startDate);
+        reqStart.setHours(0, 0, 0, 0);
+        const reqEnd = new Date(formData.endDate);
+        reqEnd.setHours(23, 59, 59, 999);
+
+        if (isNaN(reqStart.getTime()) || isNaN(reqEnd.getTime()) || reqStart > reqEnd) {
+            return null;
+        }
+
+        for (const l of existingLeaves) {
+            if (editLeave && (l._id === editLeave._id || l.id === editLeave.id)) {
+                continue;
+            }
+            if (selectedEmployeeId && l.employeeId !== selectedEmployeeId) {
+                continue;
+            }
+            if (l.status !== 'Pending' && l.status !== 'Approved') {
+                continue;
+            }
+
+            const exStart = new Date(l.startDate);
+            exStart.setHours(0, 0, 0, 0);
+            const exEnd = new Date(l.endDate);
+            exEnd.setHours(23, 59, 59, 999);
+
+            if (exStart <= reqEnd && exEnd >= reqStart) {
+                const isReqSingle = formData.startDate === formData.endDate;
+                const exStartStr = String(l.startDate).split('T')[0];
+                const exEndStr = String(l.endDate).split('T')[0];
+                const isExSingle = exStartStr === exEndStr;
+
+                if (isReqSingle && isExSingle) {
+                    const exDur = l.duration || 'Full Day';
+                    const reqDur = formData.duration || 'Full Day';
+                    if (exDur !== 'Full Day' && reqDur !== 'Full Day' && exDur !== reqDur && exDur !== 'Specify Time' && reqDur !== 'Specify Time') {
+                        continue;
+                    }
+                }
+
+                const sStr = new Date(l.startDate).toLocaleDateString('en-GB');
+                const eStr = new Date(l.endDate).toLocaleDateString('en-GB');
+                const dateRangeStr = sStr === eStr ? sStr : `${sStr} to ${eStr}`;
+                return {
+                    ...l,
+                    formattedRange: dateRangeStr
+                };
+            }
+        }
+        return null;
+    })();
 
     useEffect(() => {
         const fetchLocalBalance = async () => {
@@ -132,6 +190,12 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
             }
             if (end < start) {
                 setError('End date cannot be before start date');
+                setLoading(false);
+                return;
+            }
+
+            if (overlapConflict) {
+                setError(`You already have an active leave request (${overlapConflict.type} - ${overlapConflict.status}) for ${overlapConflict.formattedRange}. Duplicate or overlapping applications are not permitted.`);
                 setLoading(false);
                 return;
             }
@@ -282,30 +346,23 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Date</label>
-                                <div className="relative group">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={14} />
-                                    <input 
-                                        type="date"
-                                        required
-                                        value={formData.startDate}
-                                        onChange={e => setFormData({...formData, startDate: e.target.value})}
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium text-slate-600"
-                                    />
-                                </div>
+                                <FormattedDateInput 
+                                    required
+                                    value={formData.startDate}
+                                    onChange={val => setFormData({...formData, startDate: val})}
+                                    placeholder="DD/MM/YYYY"
+                                />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">End Date</label>
-                                <div className="relative group">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={14} />
-                                    <input 
-                                        type="date"
-                                        required
-                                        value={formData.endDate}
-                                        onChange={e => setFormData({...formData, endDate: e.target.value})}
-                                        disabled={formData.duration !== 'Full Day'}
-                                        className={`w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-medium ${formData.duration !== 'Full Day' ? 'text-slate-400 cursor-not-allowed opacity-70' : 'text-slate-600'}`}
-                                    />
-                                </div>
+                                <FormattedDateInput 
+                                    required
+                                    value={formData.endDate}
+                                    onChange={val => setFormData({...formData, endDate: val})}
+                                    disabled={formData.duration !== 'Full Day'}
+                                    min={formData.startDate}
+                                    placeholder="DD/MM/YYYY"
+                                />
                             </div>
                         </div>
 
@@ -389,10 +446,22 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                             </p>
                         </div>
 
+                        {overlapConflict && (
+                            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-800 animate-in fade-in duration-200">
+                                <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-bold text-rose-900">Leave already applied for this date</p>
+                                    <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
+                                        You already have an active leave request (<strong>{overlapConflict.type}</strong> — <span className="font-semibold">{overlapConflict.status}</span>) for <strong>{overlapConflict.formattedRange}</strong>. Duplicate or overlapping requests are not permitted.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         <button 
                             type="submit" 
-                            disabled={loading}
-                            className={`w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            disabled={loading || !!overlapConflict}
+                            className={`w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 ${loading || !!overlapConflict ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             {loading ? (
                                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

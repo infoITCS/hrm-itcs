@@ -226,6 +226,95 @@ async function enrichApproverNames(leaves: any[]): Promise<any[]> {
     return leaves;
 }
 
+interface CheckLeaveOverlapParams {
+    lookupIds: string[];
+    startDate: Date;
+    endDate: Date;
+    duration?: string;
+    startTime?: string;
+    endTime?: string;
+    excludeLeaveId?: any;
+    session?: mongoose.ClientSession;
+}
+
+async function checkLeaveOverlap({
+    lookupIds,
+    startDate,
+    endDate,
+    duration = 'Full Day',
+    startTime,
+    endTime,
+    excludeLeaveId,
+    session
+}: CheckLeaveOverlapParams): Promise<any | null> {
+    if (!lookupIds || lookupIds.length === 0) return null;
+
+    const reqStart = new Date(startDate);
+    reqStart.setHours(0, 0, 0, 0);
+
+    const reqEnd = new Date(endDate);
+    reqEnd.setHours(23, 59, 59, 999);
+
+    const query: any = {
+        employeeId: { $in: lookupIds },
+        status: { $in: ['Pending', 'Approved'] },
+        startDate: { $lte: reqEnd },
+        endDate: { $gte: reqStart }
+    };
+
+    if (excludeLeaveId) {
+        query._id = { $ne: excludeLeaveId };
+    }
+
+    let existingQuery = LeaveRequest.find(query);
+    if (session) existingQuery = existingQuery.session(session);
+    const overlappingLeaves = await existingQuery.lean() as any[];
+
+    if (!overlappingLeaves || overlappingLeaves.length === 0) {
+        return null;
+    }
+
+    for (const existing of overlappingLeaves) {
+        const isReqSingleDay = reqStart.toISOString().slice(0, 10) === reqEnd.toISOString().slice(0, 10);
+        const exStart = new Date(existing.startDate);
+        const exEnd = new Date(existing.endDate);
+        const isExSingleDay = exStart.toISOString().slice(0, 10) === exEnd.toISOString().slice(0, 10);
+
+        // If either is multi-day, they definitely conflict
+        if (!isReqSingleDay || !isExSingleDay) {
+            return existing;
+        }
+
+        // Both are single-day on the exact same date:
+        const existingDuration = existing.duration || 'Full Day';
+        const requestedDuration = duration || 'Full Day';
+
+        if (existingDuration === 'Full Day' || requestedDuration === 'Full Day') {
+            return existing;
+        }
+
+        if (existingDuration === requestedDuration) {
+            return existing;
+        }
+
+        if (existingDuration === 'Specify Time' && requestedDuration === 'Specify Time') {
+            if (existing.startTime && existing.endTime && startTime && endTime) {
+                if (startTime < existing.endTime && endTime > existing.startTime) {
+                    return existing;
+                }
+            } else {
+                return existing;
+            }
+        }
+
+        if (existingDuration === 'Specify Time' || requestedDuration === 'Specify Time') {
+            return existing;
+        }
+    }
+
+    return null;
+}
+
 // GET /api/leaves/today - Get all employees on leave today
 router.get('/today', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -725,6 +814,28 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(400).json({ message: 'Start date must be before end date' });
         }
 
+        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId);
+
+        // Check for duplicate / overlapping leave requests
+        const conflict = await checkLeaveOverlap({
+            lookupIds,
+            startDate: start,
+            endDate: end,
+            duration,
+            startTime,
+            endTime
+        });
+
+        if (conflict) {
+            const cStart = new Date(conflict.startDate).toLocaleDateString('en-GB');
+            const cEnd = new Date(conflict.endDate).toLocaleDateString('en-GB');
+            const dateStr = cStart === cEnd ? cStart : `${cStart} to ${cEnd}`;
+            return res.status(400).json({
+                success: false,
+                message: `You already have an active leave request (${conflict.type} - ${conflict.status}) for ${dateStr}. Duplicate or overlapping leave applications are not permitted.`
+            });
+        }
+
         // 1. Validate leave type exists first to know Sandwich toggle
         const requestedTypeCode = type.toLowerCase().trim();
         const leaveType = await LeaveType.findOne({ 
@@ -931,7 +1042,8 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         const leave = await LeaveRequest.findById(req.params.id);
         if (!leave) return res.status(404).json({ success: false, message: 'Leave request not found' });
 
-        const isOwner = user.userId === leave.employeeId;
+        const { lookupIds } = await resolveEmployeeLookupIds(user.userId);
+        const isOwner = lookupIds.includes(leave.employeeId) || leave.appliedBy === user.userId;
         const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(user.role);
 
         if (!isOwner && !isManagerOrAdmin) {
@@ -951,6 +1063,27 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         const end = new Date(endDate);
         if (start > end) {
             return res.status(400).json({ success: false, message: 'Start date must be before end date' });
+        }
+
+        const leaveEmployeeLookup = await resolveEmployeeLookupIds(leave.employeeId);
+        const conflict = await checkLeaveOverlap({
+            lookupIds: leaveEmployeeLookup.lookupIds,
+            startDate: start,
+            endDate: end,
+            duration,
+            startTime,
+            endTime,
+            excludeLeaveId: leave._id
+        });
+
+        if (conflict) {
+            const cStart = new Date(conflict.startDate).toLocaleDateString('en-GB');
+            const cEnd = new Date(conflict.endDate).toLocaleDateString('en-GB');
+            const dateStr = cStart === cEnd ? cStart : `${cStart} to ${cEnd}`;
+            return res.status(400).json({
+                success: false,
+                message: `Cannot update: Dates overlap with an existing ${conflict.type} leave (${conflict.status}) for ${dateStr}.`
+            });
         }
 
         const requestedTypeCode = (type || leave.type).toLowerCase().trim();
@@ -1449,7 +1582,8 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
         const leave = await LeaveRequest.findById(req.params.id);
         if (!leave) return res.status(404).json({ message: 'Leave request not found' });
 
-        const isOwner = user.userId === leave.employeeId;
+        const { lookupIds } = await resolveEmployeeLookupIds(user.userId);
+        const isOwner = lookupIds.includes(leave.employeeId) || leave.appliedBy === user.userId;
         const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(user.role);
 
         if (!isOwner && !isManagerOrAdmin) {

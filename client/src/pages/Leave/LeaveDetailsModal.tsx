@@ -15,7 +15,7 @@ const STATUS_COLORS: any = {
 
 const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleDateString();
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleDateString('en-GB');
 };
 
 const calculateDays = (start: string, end: string) => {
@@ -68,7 +68,13 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess, onEdit }: LeaveD
 
     if (!isOpen || !leave) return null;
 
-    const isOwner = user && leave && (leave.employeeId === user.id || leave.employeeId === (user as any).employeeId || leave.appliedBy === user.id);
+    const isOwner = user && leave && (
+        leave.employeeId === user.id || 
+        leave.employeeId === (user as any).employeeId || 
+        leave.appliedBy === user.id || 
+        leave.appliedBy === (user as any)._id || 
+        leave.appliedBy === (user as any).userId
+    );
     const isManagerOrAdmin = ['super-admin', 'admin', 'manager', 'hr'].includes(role);
 
     // Rule: Edit is allowed ONLY when status is Pending (pre-approval)

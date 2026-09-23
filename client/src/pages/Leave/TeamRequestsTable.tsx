@@ -220,8 +220,8 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                             </td>
                             <td className="px-6 py-5">
                                 <div className="flex flex-col text-xs">
-                                    <span className="font-bold text-slate-700">{new Date(req.startDate).toLocaleDateString()}</span>
-                                    <span className="text-[10px] text-slate-400">to {new Date(req.endDate).toLocaleDateString()}</span>
+                                    <span className="font-bold text-slate-700">{new Date(req.startDate).toLocaleDateString('en-GB')}</span>
+                                    <span className="text-[10px] text-slate-400">to {new Date(req.endDate).toLocaleDateString('en-GB')}</span>
                                     {req.duration && req.duration !== 'Full Day' && (
                                         <span className="text-[10px] text-indigo-500 font-bold mt-0.5">
                                             {req.duration} {req.duration === 'Specify Time' ? `(${req.startTime} - ${req.endTime})` : ''}
