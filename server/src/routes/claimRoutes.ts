@@ -5,7 +5,7 @@ import ExpenseCategory from '../models/ExpenseCategory';
 import Employee from '../models/Employee';
 import Counter from '../models/Counter';
 import { User } from '../models/User.model';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import {
     sendHRNotificationEmail,
     sendExpenseClaimSubmittedEmail,
@@ -1177,7 +1177,7 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
 });
 
 // Update ERP Reference ID for an Approved Claim (Finance/Admin)
-router.patch('/:id/erp-reference', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/erp-reference', authenticate, authorize(['admin', 'super-admin', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const userId = authReq.user?.userId;
@@ -2019,7 +2019,7 @@ router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Re
 });
 
 // ── Mark Expense Claim as Paid / Unpaid (Finance & Admin) ─────────────────
-router.patch('/:id/payout-status', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admin', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || 'employee';

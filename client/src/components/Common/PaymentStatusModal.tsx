@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertCircle, X, Loader2, Calendar, FileText, Info } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 export interface PaymentStatusTarget {
     id: string;
@@ -22,7 +23,11 @@ interface PaymentStatusModalProps {
 }
 
 export default function PaymentStatusModal({ target, onClose, onSuccess }: PaymentStatusModalProps) {
-    if (!target) return null;
+    const { user } = useAuth();
+    const role = (user?.role || '').toLowerCase().trim();
+    const canManagePayment = role === 'admin' || role === 'super-admin' || role === 'finance';
+
+    if (!target || !canManagePayment) return null;
 
     const isCurrentlyPaid = target.currentStatus === 'Paid';
     const nextStatus: 'Paid' | 'Unpaid' = isCurrentlyPaid ? 'Unpaid' : 'Paid';

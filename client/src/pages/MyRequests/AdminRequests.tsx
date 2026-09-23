@@ -801,36 +801,51 @@ const AdminRequests = () => {
 
                                 if (!isModalEligible) return null;
 
+                                const canManageModalPayment = isFinanceRole || isAdminOrSuper;
+
                                 return (
                                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status (Finance)</p>
+                                            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status {canManageModalPayment ? '(Finance)' : ''}</p>
                                             <p className="text-[11px] text-slate-500">Mark whether amount has been paid to employee</p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setPaymentModalTarget({
-                                                id: actionModal._id,
-                                                itemType: 'request',
-                                                employeeName: formatEmployeeFullName(actionModal.employee, 'Employee'),
-                                                employeeId: actionModal.employee?.employeeId,
-                                                title: actionModal.requestType || actionModal.category,
-                                                amount: actionModal.details?.requestedAmount || actionModal.details?.amount,
-                                                currency: 'Rs.',
-                                                currentStatus: actionModal.payoutStatus || 'Unpaid',
-                                                currentErpRef: actionModal.erpReferenceId,
-                                                currentPaidAt: actionModal.paidAt
-                                            })}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                                                actionModal.payoutStatus === 'Paid'
-                                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                                                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-                                            }`}
-                                        >
-                                            <span className={`w-2 h-2 rounded-full ${actionModal.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
-                                            {actionModal.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
-                                        </button>
+                                        {canManageModalPayment ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPaymentModalTarget({
+                                                    id: actionModal._id,
+                                                    itemType: 'request',
+                                                    employeeName: formatEmployeeFullName(actionModal.employee, 'Employee'),
+                                                    employeeId: actionModal.employee?.employeeId,
+                                                    title: actionModal.requestType || actionModal.category,
+                                                    amount: actionModal.details?.requestedAmount || actionModal.details?.amount,
+                                                    currency: 'Rs.',
+                                                    currentStatus: actionModal.payoutStatus || 'Unpaid',
+                                                    currentErpRef: actionModal.erpReferenceId,
+                                                    currentPaidAt: actionModal.paidAt
+                                                })}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+                                                    actionModal.payoutStatus === 'Paid'
+                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                                }`}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${actionModal.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                {actionModal.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                            </button>
+                                        ) : (
+                                            <span
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-default ${
+                                                    actionModal.payoutStatus === 'Paid'
+                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                        : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                                }`}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${actionModal.payoutStatus === 'Paid' ? 'bg-emerald-600' : 'bg-amber-600'}`} />
+                                                {actionModal.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                            </span>
+                                        )}
                                     </div>
                                     {actionModal.paidAt && (
                                         <p className="text-[11px] text-emerald-700 font-semibold">
@@ -955,11 +970,13 @@ const AdminRequests = () => {
             )}
 
             {/* Payment Status Modal (Finance Direct Payout / Revert to Payroll) */}
-            <PaymentStatusModal 
-                target={paymentModalTarget}
-                onClose={() => setPaymentModalTarget(null)}
-                onSuccess={handlePaymentModalSuccess}
-            />
+            {(isFinanceRole || isAdminOrSuper) && (
+                <PaymentStatusModal 
+                    target={paymentModalTarget}
+                    onClose={() => setPaymentModalTarget(null)}
+                    onSuccess={handlePaymentModalSuccess}
+                />
+            )}
         </div>
     );
 };

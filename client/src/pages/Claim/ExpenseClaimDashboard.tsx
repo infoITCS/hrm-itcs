@@ -313,12 +313,17 @@ const ExpenseClaimDashboard = () => {
     const isApprover = (role === 'super-admin' || ['admin', 'hr', 'finance', 'manager'].includes(role)) && canApprovalsSubAccess;
     const canSeeAllClaims = (role === 'super-admin' || ['admin', 'hr', 'finance'].includes(role)) && canHistorySubAccess;
     const isAdminLike = role === 'super-admin' || (['admin', 'hr'].includes(role) && (canApprovalsSubAccess || canHistorySubAccess));
+    const canManagePayment = role === 'admin' || role === 'super-admin' || role === 'finance';
 
     const [erpInputs, setErpInputs] = useState<Record<string, string>>({});
     const [savingErp, setSavingErp] = useState<Record<string, boolean>>({});
     const [paymentModalTarget, setPaymentModalTarget] = useState<PaymentStatusTarget | null>(null);
 
     const handleClaimPaymentSuccess = async (targetId: string, newStatus: 'Paid' | 'Unpaid', erpRef?: string, paidAt?: string, remarks?: string) => {
+        if (!canManagePayment) {
+            showToast('You do not have permission to manage payment status', 'error');
+            return;
+        }
         const token = localStorage.getItem('token');
         const res = await fetch(`${api.claims}/${targetId}/payout-status`, {
             method: 'PATCH',
@@ -374,6 +379,10 @@ const ExpenseClaimDashboard = () => {
     };
 
     const handleQuickSaveErp = async (claimId: string, erpVal?: string) => {
+        if (!canManagePayment) {
+            showToast('You do not have permission to update ERP Reference ID', 'error');
+            return;
+        }
         const valueToSave = erpVal !== undefined ? erpVal : erpInputs[claimId];
         if (!valueToSave || !valueToSave.trim()) {
             alert('Please enter a valid ERP Reference ID');
@@ -1127,6 +1136,10 @@ const ExpenseClaimDashboard = () => {
     };
 
     const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
+        if (!canManagePayment) {
+            showToast('You do not have permission to change payment status', 'error');
+            return;
+        }
         const newStatus = currentPayoutStatus === 'Paid' ? 'Unpaid' : 'Paid';
         try {
             const resp = await fetch(api.claimPayoutStatus(claimId), {
@@ -2354,27 +2367,40 @@ const ExpenseClaimDashboard = () => {
                                                             {c.status}
                                                         </span>
                                                         {c.status === 'Approved' && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (role === 'admin' || role === 'super-admin' || role === 'finance') {
+                                                            canManagePayment ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
                                                                         handleToggleClaimPayout(c._id, c.payoutStatus);
-                                                                    }
-                                                                }}
-                                                                disabled={role !== 'admin' && role !== 'super-admin' && role !== 'finance'}
-                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all ${
-                                                                    c.payoutStatus === 'Paid'
-                                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
-                                                                        : c.payoutStatus === 'Included in Payroll'
-                                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
-                                                                } ${(role === 'admin' || role === 'super-admin' || role === 'finance') ? 'cursor-pointer' : 'cursor-default'}`}
-                                                                title={(role === 'admin' || role === 'super-admin' || role === 'finance') ? `Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})` : c.payoutStatus || 'Unpaid'}
-                                                            >
-                                                                <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
-                                                                {c.payoutStatus || 'Unpaid'}
-                                                            </button>
+                                                                    }}
+                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all cursor-pointer ${
+                                                                        c.payoutStatus === 'Paid'
+                                                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
+                                                                            : c.payoutStatus === 'Included in Payroll'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                                                                    }`}
+                                                                    title={`Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})`}
+                                                                >
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                                    {c.payoutStatus || 'Unpaid'}
+                                                                </button>
+                                                            ) : (
+                                                                <span
+                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border cursor-default ${
+                                                                        c.payoutStatus === 'Paid'
+                                                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                            : c.payoutStatus === 'Included in Payroll'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                    }`}
+                                                                    title={c.payoutStatus || 'Unpaid'}
+                                                                >
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-emerald-600' : 'bg-amber-600'}`} />
+                                                                    {c.payoutStatus || 'Unpaid'}
+                                                                </span>
+                                                            )
                                                         )}
                                                     </div>
                                                 </td>
@@ -2574,27 +2600,40 @@ const ExpenseClaimDashboard = () => {
                                                             {c.status}
                                                         </span>
                                                         {c.status === 'Approved' && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (role === 'admin' || role === 'super-admin' || role === 'finance') {
+                                                            canManagePayment ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
                                                                         handleToggleClaimPayout(c._id, c.payoutStatus);
-                                                                    }
-                                                                }}
-                                                                disabled={role !== 'admin' && role !== 'super-admin' && role !== 'finance'}
-                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all ${
-                                                                    c.payoutStatus === 'Paid'
-                                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
-                                                                        : c.payoutStatus === 'Included in Payroll'
-                                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
-                                                                } ${(role === 'admin' || role === 'super-admin' || role === 'finance') ? 'cursor-pointer' : 'cursor-default'}`}
-                                                                title={(role === 'admin' || role === 'super-admin' || role === 'finance') ? `Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})` : c.payoutStatus || 'Unpaid'}
-                                                            >
-                                                                <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
-                                                                {c.payoutStatus || 'Unpaid'}
-                                                            </button>
+                                                                    }}
+                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border transition-all cursor-pointer ${
+                                                                        c.payoutStatus === 'Paid'
+                                                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
+                                                                            : c.payoutStatus === 'Included in Payroll'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                                                                    }`}
+                                                                    title={`Click to toggle Paid / Unpaid (Current: ${c.payoutStatus || 'Unpaid'})`}
+                                                                >
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                                    {c.payoutStatus || 'Unpaid'}
+                                                                </button>
+                                                            ) : (
+                                                                <span
+                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide border cursor-default ${
+                                                                        c.payoutStatus === 'Paid'
+                                                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                            : c.payoutStatus === 'Included in Payroll'
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                    }`}
+                                                                    title={c.payoutStatus || 'Unpaid'}
+                                                                >
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${c.payoutStatus === 'Paid' ? 'bg-emerald-600' : 'bg-amber-600'}`} />
+                                                                    {c.payoutStatus || 'Unpaid'}
+                                                                </span>
+                                                            )
                                                         )}
                                                     </div>
                                                 </td>
@@ -2605,7 +2644,7 @@ const ExpenseClaimDashboard = () => {
                                                                 <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold whitespace-nowrap">
                                                                     ✓ {c.erpReferenceId}
                                                                 </span>
-                                                                {(role === 'admin' || role === 'super-admin' || role === 'finance') && (
+                                                                {canManagePayment && (
                                                                     <button
                                                                         onClick={() => {
                                                                             const newErp = prompt('Edit ERP Reference ID:', c.erpReferenceId);
@@ -2613,13 +2652,13 @@ const ExpenseClaimDashboard = () => {
                                                                                 handleQuickSaveErp(c._id, newErp.trim());
                                                                             }
                                                                         }}
-                                                                        className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 underline"
+                                                                        className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 underline cursor-pointer"
                                                                     >
                                                                         Edit
                                                                     </button>
                                                                 )}
                                                             </div>
-                                                        ) : (
+                                                        ) : canManagePayment ? (
                                                             <div className="flex items-center gap-1">
                                                                 <input
                                                                     type="text"
@@ -2636,6 +2675,8 @@ const ExpenseClaimDashboard = () => {
                                                                     {savingErp[c._id] ? 'Saving...' : 'Save'}
                                                                 </button>
                                                             </div>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400">—</span>
                                                         )
                                                     ) : (
                                                         <span className="text-xs text-slate-400">—</span>
@@ -3252,32 +3293,47 @@ const ExpenseClaimDashboard = () => {
                                         <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status (Finance)</p>
-                                                    <p className="text-[11px] text-slate-500">Direct Payout vs. Automatic Payroll Inclusion</p>
+                                                    <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status {canManagePayment ? '(Finance)' : ''}</p>
+                                                    <p className="text-[11px] text-slate-500">
+                                                        {canManagePayment ? 'Direct Payout vs. Automatic Payroll Inclusion' : 'Direct payout or monthly payroll disbursement'}
+                                                    </p>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setPaymentModalTarget({
-                                                        id: decisionClaim._id,
-                                                        itemType: 'claim',
-                                                        employeeName: decisionClaim.employeeName || formatEmployeeFullName(decisionClaim, 'Employee'),
-                                                        employeeId: decisionClaim.employeeId,
-                                                        title: `Expense Claim (${decisionClaim.claimNo || decisionClaim.category})`,
-                                                        amount: decisionClaim.approvedTotal ?? decisionClaim.amountAllowed ?? decisionClaim.amountRequested,
-                                                        currency: decisionClaim.currency || 'PKR',
-                                                        currentStatus: decisionClaim.payoutStatus || 'Unpaid',
-                                                        currentErpRef: decisionClaim.erpReferenceId,
-                                                        currentPaidAt: decisionClaim.paidAt
-                                                    })}
-                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                                                        decisionClaim.payoutStatus === 'Paid'
-                                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                                                            : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-                                                    }`}
-                                                >
-                                                    <span className={`w-2 h-2 rounded-full ${decisionClaim.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
-                                                    {decisionClaim.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
-                                                </button>
+                                                {canManagePayment ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPaymentModalTarget({
+                                                            id: decisionClaim._id,
+                                                            itemType: 'claim',
+                                                            employeeName: decisionClaim.employeeName || formatEmployeeFullName(decisionClaim, 'Employee'),
+                                                            employeeId: decisionClaim.employeeId,
+                                                            title: `Expense Claim (${decisionClaim.claimNo || decisionClaim.category})`,
+                                                            amount: decisionClaim.approvedTotal ?? decisionClaim.amountAllowed ?? decisionClaim.amountRequested,
+                                                            currency: decisionClaim.currency || 'PKR',
+                                                            currentStatus: decisionClaim.payoutStatus || 'Unpaid',
+                                                            currentErpRef: decisionClaim.erpReferenceId,
+                                                            currentPaidAt: decisionClaim.paidAt
+                                                        })}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
+                                                            decisionClaim.payoutStatus === 'Paid'
+                                                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                                        }`}
+                                                    >
+                                                        <span className={`w-2 h-2 rounded-full ${decisionClaim.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                        {decisionClaim.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                                    </button>
+                                                ) : (
+                                                    <span
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-default ${
+                                                            decisionClaim.payoutStatus === 'Paid'
+                                                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                                        }`}
+                                                    >
+                                                        <span className={`w-2 h-2 rounded-full ${decisionClaim.payoutStatus === 'Paid' ? 'bg-emerald-600' : 'bg-amber-600'}`} />
+                                                        {decisionClaim.payoutStatus === 'Paid' ? '✓ Paid' : '⏳ Unpaid'}
+                                                    </span>
+                                                )}
                                             </div>
                                             {decisionClaim.paidAt && (
                                                 <p className="text-[11px] text-emerald-700 font-semibold">
@@ -4566,11 +4622,13 @@ const ExpenseClaimDashboard = () => {
             , document.body)}
 
             {/* Payment Status Modal (Finance Direct Payout / Revert to Payroll) */}
-            <PaymentStatusModal 
-                target={paymentModalTarget}
-                onClose={() => setPaymentModalTarget(null)}
-                onSuccess={handleClaimPaymentSuccess}
-            />
+            {canManagePayment && (
+                <PaymentStatusModal 
+                    target={paymentModalTarget}
+                    onClose={() => setPaymentModalTarget(null)}
+                    onSuccess={handleClaimPaymentSuccess}
+                />
+            )}
 
             {/* Cancel Expense Claim Confirmation Modal */}
             <AlertModal
