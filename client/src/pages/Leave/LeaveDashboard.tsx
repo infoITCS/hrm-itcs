@@ -432,10 +432,15 @@ const STATUS_COLORS: any = {
                                             <p className="text-sm text-slate-500 max-w-xs truncate">{leave.reason || 'No reason provided'}</p>
                                         </td>
                                         <td className="px-6 py-5">
-                                            <div className="flex justify-center">
+                                            <div className="flex flex-col items-center">
                                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${STATUS_COLORS[leave.status] || STATUS_COLORS.DEFAULT}`}>
                                                     {leave.status}
                                                 </span>
+                                                {leave.approvedByName && (leave.status === 'Approved' || leave.status === 'Rejected') && (
+                                                    <span className="text-[9.5px] text-slate-500 font-semibold mt-1 truncate max-w-[140px]" title={`${leave.status === 'Approved' ? 'Approved' : 'Rejected'} by ${leave.approvedByName.replace(/\s*\([^)]*\)$/, '').trim()}`}>
+                                                        by {leave.approvedByName.replace(/\s*\([^)]*\)$/, '').trim()}
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-5 text-right">

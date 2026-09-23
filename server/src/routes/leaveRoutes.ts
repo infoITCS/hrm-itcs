@@ -140,6 +140,92 @@ const resolveEmployeeLookupIds = async (identifier: string, session?: mongoose.C
     };
 };
 
+async function getApproverActionName(userId: string, _role?: string): Promise<string> {
+    let approverName = '';
+    const approverEmp = await Employee.findOne({
+        $or: [
+            { userId },
+            { employeeId: userId },
+            { _id: mongoose.isValidObjectId(userId) ? userId : undefined }
+        ].filter(Boolean) as any
+    }).select('firstName lastName').lean() as any;
+
+    if (approverEmp && (approverEmp.firstName || approverEmp.lastName)) {
+        approverName = `${approverEmp.firstName || ''} ${approverEmp.lastName || ''}`.trim();
+    }
+    if (!approverName) {
+        const userDoc = await User.findById(userId).select('firstName lastName name email role').lean() as any;
+        approverName = `${userDoc?.firstName || ''} ${userDoc?.lastName || ''}`.trim() || userDoc?.name || userDoc?.email?.split('@')[0] || 'Administrator';
+    }
+
+    return approverName;
+}
+
+async function enrichApproverNames(leaves: any[]): Promise<any[]> {
+    if (!leaves || leaves.length === 0) return leaves;
+
+    const needsResolutionIds = new Set<string>();
+    leaves.forEach(l => {
+        if (l.approvedBy) {
+            const cleanName = l.approvedByName ? l.approvedByName.replace(/\s*\([^)]*\)$/, '').trim() : '';
+            const isPlaceholder = !cleanName || ['ADMIN', 'SUPER-ADMIN', 'MANAGER', 'HR', 'FINANCE'].includes(cleanName.toUpperCase());
+            if (isPlaceholder) {
+                needsResolutionIds.add(String(l.approvedBy));
+            } else {
+                l.approvedByName = cleanName;
+            }
+        }
+    });
+
+    if (needsResolutionIds.size === 0) return leaves;
+
+    const idList = Array.from(needsResolutionIds);
+    const validObjectIds = idList.filter(id => mongoose.isValidObjectId(id));
+
+    const [employees, users] = await Promise.all([
+        Employee.find({
+            $or: [
+                { userId: { $in: idList } },
+                { employeeId: { $in: idList } },
+                { _id: { $in: validObjectIds } }
+            ]
+        }).select('userId employeeId _id firstName lastName').lean() as Promise<any[]>,
+        User.find({
+            _id: { $in: validObjectIds }
+        }).select('_id firstName lastName name email').lean() as Promise<any[]>
+    ]);
+
+    const nameMap = new Map<string, string>();
+
+    for (const u of users) {
+        const uId = String(u._id);
+        const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || u.email?.split('@')[0] || 'Administrator';
+        nameMap.set(uId, name);
+    }
+
+    for (const emp of employees) {
+        const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+        if (fullName) {
+            if (emp.userId) nameMap.set(String(emp.userId), fullName);
+            if (emp.employeeId) nameMap.set(String(emp.employeeId), fullName);
+            if (emp._id) nameMap.set(String(emp._id), fullName);
+        }
+    }
+
+    leaves.forEach(l => {
+        if (l.approvedBy) {
+            const resolved = nameMap.get(String(l.approvedBy));
+            if (resolved) {
+                l.approvedByName = resolved;
+            } else if (l.approvedByName) {
+                l.approvedByName = l.approvedByName.replace(/\s*\([^)]*\)$/, '').trim();
+            }
+        }
+    });
+
+    return leaves;
+}
+
 // GET /api/leaves/today - Get all employees on leave today
 router.get('/today', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -212,8 +298,9 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
         }
 
         const { lookupIds } = await resolveEmployeeLookupIds(userId);
-        const leaves = await LeaveRequest.find({ employeeId: { $in: lookupIds } }).sort({ createdAt: -1 });
-        res.json({ success: true, data: leaves });
+        const leaves = await LeaveRequest.find({ employeeId: { $in: lookupIds } }).sort({ createdAt: -1 }).lean() as any[];
+        const enrichedLeaves = await enrichApproverNames(leaves);
+        res.json({ success: true, data: enrichedLeaves });
     } catch (error) {
         next(error);
     }
@@ -611,7 +698,8 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
             readableId: readableIdMap.get(l.employeeId) || null
         }));
 
-        res.json({ success: true, data: enrichedLeaves });
+        const fullyEnrichedLeaves = await enrichApproverNames(enrichedLeaves);
+        res.json({ success: true, data: fullyEnrichedLeaves });
     } catch (error) {
         next(error);
     }
@@ -1074,17 +1162,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
             return res.status(400).json({ message: 'Leave request is already processed' });
         }
 
-        const approverEmp = await Employee.findOne({ userId: user.userId }).select('firstName lastName').lean() as any;
-        const roleLabel = user.role === 'admin' || user.role === 'super-admin'
-            ? 'Admin'
-            : (user.role === 'hr'
-                ? 'HR Manager'
-                : (user.role === 'finance'
-                    ? 'Finance Manager'
-                    : (user.role === 'manager'
-                        ? 'Reporting Manager'
-                        : 'Team Lead')));
-        const actionByName = approverEmp ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` : `${user.role.toUpperCase()} (${roleLabel})`;
+        const actionByName = await getApproverActionName(user.userId, user.role);
 
         const session = await mongoose.startSession();
         try {
@@ -1250,9 +1328,12 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
         const oldStatus = leave.status;
         const session = await mongoose.startSession();
         try {
+            const actionByName = await getApproverActionName(user.userId, user.role);
             await session.withTransaction(async () => {
                 leave.status = status;
                 leave.approvedBy = user.userId;
+                leave.approvedByName = actionByName;
+                leave.actionAt = new Date();
                 if (adminNote) leave.adminNote = adminNote;
 
                 const start = new Date(leave.startDate);
@@ -1386,9 +1467,12 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
         const oldStatus = leave.status;
         const session = await mongoose.startSession();
         try {
+            const actionByName = await getApproverActionName(user.userId, user.role);
             await session.withTransaction(async () => {
                 leave.status = 'Cancelled';
                 leave.approvedBy = user.userId; // track who performed the cancellation action
+                leave.approvedByName = actionByName;
+                leave.actionAt = new Date();
 
                 const start = new Date(leave.startDate);
                 const end = new Date(leave.endDate);

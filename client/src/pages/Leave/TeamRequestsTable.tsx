@@ -270,9 +270,9 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                                     <button 
                                                         onClick={() => {
                                                              setEditTargetId(req._id);
-                                                            setEditTargetStatus(req.status);
-                                                            setEditTargetNote(req.adminNote || '');
-                                                            setShowEditModal(true);
+                                                             setEditTargetStatus(req.status);
+                                                             setEditTargetNote(req.adminNote || '');
+                                                             setShowEditModal(true);
                                                         }}
                                                         className="inline-flex items-center justify-center p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200/80 rounded-lg transition-all shadow-2xs cursor-pointer"
                                                         title="Edit Status"
@@ -281,8 +281,13 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                                     </button>
                                                 )}
                                             </div>
+                                            {req.approvedByName && (
+                                                <span className="text-[9px] text-slate-500 font-medium mt-1 truncate max-w-[140px]" title={`By ${req.approvedByName.replace(/\s*\([^)]*\)$/, '').trim()}`}>
+                                                    by {req.approvedByName.replace(/\s*\([^)]*\)$/, '').trim()}
+                                                </span>
+                                            )}
                                             {req.adminNote && (
-                                                <span className="text-[8px] text-slate-400 mt-1 max-w-[120px] truncate italic text-center" title={req.adminNote}>
+                                                <span className="text-[8px] text-slate-400 mt-0.5 max-w-[120px] truncate italic text-center" title={req.adminNote}>
                                                     "{req.adminNote}"
                                                 </span>
                                             )}

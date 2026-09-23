@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare, Edit2 } from 'lucide-react';
+import { X, Calendar, FileText, User, ShieldCheck, AlertCircle, MessageSquare, Edit2, UserCheck, XCircle, Clock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { api } from '../../utils/api';
@@ -23,6 +23,11 @@ const calculateDays = (start: string, end: string) => {
     const endDate = new Date(end);
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return '—';
     return Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+};
+
+const formatApproverName = (name?: string) => {
+    if (!name) return '';
+    return name.replace(/\s*\([^)]*\)$/, '').trim();
 };
 
 interface LeaveDetailsModalProps {
@@ -279,6 +284,58 @@ const LeaveDetailsModal = ({ isOpen, onClose, leave, onSuccess, onEdit }: LeaveD
                             "{leave.reason || 'No reason provided'}"
                         </div>
                     </div>
+
+                    {/* Decision / Approver Details */}
+                    {leave.status === 'Approved' && (
+                        <div className="flex items-start gap-3 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl sm:rounded-2xl">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
+                                <UserCheck size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[9px] sm:text-xs font-bold text-emerald-700 uppercase tracking-widest">Approved By</p>
+                                <p className="text-xs sm:text-sm font-bold text-slate-800 break-words">{formatApproverName(leave.approvedByName) || 'Authorized Administrator'}</p>
+                                {(leave.actionAt || leave.updatedAt) && (
+                                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                        {new Date(leave.actionAt || leave.updatedAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {leave.status === 'Rejected' && (
+                        <div className="flex items-start gap-3 p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl sm:rounded-2xl">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
+                                <XCircle size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[9px] sm:text-xs font-bold text-rose-700 uppercase tracking-widest">Rejected By</p>
+                                <p className="text-xs sm:text-sm font-bold text-slate-800 break-words">{formatApproverName(leave.approvedByName) || 'Authorized Administrator'}</p>
+                                {(leave.actionAt || leave.updatedAt) && (
+                                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                        {new Date(leave.actionAt || leave.updatedAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {leave.status === 'Cancelled' && (
+                        <div className="flex items-start gap-3 p-3.5 bg-slate-100/80 border border-slate-200 rounded-xl sm:rounded-2xl">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 shrink-0">
+                                <Clock size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[9px] sm:text-xs font-bold text-slate-600 uppercase tracking-widest">Cancelled By</p>
+                                <p className="text-xs sm:text-sm font-bold text-slate-800 break-words">{formatApproverName(leave.approvedByName) || 'Requester'}</p>
+                                {(leave.actionAt || leave.updatedAt) && (
+                                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                        {new Date(leave.actionAt || leave.updatedAt).toLocaleString('en-PK', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Rejection Note (Admin Note) */}
                     {leave.adminNote && (
