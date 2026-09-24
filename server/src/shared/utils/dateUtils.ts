@@ -12,6 +12,15 @@ export function pktHHMMtoUtc(dateStr: string, timeStr: string): Date {
     return d;
 }
 
+/** Convert a PKT date-time string (e.g. "YYYY-MM-DD HH:mm:ss" from machine/BioTime) into a UTC Date. */
+export function pktDateTimeToUtc(dateTimeStr: string): Date {
+    const clean = dateTimeStr.trim().replace(' ', 'T');
+    if (/[zZ]|[+-]\d{2}(:?\d{2})?$/.test(clean)) {
+        return new Date(clean);
+    }
+    return new Date(`${clean}+05:00`);
+}
+
 // removed todayPKT and nowPKT wrappers
 export function startOfDay(dateStr: string): Date {
     const [y, m, d] = dateStr.split('-').map(Number);

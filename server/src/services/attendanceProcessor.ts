@@ -6,7 +6,7 @@ import { findHolidayForDate as lookupHolidayForDate } from '../utils/holidayUtil
 import Employee from '../models/Employee';
 import WorkShift from '../models/WorkShift';
 import { fetchReport } from './zktCloudService';
-import { isValidCheckout, applyLunchDeduction } from '../shared/utils/dateUtils';
+import { isValidCheckout, applyLunchDeduction, startOfDay, endOfDay } from '../shared/utils/dateUtils';
 import logger from '../utils/logger';
 
 
@@ -108,8 +108,8 @@ export async function processEmployeePunches(
         const halfDayHrs       = empShift?.halfDayThreshold ?? deviceConfig?.halfDayThresholdHours ?? DEFAULT_HALF_DAY_HRS;
         const locationName     = deviceConfig?.locationName     ?? 'ISB-Office';
 
-        const dayStart = new Date(dateStr + 'T00:00:00.000Z');
-        const dayEnd   = new Date(dateStr + 'T23:59:59.999Z');
+        const dayStart = startOfDay(dateStr);
+        const dayEnd   = endOfDay(dateStr);
 
         const punches = await AttendancePunch
             .find({ employeeId: resolvedEmployeeId, punchTime: { $gte: dayStart, $lte: dayEnd } })

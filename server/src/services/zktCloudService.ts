@@ -9,6 +9,7 @@ import AttendancePunch from '../models/AttendancePunch';
 import ZktSyncState from '../models/ZktSyncState';
 import Employee from '../models/Employee';
 import { processEmployeePunches } from './attendanceProcessor';
+import { pktDateTimeToUtc } from '../shared/utils/dateUtils';
 import logger from '../utils/logger';
 
 
@@ -332,7 +333,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
         let punchStatus = parseInt(txn.punch_state ?? '0', 10);
         if (punchStatus === 255) punchStatus = 0; // 255 is generic biometric punch
 
-        const punchTime = new Date(txn.punch_time.replace(' ', 'T'));
+        const punchTime = pktDateTimeToUtc(txn.punch_time);
         if (isNaN(punchTime.getTime())) continue;
 
         // Resolve machine PIN → HRM employeeId
@@ -343,7 +344,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
         }
 
         try {
-            const dateStr = punchTime.toISOString().slice(0, 10);
+            const dateStr = txn.punch_time.trim().slice(0, 10);
             const sn = txn.terminal_sn ?? 'ZKT_CLOUD';
 
             const existing = await AttendancePunch.findOneAndUpdate(

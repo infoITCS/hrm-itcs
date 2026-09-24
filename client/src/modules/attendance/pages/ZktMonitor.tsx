@@ -10,8 +10,11 @@ import { useZktSync } from '../hooks/useZktSync';
 const todayStr = () => new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
 
 const fmtTime = (iso: string) => {
-    try { return new Date(iso).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }); }
-    catch { return iso; }
+    try {
+        const clean = iso.includes('T') ? iso : iso.replace(' ', 'T');
+        const parsed = /[zZ]|[+-]\d{2}/.test(clean) ? clean : `${clean}+05:00`;
+        return new Date(parsed).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' });
+    } catch { return iso; }
 };
 
 const PUNCH_STATES: Record<string, { label: string; color: string }> = {
