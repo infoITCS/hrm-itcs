@@ -299,6 +299,7 @@ const ExpenseClaimDashboard = () => {
     const [amendNotes, setAmendNotes] = useState('');
     const [amendReplyComment, setAmendReplyComment] = useState('');
     const [amendReceiptFiles, setAmendReceiptFiles] = useState<File[]>([]);
+    const [existingReceiptsToKeep, setExistingReceiptsToKeep] = useState<any[]>([]);
     const [amending, setAmending] = useState(false);
 
     // Modal quick comment
@@ -600,6 +601,7 @@ const ExpenseClaimDashboard = () => {
         setAmendNotes(c.notes || '');
         setAmendReplyComment('');
         setAmendReceiptFiles([]);
+        setExistingReceiptsToKeep(Array.isArray(c.receipts) ? [...c.receipts] : []);
         setAmendOpen(true);
     };
 
@@ -617,10 +619,16 @@ const ExpenseClaimDashboard = () => {
                 });
             }
 
+            const keptIds = new Set(existingReceiptsToKeep.map((r: any) => String(r._id)));
+            const removedIds = (amendClaim.receipts || [])
+                .filter((r: any) => !keptIds.has(String(r._id)))
+                .map((r: any) => String(r._id));
+
             const payload: any = {
                 amountRequested: amendAmount !== '' ? Number(amendAmount) : undefined,
                 notes: amendNotes,
-                replyComment: amendReplyComment.trim() || undefined
+                replyComment: amendReplyComment.trim() || undefined,
+                removeReceiptIds: removedIds.length > 0 ? removedIds : undefined,
             };
 
             if (encodedNewReceipts.length > 0) {
@@ -639,6 +647,7 @@ const ExpenseClaimDashboard = () => {
             setAmendOpen(false);
             setAmendClaim(null);
             setAmendReceiptFiles([]);
+            setExistingReceiptsToKeep([]);
             setAmendReplyComment('');
             await fetchMine();
             await fetchApprovals();
@@ -4633,34 +4642,98 @@ const ExpenseClaimDashboard = () => {
                                 />
                             </div>
 
-                            <div>
-                                <label className="text-xs font-bold text-slate-700">Upload Revised / Additional Receipts (Max 5)</label>
-                                <input
-                                    type="file"
-                                    multiple
-                                    accept="image/*,application/pdf"
-                                    onChange={e => {
-                                        const incoming = Array.from(e.target.files || []);
-                                        setAmendReceiptFiles(prev => [...prev, ...incoming].slice(0, 5));
-                                    }}
-                                    className="mt-1 block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
-                                />
-                                {amendReceiptFiles.length > 0 && (
-                                    <div className="mt-2 space-y-1">
-                                        {amendReceiptFiles.map((f, i) => (
-                                            <div key={i} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg border border-slate-200">
-                                                <span className="font-semibold text-slate-700 truncate">{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setAmendReceiptFiles(prev => prev.filter((_, idx) => idx !== i))}
-                                                    className="text-rose-500 hover:text-rose-700 font-bold ml-2"
-                                                >
-                                                    <X size={14} />
-                                                </button>
-                                            </div>
-                                        ))}
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-700 block">
+                                    Claim Documentation & Receipts
+                                </label>
+
+                                {/* Previously Uploaded Documents */}
+                                {existingReceiptsToKeep.length > 0 && (
+                                    <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                                                <CheckCircle2 size={14} className="text-emerald-600" />
+                                                Currently Attached Documents ({existingReceiptsToKeep.length})
+                                            </span>
+                                            <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                                                Preserved
+                                            </span>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            {existingReceiptsToKeep.map((r: any) => (
+                                                <div key={r._id} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 text-xs shadow-2xs">
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <FileText size={14} className="text-emerald-600 shrink-0" />
+                                                        <span className="font-medium text-slate-700 truncate" title={r.fileName}>
+                                                            {r.fileName}
+                                                        </span>
+                                                        {r.extractedAmount ? (
+                                                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-semibold shrink-0">
+                                                                PKR {Number(r.extractedAmount).toLocaleString()}
+                                                            </span>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => downloadReceipt(amendClaim._id, r._id, r.fileName)}
+                                                            className="text-indigo-600 hover:text-indigo-800 text-[11px] font-bold cursor-pointer"
+                                                            title="View / Download"
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setExistingReceiptsToKeep(prev => prev.filter(item => item._id !== r._id))}
+                                                            className="text-rose-400 hover:text-rose-600 cursor-pointer"
+                                                            title="Remove this document from claim"
+                                                        >
+                                                            <X size={13} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <p className="text-[11px] text-emerald-800/80 leading-snug">
+                                            ✓ These documents will remain intact. Any newly uploaded files below will be added alongside them.
+                                        </p>
                                     </div>
                                 )}
+
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-600 block">
+                                        {existingReceiptsToKeep.length > 0
+                                            ? "Add Additional Documentation (e.g. Prescription, Receipts, Invoices)"
+                                            : "Upload Receipts / Supporting Documentation (Max 5)"}
+                                    </label>
+                                    <input
+                                        type="file"
+                                        multiple
+                                        accept="image/*,application/pdf"
+                                        onChange={e => {
+                                            const incoming = Array.from(e.target.files || []);
+                                            setAmendReceiptFiles(prev => [...prev, ...incoming].slice(0, 5));
+                                        }}
+                                        className="mt-1 block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
+                                    />
+                                    {amendReceiptFiles.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                            <span className="text-[11px] font-bold text-amber-800 block">New files to attach:</span>
+                                            {amendReceiptFiles.map((f, i) => (
+                                                <div key={i} className="flex items-center justify-between text-xs p-2 bg-amber-50/60 rounded-lg border border-amber-200">
+                                                    <span className="font-semibold text-slate-700 truncate">{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAmendReceiptFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                                        className="text-rose-500 hover:text-rose-700 font-bold ml-2 cursor-pointer"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div>

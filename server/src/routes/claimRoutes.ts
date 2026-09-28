@@ -14,7 +14,7 @@ import {
     sendExpenseClaimAmendedEmail,
     sendExpenseClaimCommentEmail
 } from '../utils/email';
-import { extractAndAnalyzeReceipts } from '../services/receiptExtraction';
+import { extractAndAnalyzeReceipts, analyzeReceipts } from '../services/receiptExtraction';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import logger from '../utils/logger';
 
@@ -1764,7 +1764,7 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
             return res.status(400).json({ message: 'Only claims with status "Action Required" or "Draft" can be amended' });
         }
 
-        const { amountRequested, notes, receipts, replyComment, expenseDate, forWhom, dependentId } = req.body || {};
+        const { amountRequested, notes, receipts, replyComment, expenseDate, forWhom, dependentId, removeReceiptIds } = req.body || {};
 
         if (typeof amountRequested === 'number' && amountRequested > 0) {
             claim.amountRequested = amountRequested;
@@ -1794,8 +1794,19 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
             }
         }
 
-        // Decode & process receipts if provided
-        let finalReceipts: any[] = ((claim.receipts as any) || []);
+        // Preserve existing receipts, optionally filtering out any the user explicitly asked to remove
+        let existingReceipts: any[] = Array.isArray(claim.receipts)
+            ? claim.receipts.map((r: any) => (typeof r?.toObject === 'function' ? r.toObject() : r))
+            : [];
+
+        if (Array.isArray(removeReceiptIds) && removeReceiptIds.length > 0) {
+            const removeSet = new Set(removeReceiptIds.map(String));
+            existingReceipts = existingReceipts.filter((r: any) => !removeSet.has(String(r._id)));
+        }
+
+        let allReceipts: any[] = [...existingReceipts];
+
+        // Decode & process newly uploaded receipts if provided
         if (receipts && Array.isArray(receipts)) {
             const decodedReceipts = decodeReceipts(receipts as ReceiptInput[]);
             if (decodedReceipts.length > 0) {
@@ -1810,7 +1821,7 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
                     claim.expenseDate ? new Date(claim.expenseDate) : null
                 );
 
-                finalReceipts = analysis.receipts.map((r, i) => ({
+                const newlyProcessedReceipts = analysis.receipts.map((r, i) => ({
                     ...decodedReceipts[i],
                     extractedDate: r.extractedDate,
                     extractedAmount: r.extractedAmount,
@@ -1820,32 +1831,64 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
                     extractionStatus: r.extractionStatus,
                     extractionError: r.extractionError,
                     extractionConfidence: r.extractionConfidence,
+                    uploadedAt: new Date(),
                 }));
-                claim.receiptAnalysis = analysis.receiptAnalysis as any;
 
-                const ocrFlags = [
-                    'ReceiptTotalExceedsQuota',
-                    'ReceiptTotalExceedsRequested',
-                    'ReceiptOlderThan45Days',
-                    'ReceiptDateMismatch',
-                    'ReceiptExtractionFailed',
-                    'ReceiptDateUnreadable'
-                ];
-                const currentFlags = (claim.eligibility && Array.isArray((claim.eligibility as any).flags))
-                    ? (claim.eligibility as any).flags
-                    : [];
-                const existingFlags = currentFlags.filter((f: string) => !ocrFlags.includes(f));
-                for (const f of analysis.flags) {
-                    if (!existingFlags.includes(f)) existingFlags.push(f);
-                }
-                (claim as any).eligibility = {
-                    ...((claim as any).eligibility || {}),
-                    eligible: existingFlags.length === 0,
-                    flags: existingFlags,
-                };
+                // Append newly uploaded receipts alongside existing documentation
+                allReceipts = [...existingReceipts, ...newlyProcessedReceipts];
             }
         }
-        claim.receipts = finalReceipts as any;
+
+        claim.receipts = allReceipts as any;
+
+        // Re-analyze combined documentation (both existing & new) to keep totals & flags consistent
+        if (allReceipts.length > 0) {
+            const combinedAnalysis = analyzeReceipts(
+                allReceipts.map((r: any) => ({
+                    fileName: r.fileName,
+                    contentType: r.contentType,
+                    fileData: r.fileData || Buffer.alloc(0),
+                    uploadedAt: r.uploadedAt || new Date(),
+                    extractedDate: r.extractedDate,
+                    extractedAmount: r.extractedAmount,
+                    extractedCurrency: r.extractedCurrency,
+                    merchantName: r.merchantName,
+                    receiptAgeDays: r.receiptAgeDays,
+                    extractionStatus: r.extractionStatus,
+                    extractionError: r.extractionError,
+                    extractionConfidence: r.extractionConfidence,
+                })),
+                claim.amountRequested,
+                claim.amountAllowed,
+                new Date(),
+                claim.expenseDate ? new Date(claim.expenseDate) : null
+            );
+
+            claim.receiptAnalysis = combinedAnalysis.receiptAnalysis as any;
+
+            const ocrFlags = [
+                'ReceiptTotalExceedsQuota',
+                'ReceiptTotalExceedsRequested',
+                'ReceiptOlderThan45Days',
+                'ReceiptDateMismatch',
+                'ReceiptExtractionFailed',
+                'ReceiptDateUnreadable'
+            ];
+            const currentFlags = (claim.eligibility && Array.isArray((claim.eligibility as any).flags))
+                ? (claim.eligibility as any).flags
+                : [];
+            const existingFlags = currentFlags.filter((f: string) => !ocrFlags.includes(f));
+            for (const f of combinedAnalysis.flags) {
+                if (!existingFlags.includes(f)) existingFlags.push(f);
+            }
+            (claim as any).eligibility = {
+                ...((claim as any).eligibility || {}),
+                eligible: existingFlags.length === 0,
+                flags: existingFlags,
+            };
+        } else {
+            claim.receiptAnalysis = undefined;
+        }
 
         // Recalculate limits & policy flags
         const { amountAllowed, outOfPolicy } = await resolveClaimLimits(claim.category, String(userId), claim.amountRequested, String(claim._id));
