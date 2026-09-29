@@ -10,5 +10,5 @@ export function formatEmployeeFullName(
     const parts = [emp.firstName, emp.middleName, emp.lastName]
         .map(s => (typeof s === 'string' ? s.trim() : ''))
         .filter(Boolean);
-    return parts.join(' ') || fallback;
+    return parts.join(' ') || emp.name || fallback;
 }

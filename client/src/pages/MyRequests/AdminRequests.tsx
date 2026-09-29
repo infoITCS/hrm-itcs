@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
-import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search, Home } from 'lucide-react';
+import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search, Home, PiggyBank } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
 import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
@@ -128,8 +128,10 @@ const AdminRequests = () => {
         });
 
         if (res.ok) {
+            const newWorkflowStatus = newStatus === 'Paid' ? 'Completed' : 'Approved';
             setRequests(prev => prev.map(r => r._id === targetId ? {
                 ...r,
+                status: newWorkflowStatus,
                 payoutStatus: newStatus,
                 paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
                 erpReferenceId: erpRef || r.erpReferenceId
@@ -137,6 +139,7 @@ const AdminRequests = () => {
             if (actionModal && actionModal._id === targetId) {
                 setActionModal((prev: any) => ({
                     ...prev,
+                    status: newWorkflowStatus,
                     payoutStatus: newStatus,
                     paidAt: newStatus === 'Paid' ? (paidAt || new Date().toISOString()) : undefined,
                     erpReferenceId: erpRef || prev.erpReferenceId
@@ -148,7 +151,7 @@ const AdminRequests = () => {
             showToast(
                 newStatus === 'Paid' 
                     ? 'Marked as Paid — Excluded from future monthly payroll calculations.' 
-                    : 'Reverted to Unpaid — Will automatically be included in next monthly payroll.', 
+                    : 'Reverted to Unpaid — Amount refunded to balance & queued for upcoming monthly payroll.', 
                 'success'
             );
         } else {
@@ -164,11 +167,12 @@ const AdminRequests = () => {
         const cat = (req.category || '').toLowerCase();
         const reqType = (req.requestType || '').toLowerCase();
         const isLoan = cat.includes('loan') || reqType.includes('loan');
-        const isFinanceRelated = cat.includes('finance') || cat.includes('pf') || cat.includes('provident') || cat.includes('salary') || cat.includes('advance') ||
-                                 reqType.includes('finance') || reqType.includes('pf') || reqType.includes('salary') || reqType.includes('advance');
+        const isPfWithdrawal = cat.includes('pf') || cat.includes('provident') || reqType.includes('pf') || reqType.includes('provident');
+        const isFinanceRelated = cat.includes('finance') || cat.includes('salary') || cat.includes('advance') ||
+                                 reqType.includes('finance') || reqType.includes('salary') || reqType.includes('advance');
 
-        if (isFinanceRole && (isLoan || !isFinanceRelated)) return false;
-        if (isManagerRole && (isLoan || isFinanceRelated)) return false;
+        if (isFinanceRole && (isLoan || isPfWithdrawal || !isFinanceRelated)) return false;
+        if (isManagerRole && (isLoan || isPfWithdrawal || isFinanceRelated)) return false;
 
         const employeeName = formatEmployeeFullName(req.employee, '').toLowerCase();
         const matchesSearch = req.requestType.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -305,14 +309,23 @@ const AdminRequests = () => {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
-                                                    {(req.category === 'Asset' || req.category === 'Request Asset') ? <Package size={16} className="text-purple-500"/> :
+                                                    {(req.category === 'PF Withdrawal' || req.requestType === 'PF Withdrawal' || req.category === 'Provident Fund') ? <PiggyBank size={16} className="text-indigo-600"/> :
+                                                     (req.category === 'Asset' || req.category === 'Request Asset') ? <Package size={16} className="text-purple-500"/> :
                                                      (req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) ? <Home size={16} className="text-teal-600"/> :
                                                      <Banknote size={16} className="text-emerald-500"/>}
                                                     <span className="font-medium text-gray-700">{req.requestType}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                {(req.category === 'Loan' || req.category === 'Request Loan') ? (
+                                                {(req.category === 'PF Withdrawal' || req.requestType === 'PF Withdrawal' || req.category === 'Provident Fund') ? (
+                                                    <div className="text-xs space-y-1 text-gray-600">
+                                                        <p>Withdrawal: <strong className="text-indigo-700">Rs. {Math.ceil(Number(req.details?.requestedAmount || req.details?.amount || 0)).toLocaleString()}</strong></p>
+                                                        <p className="text-[11px] text-gray-500">PF Bal: Rs. {Math.ceil(Number(req.details?.pfBalance || 0)).toLocaleString()}</p>
+                                                        {Number(req.details?.outstandingLoans || 0) > 0 && (
+                                                            <p className="text-[11px] text-amber-600 font-semibold">Active Loans: Rs. {Math.ceil(Number(req.details?.outstandingLoans || 0)).toLocaleString()}</p>
+                                                        )}
+                                                    </div>
+                                                ) : (req.category === 'Loan' || req.category === 'Request Loan') ? (
                                                     <div className="text-xs space-y-1 text-gray-600">
                                                         <p>Amount: <strong className="text-gray-900">Rs. {req.details?.requestedAmount?.toLocaleString()}</strong></p>
                                                         {req.details?.paybackDuration && (
@@ -347,36 +360,44 @@ const AdminRequests = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {isEligibleForPayment ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (isFinanceRole || isAdminOrSuper) {
-                                                                setPaymentModalTarget({
-                                                                    id: req._id,
-                                                                    itemType: 'request',
-                                                                    employeeName: formatEmployeeFullName(req.employee, 'Employee'),
-                                                                    employeeId: req.employee?.employeeId,
-                                                                    title: req.requestType || req.category,
-                                                                    amount: req.details?.requestedAmount || req.details?.amount,
-                                                                    currency: 'Rs.',
-                                                                    currentStatus: req.payoutStatus || 'Unpaid',
-                                                                    currentErpRef: req.erpReferenceId,
-                                                                    currentPaidAt: req.paidAt
-                                                                });
-                                                            }
-                                                        }}
-                                                        disabled={!isFinanceRole && !isAdminOrSuper}
-                                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${
-                                                            req.payoutStatus === 'Paid'
-                                                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                                                                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-                                                        } ${(isFinanceRole || isAdminOrSuper) ? 'cursor-pointer' : 'cursor-default'}`}
-                                                        title={(isFinanceRole || isAdminOrSuper) ? `Click to manage payment status (Current: ${req.payoutStatus || 'Unpaid'})` : req.payoutStatus || 'Unpaid'}
-                                                    >
-                                                        <span className={`w-2 h-2 rounded-full ${req.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
-                                                        {req.payoutStatus === 'Paid' ? 'Paid' : 'Unpaid'}
-                                                    </button>
+                                                    (() => {
+                                                        const isPfItem = reqCat.includes('pf') || reqCat.includes('provident') || reqTypeStr.includes('pf') || reqTypeStr.includes('provident');
+                                                        const isLoanItem = (reqCat.includes('loan') || reqTypeStr.includes('loan')) && !isPauseRequest;
+                                                        const canManageThisPayment = (isLoanItem || isPfItem) ? isAdminOrSuper : (isFinanceRole || isAdminOrSuper);
+
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (canManageThisPayment) {
+                                                                        setPaymentModalTarget({
+                                                                            id: req._id,
+                                                                            itemType: 'request',
+                                                                            employeeName: formatEmployeeFullName(req.employee, 'Employee'),
+                                                                            employeeId: req.employee?.employeeId,
+                                                                            title: req.requestType || req.category,
+                                                                            amount: req.details?.requestedAmount || req.details?.amount,
+                                                                            currency: 'Rs.',
+                                                                            currentStatus: req.payoutStatus || 'Unpaid',
+                                                                            currentErpRef: req.erpReferenceId,
+                                                                            currentPaidAt: req.paidAt
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                disabled={!canManageThisPayment}
+                                                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${
+                                                                    req.payoutStatus === 'Paid'
+                                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                                                        : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                                                                } ${canManageThisPayment ? 'cursor-pointer' : 'cursor-default'}`}
+                                                                title={canManageThisPayment ? `Click to manage payment status (Current: ${req.payoutStatus || 'Unpaid'})` : req.payoutStatus || 'Unpaid'}
+                                                            >
+                                                                <span className={`w-2 h-2 rounded-full ${req.payoutStatus === 'Paid' ? 'bg-white animate-pulse' : 'bg-amber-600'}`} />
+                                                                {req.payoutStatus === 'Paid' ? 'Paid' : 'Unpaid'}
+                                                            </button>
+                                                        );
+                                                    })()
                                                 ) : (
                                                     <span className="text-xs text-gray-400">—</span>
                                                 )}
@@ -717,6 +738,52 @@ const AdminRequests = () => {
                                     </>
                                 )}
 
+                                {(actionModal.category === 'PF Withdrawal' || actionModal.requestType === 'PF Withdrawal' || actionModal.category === 'Provident Fund') && (
+                                    <div className="mt-3 p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-3">
+                                        <div className="flex justify-between items-center text-indigo-950 font-bold border-b border-indigo-100/80 pb-2">
+                                            <span className="flex items-center gap-1.5 text-xs">
+                                                <PiggyBank size={15} className="text-indigo-600" /> Provident Fund Withdrawal Request
+                                            </span>
+                                            <span className="text-indigo-700 font-extrabold text-sm">
+                                                Rs. {Math.ceil(Number(actionModal.details?.requestedAmount || actionModal.details?.amount || 0)).toLocaleString()}
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                            <div className="p-2 bg-white rounded-lg border border-indigo-100">
+                                                <span className="text-[10px] text-gray-500 uppercase block">PF Balance</span>
+                                                <span className="font-bold text-gray-800">
+                                                    Rs. {Math.ceil(Number(actionModal.details?.pfBalance || actionModal.employee?.providentFundBalance || 0)).toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div className="p-2 bg-white rounded-lg border border-indigo-100">
+                                                <span className="text-[10px] text-gray-500 uppercase block">Active Loans</span>
+                                                <span className={`font-bold ${Number(actionModal.details?.outstandingLoans || 0) > 0 ? 'text-amber-600' : 'text-gray-800'}`}>
+                                                    Rs. {Math.ceil(Number(actionModal.details?.outstandingLoans || 0)).toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200">
+                                                <span className="text-[10px] text-emerald-700 uppercase block font-semibold">Max Allowable</span>
+                                                <span className="font-bold text-emerald-700">
+                                                    Rs. {Math.ceil(Number(actionModal.details?.maxAllowedWithdrawal || (Number(actionModal.details?.pfBalance || 0) - Number(actionModal.details?.outstandingLoans || 0)))).toLocaleString()}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-lg border border-indigo-100/80 space-y-1">
+                                            <div className="flex items-center gap-1 text-emerald-800 font-medium">
+                                                <CheckCircle size={12} className="text-emerald-600" />
+                                                <span>Policy Verified: 3-Year Post-Confirmation requirement met.</span>
+                                            </div>
+                                            {Number(actionModal.details?.outstandingLoans || 0) > 0 && (
+                                                <p className="text-amber-800">
+                                                    Loan Offset: Max withdrawal capped at PF Balance minus outstanding loans (Rs. {Math.ceil(Number(actionModal.details?.outstandingLoans || 0)).toLocaleString()}).
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {actionModal.details?.periodMonth && (
                                     <div className="mt-3 text-sm border-t border-gray-200/60 pt-2 flex justify-between items-center">
                                         <span className="text-gray-500 text-xs">Target Payroll Period</span>
@@ -801,14 +868,22 @@ const AdminRequests = () => {
 
                                 if (!isModalEligible) return null;
 
-                                const canManageModalPayment = isFinanceRole || isAdminOrSuper;
+                                const isPfItem = modalCat.includes('pf') || modalCat.includes('provident') || modalType.includes('pf') || modalType.includes('provident');
+                                const isLoanItem = (modalCat.includes('loan') || modalType.includes('loan')) && !isModalPause;
+                                const canManageModalPayment = (isLoanItem || isPfItem) ? isAdminOrSuper : (isFinanceRole || isAdminOrSuper);
 
                                 return (
                                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Payment Status {canManageModalPayment ? '(Finance)' : ''}</p>
-                                            <p className="text-[11px] text-slate-500">Mark whether amount has been paid to employee</p>
+                                            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                                                Payment Status {(isLoanItem || isPfItem) ? '(Management / HR)' : '(Finance)'}
+                                            </p>
+                                            <p className="text-[11px] text-slate-500">
+                                                {actionModal.payoutStatus === 'Paid' 
+                                                    ? 'Paid directly by Management — Excluded from monthly payroll.' 
+                                                    : 'Unpaid — Queued for automatic inclusion in monthly payroll.'}
+                                            </p>
                                         </div>
                                         {canManageModalPayment ? (
                                             <button
@@ -862,23 +937,32 @@ const AdminRequests = () => {
                                 const modalType = (actionModal.requestType || '').toLowerCase();
                                 const isModalPause = modalCat.includes('pause') || modalType.includes('pause');
                                 const isLoan = (modalCat.includes('loan') || modalType.includes('loan')) && !isModalPause;
+                                const isPfWithdrawal = modalCat.includes('pf') || modalCat.includes('provident') || modalType.includes('pf') || modalType.includes('provident');
                                 const isModalPayable = !isModalPause && (
                                     modalCat.includes('loan') || modalCat.includes('finance') || modalCat.includes('pf') || modalCat.includes('provident') || modalCat.includes('salary') || modalCat.includes('advance') ||
                                     modalType.includes('loan') || modalType.includes('finance') || modalType.includes('pf') || modalType.includes('salary') || modalType.includes('advance')
                                 );
                                 const showErpInput = isModalPayable && actionModal.status !== 'Cancelled' && actionModal.status !== 'Rejected' && (
                                     actionModal.status === 'Approved' || 
+                                    actionModal.status === 'Completed' ||
                                     actionModal.status === 'Pending Finance' ||
-                                    (isLoan && (actionModal.status === 'Pending' || actionModal.status === 'Pending HR'))
+                                    ((isLoan || isPfWithdrawal) && (actionModal.status === 'Pending' || actionModal.status === 'Pending HR'))
                                 );
 
                                 if (!showErpInput) return null;
 
                                 return (
-                                <div className="space-y-1">
-                                    <label className="block text-xs font-bold text-gray-500 uppercase">
-                                        ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
-                                    </label>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase">
+                                            ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
+                                        </label>
+                                        {isPfWithdrawal && !actionModal.erpReferenceId && (
+                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                                Active in Notifications
+                                            </span>
+                                        )}
+                                    </div>
                                     <input 
                                         type="text"
                                         className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-xs font-semibold"
@@ -886,6 +970,12 @@ const AdminRequests = () => {
                                         value={erpReferenceId}
                                         onChange={(e) => setErpReferenceId(e.target.value)}
                                     />
+                                    {isPfWithdrawal && !actionModal.erpReferenceId && (
+                                        <p className="text-[11px] text-amber-800 bg-amber-50/80 border border-amber-200 rounded-lg p-2 font-medium flex items-center gap-1.5">
+                                            <Clock size={13} className="text-amber-600 shrink-0" />
+                                            <span>This request will remain in notifications until an ERP Reference ID is saved.</span>
+                                        </p>
+                                    )}
                                 </div>
                                 );
                             })()}
@@ -899,7 +989,39 @@ const AdminRequests = () => {
                                 Close
                             </button>
 
-                            {(actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') ? (
+                            {(actionModal.category === 'PF Withdrawal' || actionModal.requestType === 'PF Withdrawal' || actionModal.category === 'Provident Fund') ? (
+                                <>
+                                    {/* PF Withdrawal Specific Workflow (Super Admin & HR Exclusive) */}
+                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Approved')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                            >
+                                                <CheckCircle size={15} /> Approve PF Withdrawal
+                                            </button>
+                                        </>
+                                    )}
+                                    {(actionModal.status === 'Approved' || actionModal.status === 'Completed') && isAdminOrSuper && (
+                                        <>
+                                            {erpReferenceId.trim() !== (actionModal.erpReferenceId || '').trim() && (
+                                                <button 
+                                                    onClick={() => handleAction(actionModal.status)}
+                                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                >
+                                                    <FileText size={14} /> Save ERP Reference ID
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                </>
+                            ) : (actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') ? (
                                 <>
                                     {/* Loan Specific Workflow (Management / HR Exclusive) */}
                                     {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR' || actionModal.status === 'Approved') && (

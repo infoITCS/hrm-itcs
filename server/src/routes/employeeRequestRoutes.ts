@@ -77,7 +77,7 @@ router.get('/pf-balance', authenticate, async (req: Request, res: Response, next
     const authReq = req as AuthRequest;
     try {
         const userId = authReq.user?.userId;
-        const employee = await Employee.findOne({ userId }).select('providentFundBalance employeeId');
+        const employee = await Employee.findOne({ userId }).select('providentFundBalance employeeId employmentStatus jobInfo');
         if (!employee) {
             return res.status(404).json({ message: 'Employee profile not found' });
         }
@@ -90,10 +90,15 @@ router.get('/pf-balance', authenticate, async (req: Request, res: Response, next
         } catch {
             // fallback if loan details cannot be calculated
         }
+        const empStatus = (employee.employmentStatus?.status || (typeof employee.employmentStatus === 'string' ? employee.employmentStatus : '') || employee.jobInfo?.employmentType || '').trim();
+        const isPermanent = empStatus.toLowerCase() === 'permanent';
+
         res.json({
             pfBalance: employee.providentFundBalance || 0,
             activeLoanBalance,
-            currentMonthlyDeduction
+            currentMonthlyDeduction,
+            employmentStatus: empStatus,
+            isPermanent
         });
     } catch (err) {
         next(err);
@@ -143,21 +148,21 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 requestType: { $not: /loan|pf|provident|salary|advance/i }
             };
         } else if (isHrOrAdmin) {
-            // HR and Admins see pending requests (including loans)
+            // HR and Admins see pending requests (including loans and PF withdrawals)
             reqQuery = { status: 'Pending' };
         } else if (isFinanceOnly) {
-            // Finance only sees non-loan financial requests. Loans are Management/HR exclusive.
+            // Finance only sees non-loan, non-PF financial requests. Loans and PF Withdrawals are Management/HR exclusive.
             reqQuery = { 
                 status: 'Pending',
                 $and: [
                     {
                         $or: [
-                            { category: { $regex: /finance|pf|provident|salary|advance/i } },
-                            { requestType: { $regex: /finance|pf|provident|salary|advance/i } }
+                            { category: { $regex: /finance|salary|advance/i } },
+                            { requestType: { $regex: /finance|salary|advance/i } }
                         ]
                     },
-                    { category: { $not: /loan/i } },
-                    { requestType: { $not: /loan/i } }
+                    { category: { $not: /loan|pf|provident/i } },
+                    { requestType: { $not: /loan|pf|provident/i } }
                 ]
             };
         }
@@ -193,6 +198,57 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     type: 'task',
                     path: '/my-requests/manage'
                 });
+            }
+        }
+
+        // --- PF Withdrawal & Loan ERP Entry Required Notifications for Super Admin & HR ---
+        if (isHrOrAdmin) {
+            const erpMissingRequests = await EmployeeRequest.find({
+                $and: [
+                    {
+                        $or: [
+                            { category: { $regex: /loan|pf|provident/i } },
+                            { requestType: { $regex: /loan|pf|provident/i } }
+                        ]
+                    },
+                    {
+                        category: { $not: /pause/i },
+                        requestType: { $not: /pause/i }
+                    },
+                    { status: { $in: ['Approved', 'Completed'] } },
+                    {
+                        $or: [
+                            { erpReferenceId: { $exists: false } },
+                            { erpReferenceId: null },
+                            { erpReferenceId: '' }
+                        ]
+                    }
+                ]
+            }).sort({ updatedAt: -1 }).limit(10).lean();
+
+            if (erpMissingRequests.length > 0) {
+                const erpEmpIds = [...new Set(erpMissingRequests.map(r => r.employeeId))];
+                const erpEmployees = await Employee.find({ employeeId: { $in: erpEmpIds } }).select('employeeId firstName lastName').lean();
+                const erpEmpMap = erpEmployees.reduce((acc: any, emp: any) => {
+                    acc[emp.employeeId] = emp;
+                    return acc;
+                }, {});
+
+                for (const reqObj of erpMissingRequests) {
+                    const emp = erpEmpMap[reqObj.employeeId];
+                    const empName = formatEmployeeFullName(emp, 'Employee');
+                    const itemLabel = reqObj.requestType || reqObj.category;
+                    const amt = Math.ceil(Number(reqObj.details?.requestedAmount || reqObj.details?.amount || 0));
+
+                    notifications.push({
+                        id: `erp-req-${reqObj._id.toString()}`,
+                        title: `ERP Entry Required: ${itemLabel}`,
+                        message: `${itemLabel} of Rs. ${amt.toLocaleString()} approved for ${empName}. Please enter ERP Transaction ID.`,
+                        time: reqObj.updatedAt || reqObj.requestedAt,
+                        type: 'task',
+                        path: '/my-requests/manage'
+                    });
+                }
             }
         }
 
@@ -554,22 +610,33 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const { category, requestType, details } = req.body;
         const userId = authReq.user?.userId;
 
-        const employee = await Employee.findOne({ userId }).select('employeeId firstName lastName jobInfo');
+        const employee = await Employee.findOne({ userId }).select('employeeId firstName lastName jobInfo employmentStatus financeInfo loans providentFundBalance');
         if (!employee) {
             return res.status(400).json({ message: 'Employee profile not found for the logged-in user' });
         }
 
-        const isLoan = category === 'Loan' || category === 'Request Loan' || requestType === 'Loan';
+        const isLoan = category === 'Loan' || category === 'Request Loan' || requestType === 'Loan' || category?.toLowerCase().includes('loan') || requestType?.toLowerCase().includes('loan');
+        const isPfWithdrawal = category === 'PF Withdrawal' || category === 'Request Provident Fund' || requestType === 'PF Withdrawal' || category === 'Provident Fund';
+
+        const empStatus = typeof employee.employmentStatus === 'string'
+            ? employee.employmentStatus
+            : employee.employmentStatus?.status;
+        const isPermanent = (empStatus || '').trim().toLowerCase() === 'permanent';
+
         const newRequest = new EmployeeRequest({
             employeeId: employee.employeeId,
-            category,
-            requestType,
+            category: isPfWithdrawal ? 'PF Withdrawal' : category,
+            requestType: isPfWithdrawal ? 'PF Withdrawal' : requestType,
             status: 'Pending',
             details
         });
 
-
         if (isLoan) {
+            if (!isPermanent) {
+                return res.status(400).json({
+                    message: 'Employee loan facility is exclusively available to confirmed Permanent employees.'
+                });
+            }
             if (details && details.paybackDuration && Number(details.paybackDuration) > 12) {
                 return res.status(400).json({ message: 'Loan payback duration cannot exceed 1 year (12 months).' });
             }
@@ -593,6 +660,85 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 totalConsolidatedBalance: totalConsolidated,
                 recommendedMonthlyDeduction: consolidatedInstallment,
                 paybackDuration: Math.min(12, Number(details?.paybackDuration) || 12)
+            };
+        }
+
+        if (isPfWithdrawal) {
+            const existingPending = await EmployeeRequest.findOne({
+                employeeId: employee.employeeId,
+                category: { $in: ['PF Withdrawal', 'Provident Fund', 'Request Provident Fund'] },
+                status: { $in: ['Pending', 'Pending HR', 'Pending Finance'] }
+            });
+            if (existingPending) {
+                return res.status(400).json({
+                    message: 'You already have an active Provident Fund withdrawal request pending review.'
+                });
+            }
+
+            const empStatus = typeof employee.employmentStatus === 'string'
+                ? employee.employmentStatus
+                : employee.employmentStatus?.status;
+
+            if (empStatus !== 'Permanent') {
+                return res.status(400).json({
+                    message: 'Provident Fund withdrawal is exclusively available to confirmed Permanent employees.'
+                });
+            }
+
+            // Condition 1: 3-year period post-confirmation (post probation)
+            let confirmationDate: Date | null = null;
+            if (employee.employmentStatus?.probationEndDate) {
+                confirmationDate = new Date(employee.employmentStatus.probationEndDate);
+            } else if (employee.jobInfo?.joiningDate) {
+                const probMonths = Number(employee.financeInfo?.probationMonths) || 3;
+                confirmationDate = new Date(employee.jobInfo.joiningDate);
+                confirmationDate.setMonth(confirmationDate.getMonth() + probMonths);
+            }
+
+            if (!confirmationDate || isNaN(confirmationDate.getTime())) {
+                return res.status(400).json({
+                    message: 'Unable to verify confirmation date for Provident Fund withdrawal.'
+                });
+            }
+
+            const eligibleDate = new Date(confirmationDate);
+            eligibleDate.setFullYear(eligibleDate.getFullYear() + 3);
+
+            if (new Date() < eligibleDate) {
+                const dateStr = eligibleDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                return res.status(400).json({
+                    message: `Provident Fund can only be withdrawn after completing 3 years post-confirmation. You will become eligible on ${dateStr}.`
+                });
+            }
+
+            // Condition 2: Max withdrawal = PF Balance - Active Outstanding Loans
+            const activeLoans = (employee.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+            const outstandingLoans = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Number(l.remainingAmount || 0), 0));
+            const pfBalance = Number(employee.providentFundBalance || 0);
+            const maxAllowed = Math.max(0, pfBalance - outstandingLoans);
+            const reqAmt = Math.ceil(Number(details?.requestedAmount || details?.amount || 0));
+
+            if (reqAmt <= 0) {
+                return res.status(400).json({ message: 'Please enter a valid withdrawal amount greater than zero.' });
+            }
+
+            if (reqAmt > maxAllowed) {
+                return res.status(400).json({
+                    message: `Requested amount (PKR ${reqAmt.toLocaleString()}) exceeds your maximum allowable withdrawal limit (PKR ${maxAllowed.toLocaleString()}).`
+                });
+            }
+
+            newRequest.category = 'PF Withdrawal';
+            newRequest.requestType = 'PF Withdrawal';
+            newRequest.details = {
+                ...details,
+                requestedAmount: reqAmt,
+                pfBalance,
+                outstandingLoans,
+                maxAllowedWithdrawal: maxAllowed,
+                confirmationDate: confirmationDate.toISOString(),
+                eligibleDate: eligibleDate.toISOString(),
+                reason: details?.reason || details?.description || ''
             };
         }
 
@@ -735,8 +881,8 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
         }
 
         const cancellableStatuses = ['Pending', 'Pending HR', 'Pending Finance', 'Approved'];
-        if (!cancellableStatuses.includes(request.status)) {
-            return res.status(400).json({ message: `Requests in status '${request.status}' cannot be cancelled.` });
+        if (!cancellableStatuses.includes(request.status) || request.payoutStatus === 'Paid') {
+            return res.status(400).json({ message: `Requests in status '${request.status}' or already paid cannot be cancelled.` });
         }
 
         const wasApproved = request.status === 'Approved';
@@ -818,17 +964,17 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
                 requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
             };
         } else if (role === 'finance') {
-            // Finance role ONLY sees non-loan Financial requests (PF, Salary, Advance, Finance). Loans are Management/HR exclusive.
+            // Finance role ONLY sees non-loan, non-PF Financial requests (Salary, Advance, Finance). Loans and PF Withdrawals are Management/HR exclusive.
             query = {
                 $and: [
                     {
                         $or: [
-                            { category: { $regex: /finance|pf|provident|salary|advance/i } },
-                            { requestType: { $regex: /finance|pf|provident|salary|advance/i } }
+                            { category: { $regex: /finance|salary|advance/i } },
+                            { requestType: { $regex: /finance|salary|advance/i } }
                         ]
                     },
-                    { category: { $not: /loan/i } },
-                    { requestType: { $not: /loan/i } }
+                    { category: { $not: /loan|pf|provident/i } },
+                    { requestType: { $not: /loan|pf|provident/i } }
                 ]
             };
         }
@@ -954,10 +1100,56 @@ async function syncLoanDisbursement(request: any) {
     await emp.save();
 }
 
-// Toggle or set Payout Status (Paid / Unpaid) for a request (Finance, Admin, Super Admin)
-router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admin', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
+async function syncPfWithdrawalDisbursement(request: any) {
+    try {
+        const isPf = request.category === 'PF Withdrawal' || request.requestType === 'PF Withdrawal' || request.category === 'Provident Fund';
+        if (!isPf) return;
+
+        const emp = await Employee.findOne({ employeeId: request.employeeId });
+        if (!emp) return;
+
+        const reqAmt = Math.ceil(Number(request.details?.requestedAmount || request.details?.amount || 0));
+        if (reqAmt <= 0) return;
+
+        const reqIdStr = request._id.toString();
+        const existingDebitIndex = (emp.providentFundHistory || []).findIndex((h: any) => 
+            (request.erpReferenceId && h.erpReferenceId && h.erpReferenceId === request.erpReferenceId) ||
+            (h.description && h.description.includes(reqIdStr.slice(-6)))
+        );
+
+        if (existingDebitIndex !== -1) {
+            // Already debited — update ERP reference ID if provided
+            if (request.erpReferenceId && emp.providentFundHistory[existingDebitIndex].erpReferenceId !== request.erpReferenceId.trim()) {
+                emp.providentFundHistory[existingDebitIndex].erpReferenceId = request.erpReferenceId.trim();
+                await emp.save();
+            }
+            return;
+        }
+
+        const currentBal = Number(emp.providentFundBalance || 0);
+        const debitAmt = Math.min(currentBal, reqAmt);
+        emp.providentFundBalance = Math.max(0, currentBal - debitAmt);
+        if (!emp.providentFundHistory) emp.providentFundHistory = [];
+        emp.providentFundHistory.push({
+            amount: debitAmt,
+            type: 'debit',
+            source: 'manual',
+            date: new Date(),
+            description: `PF Withdrawal Disbursement (Req #${reqIdStr.slice(-6)})`,
+            erpReferenceId: (request.erpReferenceId || '').trim()
+        } as any);
+
+        await emp.save();
+    } catch (err: any) {
+        logger.error('Error syncing PF withdrawal disbursement:', err.message);
+    }
+}
+
+// Toggle or set Payout Status (Paid / Unpaid) for a request (Finance, Admin, Super Admin, HR)
+router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admin', 'hr', 'finance']), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { payoutStatus, erpReferenceId, paidAt, remarks } = req.body;
+        const role = (req as AuthRequest).user?.role || '';
         if (!['Paid', 'Unpaid', 'Included in Payroll'].includes(payoutStatus)) {
             return res.status(400).json({ message: 'Invalid payoutStatus. Must be Paid, Unpaid, or Included in Payroll.' });
         }
@@ -967,16 +1159,45 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
             return res.status(404).json({ message: 'Request not found' });
         }
 
+        const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+        const isPf = request.category === 'PF Withdrawal' || request.requestType === 'PF Withdrawal' || request.category === 'Provident Fund';
+
+        // Finance cannot manage or decide on Loans or PF Withdrawals (Management / HR exclusive)
+        if (role === 'finance' && (isLoan || isPf)) {
+            return res.status(403).json({ message: 'Loans and PF Withdrawals are managed and disbursed exclusively by HR and Management.' });
+        }
+
         request.payoutStatus = payoutStatus;
         if (payoutStatus === 'Paid') {
+            request.status = 'Completed';
             request.paidAt = paidAt ? new Date(paidAt) : new Date();
             if (erpReferenceId) request.erpReferenceId = erpReferenceId.trim();
-            const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
             if (isLoan) {
                 await syncLoanDisbursement(request);
             }
+            if (isPf && !request.payrollRunId) {
+                await syncPfWithdrawalDisbursement(request);
+            }
         } else if (payoutStatus === 'Unpaid') {
+            if (request.status === 'Completed') {
+                request.status = 'Approved';
+            }
             request.paidAt = undefined;
+            if (isPf && !request.payrollRunId) {
+                const emp = await Employee.findOne({ employeeId: request.employeeId });
+                if (emp && emp.providentFundHistory) {
+                    const reqIdStr = request._id.toString();
+                    const debitIdx = emp.providentFundHistory.findIndex((h: any) => 
+                        h.type === 'debit' && h.description && h.description.includes(reqIdStr.slice(-6))
+                    );
+                    if (debitIdx !== -1) {
+                        const debitedAmount = Number(emp.providentFundHistory[debitIdx].amount || 0);
+                        emp.providentFundBalance = (emp.providentFundBalance || 0) + debitedAmount;
+                        emp.providentFundHistory.splice(debitIdx, 1);
+                        await emp.save();
+                    }
+                }
+            }
         }
 
         if (remarks) {
@@ -1010,10 +1231,11 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         }
 
         const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
+        const isPf = request.category === 'PF Withdrawal' || request.requestType === 'PF Withdrawal' || request.category === 'Provident Fund';
 
-        // Finance cannot manage or decide on Loans (Management / HR exclusive)
-        if (role === 'finance' && isLoan) {
-            return res.status(403).json({ message: 'Loans are managed and disbursed exclusively by HR and Management.' });
+        // Finance cannot manage or decide on Loans or PF Withdrawals (Management / HR exclusive)
+        if (role === 'finance' && (isLoan || isPf)) {
+            return res.status(403).json({ message: 'Loans and PF Withdrawals are managed and approved exclusively by HR and Management.' });
         }
 
         // If manager, check if the request belongs to a direct report
@@ -1125,6 +1347,32 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                     loan.monthlyInstallment = 0;
                     await emp.save();
                 }
+            }
+        }
+
+        // Sync disbursed PF withdrawal requests directly into Employee PF balance/history
+        const isPfWithdrawalReq = request.category === 'PF Withdrawal' || request.requestType === 'PF Withdrawal' || request.category === 'Provident Fund';
+        if (isPfWithdrawalReq && (status === 'Completed' || req.body.payoutStatus === 'Paid') && !request.payrollRunId) {
+            request.payoutStatus = 'Paid';
+            if (!request.paidAt) request.paidAt = new Date();
+            await syncPfWithdrawalDisbursement(request);
+        } else if (isPfWithdrawalReq && (status === 'Rejected' || status === 'Cancelled') && !request.payrollRunId) {
+            if (request.payoutStatus === 'Paid') {
+                const emp = await Employee.findOne({ employeeId: request.employeeId });
+                if (emp && emp.providentFundHistory) {
+                    const reqIdStr = request._id.toString();
+                    const debitIdx = emp.providentFundHistory.findIndex((h: any) => 
+                        h.type === 'debit' && h.description && h.description.includes(reqIdStr.slice(-6))
+                    );
+                    if (debitIdx !== -1) {
+                        const debitedAmount = Number(emp.providentFundHistory[debitIdx].amount || 0);
+                        emp.providentFundBalance = (emp.providentFundBalance || 0) + debitedAmount;
+                        emp.providentFundHistory.splice(debitIdx, 1);
+                        await emp.save();
+                    }
+                }
+                request.payoutStatus = 'Unpaid';
+                request.paidAt = undefined;
             }
         }
 

@@ -25,9 +25,14 @@ interface PaymentStatusModalProps {
 export default function PaymentStatusModal({ target, onClose, onSuccess }: PaymentStatusModalProps) {
     const { user } = useAuth();
     const role = (user?.role || '').toLowerCase().trim();
-    const canManagePayment = role === 'admin' || role === 'super-admin' || role === 'finance';
+    const canManagePayment = role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
+
+    const isLoanOrPf = (target?.title || '').toLowerCase().includes('loan') || 
+                       (target?.title || '').toLowerCase().includes('pf') || 
+                       (target?.title || '').toLowerCase().includes('provident');
 
     if (!target || !canManagePayment) return null;
+    if (role === 'finance' && isLoanOrPf) return null;
 
     const isCurrentlyPaid = target.currentStatus === 'Paid';
     const nextStatus: 'Paid' | 'Unpaid' = isCurrentlyPaid ? 'Unpaid' : 'Paid';
@@ -43,9 +48,14 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
     });
     const [remarks, setRemarks] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showConfirmAlert, setShowConfirmAlert] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handlePreSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setShowConfirmAlert(true);
+    };
+
+    const handleFinalConfirm = async () => {
         setLoading(true);
         try {
             await onSuccess(
@@ -55,6 +65,7 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
                 nextStatus === 'Paid' ? paidDate : undefined,
                 remarks.trim() || undefined
             );
+            setShowConfirmAlert(false);
             onClose();
         } catch (err) {
             // error handled by caller
@@ -100,7 +111,7 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <form onSubmit={handlePreSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
                     {/* Scrollable Body */}
                     <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 text-slate-700 text-sm">
                         {/* Item Summary Card */}
@@ -132,7 +143,7 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
                             <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-emerald-900 leading-relaxed">
                                 <Info size={16} className="text-emerald-600 shrink-0 mt-0.5" />
                                 <div>
-                                    <strong className="font-bold">Excluded from Monthly Payroll:</strong> Marking as Paid indicates Finance has disbursed this payout directly. It will be <strong>left out</strong> of payroll runs to prevent double payment.
+                                    <strong className="font-bold">Excluded from Monthly Payroll:</strong> Marking as Paid indicates {isLoanOrPf ? 'Management / HR' : 'Finance'} has disbursed this payout directly. It will be <strong>left out</strong> of payroll runs to prevent double payment.
                                 </div>
                             </div>
                         ) : (
@@ -182,7 +193,7 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
 
                         <div>
                             <label className="block text-xs font-bold text-slate-600 mb-1">
-                                Finance Remarks / Notes (Optional)
+                                Remarks / Notes (Optional)
                             </label>
                             <textarea 
                                 rows={2}
@@ -200,25 +211,121 @@ export default function PaymentStatusModal({ target, onClose, onSuccess }: Payme
                             type="button"
                             onClick={onClose}
                             disabled={loading}
-                            className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors"
+                            className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={loading}
-                            className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all flex items-center gap-2 ${
+                            className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer ${
                                 nextStatus === 'Paid'
                                     ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                                     : 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
                             }`}
                         >
                             {loading && <Loader2 size={14} className="animate-spin" />}
-                            {nextStatus === 'Paid' ? 'Confirm & Mark as Paid' : 'Confirm & Revert to Unpaid'}
+                            {nextStatus === 'Paid' ? 'Proceed to Mark Paid' : 'Proceed to Revert Unpaid'}
                         </button>
                     </div>
                 </form>
             </div>
+
+            {/* Confirmation Alert Dialog */}
+            {showConfirmAlert && (
+                <div 
+                    className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-sm w-full p-6 text-center space-y-4 animate-scaleIn">
+                        <div className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center shadow-lg ${
+                            nextStatus === 'Paid'
+                                ? 'bg-emerald-100 text-emerald-600 shadow-emerald-100'
+                                : 'bg-amber-100 text-amber-600 shadow-amber-100'
+                        }`}>
+                            {nextStatus === 'Paid' ? <CheckCircle2 size={30} /> : <AlertCircle size={30} />}
+                        </div>
+
+                        <div>
+                            <h4 className="text-base font-bold text-slate-900">
+                                {nextStatus === 'Paid' ? 'Confirm Direct Payment' : 'Confirm Reverting Payment'}
+                            </h4>
+                            <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                                {nextStatus === 'Paid' ? (
+                                    <>
+                                        Are you sure you have paid <strong>{target.employeeName}</strong> the amount of <strong className="text-emerald-700">Rs. {Number(target.amount || 0).toLocaleString()}</strong> directly from management?
+                                    </>
+                                ) : (
+                                    <>
+                                        Are you sure you want to revert <strong>{target.employeeName}</strong>'s payout of <strong className="text-amber-700">Rs. {Number(target.amount || 0).toLocaleString()}</strong> back to <strong>Unpaid</strong>?
+                                    </>
+                                )}
+                            </p>
+                        </div>
+
+                        <div className="text-[11px] bg-slate-50 border border-slate-200/80 rounded-2xl p-3 text-left space-y-1.5 text-slate-600">
+                            {nextStatus === 'Paid' ? (
+                                <>
+                                    <div className="flex items-start gap-1.5">
+                                        <span className="text-emerald-600 font-bold shrink-0">✓</span>
+                                        <span>Debits <strong>Rs. {Number(target.amount || 0).toLocaleString()}</strong> directly from employee PF balance.</span>
+                                    </div>
+                                    <div className="flex items-start gap-1.5">
+                                        <span className="text-emerald-600 font-bold shrink-0">✓</span>
+                                        <span>Excludes this withdrawal from monthly payroll.</span>
+                                    </div>
+                                    {erpReferenceId.trim() ? (
+                                        <div className="flex items-start gap-1.5">
+                                            <span className="text-indigo-600 font-bold shrink-0">✓</span>
+                                            <span>ERP Reference: <strong>{erpReferenceId.trim()}</strong></span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-start gap-1.5 text-amber-700">
+                                            <span className="shrink-0">⚠️</span>
+                                            <span>No ERP ID entered yet. Request will stay in notifications until added.</span>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex items-start gap-1.5">
+                                        <span className="text-emerald-600 font-bold shrink-0">✓</span>
+                                        <span>Refunds <strong>Rs. {Number(target.amount || 0).toLocaleString()}</strong> back into employee's PF balance.</span>
+                                    </div>
+                                    <div className="flex items-start gap-1.5">
+                                        <span className="text-emerald-600 font-bold shrink-0">✓</span>
+                                        <span>Automatically queues this withdrawal into the upcoming monthly payroll.</span>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2.5 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmAlert(false)}
+                                disabled={loading}
+                                className="px-4 py-2.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleFinalConfirm}
+                                disabled={loading}
+                                className={`px-4 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                    nextStatus === 'Paid'
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                        : 'bg-amber-600 hover:bg-amber-700 shadow-amber-200'
+                                }`}
+                            >
+                                {loading && <Loader2 size={13} className="animate-spin" />}
+                                <span>{nextStatus === 'Paid' ? 'Yes, Paid' : 'Yes, Revert'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>,
         document.body
     );

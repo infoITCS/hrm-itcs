@@ -1354,7 +1354,13 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
         }
 
         await EmployeeRequest.updateMany(
-            { payrollRunId: run._id, category: { $in: ['Provident Fund', 'Provident Fund Withdrawal', 'PF Withdrawal'] } },
+            {
+                payrollRunId: run._id,
+                $or: [
+                    { category: { $regex: /pf|provident/i } },
+                    { requestType: { $regex: /pf|provident/i } }
+                ]
+            },
             { status: 'Completed', payoutStatus: 'Paid', paidAt: new Date(), erpReferenceId: erpReferenceId.trim() }
         );
 

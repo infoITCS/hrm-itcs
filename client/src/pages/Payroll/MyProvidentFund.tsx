@@ -48,6 +48,19 @@ interface MyPFData {
     isEligible?: boolean;
     employmentStatus?: string;
     eligibilityMessage?: string;
+    confirmationDate?: string;
+    eligibleWithdrawalDate?: string;
+    isEligibleForWithdrawal?: boolean;
+    monthsPostConfirmation?: number;
+    yearsPostConfirmation?: number;
+    outstandingLoanBalance?: number;
+    maxWithdrawableAmount?: number;
+    pendingPfWithdrawal?: {
+        _id: string;
+        requestedAmount: number;
+        requestedAt: string;
+        status: string;
+    } | null;
 }
 
 
@@ -83,6 +96,14 @@ export default function MyProvidentFund() {
     const [showAgreementRecordModal, setShowAgreementRecordModal] = useState(false);
     const [musharakahSubmitting, setMusharakahSubmitting] = useState(false);
     const [musharakahFeedback, setMusharakahFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+    // PF Withdrawal States
+    const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+    const [withdrawAmount, setWithdrawAmount] = useState<string>('');
+    const [withdrawReason, setWithdrawReason] = useState<string>('');
+    const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
+    const [withdrawError, setWithdrawError] = useState<string | null>(null);
+    const [withdrawFeedback, setWithdrawFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
     // Opt-In Modal Form States
     const [agreedCheckbox, setAgreedCheckbox] = useState(false);
@@ -279,6 +300,62 @@ export default function MyProvidentFund() {
         }
     };
 
+    const handleWithdrawSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setWithdrawError(null);
+        const amt = Math.ceil(Number(withdrawAmount) || 0);
+        const maxAmt = data?.maxWithdrawableAmount || 0;
+
+        if (amt <= 0) {
+            setWithdrawError('Please enter a valid withdrawal amount greater than 0.');
+            return;
+        }
+
+        if (amt > maxAmt) {
+            setWithdrawError(`Requested amount (Rs. ${amt.toLocaleString()}) exceeds your maximum allowable withdrawal limit (Rs. ${maxAmt.toLocaleString()}).`);
+            return;
+        }
+
+        setSubmittingWithdraw(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.baseURL}/api/my-requests`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    category: 'PF Withdrawal',
+                    requestType: 'PF Withdrawal',
+                    details: {
+                        requestedAmount: amt,
+                        reason: withdrawReason.trim()
+                    }
+                })
+            });
+
+            const body = await res.json();
+            if (res.ok) {
+                setShowWithdrawModal(false);
+                setWithdrawAmount('');
+                setWithdrawReason('');
+                setWithdrawFeedback({
+                    type: 'success',
+                    message: `PF withdrawal request of Rs. ${amt.toLocaleString()} submitted successfully. Routed to Management for review.`
+                });
+                setTimeout(() => setWithdrawFeedback(null), 8000);
+                await loadData();
+            } else {
+                setWithdrawError(body.message || 'Failed to submit PF withdrawal request.');
+            }
+        } catch {
+            setWithdrawError('A network error occurred while submitting your withdrawal request.');
+        } finally {
+            setSubmittingWithdraw(false);
+        }
+    };
+
     const fmtPKR = (n: number) => {
         if (hideFigures) return '••••••••';
         return `Rs. ${(n || 0).toLocaleString('en-PK')}`;
@@ -441,6 +518,45 @@ export default function MyProvidentFund() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
+                        {data.pendingPfWithdrawal ? (
+                            <div className="px-4 py-2.5 rounded-2xl bg-amber-500/20 backdrop-blur-md border border-amber-300/40 text-amber-100 flex items-center gap-2 text-xs font-semibold shadow-inner">
+                                <Clock size={15} className="text-amber-300 animate-pulse shrink-0" />
+                                <span>
+                                    Withdrawal Pending: <strong className="text-white font-bold">{fmtPKR(data.pendingPfWithdrawal.requestedAmount)}</strong>
+                                    <span className="ml-1.5 text-[10px] px-2 py-0.5 rounded-full bg-amber-400/30 text-amber-200 font-bold uppercase tracking-wider">{data.pendingPfWithdrawal.status}</span>
+                                </span>
+                            </div>
+                        ) : data.isEligibleForWithdrawal ? (
+                            (data.maxWithdrawableAmount || 0) > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setWithdrawAmount(String(data.maxWithdrawableAmount || ''));
+                                        setWithdrawReason('');
+                                        setWithdrawError(null);
+                                        setShowWithdrawModal(true);
+                                    }}
+                                    className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                                >
+                                    <PiggyBank size={16} className="text-slate-950" />
+                                    Request PF Withdrawal
+                                </button>
+                            ) : (
+                                <div className="px-4 py-2.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-indigo-100 text-xs font-medium flex items-center gap-2" title="PF Balance is fully offset by active outstanding loans">
+                                    <AlertCircle size={15} className="text-amber-300 shrink-0" />
+                                    <span>Max Withdrawal: Rs. 0 (Offset by Loans)</span>
+                                </div>
+                            )
+                        ) : (
+                            <div className="px-4 py-2.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-indigo-100 text-xs font-medium flex items-center gap-2">
+                                <Clock size={15} className="text-indigo-200 shrink-0" />
+                                <span>
+                                    Withdrawal: Eligible 3Y Post-Confirmation
+                                    {data.eligibleWithdrawalDate ? ` (${fmtDate(data.eligibleWithdrawalDate)})` : ''}
+                                </span>
+                            </div>
+                        )}
+
                         <button
                             onClick={handleDownloadPDF}
                             className="px-5 py-3 rounded-2xl bg-white text-indigo-700 hover:bg-indigo-50 transition-all font-bold text-xs shadow-lg flex items-center gap-2 group cursor-pointer"
@@ -453,6 +569,23 @@ export default function MyProvidentFund() {
             </div>
 
             <div className="space-y-6 animate-fadeIn">
+                    {/* Withdrawal Feedback Toast */}
+                    {withdrawFeedback && (
+                        <div className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold shadow-sm transition-all animate-fadeIn ${
+                            withdrawFeedback.type === 'success' 
+                                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' 
+                                : 'bg-rose-50 border border-rose-200 text-rose-800'
+                        }`}>
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                                <span>{withdrawFeedback.message}</span>
+                            </div>
+                            <button onClick={() => setWithdrawFeedback(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
+
                     {/* Maturity Status Alert */}
                     {data.pfClaimed ? (
                         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 sm:p-5 flex items-center gap-4 text-emerald-900 shadow-sm">
@@ -1182,6 +1315,149 @@ export default function MyProvidentFund() {
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* MODAL 4: Request PF Withdrawal */}
+            {showWithdrawModal && data && createPortal(
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+                    <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-auto relative">
+                        <div className="bg-gradient-to-r from-indigo-700 to-purple-700 text-white p-5 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                                    <PiggyBank size={18} className="text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold">Request PF Withdrawal</h3>
+                                    <p className="text-[11px] text-indigo-100">Subject to policy limits & management approval</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => { setShowWithdrawModal(false); setWithdrawError(null); }}
+                                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleWithdrawSubmit} className="p-6 space-y-4">
+                            {/* Policy & Eligibility Breakdown Card */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200/60">
+                                    <span className="text-slate-500 font-medium">Service Eligibility</span>
+                                    <span className="font-bold text-emerald-700 flex items-center gap-1">
+                                        <BadgeCheck size={14} className="text-emerald-600" />
+                                        Completed 3Y Post-Confirmation
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2.5 text-center">
+                                    <div className="p-2.5 bg-white rounded-xl border border-slate-200/70 shadow-2xs">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PF Balance</span>
+                                        <span className="font-black text-slate-900 text-xs sm:text-sm block mt-0.5">
+                                            Rs. {(data.providentFundBalance || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div className={`p-2.5 bg-white rounded-xl border shadow-2xs ${
+                                        (data.outstandingLoanBalance || 0) > 0 ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200/70'
+                                    }`}>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Loans</span>
+                                        <span className={`font-black text-xs sm:text-sm block mt-0.5 ${
+                                            (data.outstandingLoanBalance || 0) > 0 ? 'text-amber-700' : 'text-slate-700'
+                                        }`}>
+                                            Rs. {(data.outstandingLoanBalance || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div className="p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200 shadow-2xs">
+                                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Max Allowed</span>
+                                        <span className="font-black text-emerald-700 text-xs sm:text-sm block mt-0.5">
+                                            Rs. {(data.maxWithdrawableAmount || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {(data.outstandingLoanBalance || 0) > 0 && (
+                                    <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded-xl p-2.5 leading-relaxed">
+                                        <strong>Loan Offset Rule Applied:</strong> Your outstanding loan balance of <strong>Rs. {(data.outstandingLoanBalance || 0).toLocaleString()}</strong> is deducted from your PF balance, restricting your maximum withdrawal to <strong>Rs. {(data.maxWithdrawableAmount || 0).toLocaleString()}</strong>.
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Amount Input */}
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between items-center text-xs">
+                                    <label className="font-bold text-slate-700">Withdrawal Amount (PKR)</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWithdrawAmount(String(data.maxWithdrawableAmount || 0))}
+                                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                                    >
+                                        Use Max Allowed (Rs. {(data.maxWithdrawableAmount || 0).toLocaleString()})
+                                    </button>
+                                </div>
+                                <div className="relative">
+                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rs.</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={data.maxWithdrawableAmount || 0}
+                                        value={withdrawAmount}
+                                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                                        placeholder="Enter amount"
+                                        required
+                                        className="w-full pl-11 pr-16 py-2.5 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-sm font-bold text-slate-800 outline-none transition-all"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setWithdrawAmount(String(data.maxWithdrawableAmount || 0))}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 transition-colors cursor-pointer"
+                                    >
+                                        MAX
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Reason / Remarks */}
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-slate-700 text-xs">Reason for Withdrawal (Optional)</label>
+                                <textarea
+                                    rows={2}
+                                    value={withdrawReason}
+                                    onChange={(e) => setWithdrawReason(e.target.value)}
+                                    placeholder="e.g., Emergency medical expenses, personal investments, home maintenance..."
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-xs text-slate-800 outline-none transition-all resize-none"
+                                />
+                            </div>
+
+                            {/* Error Banner */}
+                            {withdrawError && (
+                                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                                    <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                                    <span>{withdrawError}</span>
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowWithdrawModal(false); setWithdrawError(null); }}
+                                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={submittingWithdraw || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > (data.maxWithdrawableAmount || 0)}
+                                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {submittingWithdraw ? <Loader2 size={14} className="animate-spin" /> : <PiggyBank size={14} />}
+                                    <span>Submit Request</span>
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>,
                 document.body

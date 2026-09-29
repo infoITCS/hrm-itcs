@@ -19,6 +19,7 @@ import AttachmentFile from '../models/AttachmentFile';
 import Counter from '../models/Counter';
 import AuditLog from '../models/AuditLog';
 import Company from '../models/Company';
+import EmployeeRequest from '../models/EmployeeRequest';
 import { authenticate, authorize, AuthRequest, authenticateFile } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocuments } from '../middleware/permissions';
@@ -327,7 +328,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
 
         // Pagination
         const page = Math.max(1, parseInt(req.query.page as string) || 1);
-        const limit = Math.min(100, parseInt(req.query.limit as string) || 50);
+        const limit = Math.min(1000, parseInt(req.query.limit as string) || 1000);
         const skip = (page - 1) * limit;
 
         let employees;
@@ -903,7 +904,7 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
         }
 
         let employee = await Employee.findOne({ userId, isDeleted: { $ne: true } })
-            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement')
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement financeInfo loans')
             .lean() as any;
 
         if (!employee && authReq.user?.email) {
@@ -915,7 +916,7 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
                     { email: { $regex: new RegExp(`^${authReq.user.email}$`, 'i') } }
                 ]
             })
-            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement')
+            .select('employeeId firstName lastName avatar jobInfo providentFundBalance providentFundHistory pfClaimed pfClaimedAt employmentStatus musharakahAgreement financeInfo loans')
             .lean() as any;
         }
 
@@ -942,6 +943,48 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
             : employee.employmentStatus?.status;
         const isPermanent = empStatus === 'Permanent';
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // Provident Fund Withdrawal Eligibility & Loan-offset Calculation
+        // Condition 1: 3-year period post-confirmation
+        // Condition 2: Max withdrawal = PF Balance - Active Outstanding Loans
+        // ─────────────────────────────────────────────────────────────────────────
+        let confirmationDate: Date | null = null;
+        if (employee.employmentStatus?.probationEndDate) {
+            confirmationDate = new Date(employee.employmentStatus.probationEndDate);
+        } else if (joiningDate) {
+            const probMonths = Number(employee.financeInfo?.probationMonths) || 3;
+            confirmationDate = new Date(joiningDate);
+            confirmationDate.setMonth(confirmationDate.getMonth() + probMonths);
+        }
+
+        let eligibleWithdrawalDate: Date | null = null;
+        let isEligibleForWithdrawal = false;
+        let monthsPostConfirmation = 0;
+
+        if (confirmationDate && !isNaN(confirmationDate.getTime())) {
+            eligibleWithdrawalDate = new Date(confirmationDate);
+            eligibleWithdrawalDate.setFullYear(eligibleWithdrawalDate.getFullYear() + 3);
+
+            isEligibleForWithdrawal = isPermanent && (now >= eligibleWithdrawalDate);
+
+            if (now >= confirmationDate) {
+                monthsPostConfirmation =
+                    (now.getFullYear() - confirmationDate.getFullYear()) * 12 +
+                    (now.getMonth() - confirmationDate.getMonth());
+            }
+        }
+
+        const activeLoans = (employee.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+        const outstandingLoanBalance = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Number(l.remainingAmount || 0), 0));
+        const currentPfBalance = isPermanent ? Number(employee.providentFundBalance || 0) : 0;
+        const maxWithdrawableAmount = isEligibleForWithdrawal ? Math.max(0, currentPfBalance - outstandingLoanBalance) : 0;
+
+        const pendingPfWithdrawal = await EmployeeRequest.findOne({
+            employeeId: employee.employeeId,
+            category: { $in: ['PF Withdrawal', 'Provident Fund', 'Request Provident Fund'] },
+            status: { $in: ['Pending', 'Pending HR', 'Pending Finance'] }
+        }).select('_id requestedAt details status').lean() as any;
+
         const result = {
             employeeId: employee.employeeId,
             firstName: employee.firstName,
@@ -957,13 +1000,26 @@ router.get('/my-pf', authenticate, async (req: Request, res: Response, next: Nex
                 : 'Provident Fund is exclusively available to confirmed Permanent employees.',
             monthsOfService,
             maturityDate: maturityDate ? maturityDate.toISOString() : null,
-            providentFundBalance: isPermanent ? (employee.providentFundBalance || 0) : 0,
+            providentFundBalance: currentPfBalance,
             providentFundHistory: isPermanent ? (employee.providentFundHistory || []) : [],
             pfClaimed: employee.pfClaimed || false,
             pfClaimedAt: employee.pfClaimedAt || null,
             isMatured: isPermanent ? isMatured : false,
             maturityThresholdMonths: PF_MATURITY_MONTHS,
-            musharakahAgreement: isPermanent ? (employee.musharakahAgreement || { enrolled: false }) : { enrolled: false }
+            musharakahAgreement: isPermanent ? (employee.musharakahAgreement || { enrolled: false }) : { enrolled: false },
+            confirmationDate: confirmationDate ? confirmationDate.toISOString() : null,
+            eligibleWithdrawalDate: eligibleWithdrawalDate ? eligibleWithdrawalDate.toISOString() : null,
+            isEligibleForWithdrawal,
+            monthsPostConfirmation,
+            yearsPostConfirmation: Math.floor(monthsPostConfirmation / 12),
+            outstandingLoanBalance,
+            maxWithdrawableAmount,
+            pendingPfWithdrawal: pendingPfWithdrawal ? {
+                _id: pendingPfWithdrawal._id,
+                requestedAmount: Number(pendingPfWithdrawal.details?.requestedAmount || pendingPfWithdrawal.details?.amount || 0),
+                requestedAt: pendingPfWithdrawal.requestedAt,
+                status: pendingPfWithdrawal.status
+            } : null
         };
 
         return res.json(result);

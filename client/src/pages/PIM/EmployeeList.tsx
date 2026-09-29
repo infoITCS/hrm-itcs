@@ -128,7 +128,7 @@ const EmployeeList = () => {
     React.useEffect(() => {
         const token = localStorage.getItem('token');
         setLoading(true);
-        fetch(api.employees, {
+        fetch(`${api.employees}?limit=1000`, {
             headers: { 'Authorization': `Bearer ${token}` }
         })
             .then(res => {
@@ -158,10 +158,10 @@ const EmployeeList = () => {
 
             const fullName = formatEmployeeFullName(emp, '').toLowerCase();
             const designation = (emp.jobInfo?.designation || '').toLowerCase();
-            const matchesName = fullName.includes(filters.name.toLowerCase()) || designation.includes(filters.name.toLowerCase());
-            const matchesId = emp.employeeId.toLowerCase().includes(filters.id.toLowerCase());
-            const matchesPost = designation.includes(filters.post.toLowerCase());
-            const matchesDept = (emp.jobInfo?.department || '').toLowerCase().includes(filters.dept.toLowerCase());
+            const matchesName = fullName.includes((filters.name || '').toLowerCase()) || designation.includes((filters.name || '').toLowerCase());
+            const matchesId = (emp.employeeId || '').toLowerCase().includes((filters.id || '').toLowerCase());
+            const matchesPost = designation.includes((filters.post || '').toLowerCase());
+            const matchesDept = (emp.jobInfo?.department || '').toLowerCase().includes((filters.dept || '').toLowerCase());
 
             return matchesName && matchesId && matchesPost && matchesDept;
         });

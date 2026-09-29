@@ -31,6 +31,27 @@ export function calculateClientMedicalAccrual(
     const currentYear = asOfDate.getFullYear();
     const asOfMonth = asOfDate.getMonth(); // 0 = Jan, 11 = Dec
 
+    // Benefit Lockdown: Medical OPD is strictly locked to confirmed Permanent staff
+    const empStatus = (emp?.employmentStatus?.status || (typeof emp?.employmentStatus === 'string' ? emp?.employmentStatus : '') || emp?.jobInfo?.employmentType || '').trim().toLowerCase();
+    const isPermanent = empStatus === 'permanent';
+    if (!isPermanent) {
+        return {
+            monthlyAllowance: 0,
+            eligibleMonths: 0,
+            accruedBalance: 0,
+            annualCap: 0,
+            openingBalanceUtilized: 0,
+            ytdApproved: 0,
+            ytdPending: 0,
+            totalUtilized: 0,
+            remainingBalance: 0,
+            utilizationPct: 0,
+            isMaxedOut: true,
+            isMidYearJoiner: false,
+            joiningDate: emp?.jobInfo?.joiningDate ? new Date(emp.jobInfo.joiningDate) : null,
+        };
+    }
+
     let monthlyAllowance = 5000;
     if (emp?.medicalBenefit?.customMonthlyAllowance && emp.medicalBenefit.customMonthlyAllowance > 0) {
         monthlyAllowance = emp.medicalBenefit.customMonthlyAllowance;

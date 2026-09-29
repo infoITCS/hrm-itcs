@@ -387,6 +387,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             if (!employee) return res.status(404).json({ message: 'Employee record not found for this user' });
         }
 
+        const empStatus = (employee.employmentStatus?.status || (typeof employee.employmentStatus === 'string' ? employee.employmentStatus : '') || employee.jobInfo?.employmentType || '').trim().toLowerCase();
+        if (category === 'Medical' && empStatus !== 'permanent') {
+            return res.status(403).json({
+                message: 'Medical OPD reimbursement benefit is exclusively available to confirmed Permanent employees.'
+            });
+        }
+
         let dependentName: string | undefined;
         const fw = (forWhom as string) || 'Self';
         if (fw === 'Dependent') {
@@ -1939,7 +1946,7 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
         const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
 
         const employees = await Employee.find({ 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } })
-            .select('employeeId firstName middleName lastName jobInfo medicalBenefit userId email phone')
+            .select('employeeId firstName middleName lastName jobInfo medicalBenefit userId email phone employmentStatus')
             .lean() as any[];
 
         const medicalCat = await ExpenseCategory.findOne({ name: 'Medical' }).lean() as any;
@@ -2024,14 +2031,14 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
 
         let emp: any = null;
         if (req.params.employeeId === 'me') {
-            emp = await Employee.findOne({ userId }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+            emp = await Employee.findOne({ userId }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents employmentStatus').lean() as any;
         } else {
             emp = await Employee.findOne({
                 $or: [
                     { employeeId: req.params.employeeId },
                     { _id: mongoose.isValidObjectId(req.params.employeeId) ? req.params.employeeId : undefined }
                 ]
-            }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+            }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents employmentStatus').lean() as any;
         }
 
         if (!emp) return res.status(404).json({ message: 'Employee not found' });

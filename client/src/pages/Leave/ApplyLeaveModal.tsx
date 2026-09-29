@@ -426,6 +426,14 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                                     <option value="Annual">Annual Leave</option>
                                 )}
                             </select>
+                            {selectedLeaveType && selectedLeaveType.isPaid !== false && balCategory?.total === 0 && (
+                                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-900 mt-1.5">
+                                    <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <span className="text-[11px] leading-tight">
+                                        <strong>Permanent Staff Only:</strong> Paid leaves ({selectedLeaveType.name}) are exclusively available to confirmed Permanent employees.
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-1">

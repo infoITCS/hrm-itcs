@@ -5,14 +5,14 @@ import {
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
     ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones, Home,
-    Edit2
+    Edit2, PiggyBank
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const ICON_MAP: Record<string, any> = {
-    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle, Home
+    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle, Home, PiggyBank
 };
 
 const MyRequests = () => {
@@ -81,6 +81,7 @@ const MyRequests = () => {
     const [pfBalance, setPfBalance] = useState<number | null>(null);
     const [activeLoanBalance, setActiveLoanBalance] = useState<number>(0);
     const [currentMonthlyDeduction, setCurrentMonthlyDeduction] = useState<number>(0);
+    const [isPermanent, setIsPermanent] = useState<boolean>(true);
 
     // File attachments state
     const [uploadedFiles, setUploadedFiles] = useState<{ fileId: string; fileName: string }[]>([]);
@@ -113,6 +114,7 @@ const MyRequests = () => {
                 setPfBalance(Math.ceil(Number(data.pfBalance) || 0));
                 setActiveLoanBalance(Math.ceil(Number(data.activeLoanBalance) || 0));
                 setCurrentMonthlyDeduction(Math.ceil(Number(data.currentMonthlyDeduction) || 0));
+                setIsPermanent(data.isPermanent !== false);
             }
         } catch (err) {
             console.error('Failed to fetch PF balance', err);
@@ -275,7 +277,11 @@ const MyRequests = () => {
         const shouldProceedAnyways = anyways === true;
         
         // Loan PF Cap & 1-Year Payback Validation
-        if (activeCategory.systemType === 'loan') {
+        if (activeCategory.systemType === 'loan' || activeCategory.title?.toLowerCase().includes('loan')) {
+            if (!isPermanent) {
+                triggerAlert('Benefit Restricted', 'The employee loan facility is exclusively available to confirmed Permanent staff.', 'warning');
+                return;
+            }
             const amt = Math.ceil(Number(loanAmount) || 0);
             const ded = Math.ceil(Number(monthlyDeduction) || 0);
             const totalBal = activeLoanBalance + amt;
@@ -606,17 +612,19 @@ const MyRequests = () => {
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-3">
                                         <div className={`p-2 rounded-lg ${
+                                            (req.category === 'PF Withdrawal' || req.requestType === 'PF Withdrawal' || req.category === 'Provident Fund') ? 'bg-indigo-50 text-indigo-600' :
                                             (req.category === 'Document' || req.category === 'Generate Document') ? 'bg-blue-50 text-blue-600' : 
                                             (req.category === 'Asset' || req.category === 'Request Asset') ? 'bg-purple-50 text-purple-600' : 
                                             (req.category === 'Loan' || req.category === 'Request Loan') ? 'bg-emerald-50 text-emerald-600' : 
                                             (req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) ? 'bg-teal-50 text-teal-600' :
                                             'bg-indigo-50 text-indigo-600'
                                         }`}>
+                                            {(req.category === 'PF Withdrawal' || req.requestType === 'PF Withdrawal' || req.category === 'Provident Fund') && <PiggyBank size={20} />}
                                             {(req.category === 'Document' || req.category === 'Generate Document') && <FileText size={20} />}
                                             {(req.category === 'Asset' || req.category === 'Request Asset') && <Package size={20} />}
                                             {(req.category === 'Loan' || req.category === 'Request Loan') && <Banknote size={20} />}
                                             {(req.category === 'Work From Home (WFH)' || req.category?.includes('WFH') || req.requestType?.includes('WFH') || req.details?.isWfh) && <Home size={20} />}
-                                            {(req.category !== 'Document' && req.category !== 'Generate Document' && req.category !== 'Asset' && req.category !== 'Request Asset' && req.category !== 'Loan' && req.category !== 'Request Loan' && !req.category?.includes('WFH') && !req.requestType?.includes('WFH') && !req.details?.isWfh) && <Package size={20} />}
+                                            {(req.category !== 'Document' && req.category !== 'Generate Document' && req.category !== 'Asset' && req.category !== 'Request Asset' && req.category !== 'Loan' && req.category !== 'Request Loan' && req.category !== 'PF Withdrawal' && req.requestType !== 'PF Withdrawal' && req.category !== 'Provident Fund' && !req.category?.includes('WFH') && !req.requestType?.includes('WFH') && !req.details?.isWfh) && <Package size={20} />}
                                         </div>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{req.requestType}</h3>
@@ -659,6 +667,25 @@ const MyRequests = () => {
                                             <span className="text-gray-500 shrink-0">Monthly Deduction</span>
                                             <span className="font-semibold text-gray-800 text-right whitespace-nowrap">Rs. {req.details?.recommendedMonthlyDeduction?.toLocaleString()}</span>
                                         </div>
+                                    </div>
+                                )}
+
+                                {(req.category === 'PF Withdrawal' || req.requestType === 'PF Withdrawal' || req.category === 'Provident Fund') && (
+                                    <div className="mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs space-y-1.5">
+                                        <div className="flex justify-between items-center text-indigo-950 font-bold">
+                                            <span className="flex items-center gap-1"><PiggyBank size={14} className="text-indigo-600" /> Requested Withdrawal:</span>
+                                            <span className="text-indigo-700 font-extrabold text-sm">Rs. {Math.ceil(Number(req.details?.requestedAmount || req.details?.amount || 0)).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between text-gray-500 text-[11px]">
+                                            <span>PF Balance at request:</span>
+                                            <span>Rs. {Math.ceil(Number(req.details?.pfBalance || 0)).toLocaleString()}</span>
+                                        </div>
+                                        {Number(req.details?.outstandingLoans || 0) > 0 && (
+                                            <div className="flex justify-between text-amber-700 text-[11px] font-medium">
+                                                <span>Active Loan offset:</span>
+                                                <span>- Rs. {Math.ceil(Number(req.details?.outstandingLoans || 0)).toLocaleString()}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -901,15 +928,25 @@ const MyRequests = () => {
                                 </>
                             ) : activeCategory.systemType === 'loan' ? (
                                 <>
-                                    <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl text-sm border border-emerald-100 flex flex-col gap-1">
-                                        <div className="flex justify-between">
-                                            <span>Provident Fund Balance:</span>
-                                            <strong className="font-bold">
-                                                Rs. {pfBalance !== null ? pfBalance.toLocaleString() : 'Loading...'}
-                                            </strong>
+                                    {!isPermanent ? (
+                                        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-xs flex items-start gap-2.5">
+                                            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <span className="font-bold block text-sm text-amber-950 mb-0.5">Permanent Employees Only</span>
+                                                The employee loan facility is exclusively available to confirmed Permanent staff. Non-permanent employees are not eligible for company loans.
+                                            </div>
                                         </div>
-                                        <span className="text-[10px] opacity-80">Loan requests exceeding this balance will require special approval.</span>
-                                    </div>
+                                    ) : (
+                                        <>
+                                            <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl text-sm border border-emerald-100 flex flex-col gap-1">
+                                                <div className="flex justify-between">
+                                                    <span>Provident Fund Balance:</span>
+                                                    <strong className="font-bold">
+                                                        Rs. {pfBalance !== null ? pfBalance.toLocaleString() : 'Loading...'}
+                                                    </strong>
+                                                </div>
+                                                <span className="text-[10px] opacity-80">Loan requests exceeding this balance will require special approval.</span>
+                                            </div>
                                     {pfBalance !== null && loanAmount && Number(loanAmount) > pfBalance && (
                                         <div className="bg-rose-50 text-rose-700 text-xs px-3.5 py-2.5 rounded-xl border border-rose-100 font-semibold flex items-center gap-1.5 animate-pulse">
                                             <AlertTriangle size={14} className="text-rose-500 shrink-0" />
@@ -1000,6 +1037,8 @@ const MyRequests = () => {
                                             </p>
                                         )}
                                     </div>
+                                    </>
+                                )}
                                 </>
                             ) : (
                                 <>
@@ -1196,7 +1235,7 @@ const MyRequests = () => {
                             </button>
                             <button 
                                 type="button"
-                                disabled={generatingDoc || isSubmitting}
+                                disabled={generatingDoc || isSubmitting || ((activeCategory.systemType === 'loan' || activeCategory.title?.toLowerCase().includes('loan')) && !isPermanent)}
                                 onClick={activeCategory.systemType === 'document' ? handleGenerateDocument : handleSubmitRequest}
                                 className="flex items-center justify-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm disabled:opacity-60 disabled:cursor-not-allowed min-w-[150px]"
                             >
@@ -1309,7 +1348,11 @@ const MyRequests = () => {
                                 
                                 {selectedRequest.details?.requestedAmount && (
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">Loan Amount:</span>
+                                        <span className="text-gray-500">
+                                            {(selectedRequest.category === 'PF Withdrawal' || selectedRequest.requestType === 'PF Withdrawal' || selectedRequest.category === 'Provident Fund') 
+                                                ? 'Withdrawal Amount:' 
+                                                : 'Loan Amount:'}
+                                        </span>
                                         <span className="font-semibold text-gray-900">Rs. {selectedRequest.details.requestedAmount.toLocaleString()}</span>
                                     </div>
                                 )}
@@ -1397,10 +1440,10 @@ const MyRequests = () => {
                                         <Edit2 size={14} /> Edit Request
                                     </button>
                                 )}
-                                {['Pending', 'Pending HR', 'Pending Finance', 'Approved'].includes(selectedRequest.status) && (
+                                {['Pending', 'Pending HR', 'Pending Finance', 'Approved'].includes(selectedRequest.status) && selectedRequest.payoutStatus !== 'Paid' && (
                                     <button
                                         onClick={(e) => handleCancelRequest(selectedRequest._id, e)}
-                                        className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg transition-colors font-medium text-sm shadow-xs"
+                                        className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-lg transition-colors font-medium text-sm shadow-xs cursor-pointer"
                                     >
                                         Cancel Request
                                     </button>

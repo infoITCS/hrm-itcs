@@ -62,8 +62,9 @@ const getLeaveDaysCountWithSandwich = (start: Date, end: Date, sandwichEnabled: 
 /**
  * Dynamic balancer initialization helper.
  * Self-heals/migrates old hardcoded schemas on the fly.
+ * When isPermanent is false, paid leave quotas are set to 0.
  */
-const ensureBalancesInitialized = (balance: any, activeTypes: any[]): boolean => {
+const ensureBalancesInitialized = (balance: any, activeTypes: any[], isPermanent: boolean = true): boolean => {
     let modified = false;
     if (!balance.balances) {
         balance.balances = [];
@@ -76,7 +77,7 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[]): boolean =>
         if (balance[key] && balance[key].total !== undefined && !balance.balances.find((b: any) => b.leaveTypeCode === key)) {
             balance.balances.push({
                 leaveTypeCode: key,
-                total: balance[key].total,
+                total: !isPermanent ? 0 : balance[key].total,
                 used: balance[key].used || 0,
                 pending: balance[key].pending || 0
             });
@@ -88,13 +89,17 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[]): boolean =>
     // 2. Map all active categories
     for (const t of activeTypes) {
         const existing = balance.balances.find((b: any) => b.leaveTypeCode === t.code);
+        const quota = (!isPermanent && t.isPaid !== false) ? 0 : t.defaultDays;
         if (!existing) {
             balance.balances.push({
                 leaveTypeCode: t.code,
-                total: t.defaultDays,
+                total: quota,
                 used: 0,
                 pending: 0
             });
+            modified = true;
+        } else if (!isPermanent && t.isPaid !== false && existing.total > 0) {
+            existing.total = 0;
             modified = true;
         }
     }
@@ -414,7 +419,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         const activeTypes = await LeaveType.find({ isActive: true }).sort({ name: 1 });
 
         // Fetch all employees
-        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo');
+        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo employmentStatus');
 
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
@@ -444,9 +449,13 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
 
         // Build list of employees with their balances
         const data = employees.map(emp => {
-            const userIdStr = emp.userId?.toString();
-            const empIdStr = emp.employeeId?.toString();
-            const rawIdStr = emp._id?.toString();
+            const empObj = emp as any;
+            const userIdStr = empObj.userId?.toString();
+            const empIdStr = empObj.employeeId?.toString();
+            const rawIdStr = empObj._id?.toString();
+
+            const empStatus = (empObj.employmentStatus?.status || empObj.employmentStatus || '').toString().trim().toLowerCase();
+            const isPermanent = empStatus === 'permanent';
 
             // Find existing balance doc matching any identifier (employeeId, userId, or _id)
             let empBalanceDoc = balances.find(b => 
@@ -457,6 +466,8 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
             
             let empBalances = activeTypes.map(type => {
                 let balCat = empBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === type.code);
+                const rawTotal = balCat ? balCat.total : type.defaultDays;
+                const effectiveTotal = (!isPermanent && type.isPaid !== false) ? 0 : rawTotal;
 
                 // Calculate month-specific used leaves if monthQuery is active
                 let monthUsed = 0;
@@ -510,13 +521,15 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                 return {
                     leaveTypeCode: type.code,
                     leaveTypeName: type.name,
-                    total: balCat ? balCat.total : type.defaultDays,
+                    total: effectiveTotal,
                     used: balCat ? balCat.used : 0,
                     monthUsed: monthUsed,
                     pending: balCat ? balCat.pending : 0,
-                    available: balCat 
-                        ? Math.max(0, balCat.total - (balCat.used || 0) - (balCat.pending || 0)) 
-                        : type.defaultDays
+                    available: (!isPermanent && type.isPaid !== false)
+                        ? 0
+                        : (balCat 
+                            ? Math.max(0, effectiveTotal - (balCat.used || 0) - (balCat.pending || 0)) 
+                            : effectiveTotal)
                 };
             });
 
@@ -551,7 +564,11 @@ router.get('/balance', authenticate, async (req: Request, res: Response, next: N
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
-        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(targetId);
+        const { lookupIds, canonicalEmployeeId, employee: targetEmp } = await resolveEmployeeLookupIds(targetId);
+        const targetEmpObj = targetEmp as any;
+        const empStatus = (targetEmpObj?.employmentStatus?.status || targetEmpObj?.employmentStatus || '').toString().trim().toLowerCase();
+        const isPermanent = empStatus === 'permanent';
+
         const year = authReq.query.year ? Number(authReq.query.year) : new Date().getFullYear();
         
         let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
@@ -560,7 +577,7 @@ router.get('/balance', authenticate, async (req: Request, res: Response, next: N
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
-        const modified = ensureBalancesInitialized(balance, activeTypes);
+        const modified = ensureBalancesInitialized(balance, activeTypes, isPermanent);
         if (modified || balance.isNew) {
             await balance.save();
         }
@@ -577,7 +594,7 @@ router.get('/types', authenticate, async (req: Request, res: Response, next: Nex
     try {
         const user = authReq.user as any;
         const isAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '');
-        const query: any = {};
+        const query: any = { code: { $ne: 'unpaid' } };
         if (!isAdmin || req.query.activeOnly === 'true') {
             query.isActive = true;
         }
@@ -693,7 +710,10 @@ router.put('/balance/:employeeId', authenticate, async (req: Request, res: Respo
         const { leaveTypeCode, total, used, balances: incomingBalances } = req.body;
         const year = req.body.year ? Number(req.body.year) : new Date().getFullYear();
 
-        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId);
+        const { lookupIds, canonicalEmployeeId, employee: balEmp } = await resolveEmployeeLookupIds(employeeId);
+        const balEmpObj = balEmp as any;
+        const balEmpStatus = (balEmpObj?.employmentStatus?.status || balEmpObj?.employmentStatus || '').toString().trim().toLowerCase();
+        const balIsPermanent = balEmpStatus === 'permanent';
 
         let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
         if (!balance) {
@@ -701,7 +721,7 @@ router.put('/balance/:employeeId', authenticate, async (req: Request, res: Respo
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
-        ensureBalancesInitialized(balance, activeTypes);
+        ensureBalancesInitialized(balance, activeTypes, balIsPermanent);
 
         if (Array.isArray(incomingBalances) && incomingBalances.length > 0) {
             for (const b of incomingBalances) {
@@ -849,13 +869,15 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
         if (!employeeId) return res.status(401).json({ message: 'Unauthorized' });
 
+        const targetEmployeeId: string = employeeId;
+
         const start = new Date(startDate);
         const end = new Date(endDate);
         if (start > end) {
             return res.status(400).json({ message: 'Start date must be before end date' });
         }
 
-        const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId);
+        const { lookupIds, canonicalEmployeeId, employee: empDoc } = await resolveEmployeeLookupIds(targetEmployeeId);
 
         // Check for duplicate / overlapping leave requests
         const conflict = await checkLeaveOverlap({
@@ -888,6 +910,18 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         });
         if (!leaveType) {
             return res.status(400).json({ message: `Invalid or inactive leave type: ${type}` });
+        }
+
+        // Benefit Lockdown: Paid leave quotas and applications are exclusively for Permanent staff
+        const empDocObj = empDoc as any;
+        const empStatus = (empDocObj?.employmentStatus?.status || empDocObj?.employmentStatus || '').toString().trim().toLowerCase();
+        const isPermanent = empStatus === 'permanent';
+
+        if (!isPermanent) {
+            return res.status(403).json({
+                success: false,
+                message: `Leave benefit (${leaveType.name}) is exclusively available to confirmed Permanent employees.`
+            });
         }
 
         const leaveTypeCode = leaveType.code;
@@ -972,7 +1006,6 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         try {
             await session.withTransaction(async () => {
                 const activeTypes = await LeaveType.find({ isActive: true }).session(session);
-                const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(employeeId, session);
 
                 for (const [year, days] of yearDaysMap.entries()) {
                     let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
@@ -980,7 +1013,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
                     }
 
-                    ensureBalancesInitialized(balance, activeTypes);
+                    ensureBalancesInitialized(balance, activeTypes, isPermanent);
 
                     const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                     if (!category) {
@@ -1028,9 +1061,9 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                 try {
                     const emp = await Employee.findOne({
                         $or: [
-                            { userId: employeeId },
-                            { employeeId: employeeId },
-                            { _id: employeeId.length === 24 ? employeeId : new mongoose.Types.ObjectId() }
+                            { userId: targetEmployeeId },
+                            { employeeId: targetEmployeeId },
+                            { _id: targetEmployeeId.length === 24 ? targetEmployeeId : new mongoose.Types.ObjectId() }
                         ]
                     });
                     const employeeName = formatEmployeeFullName(emp, 'Employee');
@@ -1046,11 +1079,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                     }
 
                     const recipients = Array.from(new Set([...hrEmails, managerEmail, process.env.HR_EMAIL].filter(Boolean) as string[]));
+                    const leaveTypeName = leaveType?.name || type;
                     for (const to of recipients) {
                         await sendLeaveSubmittedEmail(
                             to,
                             employeeName,
-                            leaveType.name,
+                            leaveTypeName,
                             new Date(startDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
                             new Date(endDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }),
                             totalDeducted,
@@ -1137,6 +1171,18 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         });
         if (!leaveType) {
             return res.status(400).json({ success: false, message: `Invalid or inactive leave type: ${type || leave.type}` });
+        }
+
+        // Benefit Lockdown: Paid leave benefits are exclusively for Permanent staff
+        const editEmp = leaveEmployeeLookup.employee as any;
+        const editEmpStatus = (editEmp?.employmentStatus?.status || editEmp?.employmentStatus || '').toString().trim().toLowerCase();
+        const editIsPermanent = editEmpStatus === 'permanent';
+
+        if (!editIsPermanent) {
+            return res.status(403).json({
+                success: false,
+                message: `Leave benefit (${leaveType.name}) is exclusively available to confirmed Permanent employees.`
+            });
         }
 
         const leaveTypeCode = leaveType.code;
@@ -1248,11 +1294,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         try {
             await session.withTransaction(async () => {
                 const activeTypes = await LeaveType.find({ isActive: true }).session(session);
-                const { lookupIds, canonicalEmployeeId } = await resolveEmployeeLookupIds(leave.employeeId, session);
+                const { lookupIds: targetLookupIds, canonicalEmployeeId } = leaveEmployeeLookup;
 
                 // 1. Rollback old pending deduction
                 for (const [year, days] of oldYearDaysMap.entries()) {
-                    let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
+                    let balance = await LeaveBalance.findOne({ employeeId: { $in: targetLookupIds }, year }).session(session);
                     if (balance) {
                         const cat = balance.balances.find((b: any) => b.leaveTypeCode === oldTypeCode);
                         if (cat) {
@@ -1265,11 +1311,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
 
                 // 2. Reserve new pending deduction and validate availability
                 for (const [year, days] of newYearDaysMap.entries()) {
-                    let balance = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year }).session(session);
+                    let balance = await LeaveBalance.findOne({ employeeId: { $in: targetLookupIds }, year }).session(session);
                     if (!balance) {
                         balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
                     }
-                    ensureBalancesInitialized(balance, activeTypes);
+                    ensureBalancesInitialized(balance, activeTypes, editIsPermanent);
                     const cat = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                     if (!cat) {
                         throw new Error(`Insufficient balance category for ${leaveType.name}`);

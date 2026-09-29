@@ -292,8 +292,17 @@ export async function buildPayrollPayslips(
 
     const approvedPfRequests = await EmployeeRequest.find({
         status: { $in: ['Approved', 'Completed'] },
-        category: { $in: ['Provident Fund', 'PF Withdrawal', 'Request Provident Fund'] },
-        $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }],
+        $and: [
+            {
+                $or: [
+                    { category: { $regex: /pf|provident/i } },
+                    { requestType: { $regex: /pf|provident/i } },
+                ],
+            },
+            {
+                $or: [{ payoutStatus: 'Unpaid' }, { payoutStatus: { $exists: false } }],
+            },
+        ],
     }).lean() as any[];
 
     const pfRequestMap: Record<string, { total: number; requestIds: any[] }> = {};
@@ -414,7 +423,11 @@ export async function buildPayrollPayslips(
             notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
         }
 
-        const isEntitledToMeal = emp.financeInfo?.entitledForMealAllowance !== false;
+        const empStatus = getEmploymentStatus(emp);
+        const isPermanent = empStatus === 'Permanent';
+
+        // Benefit Lockdown: Meal allowance stipend (PKR 500/day) is exclusively for Permanent employees
+        const isEntitledToMeal = isPermanent && emp.financeInfo?.entitledForMealAllowance !== false;
         const mealDays = isEntitledToMeal ? (mealDaysMap[emp.employeeId] ?? 0) : 0;
         if (isEntitledToMeal && mealDays > 0) {
             earnings.push({
@@ -556,8 +569,6 @@ export async function buildPayrollPayslips(
         }
 
         // Provident Fund calculation (Regular + Arrears Adjustment)
-        const empStatus = getEmploymentStatus(emp);
-        const isPermanent = empStatus === 'Permanent';
         let pfContributionAmount = 0;
         let pfArrearsAdjustment = 0;
 

@@ -912,6 +912,12 @@ const ExpenseClaimDashboard = () => {
             ? allEmployees.find(emp => emp.employeeId === selectedEmployeeId) 
             : employee;
         if (!targetEmp?.employeeId) return 'Employee profile not found';
+
+        const empStatus = (targetEmp?.employmentStatus?.status || (typeof targetEmp?.employmentStatus === 'string' ? targetEmp.employmentStatus : '') || targetEmp?.jobInfo?.employmentType || '').trim().toLowerCase();
+        if (category === 'Medical' && empStatus !== 'permanent') {
+            return 'Medical OPD benefit is exclusively available to confirmed Permanent employees.';
+        }
+
         if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
         if (!category) return 'Select a category';
         
@@ -1977,13 +1983,23 @@ const ExpenseClaimDashboard = () => {
 
                             {category === 'Medical' && (
                                 <div className="lg:col-span-2 py-1">
-                                    <MedicalAccrualCards
-                                        accrual={submitMedicalAccrual}
-                                        currentClaimAmount={amountRequested}
-                                        title={selectedEmployeeId ? `Medical Entitlement for ${allEmployees.find(e => e.employeeId === selectedEmployeeId)?.firstName || 'Employee'}` : 'Your Medical Entitlement & Accrual'}
-                                        subtitle="Accrues PKR 5,000 / month"
-                                        compact={true}
-                                    />
+                                    {((isAdminLike && selectedEmployeeId ? allEmployees.find(e => e.employeeId === selectedEmployeeId) : employee)?.employmentStatus?.status || (isAdminLike && selectedEmployeeId ? allEmployees.find(e => e.employeeId === selectedEmployeeId) : employee)?.employmentStatus || (isAdminLike && selectedEmployeeId ? allEmployees.find(e => e.employeeId === selectedEmployeeId) : employee)?.jobInfo?.employmentType || '').toString().trim().toLowerCase() !== 'permanent' ? (
+                                        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-xs flex items-start gap-2.5">
+                                            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <span className="font-bold block text-sm text-amber-950 mb-0.5">Permanent Employees Only</span>
+                                                Medical OPD reimbursement is exclusively available to confirmed Permanent staff. Non-permanent employees are not eligible for medical claims.
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <MedicalAccrualCards
+                                            accrual={submitMedicalAccrual}
+                                            currentClaimAmount={amountRequested}
+                                            title={selectedEmployeeId ? `Medical Entitlement for ${allEmployees.find(e => e.employeeId === selectedEmployeeId)?.firstName || 'Employee'}` : 'Your Medical Entitlement & Accrual'}
+                                            subtitle="Accrues PKR 5,000 / month"
+                                            compact={true}
+                                        />
+                                    )}
                                 </div>
                             )}
 
