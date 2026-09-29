@@ -116,12 +116,26 @@ export async function processEmployeePunches(
             .sort({ punchTime: 1 })
             .lean() as any[];
 
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const isFuture = dateStr > todayStr;
+
         if (punches.length === 0) {
             const holidayName = await checkHoliday(dateStr, locationName);
             const leaveInfo   = await checkLeave(resolvedEmployeeId, dateStr);
             const weekend     = isWeekend(dateStr);
 
-            let zeroStatus: AttendanceStatus = 'Absent';
+            // Upcoming dates with no punches and no approved leave or holiday:
+            // Never mark as Absent! Clean up any system-generated placeholder record.
+            if (isFuture && !leaveInfo && !holidayName && !weekend) {
+                await AttendanceRecord.deleteOne({
+                    employeeId: resolvedEmployeeId,
+                    date: dateStr,
+                    manuallyAdjusted: { $ne: true }
+                });
+                return;
+            }
+
+            let zeroStatus: AttendanceStatus = isFuture ? 'N/A' : 'Absent';
             if (holidayName) zeroStatus = 'Holiday';
             else if (leaveInfo)   zeroStatus = leaveInfo.isHalfDay ? 'Half-Day Leave' : 'On Leave';
             else if (weekend)     zeroStatus = 'Weekend';
@@ -201,8 +215,6 @@ export async function processEmployeePunches(
         let status: AttendanceStatus;
         let note: string | undefined = undefined;
         let isAutoClosed = false;
-
-        const todayStr = new Date().toISOString().slice(0, 10);
 
         if (!checkOut && dateStr < todayStr) {
             // Past day with missing check-out -> Auto Clock-Out at shift end

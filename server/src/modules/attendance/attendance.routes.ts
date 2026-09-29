@@ -44,6 +44,7 @@ router.get('/weekly',  ...auth(...MANAGER_ROLES), h(ctrl.getWeekly));
 
 // ─── Records ──────────────────────────────────────────────────────────────────
 router.get('/records',      ...auth(...ALL_ROLES),     h(ctrl.getRecords));
+router.get('/check-leave',  ...auth(...ALL_ROLES),     h(ctrl.checkLeaveOnDate));
 router.get('/punches',      ...auth(...MANAGER_ROLES), h(ctrl.getPunches));
 router.put('/records/:id',  ...auth(...EDIT_ROLES),    h(ctrl.updateRecord));
 router.post('/manual',      ...auth(...EDIT_ROLES),    h(ctrl.createManualRecord));

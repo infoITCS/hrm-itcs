@@ -29,7 +29,10 @@ async function parseResponse(res: Response): Promise<any> {
     }
 
     if (!res.ok || !json.success) {
-        throw new Error(json.message || `HTTP ${res.status}`);
+        const err: any = new Error(json.message || `HTTP ${res.status}`);
+        err.isLeaveLocked = json.isLeaveLocked;
+        err.conflictLeave = json.conflictLeave;
+        throw err;
     }
     return json;
 }
@@ -165,11 +168,14 @@ export const attendanceApi = {
         return { data: json.data, pagination: json.pagination };
     },
 
-    updateRecord: (id: string, data: Partial<AttendanceRecord>) =>
+    updateRecord: (id: string, data: Partial<AttendanceRecord> & { forceOverride?: boolean }) =>
         put<AttendanceRecord>(`${V2}/records/${id}`, data),
 
     createManualRecord: (data: object) =>
         post<AttendanceRecord>(`${V2}/manual`, data),
+
+    checkLeave: (employeeId: string, date: string) =>
+        get<{ hasApprovedLeave: boolean; leave?: { type: string; duration: string; reason?: string; approvedByName?: string } }>(`${V2}/check-leave${qs({ employeeId, date })}`),
 
     selfPunch: () =>
         post<{ message: string }>(`${V2}/punch`),

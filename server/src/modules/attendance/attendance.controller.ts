@@ -9,72 +9,217 @@ import { generateCSV } from '../../utils/csv';
 import { pktHHMMtoUtc } from '../../shared/utils/dateUtils';
 import logger from '../../utils/logger';
 import type { RecordFilter } from './attendance.types';
+import mongoose from 'mongoose';
 import AttendanceRecord, { AttendanceStatus } from '../../models/AttendanceRecord';
 import LeaveBalance from '../../models/LeaveBalance';
+import LeaveRequest from '../../models/LeaveRequest';
 import Employee from '../../models/Employee';
 
 const VALID_STATUSES: AttendanceStatus[] = [
-    'Present','Absent','Late','Half-Day','Half-Day Leave','Early Leave','On Leave','Holiday','Weekend','Incomplete'
+    'Present','Absent','Late','Half-Day','Half-Day Leave','Early Leave','On Leave','Holiday','Weekend','Incomplete','N/A'
 ];
 
-export const NON_WORKING_STATUSES: AttendanceStatus[] = ['Absent', 'On Leave', 'Holiday', 'Weekend'];
+export const NON_WORKING_STATUSES: AttendanceStatus[] = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'];
 export const isNonWorkingStatus = (status?: string | null): boolean =>
     Boolean(status && NON_WORKING_STATUSES.includes(status as AttendanceStatus));
 
-async function adjustLeaveBalanceForHalfDayLeave(
+export function getAttendanceLeaveDeductionDays(status?: string | null): number {
+    if (!status) return 0;
+    if (status === 'Half-Day' || status === 'Half-Day Leave' || status === 'Late') return 0.5;
+    if (status === 'On Leave') return 1.0;
+    // Absent & Early Leave do NOT deduct from leave balance
+    return 0;
+}
+
+function formatPktTime(d?: Date | null): string {
+    if (!d || isNaN(new Date(d).getTime())) return '';
+    return new Date(d).toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Karachi',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    }).toLowerCase();
+}
+
+async function resolveEmployeeLookupIds(identifier: string): Promise<{ lookupIds: string[]; emp: any }> {
+    if (!identifier) return { lookupIds: [], emp: null };
+    const query: any = { $or: [{ employeeId: identifier }, { userId: identifier }] };
+    if (mongoose.isValidObjectId(identifier)) {
+        query.$or.push({ _id: identifier });
+    }
+    const emp = await Employee.findOne(query).lean() as any;
+    const lookupIds = [identifier];
+    if (emp?.employeeId && !lookupIds.includes(emp.employeeId)) lookupIds.push(emp.employeeId);
+    if (emp?.userId && !lookupIds.includes(String(emp.userId))) lookupIds.push(String(emp.userId));
+    if (emp?._id && !lookupIds.includes(String(emp._id))) lookupIds.push(String(emp._id));
+    return { lookupIds, emp };
+}
+
+export async function syncAttendanceLeaveBalance(
     employeeId: string,
     dateStr: string,
     oldStatus: string | undefined,
     newStatus: string
 ) {
     if (oldStatus === newStatus) return;
-    const year = new Date(dateStr).getFullYear() || new Date().getFullYear();
-
-    const isAdding = newStatus === 'Half-Day Leave' && oldStatus !== 'Half-Day Leave';
-    const isRemoving = oldStatus === 'Half-Day Leave' && newStatus !== 'Half-Day Leave';
-    if (!isAdding && !isRemoving) return;
 
     try {
-        const emp = await Employee.findOne({ $or: [{ employeeId }, { userId: employeeId }] }).lean() as any;
-        const lookupIds = [employeeId];
-        if (emp?.employeeId && !lookupIds.includes(emp.employeeId)) lookupIds.push(emp.employeeId);
-        if (emp?.userId && !lookupIds.includes(String(emp.userId))) lookupIds.push(String(emp.userId));
+        const { lookupIds, emp } = await resolveEmployeeLookupIds(employeeId);
+
+        // If an approved formal LeaveRequest already exists for this date, that request already manages the balance
+        const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+        const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+        const hasFormalLeave = await LeaveRequest.exists({
+            employeeId: { $in: lookupIds },
+            startDate: { $lte: dayEnd },
+            endDate: { $gte: dayStart },
+            status: { $in: ['Approved', 'Pending'] },
+            appliedBy: { $ne: 'system' }
+        });
+
+        if (hasFormalLeave) {
+            return;
+        }
+
+        const oldDays = getAttendanceLeaveDeductionDays(oldStatus);
+        const newDays = getAttendanceLeaveDeductionDays(newStatus);
+        const delta = Number((newDays - oldDays).toFixed(1));
+
+        if (delta === 0) return;
+
+        const year = new Date(dateStr).getFullYear() || new Date().getFullYear();
 
         let balanceDoc = await LeaveBalance.findOne({ employeeId: { $in: lookupIds }, year });
-        if (!balanceDoc && isAdding) {
+        if (!balanceDoc && delta > 0) {
             balanceDoc = new LeaveBalance({
                 employeeId: emp?.employeeId || employeeId,
                 year,
                 balances: [
                     { leaveTypeCode: 'casual', total: 10, used: 0, pending: 0 },
-                    { leaveTypeCode: 'annual', total: 20, used: 0, pending: 0 },
-                    { leaveTypeCode: 'sick', total: 8, used: 0, pending: 0 }
+                    { leaveTypeCode: 'annual-leave', total: 20, used: 0, pending: 0 },
+                    { leaveTypeCode: 'sick', total: 10, used: 0, pending: 0 }
                 ]
             });
         }
         if (!balanceDoc || !Array.isArray(balanceDoc.balances)) return;
 
-        let cat = balanceDoc.balances.find((b: any) => /casual/i.test(b.leaveTypeCode))
-               || balanceDoc.balances.find((b: any) => /annual/i.test(b.leaveTypeCode))
-               || balanceDoc.balances[0];
+        let casualCat = balanceDoc.balances.find((b: any) => /casual/i.test(b.leaveTypeCode));
+        let annualCat = balanceDoc.balances.find((b: any) => /annual/i.test(b.leaveTypeCode));
+        let primaryCat = casualCat || annualCat || balanceDoc.balances[0];
 
-        if (!cat) {
-            cat = { leaveTypeCode: 'casual', total: 10, used: 0, pending: 0 };
-            balanceDoc.balances.push(cat);
+        if (!primaryCat) {
+            primaryCat = { leaveTypeCode: 'annual-leave', total: 20, used: 0, pending: 0 };
+            balanceDoc.balances.push(primaryCat);
         }
 
-        if (isAdding) {
-            cat.used = Number(((Number(cat.used) || 0) + 0.5).toFixed(1));
-        } else if (isRemoving) {
-            cat.used = Math.max(0, Number(((Number(cat.used) || 0) - 0.5).toFixed(1)));
+        if (delta > 0) {
+            // Deduct leave days (Casual preferred first, then Annual, then fallback)
+            const availCasual = casualCat ? Math.max(0, casualCat.total - (casualCat.used || 0) - (casualCat.pending || 0)) : 0;
+            if (casualCat && availCasual >= delta) {
+                casualCat.used = Number(((Number(casualCat.used) || 0) + delta).toFixed(1));
+            } else if (casualCat && availCasual > 0 && annualCat) {
+                const rem = Number((delta - availCasual).toFixed(1));
+                casualCat.used = Number(((Number(casualCat.used) || 0) + availCasual).toFixed(1));
+                annualCat.used = Number(((Number(annualCat.used) || 0) + rem).toFixed(1));
+            } else if (annualCat) {
+                annualCat.used = Number(((Number(annualCat.used) || 0) + delta).toFixed(1));
+            } else {
+                primaryCat.used = Number(((Number(primaryCat.used) || 0) + delta).toFixed(1));
+            }
+        } else if (delta < 0) {
+            // Refund/restore leave days when status is reverted (e.g. back to Present/Absent)
+            let refund = Math.abs(delta);
+            if (annualCat && Number(annualCat.used) > 0) {
+                const toDeduct = Math.min(refund, Number(annualCat.used));
+                annualCat.used = Number((Number(annualCat.used) - toDeduct).toFixed(1));
+                refund = Number((refund - toDeduct).toFixed(1));
+            }
+            if (refund > 0 && casualCat && Number(casualCat.used) > 0) {
+                const toDeduct = Math.min(refund, Number(casualCat.used));
+                casualCat.used = Number((Number(casualCat.used) - toDeduct).toFixed(1));
+                refund = Number((refund - toDeduct).toFixed(1));
+            }
+            if (refund > 0 && primaryCat) {
+                primaryCat.used = Math.max(0, Number((Number(primaryCat.used || 0) - refund).toFixed(1)));
+            }
         }
 
         balanceDoc.markModified('balances');
         await balanceDoc.save();
+
+        // Synchronize LeaveRequest transaction record in Leave module
+        if (newDays > 0) {
+            const attRecord = await AttendanceRecord.findOne({
+                employeeId: { $in: lookupIds },
+                date: dateStr
+            }).lean() as any;
+
+            let punchDetails = '';
+            if (attRecord?.checkIn && attRecord?.checkOut) {
+                punchDetails = ` (${formatPktTime(attRecord.checkIn)} – ${formatPktTime(attRecord.checkOut)})`;
+            } else if (attRecord?.checkIn) {
+                punchDetails = ` (Check-in: ${formatPktTime(attRecord.checkIn)})`;
+            }
+
+            let reasonText = `Attendance Deduction: ${newStatus}${punchDetails}`;
+            if (newStatus === 'Late') {
+                reasonText = `Attendance Deduction: Late Arrival${punchDetails}`;
+            } else if (newStatus === 'Half-Day') {
+                reasonText = `Attendance Deduction: Half Day Absent${punchDetails}`;
+            } else if (newStatus === 'Half-Day Leave') {
+                reasonText = `Attendance Deduction: Half-Day Leave${punchDetails}`;
+            } else if (newStatus === 'On Leave') {
+                reasonText = `Attendance Deduction: Marked On Leave in Attendance`;
+            }
+
+            const durationText = newDays === 0.5 ? 'Half Day - Morning' : 'Full Day';
+
+            const existingSystemLeave = await LeaveRequest.findOne({
+                employeeId: { $in: lookupIds },
+                startDate: { $lte: dayEnd },
+                endDate: { $gte: dayStart },
+                appliedBy: 'system'
+            });
+
+            if (existingSystemLeave) {
+                existingSystemLeave.totalDays = newDays;
+                existingSystemLeave.duration = durationText;
+                existingSystemLeave.reason = reasonText;
+                existingSystemLeave.status = 'Approved';
+                existingSystemLeave.approvedByName = 'System (Attendance)';
+                existingSystemLeave.actionAt = new Date();
+                await existingSystemLeave.save();
+            } else {
+                await LeaveRequest.create({
+                    employeeId: emp?.employeeId || employeeId,
+                    type: 'Annual Leave',
+                    startDate: dayStart,
+                    endDate: dayEnd,
+                    duration: durationText,
+                    totalDays: newDays,
+                    status: 'Approved',
+                    reason: reasonText,
+                    adminNote: 'System generated from Attendance module',
+                    appliedBy: 'system',
+                    approvedByName: 'System (Attendance)',
+                    actionAt: new Date()
+                });
+            }
+        } else if (newDays === 0) {
+            await LeaveRequest.deleteMany({
+                employeeId: { $in: lookupIds },
+                startDate: { $lte: dayEnd },
+                endDate: { $gte: dayStart },
+                appliedBy: 'system'
+            });
+        }
     } catch (err) {
-        logger.error('Error adjusting leave balance for half-day leave:', err);
+        logger.error('Error synchronizing leave balance on attendance change:', err);
     }
 }
+
+// Backward-compatible alias
+const adjustLeaveBalanceForHalfDayLeave = syncAttendanceLeaveBalance;
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -202,6 +347,43 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         }
 
         const finalStatus = status || (record as any).status;
+        const recordDate = (record as any).date;
+        const empId = (record as any).employeeId;
+
+        // Check if employee has an approved formal leave on this date
+        if (status && !req.body.forceOverride) {
+            const dayStart = new Date(`${recordDate}T00:00:00.000Z`);
+            const dayEnd = new Date(`${recordDate}T23:59:59.999Z`);
+            const { lookupIds } = await resolveEmployeeLookupIds(empId);
+            const formalLeave = await LeaveRequest.findOne({
+                employeeId: { $in: lookupIds },
+                startDate: { $lte: dayEnd },
+                endDate: { $gte: dayStart },
+                status: 'Approved',
+                appliedBy: { $ne: 'system' }
+            }).lean() as any;
+
+            if (formalLeave) {
+                const isMatching = formalLeave.duration === 'Full Day'
+                    ? finalStatus === 'On Leave'
+                    : (finalStatus === 'Half-Day Leave' || finalStatus === 'On Leave');
+
+                if (!isMatching) {
+                    return res.status(409).json({
+                        success: false,
+                        isLeaveLocked: true,
+                        conflictLeave: {
+                            type: formalLeave.type,
+                            duration: formalLeave.duration,
+                            reason: formalLeave.reason,
+                            approvedByName: formalLeave.approvedByName
+                        },
+                        message: `Approved Leave Active: Employee has an approved ${formalLeave.duration} ${formalLeave.type} on ${recordDate} (Approved by ${formalLeave.approvedByName || 'Manager'}). Please confirm override to modify attendance.`
+                    });
+                }
+            }
+        }
+
         const isNonWorking = isNonWorkingStatus(finalStatus);
 
         const previousStatus = (record as any).status;
@@ -286,6 +468,41 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
         }
 
         const effectiveStatus = status ?? 'Present';
+
+        // Check if employee has an approved formal leave on this date
+        if (!req.body.forceOverride) {
+            const dayStart = new Date(`${date}T00:00:00.000Z`);
+            const dayEnd = new Date(`${date}T23:59:59.999Z`);
+            const { lookupIds } = await resolveEmployeeLookupIds(employeeId);
+            const formalLeave = await LeaveRequest.findOne({
+                employeeId: { $in: lookupIds },
+                startDate: { $lte: dayEnd },
+                endDate: { $gte: dayStart },
+                status: 'Approved',
+                appliedBy: { $ne: 'system' }
+            }).lean() as any;
+
+            if (formalLeave) {
+                const isMatching = formalLeave.duration === 'Full Day'
+                    ? effectiveStatus === 'On Leave'
+                    : (effectiveStatus === 'Half-Day Leave' || effectiveStatus === 'On Leave');
+
+                if (!isMatching) {
+                    return res.status(409).json({
+                        success: false,
+                        isLeaveLocked: true,
+                        conflictLeave: {
+                            type: formalLeave.type,
+                            duration: formalLeave.duration,
+                            reason: formalLeave.reason,
+                            approvedByName: formalLeave.approvedByName
+                        },
+                        message: `Approved Leave Active: Employee has an approved ${formalLeave.duration} ${formalLeave.type} on ${date} (Approved by ${formalLeave.approvedByName || 'Manager'}). Please confirm override to modify attendance.`
+                    });
+                }
+            }
+        }
+
         const isNonWorking = isNonWorkingStatus(effectiveStatus);
 
         let dIn: Date | null = null;
@@ -621,3 +838,39 @@ export async function exportGlobalDaily(req: AuthRequest, res: Response) {
         res.status(200).send(csv);
     } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
 }
+
+export async function checkLeaveOnDate(req: AuthRequest, res: Response) {
+    try {
+        const { employeeId, date } = req.query as Record<string, string>;
+        if (!employeeId || !date) return res.status(400).json({ success: false, message: 'employeeId and date required' });
+
+        const dayStart = new Date(`${date}T00:00:00.000Z`);
+        const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+        const { lookupIds } = await resolveEmployeeLookupIds(employeeId);
+        const formalLeave = await LeaveRequest.findOne({
+            employeeId: { $in: lookupIds },
+            startDate: { $lte: dayEnd },
+            endDate: { $gte: dayStart },
+            status: 'Approved',
+            appliedBy: { $ne: 'system' }
+        }).lean() as any;
+
+        if (formalLeave) {
+            return res.json({
+                success: true,
+                hasApprovedLeave: true,
+                leave: {
+                    type: formalLeave.type,
+                    duration: formalLeave.duration,
+                    reason: formalLeave.reason,
+                    approvedByName: formalLeave.approvedByName
+                }
+            });
+        }
+        return res.json({ success: true, hasApprovedLeave: false });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+

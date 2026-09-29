@@ -53,6 +53,7 @@ const STATUS_BADGE: Record<string, string> = {
     'Half-Day Leave': 'bg-teal-100 text-teal-800 border border-teal-200',
     Weekend:       'bg-slate-100 text-slate-500',
     Holiday:       'bg-cyan-100 text-cyan-700',
+    'N/A':         'bg-slate-100 text-slate-500 border border-slate-200',
 };
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function RosterRow({
 }: { 
     entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void 
 }) {
-    const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(entry.status);
+    const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(entry.status);
     const isMissing = !isNonWorking && entry.status === 'Incomplete' && isPast;
     const statusLabel = entry.isWfh && entry.status === 'Present'
         ? 'Present (WFH)'
@@ -425,7 +426,7 @@ export default function AdminDashboard() {
     }, [activeTab, calendarEmployeeId, calendarMonth]);
 
     const toEditableCalendarEntry = (day: MonthlyDayEntry): TodayRosterEntry => {
-        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(day.status);
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(day.status);
         return {
             employeeId: calendarEmployeeId,
             employeeName: calendarEmployeeName || calendarData?.employeeName || calendarEmployeeId,

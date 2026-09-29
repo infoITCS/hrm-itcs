@@ -18,12 +18,12 @@ type StatusSelectValue = AttendanceStatus | 'Present (WFH)';
 const STATUS_OPTIONS: { value: StatusSelectValue; label: string }[] = [
     { value: 'Present', label: 'Present' },
     { value: 'Present (WFH)', label: 'Present (WFH)' },
-    { value: 'Late', label: 'Late' },
-    { value: 'Half-Day', label: 'Half-Day Absent (0.5 Salary Cut)' },
+    { value: 'Late', label: 'Late (0.5 Leave Cut + 0.5 Salary Cut)' },
+    { value: 'Half-Day', label: 'Half-Day Absent (0.5 Leave Cut + 0.5 Salary Cut)' },
     { value: 'Half-Day Leave', label: 'Half-Day Leave (0.5 Leave Cut - Full Salary)' },
     { value: 'Early Leave', label: 'Early Leave' },
-    { value: 'On Leave', label: 'On Leave' },
-    { value: 'Absent', label: 'Absent' },
+    { value: 'On Leave', label: 'On Leave (1.0 Leave Cut - Full Salary)' },
+    { value: 'Absent', label: 'Absent (1.0 Salary Cut - No Leave Cut)' },
     { value: 'Holiday', label: 'Holiday' },
     { value: 'Weekend', label: 'Weekend' },
     { value: 'Incomplete', label: 'Incomplete' },
@@ -57,6 +57,13 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
     const [note, setNote] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [approvedLeave, setApprovedLeave] = useState<{
+        type: string;
+        duration: string;
+        reason?: string;
+        approvedByName?: string;
+    } | null>(null);
+    const [confirmOverride, setConfirmOverride] = useState(false);
 
     // Session tracker: ensures form state initializes ONLY ONCE when opening for this record,
     // preventing background parent polling or re-renders from clobbering in-progress user edits.
@@ -65,6 +72,8 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
     useEffect(() => {
         if (!isOpen || !employee) {
             lastOpenSessionRef.current = null;
+            setApprovedLeave(null);
+            setConfirmOverride(false);
             return;
         }
 
@@ -80,6 +89,18 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
         setStatus(entryStatus);
         setNote(employee.note || '');
         setError('');
+        setConfirmOverride(false);
+
+        // Check if employee has an active approved leave on this date
+        attendanceApi.checkLeave(employee.employeeId, date)
+            .then(res => {
+                if (res.hasApprovedLeave && res.leave) {
+                    setApprovedLeave(res.leave);
+                } else {
+                    setApprovedLeave(null);
+                }
+            })
+            .catch(() => setApprovedLeave(null));
 
         const isNonWorking = isNonWorkingStatus(entryStatus);
         const checkInLocal = toLocalIsoString(employee.checkIn);
@@ -117,6 +138,18 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+
+        const isLeaveConflicted = Boolean(
+            approvedLeave &&
+            status !== 'On Leave' &&
+            (status !== 'Half-Day Leave' || approvedLeave.duration === 'Full Day')
+        );
+
+        if (isLeaveConflicted && !confirmOverride) {
+            setError(`Approved Leave Active: This date has an approved ${approvedLeave?.duration} ${approvedLeave?.type}. Please check 'Confirm override' to proceed.`);
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -143,12 +176,16 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                 status: attendanceStatus,
                 note,
                 isWfh,
-                location: employee.location
+                location: employee.location,
+                forceOverride: confirmOverride
             });
 
             onSuccess();
             onClose();
         } catch (err: any) {
+            if (err.isLeaveLocked && err.conflictLeave) {
+                setApprovedLeave(err.conflictLeave);
+            }
             setError(err.message || 'Failed to update record');
         } finally {
             setLoading(false);
@@ -202,6 +239,32 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                             </div>
                         </div>
 
+                        {approvedLeave && (
+                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex flex-col gap-2">
+                                <div className="flex items-start gap-2">
+                                    <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                                    <div>
+                                        <span className="font-bold text-sm text-amber-800 block">🔒 Approved Leave Active</span>
+                                        This date is covered by an approved <strong>{approvedLeave.duration} {approvedLeave.type}</strong>
+                                        {approvedLeave.approvedByName ? ` (Approved by ${approvedLeave.approvedByName})` : ''}.
+                                    </div>
+                                </div>
+                                {status !== 'On Leave' && (status !== 'Half-Day Leave' || approvedLeave.duration === 'Full Day') && (
+                                    <label className="flex items-center gap-2 mt-1 pt-2 border-t border-amber-200/60 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={confirmOverride}
+                                            onChange={(e) => setConfirmOverride(e.target.checked)}
+                                            className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
+                                        />
+                                        <span className="font-semibold text-amber-950">
+                                            Confirm override (modify attendance on this approved leave day)
+                                        </span>
+                                    </label>
+                                )}
+                            </div>
+                        )}
+
                         {/* Status Selector at the top — status-first workflow */}
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status</label>
@@ -219,16 +282,34 @@ export default function EditAttendanceModal({ isOpen, onClose, date, employee, o
                                     Work from home — no meal allowance for this day.
                                 </p>
                             )}
+                            {status === 'Late' && (
+                                <p className="text-xs text-amber-700 mt-1 font-medium flex items-center gap-1.5">
+                                    <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                                    Late Arrival: Deducts 0.5 days from Leave Balance and a 0.5 salary cut penalty in payroll.
+                                </p>
+                            )}
                             {status === 'Half-Day' && (
                                 <p className="text-xs text-amber-700 mt-1 font-medium flex items-center gap-1.5">
                                     <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                                    Half-Day Absent: Deducts a 0.5 salary cut penalty in payroll. Leave balance is untouched.
+                                    Half-Day Absent: Deducts 0.5 days from Leave Balance and a 0.5 salary cut penalty in payroll.
                                 </p>
                             )}
                             {status === 'Half-Day Leave' && (
                                 <p className="text-xs text-teal-700 mt-1 font-medium flex items-center gap-1.5">
                                     <Info size={13} className="text-teal-600 shrink-0" />
                                     Half-Day Leave: Pays full salary (0 penalty). Automatically cuts 0.5 days from available leave balance.
+                                </p>
+                            )}
+                            {status === 'Absent' && (
+                                <p className="text-xs text-rose-700 mt-1 font-medium flex items-center gap-1.5">
+                                    <AlertTriangle size={13} className="text-rose-600 shrink-0" />
+                                    Absent: Deducts 1.0 day salary cut penalty in payroll. Leave balance is NOT touched.
+                                </p>
+                            )}
+                            {status === 'On Leave' && (
+                                <p className="text-xs text-teal-700 mt-1 font-medium flex items-center gap-1.5">
+                                    <Info size={13} className="text-teal-600 shrink-0" />
+                                    On Leave: Full paid leave. Deducts 1.0 day from available leave balance with full salary paid.
                                 </p>
                             )}
                         </div>

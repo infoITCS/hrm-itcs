@@ -14,7 +14,8 @@ export type AttendanceStatus =
     | 'On Leave'
     | 'Holiday'
     | 'Weekend'
-    | 'Incomplete'; // Checked in but no check-out yet
+    | 'Incomplete'
+    | 'N/A'; // Checked in but no check-out yet
 
 export interface IAttendanceRecord extends Document {
     employeeId: string;
@@ -64,7 +65,7 @@ const AttendanceRecordSchema: Schema = new Schema(
         // Status & Details
         status:              {
             type: String,
-            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'Half-Day Leave', 'Early Leave', 'On Leave', 'Holiday', 'Weekend', 'Incomplete'],
+            enum: ['Present', 'Absent', 'Late', 'Half-Day', 'Half-Day Leave', 'Early Leave', 'On Leave', 'Holiday', 'Weekend', 'Incomplete', 'N/A'],
             default: 'Incomplete'
         },
         isHalfDay:           { type: Boolean, default: false },

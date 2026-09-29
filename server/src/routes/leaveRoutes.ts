@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import LeaveRequest from '../models/LeaveRequest';
 import LeaveBalance from '../models/LeaveBalance';
 import LeaveType from '../models/LeaveType';
+import AttendanceRecord from '../models/AttendanceRecord';
 import Employee from '../models/Employee';
 import { User } from '../models/User.model';
 import { processEmployeePunches } from '../services/attendanceProcessor';
@@ -418,17 +419,27 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
 
-        // If a specific month is requested, fetch approved leave requests in that month range
+        // If a specific month is requested, fetch approved leave requests and attendance records in that month range
         let monthlyLeaves: any[] = [];
+        let monthlyAttendance: any[] = [];
         if (monthQuery && monthQuery >= 1 && monthQuery <= 12) {
             const startOfMonth = new Date(Date.UTC(year, monthQuery - 1, 1, 0, 0, 0));
             const endOfMonth = new Date(Date.UTC(year, monthQuery, 0, 23, 59, 59, 999));
+            const startStr = `${year}-${String(monthQuery).padStart(2, '0')}-01`;
+            const endDay = new Date(year, monthQuery, 0).getDate();
+            const endStr = `${year}-${String(monthQuery).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
 
-            monthlyLeaves = await LeaveRequest.find({
-                status: 'Approved',
-                startDate: { $lte: endOfMonth },
-                endDate: { $gte: startOfMonth }
-            }).lean();
+            [monthlyLeaves, monthlyAttendance] = await Promise.all([
+                LeaveRequest.find({
+                    status: 'Approved',
+                    startDate: { $lte: endOfMonth },
+                    endDate: { $gte: startOfMonth }
+                }).lean(),
+                AttendanceRecord.find({
+                    date: { $gte: startStr, $lte: endStr },
+                    status: { $in: ['Late', 'Half-Day', 'Half-Day Leave', 'Absent', 'On Leave'] }
+                }).select('employeeId status date').lean()
+            ]);
         }
 
         // Build list of employees with their balances
@@ -449,21 +460,51 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
 
                 // Calculate month-specific used leaves if monthQuery is active
                 let monthUsed = 0;
-                if (monthQuery && monthlyLeaves.length > 0) {
-                    const empMonthLeaves = monthlyLeaves.filter(l => {
-                        const matchesEmp = (empIdStr && l.employeeId === empIdStr) ||
-                                           (userIdStr && l.employeeId === userIdStr) ||
-                                           (rawIdStr && l.employeeId === rawIdStr) ||
-                                           (userIdStr && l.appliedBy === userIdStr);
-                        if (!matchesEmp) return false;
+                if (monthQuery) {
+                    if (monthlyLeaves.length > 0) {
+                        const empMonthLeaves = monthlyLeaves.filter(l => {
+                            const matchesEmp = (empIdStr && l.employeeId === empIdStr) ||
+                                               (userIdStr && l.employeeId === userIdStr) ||
+                                               (rawIdStr && l.employeeId === rawIdStr) ||
+                                               (userIdStr && l.appliedBy === userIdStr);
+                            if (!matchesEmp) return false;
 
-                        const lType = (l.type || '').toLowerCase().trim();
-                        const tCode = type.code.toLowerCase().trim();
-                        const tName = type.name.toLowerCase().trim();
-                        return lType === tCode || lType === tName || lType.includes(tCode) || tCode.includes(lType);
-                    });
+                            const lType = (l.type || '').toLowerCase().trim();
+                            const tCode = type.code.toLowerCase().trim();
+                            const tName = type.name.toLowerCase().trim();
+                            return lType === tCode || lType === tName || lType.includes(tCode) || tCode.includes(lType);
+                        });
 
-                    monthUsed = empMonthLeaves.reduce((sum, l) => sum + (Number(l.totalDays) || 0), 0);
+                        monthUsed = empMonthLeaves.reduce((sum, l) => sum + (Number(l.totalDays) || 0), 0);
+                    }
+
+                    // Include attendance-based leave deductions in the primary bucket (casual, or annual-leave if no casual)
+                    const isPrimary = type.code === 'casual' || (!activeTypes.some(t => t.code === 'casual') && type.code === 'annual-leave');
+                    if (isPrimary && monthlyAttendance.length > 0) {
+                        const empAtt = monthlyAttendance.filter(r =>
+                            (empIdStr && r.employeeId === empIdStr) ||
+                            (userIdStr && r.employeeId === userIdStr) ||
+                            (rawIdStr && r.employeeId === rawIdStr)
+                        );
+                        for (const r of empAtt) {
+                            const hasFormalLeave = monthlyLeaves.some(l => {
+                                const matches = (empIdStr && l.employeeId === empIdStr) ||
+                                                (userIdStr && l.employeeId === userIdStr) ||
+                                                (rawIdStr && l.employeeId === rawIdStr);
+                                if (!matches) return false;
+                                const s = new Date(l.startDate).toISOString().slice(0, 10);
+                                const e = new Date(l.endDate).toISOString().slice(0, 10);
+                                return r.date >= s && r.date <= e;
+                            });
+                            if (!hasFormalLeave) {
+                                if (r.status === 'Late' || r.status === 'Half-Day' || r.status === 'Half-Day Leave') {
+                                    monthUsed += 0.5;
+                                } else if (r.status === 'On Leave') {
+                                    monthUsed += 1.0;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 return {

@@ -10,7 +10,7 @@ import type {
     ShiftConfig, DashboardSummary, RecordsPage,
     RecordFilter, AttendanceRecordDTO, WeeklyDay, AutoCloseResult
 } from './attendance.types';
-import { AttendanceStatus } from '../../models/AttendanceRecord';
+import AttendanceRecord, { AttendanceStatus } from '../../models/AttendanceRecord';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 // ─── Shift Logic ──────────────────────────────────────────────────────────────
@@ -60,8 +60,21 @@ export async function processEmployeePunches(
             ]);
             const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
             const weekend = isWeekend(dateStr);
+            const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+            const isFuture = dateStr > todayStr;
 
-            let status: AttendanceStatus = 'Absent';
+            // Upcoming dates with no punches and no approved leave or holiday:
+            // Never mark as Absent! Clean up any system-generated placeholder record.
+            if (isFuture && !leaveType && !holidayName && !weekend) {
+                await AttendanceRecord.deleteOne({
+                    employeeId: resolvedEmployeeId,
+                    date: dateStr,
+                    manuallyAdjusted: { $ne: true }
+                });
+                return;
+            }
+
+            let status: AttendanceStatus = isFuture ? 'N/A' : 'Absent';
             if (holidayName) status = 'Holiday';
             else if (leaveType) status = 'On Leave';
             else if (weekend) status = 'Weekend';
@@ -297,7 +310,7 @@ export async function getTodayRoster(
             avatar = (emp as any).avatar;
         }
 
-        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(status);
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(status);
 
         roster.push({
             employeeId: empId || (emp as any)?.employeeId || `unlinked_${firstPunch.machineUserId}`,
@@ -318,14 +331,17 @@ export async function getTodayRoster(
 
     // Add employees who have NO PUNCHES (Absent / On Leave / Records with no punches)
     const allExpectedEmps = [...new Set([...activeEmpIds, ...recMap.keys()])];
+    const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+    const isFuture = dateStr > todayStr;
+
     for (const empId of allExpectedEmps) {
         if (processedEmpIds.has(empId)) continue;
 
         const rec = recMap.get(empId) as any;
         const emp = idToEmp.get(empId);
         const name = emp ? `${(emp as any).firstName} ${(emp as any).lastName || ''}`.trim() : 'Unknown';
-        const effectiveStatus = rec?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent');
-        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(effectiveStatus);
+        const effectiveStatus = rec?.status || (isWeekend(dateStr) ? 'Weekend' : (isFuture ? 'N/A' : 'Absent'));
+        const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(effectiveStatus);
 
         roster.push({
             employeeId: empId,
@@ -684,13 +700,16 @@ export async function getEmployeeMonthlyAttendance(
         const r = recordMap.get(dateStr);
 
         if (r) {
-            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(r.status);
+            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(r.status);
 
             if (['Present', 'Late', 'Half-Day'].includes(r.status)) {
                 summary.presentDays++;
                 if (r.lateMinutes > 0) summary.lateDays++;
             } else if (r.status === 'Absent') {
-                summary.absentDays++;
+                const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+                if (dateStr <= todayStr) {
+                    summary.absentDays++;
+                }
             }
 
             // Only count work duration towards monthly total for working days
@@ -709,8 +728,10 @@ export async function getEmployeeMonthlyAttendance(
                 isWfh: isNonWorking ? false : (Boolean(r.isWfh) || /wfh|work from home/i.test(r.note || '')),
             });
         } else {
+            const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+            const isFuture = dateStr > todayStr;
             const weekend = isWeekend(dateStr);
-            const defaultStatus = weekend ? 'Weekend' : 'Absent';
+            const defaultStatus = weekend ? 'Weekend' : (isFuture ? 'N/A' : 'Absent');
             if (defaultStatus === 'Absent') {
                 summary.absentDays++;
             }
@@ -754,6 +775,7 @@ function escapeCsvField(value: any): string {
 }
 
 function buildAttendanceExportCsv(employees: any[], records: any[], dates: string[]): string {
+    const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
     const headers = ['Employee ID', 'Name', 'Date', 'Day', 'Status', 'Check In', 'Check Out', 'Work Hours', 'Late Mins'];
     const rows = [headers.join(',')];
 
@@ -765,8 +787,9 @@ function buildAttendanceExportCsv(employees: any[], records: any[], dates: strin
             const record = recordMap.get(`${emp.employeeId}_${dateStr}`);
             const dateObj = new Date(dateStr);
             const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-            const status = record?.status || (isWeekend(dateStr) ? 'Weekend' : 'Absent');
-            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend'].includes(status);
+            const isFuture = dateStr > todayStr;
+            const status = record?.status || (isWeekend(dateStr) ? 'Weekend' : (isFuture ? 'N/A' : 'Absent'));
+            const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(status);
             const checkIn = !isNonWorking && record?.checkIn ? new Date(record.checkIn).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
             const checkOut = !isNonWorking && record?.checkOut ? new Date(record.checkOut).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Karachi' }) : '';
             const workHrs = !isNonWorking && record?.workDurationMinutes ? (record.workDurationMinutes / 60).toFixed(2) : '0';

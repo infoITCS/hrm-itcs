@@ -1,655 +1,361 @@
-# HRM System - Module Explanations
+# HRM System - Module Explanations & Business Logic
+
+A comprehensive technical and functional reference for all core modules, domain models, algorithms, and cross-module integrations in the HRM system.
+
+---
 
 ## 1. LEAVE MODULE - Complete Working & Logic
 
 ### Overview
-The Leave Module manages employee leave requests with balance tracking, approval workflows, and integration with attendance records.
+The Leave Module manages employee leave requests, atomic balance tracking across calendar years, approval workflows, configurable sandwich rules, and automatic synchronization with attendance records.
 
-### Leave Types
-- **Annual Leave**: 20 days/year (default)
-- **Sick Leave**: 10 days/year (default)
-- **Casual Leave**: 10 days/year (default)
-- **Unpaid Leave**: Unlimited
+### Dynamic Leave Types
+Leave categories are stored in the database (`LeaveType` model) and configurable by administrators:
+* **Annual Leave**: Default 20 days/year (Paid)
+* **Casual Leave**: Default 10 days/year (Paid)
+* **Sick Leave**: Default 8–10 days/year (Paid)
+* **Unpaid Leave**: Uncapped days (Unpaid)
+* **Maternity / Paternity / Special**: Custom-configurable with sandwich rule toggles
+
+Each leave type specifies:
+* `name`: Display name (e.g., "Casual Leave")
+* `code`: Unique identifier (e.g., "casual", "annual", "sick")
+* `defaultDays`: Standard annual allocation
+* `isPaid`: Boolean flag (paid vs. unpaid)
+* `isActive`: Active/disabled status
+* `sandwichRuleEnabled`: Whether weekend sandwiching applies
 
 ### Leave Request Statuses
-1. **Pending** → Initial state when employee submits request
-2. **Approved** → Manager/Admin approves the request
-3. **Rejected** → Manager/Admin rejects the request
+1. **Pending** → Submitted by employee or manager, awaiting approval (days reserved as `pending`)
+2. **Approved** → Approved by authorized manager/admin (moved `pending` ➔ `used`)
+3. **Rejected** → Declined by manager/admin (`pending` days released back to `available`)
+4. **Cancelled** → Cancelled by employee or admin before or after action
 
 ---
 
 ### Conditions & Logic
 
-#### 1. **Submission Conditions** (When Employee Applies for Leave)
+#### 1. **Leave Days Calculation & Sandwich Rule**
+Leave days are calculated between `startDate` and `endDate`:
 ```
-✓ Start Date must be BEFORE End Date
-✓ At least 1 working day (Monday-Friday, excluding weekends)
-✓ Sufficient leave balance available
-✓ Leave type must be valid (Annual, Sick, Casual)
-```
-
-#### 2. **Leave Balance Calculation**
-```
-Available Balance = Total - (Used + Pending)
-
-Where:
-- Total: Allocated days for the year (20 for Annual, 10 for Sick/Casual)
-- Used: Already approved and taken leave
-- Pending: Submitted but not yet approved
-```
-
-Example:
-```
-Annual Leave Balance for 2026:
-- Total: 20 days
-- Used: 5 days (already taken)
-- Pending: 3 days (waiting approval)
-- Available: 20 - (5 + 3) = 12 days can request
+FOR EACH calendar day in range:
+├─ IF day is Monday – Friday:
+│  └─ Count as 1 leave day
+│
+└─ ELSE IF day is Saturday or Sunday:
+   ├─ IF sandwichRuleEnabled == false:
+   │  └─ Skip (Do NOT count weekend)
+   │
+   └─ ELSE (Sandwich rule is active):
+      ├─ Check if preceded by a requested weekday in range AND
+      │  followed by a requested weekday in range
+      ├─ IF Yes → Weekend is "sandwiched" ➔ Count as leave day
+      └─ IF No  → Skip weekend
 ```
 
-#### 3. **Leave Days Counting**
-- **Weekdays Only**: Count Monday-Friday (exclude Saturday-Sunday)
-- **Multi-Year Support**: If leave spans 2 calendar years, days are split by year and checked separately
-- **Working Days**: Only non-weekend days are counted
+*Half-day requests:* If duration is `First Half`, `Second Half`, or `Half Day`, the deduction is recorded as `0.5` days.
 
-Example:
+#### 2. **Multi-Year Support & Atomic Balance Reservations**
+When a leave request spans across calendar year boundaries (e.g., Dec 28, 2025 to Jan 4, 2026):
 ```
-Request: 2024-12-27 to 2025-01-03
-Friday   → Count ✓
-Saturday → Skip ✗
-Sunday   → Skip ✗
-Monday   → Count ✓
-Tuesday  → Count ✓
-Wednesday→ Count ✓
-Thursday → Count ✓
-Friday   → Count ✓
+1. Split requested dates by calendar year:
+   ├─ 2025 days counted against 2025 LeaveBalance
+   └─ 2026 days counted against 2026 LeaveBalance
 
-2024 Balance: -2 days
-2025 Balance: -4 days
+2. ATOMIC TRANSACTION:
+   ├─ For each year:
+   │  ├─ Available = Total - (Used + Pending)
+   │  ├─ Validate: Available >= Days Requested in that year
+   │  └─ RESERVE: Pending += Days Requested
+   ├─ Save LeaveRequest (Status: "Pending")
+   └─ COMMIT TRANSACTION (Rollback on any insufficient balance)
 ```
 
-#### 4. **Atomic Transaction Processing**
-When employee submits leave request:
-
+#### 3. **Approval & Attendance Synchronization**
+When a leave request is Approved (`PUT /api/leaves/:id/status`):
 ```
-1. START TRANSACTION
-2. FOR EACH YEAR in the leave period:
-   - Fetch LeaveBalance record for that year (create if doesn't exist)
-   - Calculate: available = total - (used + pending)
-   - Validate: available >= days_requested
-   - RESERVE: pending += days_requested
-3. Create LeaveRequest with status "Pending"
-4. COMMIT TRANSACTION
-   OR
-   ROLLBACK on ANY error (sufficient balance check fails)
-```
+1. ATOMIC TRANSACTION:
+   ├─ Leave.status = "Approved"
+   ├─ For each year:
+   │  └─ Balance: Pending -= Days, Used += Days
+   └─ COMMIT
 
-This ensures **no race conditions** - pending days are reserved immediately.
-
-#### 5. **Approval Process**
-When Manager/Admin approves/rejects:
-
-```
-Status: Pending → Approved
-  ├─ Mark leave.status = "Approved"
-  └─ Update balance: pending -= days, used += days
-
-Status: Pending → Rejected
-  ├─ Mark leave.status = "Rejected"
-  └─ Update balance: pending -= days (funds released back)
+2. ATTENDANCE SYNCHRONIZATION:
+   ├─ Loop through each date in the approved leave range
+   └─ Execute processEmployeePunches(employeeId, dateStr, 'INTERNAL'):
+      ├─ Attendance status updated to "On Leave" (or "Half-Day Leave" if 0.5)
+      ├─ leaveType set to the approved leave category
+      └─ Employee is protected from being marked Absent or incurring payroll cuts
 ```
 
-#### 6. **Post-Approval: Attendance Integration**
-After leave is approved:
-- Attendance records for those dates are updated to status: "On Leave"
-- `leaveType` field stores the type of leave (Casual, Sick, etc.)
-- These dates won't count as Absent even without punches
-
----
-
-### API Endpoints
-
+#### 4. **API Endpoints**
 | Endpoint | Method | Role | Action |
-|----------|--------|------|--------|
-| `/api/leaves/mine` | GET | Employee | View their leave history |
-| `/api/leaves/balance` | GET | Employee | Check current year balance |
-| `/api/leaves/all` | GET | Admin/Manager | View all team member leaves |
-| `/api/leaves` | POST | Employee | Submit new leave request |
-| `/api/leaves/:id/status` | PUT | Admin/Manager | Approve/Reject leave |
+| :--- | :--- | :--- | :--- |
+| `/api/leaves/mine` | GET | Employee | Personal leave history |
+| `/api/leaves/balance` | GET | Employee/Admin | Personal or target leave balance |
+| `/api/leaves/balances/all` | GET | Admin/HR | Org-wide leave balance ledger (supports `?year=` & `?month=`) |
+| `/api/leaves` | POST | Employee/Manager | Submit new leave application |
+| `/api/leaves/:id` | PUT | Employee/Manager | Edit pending leave request |
+| `/api/leaves/:id/status` | PUT | Manager/Admin | Approve or reject leave request |
+| `/api/leaves/:id/revert-status` | PUT | Admin/HR | Revert processed leave with balance re-adjustment |
+| `/api/leaves/types` | GET/POST | Admin | View or create dynamic leave types |
 
 ---
 
 ## 2. EXPENSE CLAIM MODULE - Complete Working & Logic
 
 ### Overview
-Multi-stage approval workflow for employee expense reimbursement requests with policy limit validation and category-based routing.
+Multi-stage approval workflow for employee expense reimbursements with automated policy limits, receipt verification, and direct integration into payroll.
 
-### Expense Categories & Policy Limits
-```
-Medical                 → PKR 60,000 limit per calendar year (requires receipt)
-Training & Certification→ Unlimited (requires comment or receipt)
-Travel                  → PKR 9,999,999 (unlimited)
-Sales/Customer Gifts    → Unlimited (requires comment or receipt)
-Other                   → Unlimited (requires comment or receipt)
-```
+### Claim Categories & Policy Limits
+* **Medical**: Annual policy limit (e.g. PKR 60,000/year); receipt strictly mandatory.
+* **Training & Certification**: Requires comment (min 5 chars) or receipt.
+* **Travel**: Routed to Line Manager; requires comment or receipt.
+* **Sales / Customer Gifts**: Routed to Line Manager; requires comment or receipt.
+* **Other**: General business expenses; routed to Line Manager.
 
-### Claim Statuses
-```
-Draft                 → Saved but not submitted
-Submitted             → Submitted (ready for approval)
-Pending Team Lead     → Waiting team lead review
-Pending Line Manager  → Waiting manager review
-Pending HR            → Waiting HR review
-Pending Finance       → Waiting finance review
-Approved              → Final approval received
-Declined              → Rejected at any stage
-```
-
----
-
-### Conditions & Validation
-
-#### 1. **Submission Validation**
-```
-✓ Category must be valid
-✓ Amount must be > 0
-✓ Employee must have employee record linked
-✓ For Dependent claims: dependent must be registered in employee profile
-✓ Medical: receipt is strictly required
-✓ Training, Sales, Other: at least one comment (notes >= 5 chars) or one receipt is required
-```
-
-#### 2. **Eligibility Flags** (Automatic Detection)
-```
-OutOfPolicy             → Requested amount exceeds remaining category limit (yearly limit for Medical)
-MissingReceipt          → Medical category without receipt
-MissingCommentOrReceipt → Training, Sales, or Other category without 5+ char comment AND without receipt
-```
-
-Example:
-```
-Category: Medical
-Requested: PKR 25,000
-Current Claimed (Current Year): PKR 45,000 (Remaining Limit: PKR 15,000)
-
-Flags: ["OutOfPolicy"]
-amountAllowed: PKR 15,000 (capped to remaining limit)
-amountRequested: PKR 25,000 (original requested)
-requiresAuthorization: true (HR must authorize override)
-```
-
-#### 3. **Category-Based Workflow Routing**
-The approval chain depends on expense category:
-
+### Multi-Stage Approval Chain by Category
 ```
 MEDICAL:
-  Employee → HR → Finance → Approved
-  (Skip manager levels)
+  Employee ➔ HR Review ➔ Finance (Final) ➔ Approved
 
 TRAINING & CERTIFICATION:
-  Employee → Team Lead → HR → Finance → Approved
+  Employee ➔ Team Lead ➔ HR Review ➔ Finance (Final) ➔ Approved
 
-TRAVEL:
-  Employee → Line Manager → HR → Finance → Approved
-
-SALES/CUSTOMER GIFTS:
-  Employee → Line Manager → HR → Finance → Approved
-
-OTHER:
-  Employee → Line Manager → HR → Finance → Approved
+TRAVEL / SALES / OTHER:
+  Employee ➔ Line Manager ➔ HR Review ➔ Finance (Final) ➔ Approved
 ```
 
-#### 4. **Reporting Manager Resolution**
-- Team Lead/Line Manager stages automatically assigned to:
-  - Employee's `jobInfo.reportingManager` field from PIM
-  - If not found, stage remains unassigned
+### Claim Statuses & State Machine
+```
+Draft ➔ Submitted ➔ Pending Team Lead / Line Manager ➔ Pending HR ➔ Pending Finance ➔ Approved
+                                    └─────────────── Declined at any stage ───────────────┘
+```
+* **Admin Override**: Super-Admins and Admins can override any stage, auto-approve all remaining stages, and set the final approved amount directly.
+* **Payroll Hand-Off**: Once a claim reaches `Approved` with payoutStatus `Unpaid`, it is automatically incorporated into the employee's next monthly payroll as non-taxable earnings and marked `Included in Payroll`.
 
 ---
 
-### Approval Decision Logic
-
-#### Stage 1-2: Team Lead / Line Manager
-```
-Decision: Approve
-├─ Mark stage as "Approved"
-├─ Can propose partial approval (approvedAmount ≤ amountAllowed)
-└─ Move to next stage
-
-Decision: Decline
-├─ Mark claim status = "Declined"
-└─ Process ends (terminal decision)
-```
-
-#### Stage 3: HR Review
-```
-Decision: Approve
-├─ If "OutOfPolicy" flag AND no authorizationBy → REJECT
-│  (Must provide "authorizationBy" like "Senior Management")
-├─ Can propose partial approval
-└─ If Admin: AUTO-APPROVE all remaining stages
-└─ Move to Finance or Approve (if admin)
-
-Decision: Decline
-├─ Mark claim status = "Declined"
-└─ Process ends
-```
-
-#### Stage 4: Finance (Final)
-```
-Decision: Approve
-├─ Calculate final approvedTotal from all stage approvals
-├─ Mark claim status = "Approved"
-└─ Employee eligible for reimbursement
-
-Decision: Decline
-├─ Mark claim status = "Declined"
-└─ Process ends
-```
-
-#### Admin Override
-```
-If role = "Admin" or "Super-Admin":
-├─ Can approve from ANY stage
-├─ Automatically approves all remaining pending stages
-├─ Jumps directly to "Approved" status
-└─ Updates approvedTotal based on proposed amount
-```
-
----
-
-### Approval Amount Calculation
-
-```
-Final Approved Total = MINIMUM of:
-1. Last stage's approvedAmount (if proposed)
-2. amountAllowed (policy limit)
-3. amountRequested (what employee asked)
-
-Default Flow (if no partial amounts proposed):
-approvedTotal = amountAllowed (respects policy limits)
-```
-
-Example Scenario:
-```
-Request:
-├─ Category: Medical
-├─ Requested: PKR 25,000
-├─ Policy Limit: PKR 20,000
-├─ amountAllowed: PKR 20,000 (auto-capped)
-└─ Flags: ["OutOfPolicy"]
-
-Workflow: HR → Finance
-
-HR Review (with authorization):
-├─ Decision: Approve
-├─ approvedAmount: PKR 20,000
-├─ authorizationBy: "Senior Management"
-└─ Status: Pending Finance
-
-Finance Review:
-├─ Decision: Approve
-├─ approvedAmount: PKR 15,000 (negotiated down)
-└─ Final approvedTotal: PKR 15,000
-```
-
----
-
-### Receipt Management
-```
-Maximum Receipts: 5 per claim
-Maximum Size: 5 MB each
-Formats: Any (stored as Buffer with contentType)
-
-Receipt Storage:
-├─ fileName: Original file name
-├─ contentType: MIME type (image/png, application/pdf, etc.)
-├─ fileData: Binary Buffer (sent as base64 in API)
-└─ uploadedAt: Timestamp
-```
-
----
-
-### API Endpoints
-
-| Endpoint | Method | Role | Action |
-|----------|--------|------|--------|
-| `/api/claims` | POST | Employee | Submit new expense claim |
-| `/api/claims/mine` | GET | Employee | View their claims |
-| `/api/claims/approvals/pending` | GET | Manager/Admin | View pending approvals |
-| `/api/claims/:id/decision` | PATCH | Manager/Admin | Make approval decision |
-| `/api/claims/:id/admin-correct` | PATCH | Admin | Correct status/amount |
-| `/api/claims/:id/receipts/:receiptId` | GET | Owner/Admin | Download receipt |
-
----
-
-## 3. ATTENDANCE MODULE - Complete Working & Logic
+## 3. ATTENDANCE MODULE (V2) - Complete Working & Logic
 
 ### Overview
-Real-time punch processing, status calculation, and integration with leaves and shifts.
+Enterprise attendance system combining real-time hardware biometric machine ingestion (ZKTeco ADMS), shift rule engines, automated punch evaluation, and audit-logged manual adjustments.
 
-### Attendance Statuses
+### Attendance Statuses (11 Categories)
 ```
-Present       → Full shift worked, on time
-Late          → Arrived after grace period
-Early Leave   → Left before scheduled end (>10 min early)
-Half-Day      → <4 hours worked
-On Leave      → Approved leave on this date
-Holiday       → Organization holiday
-Weekend       → Saturday or Sunday
-Absent        → No punches, no leave, no holiday
-Incomplete    → Checked in but no valid check-out yet
+1. Present          → Met shift requirements, on time
+2. Present (WFH)    → Approved Work From Home (excludes meal allowance in payroll)
+3. Late             → Arrived after shift grace period (before 2:00 PM cutoff)
+4. Half-Day         → Half-Day Absent: < 4 hours worked or early departure (0.5 salary cut penalty)
+5. Half-Day Leave   → Approved 0.5-day leave (0.5 leave balance cut, full salary)
+6. Early Leave      → Checked out > 10 minutes before scheduled shift end
+7. On Leave         → Full day approved leave (synced from Leave Module)
+8. Holiday          → Location or org-wide paid holiday
+9. Weekend          → Saturday or Sunday non-working day
+10. Absent          → No punches recorded, no approved leave, non-holiday
+11. Incomplete      → Checked in but missing valid check-out punch
 ```
 
 ---
 
 ### Conditions & Logic
 
-#### 1. **Shift Configuration Hierarchy**
+#### 1. **Shift Hierarchy & Resolution**
+Shift configurations are evaluated in strict priority:
+1. **Employee Custom Shift**: Explicitly assigned in `employee.jobInfo.shift`
+2. **Device Location Configuration**: Configured on `DeviceLocation`
+3. **System Defaults**: `09:00` start, `18:00` end, `30` min grace, `4` hr half-day threshold
+
+#### 2. **Punch Validation & Calculations**
+* **Valid Check-In**: First recorded punch of the day.
+* **Valid Check-Out**: Last punch of the day occurring at least 60 minutes after check-in and after 1:00 PM.
+* **Lunch Deduction**:
+  ```
+  IF (checkOut - checkIn) > 5 hours:
+    └─ Deduct 60 minutes lunch
+    └─ workDurationMinutes = (checkOut - checkIn) - 60
+  ELSE:
+    └─ workDurationMinutes = checkOut - checkIn
+  ```
+* **Late Minutes**:
+  ```
+  diffMins = checkIn - shiftStart
+  IF diffMins > graceMinutes:
+    └─ lateMinutes = diffMins - graceMinutes
+  ELSE:
+    └─ lateMinutes = 0
+  ```
+* **Overtime Minutes**:
+  ```
+  IF checkOut > shiftEnd:
+    └─ overtimeMinutes = checkOut - shiftEnd
+  ```
+
+#### 3. **Policy Cutoffs & Status Determination**
 ```
-Priority:
-1. Employee's assigned shift (from jobInfo.shift)
-2. Device Location configuration
-3. Hardcoded defaults (09:00-18:00, 30 min grace)
-
-Default Values:
-├─ Shift Start: 09:00
-├─ Shift End: 18:00
-├─ Grace Minutes: 30
-├─ Half-Day Threshold: 4 hours
-└─ Location: ISB-Office
-```
-
-Example:
-```
-Employee has no custom shift assigned
-├─ Device registered at ISB-Office has: 08:00-17:00, 15 min grace
-└─ Used: 08:00-17:00 with 15 min grace
-```
-
-#### 2. **Punch Validation Rules**
-
-**Valid Check-In:**
-- Any punch during work day
-
-**Valid Check-Out:**
-- Must be AFTER 1:00 PM (13:00 / 5 hours after start)
-- At least 60 minutes after check-in
-
-```
-Example Invalid Check-Outs:
-├─ 11:30 AM → Too early in day (before 1 PM)
-├─ 09:30 AM → Only 30 min after check-in (need 60 min minimum)
-└─ 14:00 with check-in at 11:00 → Only 3 hours worked, needs other validation
-```
-
-#### 3. **Lunch Deduction Logic**
-```
-IF workDuration > 5 hours:
-  ├─ Deduct 1 hour for lunch
-  └─ workDurationMinutes = (checkOut - checkIn) - 60
-
-ELSE:
-  └─ workDurationMinutes = checkOut - checkIn (no deduction)
-```
-
-Example:
-```
-Check-in:  09:00
-Check-out: 15:00
-Raw Duration: 6 hours
-
-> 5 hours? YES
-└─ Deduct 60 min lunch
-└─ Recorded Duration: 5 hours
-```
-
-#### 4. **Late Calculation**
-```
-lateMinutes = (checkIn - shiftStart) - gracePeriod
-
-IF lateMinutes ≤ 0:
-  └─ lateMinutes = 0 (not late, within grace)
-
-Example:
-├─ Shift Start: 09:00
-├─ Grace: 30 minutes
-├─ Check-in: 09:35
-└─ lateMinutes = (09:35 - 09:00) - 30 = 5 minutes late
-```
-
-#### 5. **Overtime Calculation**
-```
-overtimeMinutes = checkOut - shiftEnd
-
-IF overtimeMinutes ≤ 0:
-  └─ overtimeMinutes = 0 (no overtime)
-
-Example:
-├─ Shift End: 18:00
-├─ Check-out: 19:15
-└─ overtimeMinutes = 19:15 - 18:00 = 75 minutes
-```
-
-#### 6. **Early Leave Detection**
-```
-CHECK_OUT_GRACE = 10 minutes
-
-IF (shiftEnd - checkOut) > 10 minutes:
-  └─ isEarlyLeave = true
-  └─ Status = "Early Leave"
-
-Example:
-├─ Shift End: 18:00
-├─ Check-out: 17:40
-├─ Difference: 20 minutes
-└─ isEarlyLeave = true (> 10 min grace)
-```
-
-#### 7. **Status Determination Algorithm**
-
-```
-IF no punches:
-  ├─ Check if Holiday → Status = "Holiday"
-  ├─ Check if On Approved Leave → Status = "On Leave"
-  ├─ Check if Weekend → Status = "Weekend"
-  └─ Default → Status = "Absent"
+IF punches == 0:
+  ├─ Check Holiday  ➔ "Holiday"
+  ├─ Check Leave    ➔ "On Leave" (or "Half-Day Leave")
+  ├─ Check Weekend  ➔ "Weekend"
+  └─ Otherwise      ➔ "Absent"
 
 ELSE (has punches):
-  ├─ IF no valid checkOut:
-  │  └─ Status = "Incomplete"
+  ├─ IF checkIn >= 14:00 (2:00 PM):
+  │  └─ Status = "Absent" (Full day salary cut per HR Policy)
   │
-  ├─ ELSE IF workDuration < halfDayThreshold (4 hours):
-  │  ├─ IF on approved leave → "On Leave"
-  │  └─ ELSE → "Half-Day"
+  ├─ ELSE IF checkIn > (shiftStart + graceMinutes):
+  │  └─ Status = "Late" (Half day salary cut per HR Policy)
   │
-  ├─ ELSE IF isEarlyLeave:
+  ├─ ELSE IF workDurationMinutes < (halfDayThresholdHours * 60) AND checkOut exists:
+  │  └─ Status = "Half-Day"
+  │
+  ├─ ELSE IF checkOut < (shiftEnd - 10 mins):
   │  └─ Status = "Early Leave"
   │
-  ├─ ELSE IF lateMinutes > 0:
-  │  └─ Status = "Late"
+  ├─ ELSE IF checkOut is missing:
+  │  ├─ IF date < today ➔ Auto-close at shiftEnd ("Auto Clocked-Out")
+  │  └─ IF date == today ➔ "Incomplete"
   │
   └─ ELSE:
      └─ Status = "Present"
 ```
 
-#### 8. **Holiday Checking**
-```
-Check by:
-1. Exact date match (YYYY-MM-DD format)
-2. Location-specific OR system-wide holiday
+#### 4. **Hardware ADMS Integration**
+* ZKTeco devices push biometric punches directly to `/iclock/cdata` (rewritten internally to `/api/attendance/adms`).
+* Unauthenticated hardware endpoint validates serial numbers (`deviceSN`), logs raw punches (`AttendancePunch`), and triggers asynchronous record processing.
 
-Priority:
-├─ Location-specific holiday (for ISB-Office, etc.)
-└─ System-wide holiday (location = null)
-```
-
-#### 9. **Leave Integration**
-```
-For each processing date:
-  ├─ Query LeaveRequest where:
-  │  ├─ employeeId matches
-  │  ├─ startDate ≤ date ≤ endDate
-  │  └─ status = "Approved"
-  └─ If found:
-     ├─ leaveType field stores type (Casual, Sick, etc.)
-     ├─ Included in status determination
-     └─ Won't count as Absent
-```
-
----
-
-### Data Processing Flow
-
-```
-1. PUNCH RECEIVED (from ZKTeco device)
-   └─ Create AttendancePunch record
-
-2. TRIGGER PROCESSING (hourly/on-demand)
-   └─ Fetch all unprocesed punches for employee + date
-
-3. VALIDATE PUNCHES
-   ├─ Group by date
-   ├─ Sort by timestamp
-   └─ Identify check-in and check-out
-
-4. CALCULATE METRICS
-   ├─ workDurationMinutes (with lunch deduction)
-   ├─ lateMinutes
-   ├─ overtimeMinutes
-   └─ isEarlyLeave
-
-5. DETERMINE STATUS
-   └─ Apply algorithm with leave/holiday checks
-
-6. UPSERT ATTENDANCE RECORD
-   └─ One record per employee per date
-
-7. MARK PUNCHES PROCESSED
-   └─ Set processed = true (avoid reprocessing)
-```
-
----
-
-### Data Model Structure
-
-**AttendanceRecord (one per employee per date):**
-```
-{
-  employeeId: "EMP-001",
-  date: "2025-05-20",
-  location: "ISB-Office",
-  shiftStart: "09:00",
-  shiftEnd: "18:00",
-  checkIn: Date,
-  checkOut: Date,
-  workDurationMinutes: 480,
-  status: "Present",
-  lateMinutes: 0,
-  overtimeMinutes: 45,
-  leaveType: null,
-  isHalfDay: false,
-  allPunches: [Date, Date, ...],
-  manuallyAdjusted: false,
-  note: null
-}
-```
-
----
-
-### Dashboard Summary Calculation
-
-**Query:**
-```
-GET /api/attendance/dashboard?date=YYYY-MM-DD&location=ISB-Office
-
-Aggregates:
-├─ totalPresent
-├─ totalLate
-├─ totalHalfDay
-├─ totalEarlyLeave
-├─ totalAbsent
-├─ totalOnLeave
-├─ totalIncomplete
-└─ totalActive (all non-terminated employees)
-```
-
-**Filters by Role:**
-```
-Admin: See entire organization or location
-Manager: See only direct reports (via reportingManager field)
-Employee: See only their own record
-```
-
----
-
-### API Endpoints
-
+#### 5. **API Endpoints (Attendance V2)**
+Mounted at `/api/v2/attendance`:
 | Endpoint | Method | Role | Action |
-|----------|--------|------|--------|
-| `/api/attendance/mine` | GET | Employee | View their attendance |
-| `/api/attendance/dashboard` | GET | Admin/Manager | View summary stats |
-| `/api/attendance/records` | GET | Admin | View all records |
-| `/api/attendance/:id/manual-adjust` | PATCH | Admin/Manager | Correct record |
+| :--- | :--- | :--- | :--- |
+| `/api/v2/attendance/today` | GET | Manager/Admin | Overview dashboard statistics for date |
+| `/api/v2/attendance/summary` | GET | Manager/Admin | Aggregated counts by status |
+| `/api/v2/attendance/roster` | GET | Manager/Admin | Smart daily roster (first-in / last-out per employee) |
+| `/api/v2/attendance/live-feed` | GET | Manager/Admin | Real-time punch feed stream |
+| `/api/v2/attendance/records` | GET | All Roles | Filterable attendance records |
+| `/api/v2/attendance/records/:id` | PUT | Manager/Admin | Update attendance record (checkIn, checkOut, status, note) |
+| `/api/v2/attendance/manual` | POST | Manager/Admin | Create manual attendance record |
+| `/api/v2/attendance/employee/:id/monthly`| GET | All Roles | Monthly employee calendar attendance detail |
+| `/api/v2/attendance/export/monthly` | GET | Manager/Admin | Global monthly attendance CSV export |
+| `/api/v2/attendance/admin/auto-close` | POST | Admin | Trigger manual auto-close job for date |
 
 ---
 
-## 4. Integration Between Modules
+## 4. PAYROLL MODULE - Complete Working & Logic
 
-### Leave ↔ Attendance Integration
-```
-When Leave is Approved:
-├─ AttendanceProcessor automatically detects approved leave
-├─ Sets attendance status = "On Leave" for those dates
-└─ Employee won't appear in "Absent" report
-
-When Employee is on Approved Leave:
-├─ No punch required
-├─ Dashboard excludes from absent count
-└─ Attendance record created with "On Leave" status
-```
-
-### Leave Balance ↔ Leave Request
-```
-Submission:
-├─ Check available balance
-└─ Reserve as "pending"
-
-Approval:
-├─ Move pending → used (deduct from balance)
-└─ Update can request amount
-
-Rejection:
-├─ Release pending → back to available
-└─ Employee can request again
-```
-
-### Expense Claim ↔ Approvals
-```
-Each expense category has predefined approval stages
-├─ Workflow determined at submission
-├─ Can't be changed mid-approval
-└─ Stage completion triggers next notification
-
-Admin can override all stages
-├─ Skip to final approval
-└─ Set final amount directly
-```
+### Overview
+End-to-end salary processing engine that computes gross pay, attendance penalties, loan recoveries, Provident Fund contributions, meal allowances, and retroactive arrears, producing banking batch transfer files and official payslips.
 
 ---
 
-## 5. Summary of Key Logic
+### Conditions & Logic
 
-| Module | Key Point |
-|--------|-----------|
-| **Leave** | Atomic transactions prevent race conditions; balance split by year |
-| **Leave** | Weekdays only counted; pending reserved immediately on submission |
-| **Leave** | Post-approval updates attendance to "On Leave" |
-| **Expense** | Categories have different approval workflows |
-| **Expense** | Policy limits auto-checked; flags mark out-of-policy |
-| **Expense** | Managers assigned via reportingManager PIM field |
-| **Expense** | Admin can auto-approve remaining stages |
-| **Attendance** | Shift config prioritized: Employee → Location → Defaults |
-| **Attendance** | Lunch deducted if > 5 hours worked |
-| **Attendance** | Check-out must be after 1 PM and 60+ min after check-in |
-| **Attendance** | Status determined via multi-step algorithm considering leaves/holidays |
-| **Attendance** | One record per employee per date (upserted) |
+#### 1. **Payroll Period & Working Days**
+* **Period Bounds**: Configured per run (e.g., `2026-09-01` to `2026-09-30`).
+* **Monthly Working Days**: Total non-weekend days (Mon–Fri) in the period (default fallback: 22 days).
+* **Daily Rate Formula**:
+  $$\text{Daily Rate} = \frac{\text{Basic Salary}}{\text{Monthly Working Days}}$$
+
+#### 2. **Earnings Calculation**
+1. **Basic / Fixed Salary**: Resolved from employee's salary components, confirmed salary, or probation salary.
+2. **Meal Allowance**:
+   * Entitlement check: `employee.financeInfo.entitledForMealAllowance !== false`
+   * Meal Days = Count of `AttendanceRecord` where `status == "Present"`, `isWfh !== true`, and note does not contain WFH.
+   * Meal Amount = $\text{Meal Days} \times \text{Meal Rate Per Day}$ (Default: PKR 500/day).
+3. **Retroactive Salary Arrears**:
+   * Scans `employee.salaryHistory` for revisions with `effectiveDate` prior to the current payroll month that have `arrearsProcessed !== true`.
+   * For each prior month from the effective date up to the run month, calculates:
+     $$\text{Month Arrears} = (\text{New Salary} - \text{Previous Salary}) \times \text{Proration Factor}$$
+   * Adds arrears line item to earnings and marks revision as processed upon payroll finalization.
+4. **Expense Claims & PF Withdrawals**:
+   * Pulls approved expense claims and PF payouts (`payoutStatus: "Unpaid"`) into earnings as variable non-taxable items.
+5. **Work Anniversary Bonus**:
+   * Detects if joining date month matches the payroll period month and years of service $\ge 1$.
+
+#### 3. **Attendance Penalty Deductions**
+Mapped via `attendancePenaltyPolicy.ts`:
+```
+Attendance Record Status ➔ Penalty Type:
+├─ "Late"       ➔ "half" (0.5 day cut)
+├─ "Half-Day"   ➔ "half" (0.5 day cut)
+├─ "Absent"     ➔ "full" (1.0 day cut)
+└─ Others       ➔ null (0 cut)
+```
+
+**First Penalty Exemption Policy**:
+* Per HR Policy, the **first attendance penalty event in the payroll cycle is exempt from salary deduction**.
+* Deductions are calculated on remaining non-exempt events:
+  $$\text{Half-Day Deduction} = \text{Billable Half Days} \times 0.5 \times \text{Daily Rate}$$
+  $$\text{Absence Deduction} = \text{Billable Full Days} \times 1.0 \times \text{Daily Rate}$$
+
+#### 4. **Loan Deductions & Pauses**
+* Evaluates active loans for the employee.
+* Deducts monthly installment: $\min(\text{Loan Balance}, \text{Monthly Deduction})$.
+* **Approved Loan Pause**: If an `EmployeeRequest` for "Loan Pause" is approved for the period, loan deduction is set to `0` and flagged as `Paused`.
+
+#### 5. **Provident Fund (PF) Calculations**
+* Applicable to **Permanent** employees:
+  $$\text{Regular PF} = \text{Basic Salary} \times 15\%$$
+  $$\text{PF Arrears Adjustment} = \text{Total Arrears Amount} \times 15\%$$
+  $$\text{Total PF Contribution} = \text{Regular PF} + \text{PF Arrears Adjustment}$$
+
+#### 6. **Net Pay & Totals**
+$$\text{Gross Pay} = \sum \text{Earnings}$$
+$$\text{Total Deductions} = \text{Attendance Penalties} + \text{Loan Deductions} + \text{Tax}$$
+$$\text{Net Pay} = \text{Gross Pay} - \text{Total Deductions}$$
+
+#### 7. **Sequential Numbering & Banking Batch Files**
+* Generates sequential payslip numbers: `PS-YYYY-MM-XXXX` using atomic database counters.
+* Generates unique customer reference numbers for banking protocols.
+* Exports batch payment instructions in Meezan Bank CSV/Excel format.
+* Generates downloadable PDF payslips using server-side `PDFKit`.
+
+---
+
+## 5. Cross-Module Integrations
+
+```mermaid
+graph TD
+    PIM[PIM: Employees, Shifts, Salaries] --> ATT[Attendance Module]
+    PIM --> LEAVE[Leave Module]
+    PIM --> PAY[Payroll Module]
+    
+    LEAVE -- Approved Leave Sync --> ATT
+    ATT -- Penalties & Present Days --> PAY
+    CLAIMS[Expense Claims] -- Approved Claims Payout --> PAY
+    REQS[Employee Requests: Loan Pauses, PF] --> PAY
+    
+    ATT -- Overtime / Absence Data --> REP[Reports & Exports]
+    PAY -- Payslips & Bank Batch Files --> BANK[Bank Transfer & PDF]
+```
+
+### 1. Leave ➔ Attendance
+* Approving a leave application in the Leave Module automatically re-processes daily attendance records and tags them as `"On Leave"` or `"Half-Day Leave"`.
+
+### 2. Attendance ➔ Payroll
+* Daily office attendance without WFH dynamically calculates the **Meal Allowance**.
+* Attendance penalty events (`Late`, `Half-Day`, `Absent`) apply automated salary deductions according to the first-penalty exemption policy.
+
+### 3. Expense Claims ➔ Payroll
+* Approved unpaid expense claims are bundled into payslip earnings and transitioned to `Included in Payroll` upon payroll run confirmation.
+
+### 4. Employee Requests ➔ Payroll
+* Approved Loan Pause requests suppress loan installments for the specified month.
+* Approved Provident Fund withdrawal requests are disbursed directly into employee net pay.
+
+---
+
+## 6. Summary of Key Business Formulas
+
+| Rule / Calculation | Formula / Logic |
+| :--- | :--- |
+| **Available Leave Balance** | $\text{Total} - (\text{Used} + \text{Pending})$ |
+| **Sandwich Rule** | Weekend counts as leave if bounded by weekday leaves on both sides |
+| **Attendance Lunch Deduction** | IF $\text{Duration} > 5\text{ hrs} \implies \text{Duration} - 60\text{ mins}$ |
+| **Attendance Late Threshold** | $\text{checkIn} > (\text{shiftStart} + \text{graceMinutes})$ |
+| **Late Cutoff (Full Day)** | $\text{checkIn} \ge 14:00 \implies \text{Status} = \text{"Absent"}$ |
+| **Daily Salary Rate** | $\text{Basic Salary} / \text{Working Days (Mon–Fri)}$ |
+| **First Penalty Exemption** | First late or half-day event in the payroll month is exempt from salary cut |
+| **Meal Allowance** | $\text{Present Office Days} \times \text{PKR } 500$ |
+| **Provident Fund Contribution** | $(\text{Basic Salary} + \text{Retroactive Arrears}) \times 15\%$ (Permanent only) |
+| **Net Pay** | $\text{Gross Pay} - (\text{Attendance Penalties} + \text{Loan Deductions} + \text{Tax})$ |

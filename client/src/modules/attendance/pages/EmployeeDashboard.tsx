@@ -33,6 +33,7 @@ const STATUS_BADGE: Record<string, string> = {
     'Half-Day Leave': 'bg-teal-100/50 text-teal-800 border-teal-200',
     Weekend:       'bg-slate-100/50 text-slate-500 border-slate-200',
     Holiday:       'bg-cyan-100/50 text-cyan-700 border-cyan-200',
+    'N/A':         'bg-slate-100/50 text-slate-500 border-slate-200',
 };
 
 // ─── Stat Card Component ────────────────────────────────────────────────────────

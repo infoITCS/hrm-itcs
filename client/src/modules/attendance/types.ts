@@ -3,7 +3,7 @@
 
 export type AttendanceStatus =
     | 'Present' | 'Absent' | 'Late' | 'Half-Day' | 'Half-Day Leave' | 'Early Leave'
-    | 'On Leave' | 'Holiday' | 'Weekend' | 'Incomplete';
+    | 'On Leave' | 'Holiday' | 'Weekend' | 'Incomplete' | 'N/A';
 
 export type StatusFilter =
     | AttendanceStatus | 'OnTime' | 'StillIn' | '';
@@ -127,6 +127,7 @@ export const STATUS_COLORS: Record<Exclude<StatusFilter, ''>, string> = {
     'Half-Day Leave': 'teal',
     OnTime:         'emerald',
     StillIn:        'indigo',
+    'N/A':          'slate',
 };
 
 export const STATUS_LABELS: Record<Exclude<StatusFilter, ''>, string> = {
@@ -142,6 +143,7 @@ export const STATUS_LABELS: Record<Exclude<StatusFilter, ''>, string> = {
     'Half-Day Leave': 'Half-Day Leave',
     OnTime:        'On Time',
     StillIn:       'Still In',
+    'N/A':         'N/A',
 };
 
 export interface MonthlyDayEntry {

@@ -5,6 +5,7 @@ import Employee from '../models/Employee';
 import Counter from '../models/Counter';
 import EmployeeRequest from '../models/EmployeeRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
+import LeaveRequest from '../models/LeaveRequest';
 import Company from '../models/Company';
 import ExpenseClaim from '../models/ExpenseClaim';
 import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
@@ -197,10 +198,24 @@ export async function buildPayrollPayslips(
         date: { $gte: periodStart, $lte: periodEnd },
     }).select('employeeId status date').lean() as any[];
 
+    // Fetch approved formal leaves in this period to protect employees from bogus attendance penalties on approved leave days
+    const periodApprovedLeaves = await LeaveRequest.find({
+        status: 'Approved',
+        startDate: { $lte: new Date(`${periodEnd}T23:59:59.999Z`) },
+        endDate: { $gte: new Date(`${periodStart}T00:00:00.000Z`) },
+        appliedBy: { $ne: 'system' }
+    }).select('employeeId startDate endDate duration').lean() as any[];
+
     const employeeAttendanceMap: Record<string, any> = {};
     const attendanceDeductionsMap: Record<string, { penalties: { date: string; type: 'half' | 'full' }[] }> = {};
 
+    const todayStr = new Date().toISOString().slice(0, 10);
+
     for (const r of periodRecords) {
+        // Never process attendance stats or penalties for future dates that have not arrived yet, or N/A records
+        if (r.date > todayStr) continue;
+        if (r.status === 'N/A') continue;
+
         if (!employeeAttendanceMap[r.employeeId]) {
             employeeAttendanceMap[r.employeeId] = {
                 workingDays: monthlyWorkingDays,
@@ -219,6 +234,16 @@ export async function buildPayrollPayslips(
         else if (r.status === 'On Leave') employeeAttendanceMap[r.employeeId].leaveDays++;
 
         if (holidayDates.has(r.date)) continue;
+
+        // Approved formal full-day leave shields employee from attendance penalties
+        const hasFullDayLeave = periodApprovedLeaves.some(l => {
+            if (l.employeeId !== r.employeeId) return false;
+            const s = new Date(l.startDate).toISOString().slice(0, 10);
+            const e = new Date(l.endDate).toISOString().slice(0, 10);
+            return r.date >= s && r.date <= e && l.duration === 'Full Day';
+        });
+        if (hasFullDayLeave) continue;
+
         const penaltyType = statusToPenaltyType(r.status);
         if (!penaltyType) continue;
 

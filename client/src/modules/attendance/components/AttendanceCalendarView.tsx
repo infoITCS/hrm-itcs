@@ -29,6 +29,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; border: string; 
     'Half-Day Leave': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', label: 'Half Day Leave' },
     Weekend:       { bg: 'bg-slate-50', text: 'text-slate-400', border: 'border-slate-100', label: 'Weekend' },
     Holiday:       { bg: 'cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', label: 'Holiday' },
+    'N/A':         { bg: 'bg-slate-50', text: 'text-slate-400', border: 'border-slate-200', label: 'N/A' },
 };
 
 export default function AttendanceCalendarView({
@@ -50,11 +51,11 @@ export default function AttendanceCalendarView({
     const dayMap = new Map<string, MonthlyDayEntry>();
     days.forEach((d) => dayMap.set(d.date, d));
 
-    // Calculate Summary Stats from days
+    // Calculate Summary Stats from days (only count absent if on or before today)
     const stats = {
         present: days.filter(d => d.status === 'Present').length,
         late: days.filter(d => d.status === 'Late' || d.lateMinutes > 0).length,
-        absent: days.filter(d => d.status === 'Absent').length,
+        absent: days.filter(d => d.status === 'Absent' && d.date <= todayStr).length,
         halfDay: days.filter(d => d.status === 'Half-Day' || d.status === 'Half-Day Leave').length,
         onLeave: days.filter(d => d.status === 'On Leave' || d.status === 'Half-Day Leave').length,
         weekend: days.filter(d => d.status === 'Weekend').length,
@@ -67,12 +68,13 @@ export default function AttendanceCalendarView({
     const daysList = Array.from({ length: daysInMonth }, (_, i) => {
         const dayNum = i + 1;
         const dateStr = `${month}-${String(dayNum).padStart(2, '0')}`;
+        const isFuture = dateStr > todayStr;
         return (
             dayMap.get(dateStr) || {
                 date: dateStr,
                 workDurationMinutes: 0,
                 lateMinutes: 0,
-                status: 'Absent' as AttendanceStatus,
+                status: (isFuture ? 'N/A' : 'Absent') as AttendanceStatus,
             }
         );
     });
@@ -204,12 +206,12 @@ export default function AttendanceCalendarView({
                                             className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md inline-block truncate ${
                                                 isWeekend
                                                     ? 'bg-slate-200/60 text-slate-500'
-                                                    : isFuture
+                                                    : (isFuture || day.status === 'N/A')
                                                         ? 'bg-slate-100 text-slate-400'
                                                         : `${cfg.bg} ${cfg.text}`
                                             }`}
                                         >
-                                            {isFuture && !hasPunches ? 'Upcoming' : cfg.label}
+                                            {(isFuture || day.status === 'N/A') && !hasPunches ? 'N/A' : cfg.label}
                                         </span>
                                     </div>
 
