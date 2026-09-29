@@ -1,7 +1,7 @@
 import Employee from '../models/Employee';
 
 export const canCreateUser = (role: string): boolean => {
-    return ['super-admin', 'admin', 'hr', 'manager'].includes(role);
+    return ['super-admin', 'admin', 'hr'].includes(role);
 };
 
 /**
@@ -57,7 +57,7 @@ export const canViewEmployee = async (
 };
 
 export const canEditSensitiveData = (role: string): boolean => {
-    return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role);
+    return ['super-admin', 'admin', 'hr', 'finance'].includes(role);
 };
 
 export const canApproveDocuments = (role: string): boolean => {

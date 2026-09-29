@@ -1363,8 +1363,8 @@ const MyInfo = () => {
         { id: 8, title: 'Documents', icon: FileText }
     ];
 
-    const isAdmin = ['admin', 'super-admin', 'hr', 'manager'].includes(user?.role || '');
-    const canEditJob = ['admin', 'super-admin', 'hr', 'manager'].includes(user?.role || '');
+    const isAdmin = ['admin', 'super-admin', 'hr'].includes(user?.role || '');
+    const canEditJob = ['admin', 'super-admin', 'hr'].includes(user?.role || '');
     const canEditFinancials = ['super-admin', 'hr'].includes(user?.role || '');
     const canEditBankDetails = ['admin', 'super-admin', 'finance', 'hr'].includes(user?.role || '');
     const disabledJobClass = !canEditJob ? 'bg-gray-50 cursor-not-allowed' : 'bg-white';

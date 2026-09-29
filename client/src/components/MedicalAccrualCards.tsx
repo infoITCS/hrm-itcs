@@ -1,5 +1,5 @@
 import React from 'react';
-import { DollarSign, Sparkles, Receipt, ShieldCheck } from 'lucide-react';
+import { DollarSign, Sparkles, ShieldCheck } from 'lucide-react';
 import type { MedicalAccrualData } from '../utils/medicalAccrual';
 
 interface Props {
@@ -24,6 +24,7 @@ export const MedicalAccrualCards: React.FC<Props> = ({
     const accruedBalance = accrual?.accruedBalance ?? (eligibleMonths * monthlyAllowance);
     const totalUtilized = accrual?.totalUtilized ?? 0;
     const remainingBalance = accrual?.remainingBalance ?? Math.max(0, accruedBalance - totalUtilized);
+    const annualLimit = (accrual as any)?.annualLimit ?? (accrual as any)?.annualCap ?? 60000;
 
     const formatAmt = (val: number) => `${currency} ${Number(val || 0).toLocaleString('en-PK')}`;
 
@@ -76,19 +77,42 @@ export const MedicalAccrualCards: React.FC<Props> = ({
                     </div>
                 </div>
 
-                {/* 3. Amount Utilized */}
-                <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-2.5 shadow-2xs">
-                    <div className="flex items-center gap-1.5 text-amber-800 text-[11px] font-bold tracking-tight mb-1">
-                        <Receipt size={13} className="text-amber-600 shrink-0" />
-                        <span className="truncate">Amount Utilized</span>
+                {/* 3. Amount Requested (if current claim context) OR Annual Cap (profile/info context) */}
+                {typeof currentClaimAmount === 'number' ? (
+                    <div className={`rounded-xl p-2.5 border shadow-2xs transition-all ${
+                        isOver ? 'bg-rose-50/80 border-rose-300 text-rose-950' : 'bg-slate-50/80 border-slate-200 text-slate-900'
+                    }`}>
+                        <div className={`flex items-center gap-1.5 text-[11px] font-bold tracking-tight mb-1 ${
+                            isOver ? 'text-rose-800' : 'text-slate-600'
+                        }`}>
+                            <span className="text-[10px] font-black leading-none text-indigo-600">PKR</span>
+                            <span className="truncate">Amount Requested</span>
+                        </div>
+                        <div className={`font-black text-sm sm:text-base tracking-tight leading-none mb-1 ${
+                            isOver ? 'text-rose-700' : 'text-slate-900'
+                        }`}>
+                            {formatAmt(currentClaimAmount)}
+                        </div>
+                        <div className={`text-[10px] font-semibold truncate ${
+                            isOver ? 'text-rose-600' : 'text-slate-400'
+                        }`}>
+                            {isOver ? `Over by ${formatAmt(currentClaimAmount - remainingBalance)}` : 'Current claim'}
+                        </div>
                     </div>
-                    <div className="font-black text-amber-950 text-sm sm:text-base tracking-tight leading-none mb-1">
-                        {formatAmt(totalUtilized)}
+                ) : (
+                    <div className="bg-purple-50/70 border border-purple-200/80 rounded-xl p-2.5 shadow-2xs">
+                        <div className="flex items-center gap-1.5 text-purple-800 text-[11px] font-bold tracking-tight mb-1">
+                            <ShieldCheck size={13} className="text-purple-600 shrink-0" />
+                            <span className="truncate">Annual Limit</span>
+                        </div>
+                        <div className="font-black text-purple-950 text-sm sm:text-base tracking-tight leading-none mb-1">
+                            {formatAmt(annualLimit)}
+                        </div>
+                        <div className="text-[10px] text-purple-700/80 font-medium truncate">
+                            Policy annual cap
+                        </div>
                     </div>
-                    <div className="text-[10px] text-amber-700/80 font-medium truncate">
-                        Total claimed YTD
-                    </div>
-                </div>
+                )}
 
                 {/* 4. Remaining Balance */}
                 <div className={`rounded-xl p-2.5 border shadow-2xs transition-all ${
@@ -110,7 +134,7 @@ export const MedicalAccrualCards: React.FC<Props> = ({
                     }`}>
                         {typeof currentClaimAmount === 'number' && currentClaimAmount > 0 ? (
                             isOver ? (
-                                `Over by ${formatAmt(currentClaimAmount - remainingBalance)}`
+                                `Over limit by ${formatAmt(currentClaimAmount - remainingBalance)}`
                             ) : (
                                 `After: ${formatAmt(postApprovalRemaining)}`
                             )

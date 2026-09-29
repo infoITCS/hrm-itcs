@@ -1165,12 +1165,6 @@ const ExpenseClaimDashboard = () => {
         return calculateClientMedicalAccrual(claimantEmp, uniqueClaims, decisionClaim.expenseDate ? new Date(decisionClaim.expenseDate) : new Date());
     }, [decisionClaim, decisionMedicalSummary, history, approvals, mine, allEmployees, employee]);
 
-    const decisionClaimRemainingLimit = useMemo(() => {
-        if (!decisionClaim || !decisionClaim.employeeId) return null;
-        if (decisionClaim.category !== 'Medical') return null;
-        return decisionMedicalAccrualData?.remainingBalance ?? 0;
-    }, [decisionClaim, decisionMedicalAccrualData]);
-
     // Receipt preview state
     const [receiptBlobs, setReceiptBlobs] = useState<Record<string, string>>({});
     const [loadingReceipts, setLoadingReceipts] = useState(false);
@@ -3547,35 +3541,31 @@ const ExpenseClaimDashboard = () => {
                                                     : '—'}
                                             </div>
                                         </div>
-                                        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-                                            <div className="flex items-center gap-1.5 text-indigo-400 text-[11px] font-bold mb-1">
-                                                <span className="text-[10px] font-black text-indigo-500/80 mr-0.5 leading-none">PKR</span>
-                                                REQUESTED
-                                            </div>
-                                            <div className="font-extrabold text-indigo-800 text-sm">{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</div>
-                                        </div>
-                                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                                            <div className="flex items-center gap-1.5 text-emerald-600 text-[11px] font-bold mb-1">
-                                                <ShieldCheck size={11} />
-                                                {decisionClaim.category === 'Medical' ? 'REMAINING ACCRUED' : 'POLICY LIMIT'}
-                                            </div>
-                                            <div className="font-bold text-emerald-700 text-sm">
-                                                {decisionClaim.category === 'Medical' && typeof decisionClaimRemainingLimit === 'number'
-                                                    ? formatMoney(decisionClaimRemainingLimit, decisionClaim.currency)
-                                                    : formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)
-                                                }
-                                            </div>
-                                            {decisionClaim.category === 'Medical' && typeof decisionClaimRemainingLimit === 'number' && decisionClaim.amountRequested > decisionClaimRemainingLimit && (
-                                                <div className="text-[10px] text-rose-500 font-bold mt-0.5">
-                                                    ↑ Over by {formatMoney(decisionClaim.amountRequested - decisionClaimRemainingLimit, decisionClaim.currency)}
+                                        {decisionClaim.category !== 'Medical' && (
+                                            <>
+                                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                                    <div className="flex items-center gap-1.5 text-indigo-400 text-[11px] font-bold mb-1">
+                                                        <span className="text-[10px] font-black text-indigo-500/80 mr-0.5 leading-none">PKR</span>
+                                                        REQUESTED
+                                                    </div>
+                                                    <div className="font-extrabold text-indigo-800 text-sm">{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</div>
                                                 </div>
-                                            )}
-                                            {decisionClaim.category !== 'Medical' && decisionClaim.amountRequested > decisionClaim.amountAllowed && (
-                                                <div className="text-[10px] text-rose-500 font-bold mt-0.5">
-                                                    ↑ Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)}
+                                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                                    <div className="flex items-center gap-1.5 text-emerald-600 text-[11px] font-bold mb-1">
+                                                        <ShieldCheck size={11} />
+                                                        POLICY LIMIT
+                                                    </div>
+                                                    <div className="font-bold text-emerald-700 text-sm">
+                                                        {formatMoney(decisionClaim.amountAllowed, decisionClaim.currency)}
+                                                    </div>
+                                                    {decisionClaim.amountRequested > decisionClaim.amountAllowed && (
+                                                        <div className="text-[10px] text-rose-500 font-bold mt-0.5">
+                                                            ↑ Over by {formatMoney(decisionClaim.amountRequested - decisionClaim.amountAllowed, decisionClaim.currency)}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </div>
+                                            </>
+                                        )}
                                     </div>
 
                                     {/* Suggestion 2: Compact Medical Accrual Cards in Claim Review Modal */}

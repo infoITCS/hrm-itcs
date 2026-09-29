@@ -8,12 +8,12 @@ export const usePermissions = () => {
 
     const canCreateUser = useCallback((): boolean => {
         if (!user) return false;
-        return ['super-admin', 'admin', 'hr', 'manager'].includes(normalizedRole);
+        return ['super-admin', 'admin', 'hr'].includes(normalizedRole);
     }, [user, normalizedRole]);
 
     const canEditSensitiveData = useCallback((): boolean => {
         if (!user) return false;
-        return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+        return ['super-admin', 'admin', 'hr', 'finance'].includes(normalizedRole);
     }, [user, normalizedRole]);
 
     const canApproveDocuments = useCallback((): boolean => {

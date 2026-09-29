@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, Lock, Unlock, Utensils, Calendar, History, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, ShieldCheck, Lock, Unlock, Utensils, Calendar, History, Loader2 } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -129,7 +129,7 @@ const AddEmployeeWizard = () => {
     const { user: authUser, login } = useAuth();
     const { showToast } = useToast();
     const { canEditSensitiveData, canCreateUser, role } = usePermissions();
-    const isAdmin = ['super-admin', 'admin', 'hr', 'manager'].includes(role);
+    const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
     const canEditFinancials = ['super-admin', 'hr'].includes(role);
     const [isFinancialUnlocked, setIsFinancialUnlocked] = useState(false);
     const [showMasterPinModal, setShowMasterPinModal] = useState(false);
@@ -451,6 +451,12 @@ const AddEmployeeWizard = () => {
             salaryRevisionReason: ''
         },
         benefits: [] as { name: string; description: string; eligibleDate: string; status: 'Active' | 'Pending' | 'Expired' }[],
+        medicalBenefit: {
+            customAnnualLimit: '' as number | '',
+            customMonthlyAllowance: '' as number | '',
+            openingBalanceUtilized: 0 as number | '',
+            notes: ''
+        },
         salaryHistory: [] as { effectiveDate: string; amount: number; changeType: string; reason: string; previousAmount: number; arrearsProcessed?: boolean; revisedAt?: string }[],
         providentFundBalance: 0
     });
@@ -634,6 +640,12 @@ const AddEmployeeWizard = () => {
                                     status: b.status || 'Active'
                                 }))
                                 : [],
+                            medicalBenefit: {
+                                customAnnualLimit: found.medicalBenefit?.customAnnualLimit ?? '',
+                                customMonthlyAllowance: found.medicalBenefit?.customMonthlyAllowance ?? '',
+                                openingBalanceUtilized: found.medicalBenefit?.openingBalanceUtilized ?? 0,
+                                notes: found.medicalBenefit?.notes || ''
+                            },
                             salaryHistory: found.salaryHistory?.length
                                 ? found.salaryHistory.map((sh: any) => ({
                                     ...sh,
@@ -765,6 +777,17 @@ const AddEmployeeWizard = () => {
                 (employeeData as any).userId = authUser.id;
             }
 
+            // Format medical benefit for cleanly typed persistence
+            if ((employeeData as any).medicalBenefit) {
+                const mb = (employeeData as any).medicalBenefit;
+                (employeeData as any).medicalBenefit = {
+                    customAnnualLimit: mb.customAnnualLimit !== '' && mb.customAnnualLimit !== null && mb.customAnnualLimit !== undefined ? Number(mb.customAnnualLimit) : null,
+                    customMonthlyAllowance: mb.customMonthlyAllowance !== '' && mb.customMonthlyAllowance !== null && mb.customMonthlyAllowance !== undefined ? Number(mb.customMonthlyAllowance) : null,
+                    openingBalanceUtilized: mb.openingBalanceUtilized !== '' && mb.openingBalanceUtilized !== null && mb.openingBalanceUtilized !== undefined ? Number(mb.openingBalanceUtilized) : 0,
+                    notes: mb.notes || ''
+                };
+            }
+
             const url = isEditMode ? `${api.employees}/${id}` : api.employees;
             const method = isEditMode ? 'PUT' : 'POST';
 
@@ -792,7 +815,8 @@ const AddEmployeeWizard = () => {
                     salaryHistory: savedEmp.salaryHistory || prev.salaryHistory,
                     salaryComponents: savedEmp.salaryComponents || prev.salaryComponents,
                     benefits: savedEmp.benefits || prev.benefits,
-                    financeInfo: savedEmp.financeInfo ? { ...prev.financeInfo, ...savedEmp.financeInfo } : prev.financeInfo
+                    financeInfo: savedEmp.financeInfo ? { ...prev.financeInfo, ...savedEmp.financeInfo } : prev.financeInfo,
+                    medicalBenefit: savedEmp.medicalBenefit || prev.medicalBenefit
                 }));
             }
 
@@ -2944,6 +2968,114 @@ const AddEmployeeWizard = () => {
 
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+
+                        {/* OPD Medical Benefit & Accrual Limits */}
+                        <div className="pt-8 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-700 flex items-center gap-2">
+                                        <ShieldCheck size={20} className="text-emerald-600" />
+                                        OPD Medical Benefit & Accrual Limits
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Set custom monthly OPD accrual rate, annual reimbursement cap, or opening balance utilized. Leave blank for standard policy defaults (PKR 5,000 / mo, PKR 60,000 / yr).
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/60 p-6 rounded-2xl border border-slate-200/80">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                        Monthly Allowance (PKR)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        placeholder="Default: 5,000 / mo"
+                                        value={formData.medicalBenefit?.customMonthlyAllowance ?? ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value === '' ? '' : Number(e.target.value);
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                medicalBenefit: {
+                                                    ...prev.medicalBenefit,
+                                                    customMonthlyAllowance: val
+                                                }
+                                            }));
+                                        }}
+                                        className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                    <p className="text-[11px] text-slate-400">Default rate: PKR 5,000 / month</p>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                        Annual Entitlement Cap (PKR)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        placeholder="Default: 60,000 / yr"
+                                        value={formData.medicalBenefit?.customAnnualLimit ?? ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value === '' ? '' : Number(e.target.value);
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                medicalBenefit: {
+                                                    ...prev.medicalBenefit,
+                                                    customAnnualLimit: val
+                                                }
+                                            }));
+                                        }}
+                                        className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                    <p className="text-[11px] text-slate-400">Total max reimbursement per calendar year</p>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                        Opening Balance Utilized (PKR)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        placeholder="0"
+                                        value={formData.medicalBenefit?.openingBalanceUtilized ?? ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                medicalBenefit: {
+                                                    ...prev.medicalBenefit,
+                                                    openingBalanceUtilized: val
+                                                }
+                                            }));
+                                        }}
+                                        className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 bg-white focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                    <p className="text-[11px] text-slate-400">Reimbursement amount utilized prior/outside system</p>
+                                </div>
+
+                                <div className="space-y-1 col-span-1 md:col-span-3">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                        Entitlement Notes / Policy Memo
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Approved custom medical tier for executive status"
+                                        value={formData.medicalBenefit?.notes || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                medicalBenefit: {
+                                                    ...prev.medicalBenefit,
+                                                    notes: val
+                                                }
+                                            }));
+                                        }}
+                                        className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 bg-white focus:ring-2 focus:ring-emerald-200 outline-none"
+                                    />
+                                </div>
                             </div>
                         </div>
 

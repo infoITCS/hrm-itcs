@@ -6,7 +6,7 @@ import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
     DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock, Utensils,
-    ShieldCheck
+    ShieldCheck, RefreshCw, CheckCircle2
 } from 'lucide-react';
 import MedicalAccrualCards from '../../components/MedicalAccrualCards';
 import { calculateClientMedicalAccrual } from '../../utils/medicalAccrual';
@@ -55,11 +55,18 @@ const EmployeeProfile = () => {
 
     const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
     const canViewFinancials = ['super-admin', 'finance', 'hr'].includes(role);
+    const canManageMedical = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
     const isSuperAdmin = role === 'super-admin';
 
     // Medical benefits state
     const [medicalRecordData, setMedicalRecordData] = useState<any>(null);
     const [loadingMedicalRecord, setLoadingMedicalRecord] = useState(false);
+    const [adjustMedicalOpen, setAdjustMedicalOpen] = useState(false);
+    const [adjustAnnualLimit, setAdjustAnnualLimit] = useState<number | ''>('');
+    const [adjustMonthlyAllowance, setAdjustMonthlyAllowance] = useState<number | ''>('');
+    const [adjustOpeningBalance, setAdjustOpeningBalance] = useState<number | ''>('');
+    const [adjustNotes, setAdjustNotes] = useState('');
+    const [adjustingMedical, setAdjustingMedical] = useState(false);
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -129,6 +136,50 @@ const EmployeeProfile = () => {
             setLoadingMedicalRecord(false);
         }
     }, []);
+
+    const openAdjustMedicalModal = () => {
+        const mb = employee?.medicalBenefit || medicalRecordData?.employee?.medicalBenefit || {};
+        const summary = medicalRecordData?.summary;
+        setAdjustAnnualLimit(mb.customAnnualLimit ?? (summary?.customLimitSet ? summary.annualLimit : ''));
+        setAdjustMonthlyAllowance(mb.customMonthlyAllowance ?? (summary?.monthlyAllowance && summary.monthlyAllowance !== 5000 ? summary.monthlyAllowance : ''));
+        setAdjustOpeningBalance(mb.openingBalanceUtilized ?? summary?.openingBalanceUtilized ?? '');
+        setAdjustNotes(mb.notes || '');
+        setAdjustMedicalOpen(true);
+    };
+
+    const handleSaveMedicalAdjustment = async () => {
+        if (!employee?.employeeId) return;
+        setAdjustingMedical(true);
+        const token = localStorage.getItem('token');
+        try {
+            const payload: any = {
+                customAnnualLimit: adjustAnnualLimit !== '' ? Number(adjustAnnualLimit) : null,
+                customMonthlyAllowance: adjustMonthlyAllowance !== '' ? Number(adjustMonthlyAllowance) : null,
+                openingBalanceUtilized: adjustOpeningBalance !== '' ? Number(adjustOpeningBalance) : 0,
+                notes: adjustNotes
+            };
+            const res = await fetch(api.medicalRecordAdjust(employee.employeeId), {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.message || 'Failed to update medical record');
+            showToast('Medical benefit updated successfully', 'success');
+            setAdjustMedicalOpen(false);
+            await Promise.all([
+                fetchEmployee(),
+                fetchMedicalRecord(employee.employeeId)
+            ]);
+        } catch (err: any) {
+            showToast(err.message || 'Failed to update medical benefit', 'error');
+        } finally {
+            setAdjustingMedical(false);
+        }
+    };
 
     useEffect(() => {
         fetchEmployee();
@@ -1037,6 +1088,16 @@ const EmployeeProfile = () => {
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    {canManageMedical && (
+                                        <button
+                                            type="button"
+                                            onClick={openAdjustMedicalModal}
+                                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                                            title="Edit monthly allowance, annual limit, and opening balance"
+                                        >
+                                            <Edit2 size={13} /> Adjust Medical Benefit
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => navigate(`/claims?tab=medical-records&emp=${employee.employeeId}`)}
@@ -1473,6 +1534,95 @@ const EmployeeProfile = () => {
                 title="Universal Master Financial PIN"
                 description="Enter the 4-digit Master Financial PIN to unlock and view employee compensation details."
             />
+
+            {/* Adjust Medical Benefit Modal */}
+            {adjustMedicalOpen && createPortal(
+                <div className="fixed inset-0 min-[992px]:left-64 min-[992px]:top-16 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-scale-in">
+                        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                            <div>
+                                <h3 className="font-extrabold text-base flex items-center gap-2">
+                                    <ShieldCheck size={18} />
+                                    Adjust Medical Benefit
+                                </h3>
+                                <p className="text-xs text-emerald-100 mt-0.5">{employee.firstName} {employee.lastName} ({employee.employeeId})</p>
+                            </div>
+                            <button onClick={() => setAdjustMedicalOpen(false)} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white cursor-pointer">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Custom Monthly Allowance (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustMonthlyAllowance}
+                                    onChange={e => setAdjustMonthlyAllowance(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="Leave empty for policy default (PKR 5,000 / mo)"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Amount the employee accrues each eligible month (default: PKR 5,000).</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Custom Annual Medical Limit (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustAnnualLimit}
+                                    onChange={e => setAdjustAnnualLimit(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="Leave empty for policy cap (PKR 60,000)"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Maximum annual policy cap ceiling (default: PKR 60,000).</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Opening Balance Utilized (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustOpeningBalance}
+                                    onChange={e => setAdjustOpeningBalance(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="0"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Claims already reimbursed offline or prior to system onboarding this year.</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Internal HR Notes / Justification</label>
+                                <textarea
+                                    rows={2}
+                                    value={adjustNotes}
+                                    onChange={e => setAdjustNotes(e.target.value)}
+                                    placeholder="Special executive package / revised allowance rationale..."
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setAdjustMedicalOpen(false)}
+                                className="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveMedicalAdjustment}
+                                disabled={adjustingMedical}
+                                className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                            >
+                                {adjustingMedical ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                Save Adjustments
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

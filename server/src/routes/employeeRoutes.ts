@@ -425,21 +425,39 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
-            'employeeId', 'biometricPin', 'providentFundBalance', 'salaryHistory'
+            'employeeId', 'biometricPin', 'providentFundBalance', 'salaryHistory', 'medicalBenefit'
         ];
 
-        const allowedFields = (['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(role))
+        const allowedFields = (['super-admin', 'admin', 'hr', 'finance'].includes(role))
             ? [...EMPLOYEE_EDITABLE_FIELDS, ...ADMIN_EXTRA_FIELDS]
             : EMPLOYEE_EDITABLE_FIELDS;
 
         const employeeData = pick(req.body, allowedFields) as any;
 
-        const canEditFinancials = ['super-admin', 'hr'].includes(role);
+        const canEditFinancials = ['super-admin', 'hr', 'admin', 'finance'].includes(role);
         if (!canEditFinancials) {
             delete employeeData.salaryComponents;
             delete employeeData.financeInfo;
             delete employeeData.providentFundBalance;
             delete employeeData.salaryHistory;
+            delete employeeData.medicalBenefit;
+            delete employeeData.benefits;
+        }
+
+        // Normalize medicalBenefit to prevent CastErrors
+        if (employeeData.medicalBenefit && typeof employeeData.medicalBenefit === 'object') {
+            employeeData.medicalBenefit = {
+                customAnnualLimit: (employeeData.medicalBenefit.customAnnualLimit !== '' && employeeData.medicalBenefit.customAnnualLimit !== null && employeeData.medicalBenefit.customAnnualLimit !== undefined)
+                    ? Number(employeeData.medicalBenefit.customAnnualLimit)
+                    : undefined,
+                customMonthlyAllowance: (employeeData.medicalBenefit.customMonthlyAllowance !== '' && employeeData.medicalBenefit.customMonthlyAllowance !== null && employeeData.medicalBenefit.customMonthlyAllowance !== undefined)
+                    ? Number(employeeData.medicalBenefit.customMonthlyAllowance)
+                    : undefined,
+                openingBalanceUtilized: (employeeData.medicalBenefit.openingBalanceUtilized !== '' && employeeData.medicalBenefit.openingBalanceUtilized !== null && employeeData.medicalBenefit.openingBalanceUtilized !== undefined)
+                    ? Number(employeeData.medicalBenefit.openingBalanceUtilized)
+                    : 0,
+                notes: typeof employeeData.medicalBenefit.notes === 'string' ? employeeData.medicalBenefit.notes.trim() : ''
+            };
         }
 
         if (!canEditBankDetails(role)) {
@@ -1987,11 +2005,19 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
     const authReq = req as AuthRequest;
     try {
         const role = authReq.user?.role || '';
-        const isAdmin = role === 'super-admin' || role === 'admin' || role === 'manager';
+        const isAdmin = role === 'super-admin' || role === 'admin' || role === 'hr';
 
         // Exclude fileData to prevent pulling hundreds of megabytes into Node.js memory
         const employee = await Employee.findOne({ employeeId: req.params.id }).select('-attachments.fileData');
         if (!employee) return res.status(404).json({ message: 'Employee not found' });
+
+        // Non-admins (employees and managers) can ONLY update their own record
+        if (!isAdmin) {
+            const currentEmployee = await Employee.findOne({ userId: authReq.user?.userId }).lean() as any;
+            if (!currentEmployee || currentEmployee.employeeId !== employee.employeeId) {
+                return res.status(403).json({ message: 'You do not have permission to update other employees' });
+            }
+        }
 
         const canView = await canViewEmployee(
             role,
@@ -2016,7 +2042,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         ];
         const ADMIN_EXTRA_FIELDS = [
             'jobInfo', 'employmentStatus', 'salaryComponents', 'financeInfo', 'benefits', 
-            'employeeId', 'biometricPin', 'avatar', 'providentFundBalance', 'salaryHistory'
+            'employeeId', 'biometricPin', 'avatar', 'providentFundBalance', 'salaryHistory', 'medicalBenefit'
         ];
 
         const allowedFields = isAdmin
@@ -2028,14 +2054,32 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
-        // Only super-admin and hr can edit salary / financial components
-        const canEditFinancials = ['super-admin', 'hr'].includes(role);
+        // Only super-admin, hr, admin, and finance can edit salary / financial components / medical benefits
+        const canEditFinancials = ['super-admin', 'hr', 'admin', 'finance'].includes(role);
         if (!canEditFinancials) {
             delete updates.salaryComponents;
             delete updates.financeInfo;
             delete updates.providentFundBalance;
             delete updates.loans;
             delete updates.salaryHistory;
+            delete updates.medicalBenefit;
+            delete updates.benefits;
+        }
+
+        // Normalize medicalBenefit to prevent CastErrors
+        if (updates.medicalBenefit && typeof updates.medicalBenefit === 'object') {
+            updates.medicalBenefit = {
+                customAnnualLimit: (updates.medicalBenefit.customAnnualLimit !== '' && updates.medicalBenefit.customAnnualLimit !== null && updates.medicalBenefit.customAnnualLimit !== undefined)
+                    ? Number(updates.medicalBenefit.customAnnualLimit)
+                    : undefined,
+                customMonthlyAllowance: (updates.medicalBenefit.customMonthlyAllowance !== '' && updates.medicalBenefit.customMonthlyAllowance !== null && updates.medicalBenefit.customMonthlyAllowance !== undefined)
+                    ? Number(updates.medicalBenefit.customMonthlyAllowance)
+                    : undefined,
+                openingBalanceUtilized: (updates.medicalBenefit.openingBalanceUtilized !== '' && updates.medicalBenefit.openingBalanceUtilized !== null && updates.medicalBenefit.openingBalanceUtilized !== undefined)
+                    ? Number(updates.medicalBenefit.openingBalanceUtilized)
+                    : 0,
+                notes: typeof updates.medicalBenefit.notes === 'string' ? updates.medicalBenefit.notes.trim() : ''
+            };
         }
 
         // Bank account details may only be updated by HR / Finance / Admin — not by employees themselves
