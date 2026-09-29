@@ -16,6 +16,7 @@ import {
 } from '../utils/email';
 import { extractAndAnalyzeReceipts, analyzeReceipts } from '../services/receiptExtraction';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { calculateEmployeeMedicalAccrual } from '../utils/medicalAccrual';
 import logger from '../utils/logger';
 
 const router = express.Router();
@@ -202,11 +203,12 @@ async function resolveClaimLimits(
     submitterUserId: string,
     amountRequested: number,
     excludeClaimId?: string
-): Promise<{ catDoc: any; amountAllowed: number; limit: number; outOfPolicy: boolean }> {
+): Promise<{ catDoc: any; amountAllowed: number; limit: number; outOfPolicy: boolean; medicalAccrual?: any }> {
     const catDoc = await ExpenseCategory.findOne({ name: category });
     if (!catDoc) throw Object.assign(new Error('Invalid category'), { status: 400 });
 
     let limit = catDoc.policyLimit && catDoc.policyLimit > 0 ? catDoc.policyLimit : 9999999;
+    let medicalAccrual: any = null;
 
     const empDoc = await Employee.findOne({ userId: submitterUserId }).lean() as any;
 
@@ -215,27 +217,10 @@ async function resolveClaimLimits(
         const startOfYear = new Date(currentYear, 0, 1);
         const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
 
-        let baseLimit = catDoc.policyLimit || 60000;
-        if (empDoc?.medicalBenefit?.customAnnualLimit && empDoc.medicalBenefit.customAnnualLimit > 0) {
-            baseLimit = empDoc.medicalBenefit.customAnnualLimit;
-        }
-
-        // Pro-rate if joined in current year
-        if (empDoc?.jobInfo?.joiningDate) {
-            const joiningDate = new Date(empDoc.jobInfo.joiningDate);
-            if (joiningDate.getFullYear() === currentYear) {
-                const joiningMonth = joiningDate.getMonth(); // 0 to 11
-                const activeMonths = 12 - joiningMonth;
-                baseLimit = Math.round((activeMonths / 12) * baseLimit);
-            }
-        }
-
-        const openingUtilized = empDoc?.medicalBenefit?.openingBalanceUtilized || 0;
-
         const query: any = {
             employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
             category: 'Medical',
-            status: { $nin: ['Draft', 'Declined', 'Action Required', 'Cancelled'] },
+            status: { $nin: ['Draft', 'Declined', 'Cancelled'] },
             createdAt: { $gte: startOfYear, $lte: endOfYear },
         };
         if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
@@ -244,12 +229,8 @@ async function resolveClaimLimits(
 
         const existingClaims = await ExpenseClaim.find(query).lean() as any[];
 
-        const claimedSoFar = existingClaims.reduce((sum, c) => {
-            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
-            return sum + amount;
-        }, 0);
-
-        limit = Math.max(0, baseLimit - openingUtilized - claimedSoFar);
+        medicalAccrual = calculateEmployeeMedicalAccrual(empDoc, existingClaims, new Date(), catDoc.policyLimit || 60000);
+        limit = medicalAccrual.remainingBalance;
     } else if (catDoc.policyLimit && catDoc.policyLimit > 0) {
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(currentYear, 0, 1);
@@ -263,6 +244,7 @@ async function resolveClaimLimits(
         if (excludeClaimId && mongoose.isValidObjectId(excludeClaimId)) {
             query._id = { $ne: new mongoose.Types.ObjectId(excludeClaimId) };
         }
+
         const existingClaims = await ExpenseClaim.find(query).lean() as any[];
 
         const claimedSoFar = existingClaims.reduce((sum, c) => {
@@ -275,7 +257,8 @@ async function resolveClaimLimits(
 
     const amountAllowed = Math.min(amountRequested, limit);
     const outOfPolicy = amountRequested > limit;
-    return { catDoc, amountAllowed, limit, outOfPolicy };
+
+    return { catDoc, amountAllowed, limit, outOfPolicy, medicalAccrual };
 }
 
 // Preview receipt scan + flags BEFORE submit (no claim created)
@@ -414,29 +397,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         }
 
         const flags: string[] = [];
-        let limit = catDoc.policyLimit && catDoc.policyLimit > 0 ? catDoc.policyLimit : 9999999;
-
-        if (catDoc.policyLimit && catDoc.policyLimit > 0) {
-            const currentYear = new Date().getFullYear();
-            const startOfYear = new Date(currentYear, 0, 1);
-            const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
-            const existingClaims = await ExpenseClaim.find({
-                employeeUserId: new mongoose.Types.ObjectId(String(submitterUserId)),
-                category: category,
-                status: { $nin: ['Draft', 'Declined', 'Cancelled'] },
-                createdAt: { $gte: startOfYear, $lte: endOfYear }
-            }).lean() as any[];
-
-            const claimedSoFar = existingClaims.reduce((sum, c) => {
-                const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
-                return sum + amount;
-            }, 0);
-
-            limit = Math.max(0, catDoc.policyLimit - claimedSoFar);
-        }
-
-        const amountAllowed = Math.min(amountRequested, limit);
-        const outOfPolicy = amountRequested > limit;
+        const { amountAllowed, limit, outOfPolicy } = await resolveClaimLimits(category, submitterUserId, amountRequested);
 
         if (outOfPolicy) {
             if (!isAdminLike(role)) {
@@ -2001,36 +1962,7 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
                 (empIdStr && String(c.employeeId) === empIdStr)
             );
 
-            let baseLimit = emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0
-                ? emp.medicalBenefit.customAnnualLimit
-                : defaultAnnualLimit;
-
-            let isMidYearJoiner = false;
-            let activeMonths = 12;
-            if (emp.jobInfo?.joiningDate) {
-                const jd = new Date(emp.jobInfo.joiningDate);
-                if (jd.getFullYear() === currentYear) {
-                    isMidYearJoiner = true;
-                    activeMonths = 12 - jd.getMonth();
-                    baseLimit = Math.round((activeMonths / 12) * baseLimit);
-                }
-            }
-
-            const openingUtilized = emp.medicalBenefit?.openingBalanceUtilized || 0;
-
-            const approvedClaims = empClaims.filter(c => c.status === 'Approved');
-            const pendingClaims = empClaims.filter(c => c.status !== 'Approved');
-
-            const ytdApproved = approvedClaims.reduce((sum, c) => {
-                const amt = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
-                return sum + amt;
-            }, 0);
-
-            const ytdPending = pendingClaims.reduce((sum, c) => sum + (c.amountRequested || 0), 0);
-
-            const totalUtilized = openingUtilized + ytdApproved;
-            const remainingBalance = Math.max(0, baseLimit - totalUtilized);
-            const utilizationPct = baseLimit > 0 ? Math.min(100, Math.round((totalUtilized / baseLimit) * 100)) : 0;
+            const accrual = calculateEmployeeMedicalAccrual(emp, empClaims, new Date(), defaultAnnualLimit);
 
             return {
                 employeeId: emp.employeeId,
@@ -2038,24 +1970,29 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
                 department: emp.jobInfo?.department || '—',
                 designation: emp.jobInfo?.designation || '—',
                 joiningDate: emp.jobInfo?.joiningDate || null,
-                isMidYearJoiner,
-                activeMonths,
-                annualLimit: baseLimit,
-                customLimitSet: !!(emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0),
-                openingBalanceUtilized: openingUtilized,
-                ytdApproved,
-                ytdPending,
-                totalUtilized,
-                remainingBalance,
-                utilizationPct,
-                isMaxedOut: remainingBalance <= 0,
+                isMidYearJoiner: accrual.isMidYearJoiner,
+                activeMonths: accrual.eligibleMonths,
+                monthlyAllowance: accrual.monthlyAllowance,
+                eligibleMonths: accrual.eligibleMonths,
+                accruedBalance: accrual.accruedBalance,
+                annualLimit: accrual.annualCap,
+                customLimitSet: !!((emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0) || (emp.medicalBenefit?.customMonthlyAllowance && emp.medicalBenefit.customMonthlyAllowance > 0)),
+                openingBalanceUtilized: accrual.openingBalanceUtilized,
+                ytdApproved: accrual.ytdApproved,
+                ytdPending: accrual.ytdPending,
+                totalUtilized: accrual.totalUtilized,
+                remainingBalance: accrual.remainingBalance,
+                utilizationPct: accrual.utilizationPct,
+                isMaxedOut: accrual.isMaxedOut,
                 claimCount: empClaims.length,
                 notes: emp.medicalBenefit?.notes || ''
             };
         });
 
         const totalAllocated = records.reduce((s, r) => s + r.annualLimit, 0);
+        const totalAccrued = records.reduce((s, r) => s + (r.accruedBalance || 0), 0);
         const totalUtilized = records.reduce((s, r) => s + r.totalUtilized, 0);
+        const totalRemaining = records.reduce((s, r) => s + r.remainingBalance, 0);
         const totalMaxedOut = records.filter(r => r.isMaxedOut).length;
 
         res.json({
@@ -2065,8 +2002,9 @@ router.get('/medical-records', authenticate, async (req: Request, res: Response,
                 summary: {
                     totalEmployees: records.length,
                     totalAllocated,
+                    totalAccrued,
                     totalUtilized,
-                    totalRemaining: Math.max(0, totalAllocated - totalUtilized),
+                    totalRemaining,
                     totalMaxedOut
                 }
             }
@@ -2084,16 +2022,21 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
         const role = authReq.user?.role || 'employee';
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-        const emp = await Employee.findOne({
-            $or: [
-                { employeeId: req.params.employeeId },
-                { _id: mongoose.isValidObjectId(req.params.employeeId) ? req.params.employeeId : undefined }
-            ]
-        }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+        let emp: any = null;
+        if (req.params.employeeId === 'me') {
+            emp = await Employee.findOne({ userId }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+        } else {
+            emp = await Employee.findOne({
+                $or: [
+                    { employeeId: req.params.employeeId },
+                    { _id: mongoose.isValidObjectId(req.params.employeeId) ? req.params.employeeId : undefined }
+                ]
+            }).select('employeeId firstName middleName lastName jobInfo medicalBenefit userId dependents').lean() as any;
+        }
 
         if (!emp) return res.status(404).json({ message: 'Employee not found' });
 
-        const isSelf = String(emp.userId) === String(userId);
+        const isSelf = String(emp.userId) === String(userId) || String(emp.employeeId) === String(req.params.employeeId);
         if (!isSelf && !['super-admin', 'admin', 'hr'].includes(role)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
@@ -2104,21 +2047,6 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
 
         const medicalCat = await ExpenseCategory.findOne({ name: 'Medical' }).lean() as any;
         const defaultAnnualLimit = medicalCat?.policyLimit || 60000;
-
-        let baseLimit = emp.medicalBenefit?.customAnnualLimit && emp.medicalBenefit.customAnnualLimit > 0
-            ? emp.medicalBenefit.customAnnualLimit
-            : defaultAnnualLimit;
-
-        let isMidYearJoiner = false;
-        let activeMonths = 12;
-        if (emp.jobInfo?.joiningDate) {
-            const jd = new Date(emp.jobInfo.joiningDate);
-            if (jd.getFullYear() === currentYear) {
-                isMidYearJoiner = true;
-                activeMonths = 12 - jd.getMonth();
-                baseLimit = Math.round((activeMonths / 12) * baseLimit);
-            }
-        }
 
         const claims = await ExpenseClaim.find({
             $or: [
@@ -2132,18 +2060,8 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
         .sort({ createdAt: -1 })
         .lean() as any[];
 
-        const openingUtilized = emp.medicalBenefit?.openingBalanceUtilized || 0;
+        const accrual = calculateEmployeeMedicalAccrual(emp, claims, new Date(), defaultAnnualLimit);
         const approvedClaims = claims.filter(c => c.status === 'Approved');
-        const pendingClaims = claims.filter(c => c.status !== 'Approved' && c.status !== 'Declined' && c.status !== 'Draft');
-
-        const ytdApproved = approvedClaims.reduce((sum, c) => {
-            const amt = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
-            return sum + amt;
-        }, 0);
-
-        const ytdPending = pendingClaims.reduce((sum, c) => sum + (c.amountRequested || 0), 0);
-        const totalUtilized = openingUtilized + ytdApproved;
-        const remainingBalance = Math.max(0, baseLimit - totalUtilized);
 
         // Group by subcategory
         const subcategoryBreakdown: Record<string, number> = {
@@ -2171,20 +2089,23 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
                     department: emp.jobInfo?.department,
                     designation: emp.jobInfo?.designation,
                     joiningDate: emp.jobInfo?.joiningDate,
-                    isMidYearJoiner,
-                    activeMonths,
+                    isMidYearJoiner: accrual.isMidYearJoiner,
+                    activeMonths: accrual.eligibleMonths,
                     medicalBenefit: emp.medicalBenefit || {},
                     dependents: emp.dependents || []
                 },
                 summary: {
-                    annualLimit: baseLimit,
-                    openingBalanceUtilized: openingUtilized,
-                    ytdApproved,
-                    ytdPending,
-                    totalUtilized,
-                    remainingBalance,
-                    isMaxedOut: remainingBalance <= 0,
-                    utilizationPct: baseLimit > 0 ? Math.min(100, Math.round((totalUtilized / baseLimit) * 100)) : 0
+                    monthlyAllowance: accrual.monthlyAllowance,
+                    eligibleMonths: accrual.eligibleMonths,
+                    accruedBalance: accrual.accruedBalance,
+                    annualLimit: accrual.annualCap,
+                    openingBalanceUtilized: accrual.openingBalanceUtilized,
+                    ytdApproved: accrual.ytdApproved,
+                    ytdPending: accrual.ytdPending,
+                    totalUtilized: accrual.totalUtilized,
+                    remainingBalance: accrual.remainingBalance,
+                    isMaxedOut: accrual.isMaxedOut,
+                    utilizationPct: accrual.utilizationPct
                 },
                 subcategoryBreakdown,
                 claims
@@ -2195,7 +2116,7 @@ router.get('/medical-records/:employeeId', authenticate, async (req: Request, re
     }
 });
 
-// ── Adjust Custom Annual Limit or Opening Balance (HR / Admin) ───────────
+// ── Adjust Custom Limits or Opening Balance (HR / Admin) ───────────
 router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
@@ -2204,7 +2125,7 @@ router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Re
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
-        const { customAnnualLimit, openingBalanceUtilized, notes } = req.body || {};
+        const { customAnnualLimit, customMonthlyAllowance, openingBalanceUtilized, notes } = req.body || {};
 
         const emp = await Employee.findOne({
             $or: [
@@ -2218,6 +2139,9 @@ router.patch('/medical-records/:employeeId/adjust', authenticate, async (req: Re
         emp.medicalBenefit = emp.medicalBenefit || {};
         if (customAnnualLimit !== undefined) {
             emp.medicalBenefit.customAnnualLimit = customAnnualLimit === '' || customAnnualLimit === null ? undefined : Number(customAnnualLimit);
+        }
+        if (customMonthlyAllowance !== undefined) {
+            emp.medicalBenefit.customMonthlyAllowance = customMonthlyAllowance === '' || customMonthlyAllowance === null ? undefined : Number(customMonthlyAllowance);
         }
         if (openingBalanceUtilized !== undefined) {
             emp.medicalBenefit.openingBalanceUtilized = openingBalanceUtilized === '' || openingBalanceUtilized === null ? 0 : Number(openingBalanceUtilized);

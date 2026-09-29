@@ -40,6 +40,8 @@ import {
     BookOpen,
     ExternalLink,
 } from 'lucide-react';
+import MedicalAccrualCards from '../../components/MedicalAccrualCards';
+import { calculateClientMedicalAccrual } from '../../utils/medicalAccrual';
 
 type ForWhom = 'Self' | 'Dependent';
 
@@ -288,9 +290,11 @@ const ExpenseClaimDashboard = () => {
     const [adjustModalOpen, setAdjustModalOpen] = useState(false);
     const [adjustEmp, setAdjustEmp] = useState<any>(null);
     const [adjustAnnualLimit, setAdjustAnnualLimit] = useState<number | ''>('');
+    const [adjustMonthlyAllowance, setAdjustMonthlyAllowance] = useState<number | ''>('');
     const [adjustOpeningBalance, setAdjustOpeningBalance] = useState<number | ''>('');
     const [adjustNotes, setAdjustNotes] = useState('');
     const [adjusting, setAdjusting] = useState(false);
+    const [decisionMedicalSummary, setDecisionMedicalSummary] = useState<any>(null);
 
     // Amend & Resubmit Modal state
     const [amendOpen, setAmendOpen] = useState(false);
@@ -407,8 +411,18 @@ const ExpenseClaimDashboard = () => {
         }
     };
 
+    const submitMedicalAccrual = useMemo(() => {
+        if (category !== 'Medical') return null;
+        const activeEmp = (isAdminLike && selectedEmployeeId ? allEmployees.find(e => e.employeeId === selectedEmployeeId) : employee) || employee;
+        const relevantClaims = (isAdminLike && selectedEmployeeId ? history.filter((c: any) => c.employeeId === selectedEmployeeId) : mine) || [];
+        return calculateClientMedicalAccrual(activeEmp, relevantClaims, expenseDate ? new Date(expenseDate) : new Date());
+    }, [category, isAdminLike, selectedEmployeeId, allEmployees, employee, history, mine, expenseDate]);
+
     const remainingMedicalLimit = useMemo(() => {
         if (!category) return 0;
+        if (category === 'Medical') {
+            return submitMedicalAccrual?.remainingBalance ?? 0;
+        }
         const selectedCat = categories.find(c => c.name === category);
         if (!selectedCat || !selectedCat.policyLimit) return 0;
 
@@ -436,7 +450,7 @@ const ExpenseClaimDashboard = () => {
         }, 0);
 
         return Math.max(0, selectedCat.policyLimit - claimedSoFar);
-    }, [category, categories, mine, history, selectedEmployeeId, isAdminLike]);
+    }, [category, submitMedicalAccrual, categories, mine, history, selectedEmployeeId, isAdminLike]);
 
     const fetchEmployee = useCallback(async () => {
         if (!user?.id) return;
@@ -559,6 +573,7 @@ const ExpenseClaimDashboard = () => {
     const openAdjustModal = (empRecord: any) => {
         setAdjustEmp(empRecord);
         setAdjustAnnualLimit(empRecord.customLimitSet ? empRecord.annualLimit : '');
+        setAdjustMonthlyAllowance(empRecord.monthlyAllowance !== 5000 ? empRecord.monthlyAllowance : '');
         setAdjustOpeningBalance(empRecord.openingBalanceUtilized || '');
         setAdjustNotes(empRecord.notes || '');
         setAdjustModalOpen(true);
@@ -571,6 +586,8 @@ const ExpenseClaimDashboard = () => {
             const payload: any = {};
             if (adjustAnnualLimit !== '') payload.customAnnualLimit = Number(adjustAnnualLimit);
             else payload.customAnnualLimit = null;
+            if (adjustMonthlyAllowance !== '') payload.customMonthlyAllowance = Number(adjustMonthlyAllowance);
+            else payload.customMonthlyAllowance = null;
             if (adjustOpeningBalance !== '') payload.openingBalanceUtilized = Number(adjustOpeningBalance);
             else payload.openingBalanceUtilized = 0;
             payload.notes = adjustNotes;
@@ -1138,33 +1155,21 @@ const ExpenseClaimDashboard = () => {
         }
     };
 
-    const decisionClaimRemainingLimit = useMemo(() => {
-        if (!decisionClaim || !decisionClaim.employeeId) return null;
-        if (decisionClaim.category !== 'Medical') return null;
-
-        const currentYear = new Date().getFullYear();
-        const startOfYear = new Date(currentYear, 0, 1).getTime();
-        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999).getTime();
+    const decisionMedicalAccrualData = useMemo(() => {
+        if (!decisionClaim || decisionClaim.category !== 'Medical') return null;
+        if (decisionMedicalSummary) return decisionMedicalSummary;
 
         const allLoadedClaims = [...history, ...approvals, ...mine];
         const uniqueClaims = Array.from(new Map(allLoadedClaims.map(c => [c._id, c])).values());
+        const claimantEmp = allEmployees.find(e => e.employeeId === decisionClaim.employeeId) || employee;
+        return calculateClientMedicalAccrual(claimantEmp, uniqueClaims, decisionClaim.expenseDate ? new Date(decisionClaim.expenseDate) : new Date());
+    }, [decisionClaim, decisionMedicalSummary, history, approvals, mine, allEmployees, employee]);
 
-        const claimantClaims = uniqueClaims.filter((c: any) => {
-            if (c.employeeId !== decisionClaim.employeeId) return false;
-            if (c.category !== 'Medical') return false;
-            if (c.status === 'Draft' || c.status === 'Declined') return false;
-            if (c._id === decisionClaim._id) return false;
-            const createdAt = new Date(c.createdAt).getTime();
-            return createdAt >= startOfYear && createdAt <= endOfYear;
-        });
-
-        const claimedSoFar = claimantClaims.reduce((sum: number, c: any) => {
-            const amount = typeof c.approvedTotal === 'number' ? c.approvedTotal : c.amountAllowed;
-            return sum + amount;
-        }, 0);
-
-        return Math.max(0, 60000 - claimedSoFar);
-    }, [decisionClaim, history, approvals, mine]);
+    const decisionClaimRemainingLimit = useMemo(() => {
+        if (!decisionClaim || !decisionClaim.employeeId) return null;
+        if (decisionClaim.category !== 'Medical') return null;
+        return decisionMedicalAccrualData?.remainingBalance ?? 0;
+    }, [decisionClaim, decisionMedicalAccrualData]);
 
     // Receipt preview state
     const [receiptBlobs, setReceiptBlobs] = useState<Record<string, string>>({});
@@ -1224,6 +1229,19 @@ const ExpenseClaimDashboard = () => {
         setDecisionErpId(c?.erpReferenceId || '');
         setReceiptBlobs({});
         setLightboxIndex(null);
+        setDecisionMedicalSummary(null);
+
+        if (c?.category === 'Medical' && c?.employeeId) {
+            fetch(api.medicalRecordEmployee(c.employeeId), { headers })
+                .then(r => r.json())
+                .then(d => {
+                    if (d?.success && d?.data?.summary) {
+                        setDecisionMedicalSummary(d.data.summary);
+                    }
+                })
+                .catch(() => {});
+        }
+
         setDecisionOpen(true);
 
         // Pre-fetch all receipts so the reviewer can see them inline
@@ -1962,6 +1980,18 @@ const ExpenseClaimDashboard = () => {
                                 </div>
                             )}
 
+
+                            {category === 'Medical' && (
+                                <div className="lg:col-span-2 py-1">
+                                    <MedicalAccrualCards
+                                        accrual={submitMedicalAccrual}
+                                        currentClaimAmount={amountRequested}
+                                        title={selectedEmployeeId ? `Medical Entitlement for ${allEmployees.find(e => e.employeeId === selectedEmployeeId)?.firstName || 'Employee'}` : 'Your Medical Entitlement & Accrual'}
+                                        subtitle="Accrues PKR 5,000 / month"
+                                        compact={true}
+                                    />
+                                </div>
+                            )}
 
                             <div>
                                 <label className="text-xs font-bold text-slate-600">Amount Requested (PKR)</label>
@@ -3005,11 +3035,12 @@ const ExpenseClaimDashboard = () => {
                                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
                                             <th className="text-left px-4 py-3 font-semibold">Employee</th>
                                             <th className="text-left px-4 py-3 font-semibold">Dept / Designation</th>
-                                            <th className="text-left px-4 py-3 font-semibold">Annual Limit</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Monthly Rate</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Accrued To Date</th>
                                             <th className="text-left px-4 py-3 font-semibold">Total Utilized</th>
-                                            <th className="text-left px-4 py-3 font-semibold min-w-[180px]">Utilization Bar</th>
-                                            <th className="text-left px-4 py-3 font-semibold">Remaining</th>
-                                            <th className="text-left px-4 py-3 font-semibold">Status</th>
+                                            <th className="text-left px-4 py-3 font-semibold min-w-[160px]">Accrual Progress</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Remaining Accrued</th>
+                                            <th className="text-left px-4 py-3 font-semibold">Annual Cap</th>
                                             <th className="text-right px-4 py-3 font-semibold">Actions</th>
                                         </tr>
                                     </thead>
@@ -3037,11 +3068,13 @@ const ExpenseClaimDashboard = () => {
                                                         <div className="font-medium text-slate-700">{rec.designation}</div>
                                                         <div className="text-slate-400">{rec.department}</div>
                                                     </td>
-                                                    <td className="px-4 py-3 align-middle whitespace-nowrap font-bold text-slate-700">
-                                                        <div>{formatMoney(rec.annualLimit)}</div>
-                                                        {rec.customLimitSet && (
-                                                            <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded font-bold">Custom Limit</span>
-                                                        )}
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap font-bold text-sky-800">
+                                                        <div>{formatMoney(rec.monthlyAllowance || 5000)}</div>
+                                                        <span className="text-[10px] text-slate-400 font-normal">/ month</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap font-bold text-indigo-900">
+                                                        <div>{formatMoney(rec.accruedBalance)}</div>
+                                                        <span className="text-[10px] text-indigo-600 font-medium">{rec.eligibleMonths} mos accrued</span>
                                                     </td>
                                                     <td className="px-4 py-3 align-middle whitespace-nowrap">
                                                         <div className="font-bold text-slate-800">{formatMoney(rec.totalUtilized)}</div>
@@ -3051,7 +3084,7 @@ const ExpenseClaimDashboard = () => {
                                                             </div>
                                                         )}
                                                     </td>
-                                                    <td className="px-4 py-3 align-middle min-w-[180px]">
+                                                    <td className="px-4 py-3 align-middle min-w-[160px]">
                                                         <div className="space-y-1">
                                                             <div className="flex justify-between text-[11px] font-bold">
                                                                 <span className={rec.utilizationPct >= 100 ? 'text-rose-600' : rec.utilizationPct >= 75 ? 'text-amber-600' : 'text-emerald-600'}>
@@ -3081,6 +3114,12 @@ const ExpenseClaimDashboard = () => {
                                                             <div className="text-[10px] text-amber-600 font-bold">
                                                                 Pending: {formatMoney(rec.ytdPending)}
                                                             </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle whitespace-nowrap font-medium text-slate-500 text-xs">
+                                                        <div>{formatMoney(rec.annualLimit)}</div>
+                                                        {rec.customLimitSet && (
+                                                            <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded font-bold">Custom</span>
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 align-middle whitespace-nowrap">
@@ -3516,9 +3555,9 @@ const ExpenseClaimDashboard = () => {
                                             <div className="font-extrabold text-indigo-800 text-sm">{formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}</div>
                                         </div>
                                         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-                                            <div className="flex items-center gap-1.5 text-emerald-400 text-[11px] font-bold mb-1">
+                                            <div className="flex items-center gap-1.5 text-emerald-600 text-[11px] font-bold mb-1">
                                                 <ShieldCheck size={11} />
-                                                {decisionClaim.category === 'Medical' ? 'REMAINING LIMIT' : 'POLICY LIMIT'}
+                                                {decisionClaim.category === 'Medical' ? 'REMAINING ACCRUED' : 'POLICY LIMIT'}
                                             </div>
                                             <div className="font-bold text-emerald-700 text-sm">
                                                 {decisionClaim.category === 'Medical' && typeof decisionClaimRemainingLimit === 'number'
@@ -3538,6 +3577,20 @@ const ExpenseClaimDashboard = () => {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* Suggestion 2: Compact Medical Accrual Cards in Claim Review Modal */}
+                                    {decisionClaim.category === 'Medical' && (
+                                        <div className="p-3 bg-slate-50/80 border border-slate-200/80 rounded-2xl">
+                                            <MedicalAccrualCards
+                                                accrual={decisionMedicalAccrualData}
+                                                currentClaimAmount={decisionClaim.amountRequested}
+                                                currency={decisionClaim.currency}
+                                                title="Claimant Medical Entitlement & Accrual"
+                                                subtitle={`${decisionClaim.employeeDetails?.employeeId || decisionClaim.employeeId || ''}`}
+                                                compact={true}
+                                            />
+                                        </div>
+                                    )}
 
                                     {/* For whom */}
                                     {(decisionClaim.forWhom || decisionClaim.dependentName) && (
@@ -4916,6 +4969,18 @@ const ExpenseClaimDashboard = () => {
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 />
                                 <p className="text-[10px] text-slate-400 mt-1">If blank, policy limit or joining pro-ration is used.</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-700">Custom Monthly Allowance (PKR)</label>
+                                <input
+                                    type="number"
+                                    value={adjustMonthlyAllowance}
+                                    onChange={e => setAdjustMonthlyAllowance(e.target.value === '' ? '' : Number(e.target.value))}
+                                    placeholder="Leave empty to use policy default (PKR 5,000 / mo)"
+                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Default is PKR 5,000 / month ($60,000 annual / 12).</p>
                             </div>
 
                             <div>

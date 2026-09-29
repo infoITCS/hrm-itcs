@@ -112,6 +112,7 @@ export interface IEmployee extends Document {
     }[];
     medicalBenefit?: {
         customAnnualLimit?: number;
+        customMonthlyAllowance?: number;
         openingBalanceUtilized?: number;
         notes?: string;
     };
@@ -316,6 +317,7 @@ const EmployeeSchema: Schema = new Schema({
     }],
     medicalBenefit: {
         customAnnualLimit: { type: Number },
+        customMonthlyAllowance: { type: Number },
         openingBalanceUtilized: { type: Number, default: 0 },
         notes: { type: String }
     },

@@ -5,8 +5,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
-    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock, Utensils
+    DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock, Utensils,
+    ShieldCheck
 } from 'lucide-react';
+import MedicalAccrualCards from '../../components/MedicalAccrualCards';
+import { calculateClientMedicalAccrual } from '../../utils/medicalAccrual';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -53,6 +56,10 @@ const EmployeeProfile = () => {
     const isAdmin = ['super-admin', 'admin', 'hr'].includes(role);
     const canViewFinancials = ['super-admin', 'finance', 'hr'].includes(role);
     const isSuperAdmin = role === 'super-admin';
+
+    // Medical benefits state
+    const [medicalRecordData, setMedicalRecordData] = useState<any>(null);
+    const [loadingMedicalRecord, setLoadingMedicalRecord] = useState(false);
 
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
@@ -102,6 +109,27 @@ const EmployeeProfile = () => {
         }
     }, []);
 
+    const fetchMedicalRecord = useCallback(async (empId: string) => {
+        if (!empId) return;
+        const token = localStorage.getItem('token');
+        setLoadingMedicalRecord(true);
+        try {
+            const res = await fetch(api.medicalRecordEmployee(empId), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const d = await res.json();
+                if (d?.success && d?.data) {
+                    setMedicalRecordData(d.data);
+                }
+            }
+        } catch {
+            // ignore
+        } finally {
+            setLoadingMedicalRecord(false);
+        }
+    }, []);
+
     useEffect(() => {
         fetchEmployee();
         if (role === 'super-admin') {
@@ -109,6 +137,12 @@ const EmployeeProfile = () => {
         }
         fetchAllEmployees();
     }, [id, role, fetchEmployee, fetchAuditLogs, fetchAllEmployees]);
+
+    useEffect(() => {
+        if (employee?.employeeId) {
+            fetchMedicalRecord(employee.employeeId);
+        }
+    }, [employee?.employeeId, fetchMedicalRecord]);
 
     const [localAvatarPreview, setLocalAvatarPreview] = useState<string | null>(null);
     const [viewingAvatarUrl, setViewingAvatarUrl] = useState<string | null>(null);
@@ -990,9 +1024,63 @@ const EmployeeProfile = () => {
                 {/* Benefits Tab */}
                 {activeTab === 'benefits' && (
                     <div className="space-y-6 animate-fadeIn">
+                        {/* OPD Medical Entitlement & Accrual (Suggestion 2) */}
+                        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                                <div>
+                                    <h3 className="font-extrabold text-slate-800 text-base flex items-center gap-2">
+                                        <ShieldCheck size={20} className="text-emerald-600" />
+                                        OPD Medical Allowance & Accrual
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Monthly medical allowance (PKR 5,000 / month) accruing across the calendar year.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate(`/claims?tab=medical-records&emp=${employee.employeeId}`)}
+                                        className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <FileText size={14} /> Full Medical Ledger
+                                    </button>
+                                </div>
+                            </div>
+
+                            {loadingMedicalRecord ? (
+                                <div className="py-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                                    <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                    <span>Loading medical entitlement records…</span>
+                                </div>
+                            ) : (
+                                <MedicalAccrualCards
+                                    accrual={medicalRecordData?.summary || calculateClientMedicalAccrual(employee)}
+                                    title="Employee Medical Entitlement"
+                                    subtitle={`ID: ${employee.employeeId}`}
+                                />
+                            )}
+
+                            {/* Subcategory breakdown if any approved claims */}
+                            {medicalRecordData?.subcategoryBreakdown && Object.values(medicalRecordData.subcategoryBreakdown).some((v: any) => v > 0) && (
+                                <div className="pt-2">
+                                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">YTD Approved Subcategory Breakdown</h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {Object.entries(medicalRecordData.subcategoryBreakdown)
+                                            .filter(([_, amt]: [string, any]) => amt > 0)
+                                            .map(([cat, amt]: [string, any]) => (
+                                                <div key={cat} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                                                    <span className="text-slate-500 block truncate" title={cat}>{cat}</span>
+                                                    <span className="font-extrabold text-slate-800">PKR {Number(amt).toLocaleString('en-PK')}</span>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div>
                             <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2 flex items-center gap-2">
-                                <Gift size={20} className="text-indigo-600" /> Company Benefits
+                                <Gift size={20} className="text-indigo-600" /> Additional Company Benefits
                             </h3>
                             {employee.benefits?.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1020,10 +1108,9 @@ const EmployeeProfile = () => {
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-center py-12 text-gray-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                                    <Gift size={48} className="mx-auto mb-4 opacity-20" />
-                                    <p>No benefits assigned yet</p>
-                                    <p className="text-sm mt-1">HR can assign benefits through the edit profile section.</p>
+                                <div className="text-center py-8 text-gray-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                                    <Gift size={36} className="mx-auto mb-2 opacity-30" />
+                                    <p className="text-xs">No additional custom perks assigned.</p>
                                 </div>
                             )}
                         </div>
