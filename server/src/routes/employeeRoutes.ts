@@ -26,7 +26,7 @@ import { canCreateUser, canViewEmployee, canEditSensitiveData, canApproveDocumen
 // removed getDiff import
 import logger from '../utils/logger';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../utils/defaultSalaryComponents';
-import { ensureProbationUpgraded, upgradeCompletedProbations } from '../services/probationUpgradeService';
+import { ensureProbationUpgraded, upgradeCompletedProbations, isProbationPeriodEnded } from '../services/probationUpgradeService';
 import { decryptEmployeeFields } from '../utils/encryption';
 
 
@@ -354,6 +354,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: Function
                 Employee.countDocuments(baseFilter)
             ]);
         } else if (role === 'manager') {
+            await upgradeCompletedProbations();
             // Managers see only their direct reports + their own record
             const managerEmployee = await Employee.findOne({
                 $or: [
@@ -2187,6 +2188,20 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             updates.employmentStatus.probationEndDate = candidateEnd > new Date() ? candidateEnd : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
         }
 
+        // If probation status is active, check if probation end date has already passed
+        const effectiveStatus = updates.employmentStatus?.status || employee.employmentStatus?.status;
+        if (effectiveStatus === 'Probation') {
+            const effectiveProbationEnd = updates.employmentStatus?.probationEndDate || employee.employmentStatus?.probationEndDate;
+            if (isProbationPeriodEnded(effectiveProbationEnd)) {
+                updates.employmentStatus = {
+                    ...(typeof employee.employmentStatus === 'object' ? employee.employmentStatus : {}),
+                    ...(updates.employmentStatus || {}),
+                    status: 'Permanent',
+                    autoUpdated: true
+                };
+            }
+        }
+
         // Strip completely empty arrays from frontend defaults so they don't overwrite DB
         const stripEmptyWizardArrays = (arr: any[], defaultKey: string) => {
             if (!Array.isArray(arr)) return arr;
@@ -2354,8 +2369,8 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
                             { employeeId: req.params.id },
                             ...(updatedEmployee.userId ? [{ employeeUserId: updatedEmployee.userId }] : [])
                         ],
-                        status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
-                        'approvals.stage': { $in: ['lineManager', 'teamLead'] },
+                        status: 'Pending Line Manager',
+                        'approvals.stage': 'lineManager',
                         'approvals.status': 'Pending'
                     },
                     {
@@ -2366,7 +2381,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
                     {
                         arrayFilters: [
                             {
-                                'elem.stage': { $in: ['lineManager', 'teamLead'] },
+                                'elem.stage': 'lineManager',
                                 'elem.status': 'Pending'
                             }
                         ]
@@ -2391,7 +2406,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         // Log action
         await createAuditLog('UPDATE', req.params.id, authReq.user?.userId || 'unknown', { diff });
 
-        res.json(sanitizeEmployeeForRole(updatedEmployee.toObject(), role, authReq.user?.userId));
+        let finalEmployee = updatedEmployee.toObject();
+        finalEmployee = await ensureProbationUpgraded(finalEmployee);
+        res.json(sanitizeEmployeeForRole(finalEmployee, role, authReq.user?.userId));
     } catch (err: any) {
         logger.error(`[EmployeeUpdate] Error updating ${req.params.id}:`, err);
         

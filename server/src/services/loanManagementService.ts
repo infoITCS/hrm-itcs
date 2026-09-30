@@ -192,12 +192,16 @@ export async function buildBatchLoanData() {
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] },
         }).select('employeeId firstName lastName jobInfo loans').lean(),
         EmployeeRequest.find({
-            status: { $in: ['Approved', 'Completed'] },
-            $or: [
-                { category: { $in: ['Loan', 'Request Loan'] } },
-                { requestType: { $in: ['Loan', 'Request Loan'] } },
-                { category: { $regex: /loan/i } }
-            ],
+            $or: [{ status: 'Completed' }, { payoutStatus: 'Paid' }],
+            $and: [
+                {
+                    $or: [
+                        { category: { $in: ['Loan', 'Request Loan'] } },
+                        { requestType: { $in: ['Loan', 'Request Loan'] } },
+                        { category: { $regex: /loan/i } }
+                    ]
+                }
+            ]
         }).sort({ requestedAt: 1 }).lean(),
         Payslip.find({
             status: 'Finalized',
@@ -515,12 +519,16 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
 
     const loanRequests = await EmployeeRequest.find({
         employeeId,
-        status: { $in: ['Approved', 'Completed'] },
-        $or: [
-            { category: { $in: ['Loan', 'Request Loan'] } },
-            { requestType: { $in: ['Loan', 'Request Loan'] } },
-            { category: { $regex: /loan/i } }
-        ],
+        $or: [{ status: 'Completed' }, { payoutStatus: 'Paid' }],
+        $and: [
+            {
+                $or: [
+                    { category: { $in: ['Loan', 'Request Loan'] } },
+                    { requestType: { $in: ['Loan', 'Request Loan'] } },
+                    { category: { $regex: /loan/i } }
+                ]
+            }
+        ]
     }).sort({ requestedAt: 1 }).lean();
 
     const payslips = await Payslip.find({

@@ -119,16 +119,13 @@ Multi-stage approval workflow for employee expense reimbursements with automated
 MEDICAL:
   Employee ➔ HR Review ➔ Finance (Final) ➔ Approved
 
-TRAINING & CERTIFICATION:
-  Employee ➔ Team Lead ➔ HR Review ➔ Finance (Final) ➔ Approved
-
-TRAVEL / SALES / OTHER:
+TRAINING & CERTIFICATION / TRAVEL / SALES / OTHER:
   Employee ➔ Line Manager ➔ HR Review ➔ Finance (Final) ➔ Approved
 ```
 
 ### Claim Statuses & State Machine
 ```
-Draft ➔ Submitted ➔ Pending Team Lead / Line Manager ➔ Pending HR ➔ Pending Finance ➔ Approved
+Draft ➔ Submitted ➔ Pending Line Manager ➔ Pending HR ➔ Pending Finance ➔ Approved
                                     └─────────────── Declined at any stage ───────────────┘
 ```
 * **Admin Override**: Super-Admins and Admins can override any stage, auto-approve all remaining stages, and set the final approved amount directly.

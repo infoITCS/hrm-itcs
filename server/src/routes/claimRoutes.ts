@@ -57,10 +57,10 @@ function sanitizeClaimForJson(doc: any) {
 export async function syncPendingClaimsToCurrentManager(targetEmployeeId?: string): Promise<void> {
     try {
         const query: any = {
-            status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
+            status: 'Pending Line Manager',
             'approvals': {
                 $elemMatch: {
-                    stage: { $in: ['lineManager', 'teamLead'] },
+                    stage: 'lineManager',
                     status: 'Pending'
                 }
             }
@@ -100,7 +100,7 @@ export async function syncPendingClaimsToCurrentManager(targetEmployeeId?: strin
             if (!currentMgrId) continue;
 
             const pendingApproval = claim.approvals?.find(
-                (a: any) => (a.stage === 'lineManager' || a.stage === 'teamLead') && a.status === 'Pending'
+                (a: any) => a.stage === 'lineManager' && a.status === 'Pending'
             );
 
             if (pendingApproval && pendingApproval.assignedToEmployeeId !== currentMgrId) {
@@ -136,7 +136,6 @@ async function buildWorkflow(category: string, catDoc?: any): Promise<ExpenseCla
 }
 
 function stageToStatus(stage: ExpenseClaimApprovalStage): string {
-    if (stage === 'teamLead') return 'Pending Team Lead';
     if (stage === 'lineManager') return 'Pending Line Manager';
     if (stage === 'hr') return 'Pending HR';
     return 'Pending Finance';
@@ -184,7 +183,7 @@ async function generateClaimNo(): Promise<string> {
 }
 
 function roleCanActOnStage(role: string, stage: ExpenseClaimApprovalStage): boolean {
-    if (stage === 'teamLead' || stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr';
+    if (stage === 'lineManager') return role === 'manager' || role === 'admin' || role === 'super-admin' || role === 'hr' || role === 'finance';
     if (stage === 'hr') return role === 'admin' || role === 'super-admin' || role === 'hr';
     if (stage === 'finance') return role === 'admin' || role === 'super-admin' || role === 'finance';
     return false;
@@ -356,7 +355,9 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             forWhom,
             dependentId,
             purpose,
-            amountRequested,
+            amountRequested: rawAmountRequested,
+            mileage,
+            fuelRatePerUnit,
             notes,
             receipts,
         } = req.body || {};
@@ -366,6 +367,15 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const catDoc = await ExpenseCategory.findOne({ name: category });
         if (!catDoc) {
             return res.status(400).json({ message: 'Invalid category' });
+        }
+
+        const resolvedFuelRate = typeof fuelRatePerUnit === 'number' && fuelRatePerUnit > 0
+            ? fuelRatePerUnit
+            : (catDoc.fuelRatePerUnit || 0);
+
+        let amountRequested = typeof rawAmountRequested === 'number' ? rawAmountRequested : 0;
+        if ((!amountRequested || amountRequested <= 0) && typeof mileage === 'number' && mileage > 0 && resolvedFuelRate > 0) {
+            amountRequested = Math.round(mileage * resolvedFuelRate);
         }
         
         if (typeof amountRequested !== 'number' || amountRequested <= 0) {
@@ -479,7 +489,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             status: 'Pending',
             amountAllowed,
             requiresAuthorization: stage === 'hr' && outOfPolicy,
-            ...(stage === 'teamLead' || stage === 'lineManager'
+            ...(stage === 'lineManager'
                 ? { assignedToEmployeeId: reportingManagerId || undefined }
                 : {}),
         }));
@@ -501,6 +511,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             amountRequested,
             amountAllowed,
             approvedTotal: undefined,
+            mileage: typeof mileage === 'number' && mileage > 0 ? mileage : undefined,
+            fuelRatePerUnit: resolvedFuelRate > 0 ? resolvedFuelRate : undefined,
             notes,
             receipts: finalReceipts,
             receiptAnalysis,
@@ -531,7 +543,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             if (doc.status === 'Pending HR') void notifyClaim(hrEmails);
             if (doc.status === 'Pending Finance') void notifyClaim(financeEmails);
         })();
-        if (doc.status === 'Pending Team Lead' || doc.status === 'Pending Line Manager') {
+        if (doc.status === 'Pending Line Manager') {
             (async () => {
                 try {
                     if (reportingManagerId) {
@@ -621,7 +633,7 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             const directReportUserIds = directReports.map((d: any) => d.userId).filter(Boolean);
 
             const claims = await ExpenseClaim.find({
-                status: { $in: ['Pending Line Manager', 'Pending Team Lead'] },
+                status: 'Pending Line Manager',
                 $or: [
                     {
                         'approvals.assignedToEmployeeId': { $in: managerIdentifiers },
@@ -643,12 +655,47 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
 
         let claimsQuery: any;
         if (role === 'finance') {
-            claimsQuery = { status: 'Pending Finance' };
+            await syncPendingClaimsToCurrentManager();
+
+            const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
+            const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
+            const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
+            const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
+
+            const directReports = await Employee.find({ 'jobInfo.reportingManager': { $in: managerIdentifiers } })
+                .select('employeeId userId')
+                .lean() as any[];
+            const directReportEmpIds = directReports.map((d: any) => d.employeeId).filter(Boolean);
+            const directReportUserIds = directReports.map((d: any) => d.userId).filter(Boolean);
+
+            if (directReportEmpIds.length > 0 || directReportUserIds.length > 0) {
+                claimsQuery = {
+                    $or: [
+                        { status: 'Pending Finance' },
+                        {
+                            status: 'Pending Line Manager',
+                            $or: [
+                                {
+                                    'approvals.assignedToEmployeeId': { $in: managerIdentifiers },
+                                    $or: [
+                                        { employeeId: { $in: directReportEmpIds } },
+                                        { employeeUserId: { $in: directReportUserIds } }
+                                    ]
+                                },
+                                { employeeId: { $in: directReportEmpIds } },
+                                { employeeUserId: { $in: directReportUserIds } }
+                            ]
+                        }
+                    ]
+                };
+            } else {
+                claimsQuery = { status: 'Pending Finance' };
+            }
         } else if (role === 'hr') {
             claimsQuery = {
                 $or: [
                     { status: 'Pending HR' },
-                    { status: { $in: ['Pending Line Manager', 'Pending Team Lead'] }, 'approvals.assignedToEmployeeId': { $in: [null, '', undefined] } }
+                    { status: 'Pending Line Manager', 'approvals.assignedToEmployeeId': { $in: [null, '', undefined] } }
                 ]
             };
         } else {
@@ -711,9 +758,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 ? 'HR Manager'
                 : (role === 'finance'
                     ? 'Finance Manager'
-                    : (role === 'manager'
-                        ? 'Line Manager'
-                        : 'Team Lead')));
+                    : 'Line Manager'));
         const actionByName = approverEmp 
             ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
             : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
@@ -743,7 +788,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 const idx = claim.approvals.findIndex((a: any) => a.status === 'Pending');
                 const pending = claim.approvals[idx] as any;
 
-                if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) {
+                if ((role === 'manager' || role === 'finance') && currentStage === 'lineManager') {
                     const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
                     const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
                     const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
@@ -886,25 +931,42 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
         if (isFinalStatus(claim.status)) return res.status(400).json({ message: 'Claim is already finalized' });
 
+        // Auto-bypass: If claim status is 'Pending Finance', ensure any prior pending stage is marked bypassed
+        if (claim.status === 'Pending Finance' && Array.isArray(claim.approvals)) {
+            let healed = false;
+            for (const a of claim.approvals) {
+                if (a.stage !== 'finance' && a.status === 'Pending') {
+                    a.status = 'Approved' as any;
+                    a.comments = a.comments || 'Bypassed by Admin for Finance review';
+                    a.decidedAt = a.decidedAt || new Date();
+                    healed = true;
+                }
+            }
+            if (!claim.approvals.some((a: any) => a.stage === 'finance')) {
+                (claim.approvals as any).push({
+                    stage: 'finance',
+                    status: 'Pending' as any,
+                    amountAllowed: claim.amountAllowed,
+                } as any);
+                healed = true;
+            }
+            if (healed) {
+                claim.markModified('approvals');
+                await claim.save();
+            }
+        }
+
         const currentStage = claim.approvals?.find((a: any) => a.status === 'Pending')?.stage as ExpenseClaimApprovalStage | undefined;
         if (!currentStage) return res.status(400).json({ message: 'Claim has no pending stage' });
         if (!isAdminLike(role) && !roleCanActOnStage(role, currentStage)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
 
-        // Enforce stage-based permissions
-        if ((currentStage === 'hr' || currentStage === 'lineManager') && role === 'finance') {
-            return res.status(403).json({ message: 'Expense claims must be approved by Line Manager / HR before Finance can disburse or approve.' });
-        }
-
-        if (currentStage === 'finance' && decision === 'Approved' && (!erpReferenceId || !String(erpReferenceId).trim())) {
-            return res.status(400).json({ message: 'ERP Transaction Reference ID is required when Finance approves/disburses an expense claim.' });
-        }
-
         const idx = claim.approvals.findIndex((a: any) => a.status === 'Pending');
         const pending = claim.approvals[idx] as any;
 
-        if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) {
+        let isManagerOfSubmitter = false;
+        if (currentStage === 'lineManager') {
             const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
             const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
             const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
@@ -922,15 +984,30 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
                 managerIdentifiers.includes(String(claimSubmitter.jobInfo.reportingManager))
             );
             const isAssigned = managerIdentifiers.includes(String(pending.assignedToEmployeeId || ''));
+            isManagerOfSubmitter = isDirectReport || isAssigned;
 
-            // If the employee has moved to another manager, the old manager cannot decide on this claim
-            if (claimSubmitter?.jobInfo?.reportingManager && !isDirectReport) {
-                return res.status(403).json({ message: 'This employee now reports to a different manager. You cannot decide on this claim.' });
-            }
+            if (role === 'manager') {
+                // If the employee has moved to another manager, the old manager cannot decide on this claim
+                if (claimSubmitter?.jobInfo?.reportingManager && !isDirectReport) {
+                    return res.status(403).json({ message: 'This employee now reports to a different manager. You cannot decide on this claim.' });
+                }
 
-            if (!isAssigned && !isDirectReport) {
-                return res.status(403).json({ message: 'This claim is not assigned to you' });
+                if (!isAssigned && !isDirectReport) {
+                    return res.status(403).json({ message: 'This claim is not assigned to you' });
+                }
             }
+        }
+
+        // Enforce stage-based permissions
+        if (currentStage === 'hr' && role === 'finance') {
+            return res.status(403).json({ message: 'Expense claims must be approved by HR before Finance can disburse or approve.' });
+        }
+        if (currentStage === 'lineManager' && role === 'finance' && !isManagerOfSubmitter && !isAdminLike(role)) {
+            return res.status(403).json({ message: 'Expense claims must be approved by Line Manager before Finance can disburse or approve.' });
+        }
+
+        if (currentStage === 'finance' && decision === 'Approved' && (!erpReferenceId || !String(erpReferenceId).trim())) {
+            return res.status(400).json({ message: 'ERP Transaction Reference ID is required when Finance approves/disburses an expense claim.' });
         }
 
         // Partial approvals (primarily Line Manager / HR): allow approvedAmount <= amountAllowed
@@ -1005,10 +1082,8 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
                     : (role === 'hr'
                         ? 'HR Manager'
                         : (role === 'finance'
-                            ? 'Finance Manager'
-                            : (role === 'manager'
-                                ? 'Line Manager'
-                                : 'Team Lead')));
+                            ? (currentStage === 'lineManager' ? 'Line Manager' : 'Finance Manager')
+                            : 'Line Manager'));
                 const actionByName = approverEmp 
                     ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
                     : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
@@ -1093,6 +1168,14 @@ router.patch('/:id/change-category', authenticate, async (req: Request, res: Res
             return res.status(404).json({ message: `Expense category "${category}" not found` });
         }
 
+        const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
+        const roleLabel = role === 'admin' || role === 'super-admin'
+            ? 'Admin'
+            : (role === 'hr' ? 'HR Manager' : (role === 'finance' ? 'Finance Manager' : 'Approver'));
+        const authorName = approverEmp 
+            ? `${approverEmp.firstName} ${approverEmp.lastName}`.trim() 
+            : `${role.toUpperCase()}`;
+
         const oldCategory = claim.category;
         const oldSubCategories = claim.subCategories || [];
 
@@ -1109,22 +1192,23 @@ router.patch('/:id/change-category', authenticate, async (req: Request, res: Res
 
         // If new category requires Finance only
         if (newCatDoc.assignedTo === 'Finance') {
-            if (claim.status === 'Pending HR') {
+            if (claim.status === 'Pending HR' || claim.status === 'Pending Line Manager') {
                 claim.status = 'Pending Finance';
                 reRouted = true;
+                const priorApproval = claim.approvals.find((a: any) => ['lineManager', 'hr'].includes(a.stage));
+                const bypassedStage = priorApproval?.status === 'Approved' ? priorApproval : {
+                    stage: priorApproval?.stage || 'lineManager',
+                    status: 'Approved',
+                    comments: `Approved & bypassed by Admin on category change to "${newCatDoc.name}" (${authorName})`,
+                    decidedAt: new Date(),
+                    decidedByUserId: new mongoose.Types.ObjectId(String(userId)),
+                    amountAllowed: claim.amountAllowed,
+                    approvedAmount: claim.amountAllowed
+                };
                 (claim.approvals as any) = [
+                    bypassedStage,
                     { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
                 ];
-            } else if (claim.status === 'Pending Line Manager' || claim.status === 'Pending Team Lead') {
-                const managerApproval = claim.approvals.find((a: any) => a.stage === 'lineManager' || a.stage === 'teamLead');
-                if (managerApproval && managerApproval.status === 'Approved') {
-                    claim.status = 'Pending Finance';
-                    reRouted = true;
-                    (claim.approvals as any) = [
-                        managerApproval,
-                        { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
-                    ];
-                }
             } else {
                 const pendingStage = claim.approvals.find((a: any) => a.status === 'Pending');
                 if (pendingStage) pendingStage.amountAllowed = claim.amountAllowed;
@@ -1140,17 +1224,24 @@ router.patch('/:id/change-category', authenticate, async (req: Request, res: Res
                     { stage: 'hr', status: 'Pending', amountAllowed: claim.amountAllowed },
                     { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
                 ];
-            } else if (claim.status === 'Pending Line Manager' || claim.status === 'Pending Team Lead') {
-                const managerApproval = claim.approvals.find((a: any) => a.stage === 'lineManager' || a.stage === 'teamLead');
-                if (managerApproval && managerApproval.status === 'Approved') {
-                    claim.status = 'Pending HR';
-                    reRouted = true;
-                    (claim.approvals as any) = [
-                        managerApproval,
-                        { stage: 'hr', status: 'Pending', amountAllowed: claim.amountAllowed },
-                        { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
-                    ];
-                }
+            } else if (claim.status === 'Pending Line Manager') {
+                claim.status = 'Pending HR';
+                reRouted = true;
+                const managerApproval = claim.approvals.find((a: any) => a.stage === 'lineManager');
+                const bypassedStage = managerApproval?.status === 'Approved' ? managerApproval : {
+                    stage: managerApproval?.stage || 'lineManager',
+                    status: 'Approved',
+                    comments: `Approved & bypassed by Admin on category change to "${newCatDoc.name}" (${authorName})`,
+                    decidedAt: new Date(),
+                    decidedByUserId: new mongoose.Types.ObjectId(String(userId)),
+                    amountAllowed: claim.amountAllowed,
+                    approvedAmount: claim.amountAllowed
+                };
+                (claim.approvals as any) = [
+                    bypassedStage,
+                    { stage: 'hr', status: 'Pending', amountAllowed: claim.amountAllowed },
+                    { stage: 'finance', status: 'Pending', amountAllowed: claim.amountAllowed }
+                ];
             } else {
                 const pendingStage = claim.approvals.find((a: any) => a.status === 'Pending');
                 if (pendingStage) pendingStage.amountAllowed = claim.amountAllowed;
@@ -1158,8 +1249,8 @@ router.patch('/:id/change-category', authenticate, async (req: Request, res: Res
         }
         // If new category requires Manager
         else if (newCatDoc.assignedTo === 'Manager') {
-            const hasManagerApproval = claim.approvals.some((a: any) => (a.stage === 'lineManager' || a.stage === 'teamLead') && a.status === 'Approved');
-            if (!hasManagerApproval && claim.status !== 'Pending Line Manager' && claim.status !== 'Pending Team Lead') {
+            const hasManagerApproval = claim.approvals.some((a: any) => a.stage === 'lineManager' && a.status === 'Approved');
+            if (!hasManagerApproval && claim.status !== 'Pending Line Manager') {
                 claim.status = 'Pending Line Manager';
                 reRouted = true;
                 (claim.approvals as any) = [
@@ -1174,14 +1265,6 @@ router.patch('/:id/change-category', authenticate, async (req: Request, res: Res
         claim.subCategories = Array.isArray(subCategories) ? subCategories : (subCategories ? [subCategories] : []);
 
         // 4. Record audit comment
-        const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
-        const roleLabel = role === 'admin' || role === 'super-admin'
-            ? 'Admin'
-            : (role === 'hr' ? 'HR Manager' : (role === 'finance' ? 'Finance Manager' : 'Approver'));
-        const authorName = approverEmp 
-            ? `${approverEmp.firstName} ${approverEmp.lastName}`.trim() 
-            : `${role.toUpperCase()}`;
-
         const oldCatDisplay = oldCategory + (oldSubCategories.length ? ` (${oldSubCategories.join(', ')})` : '');
         const newCatDisplay = claim.category + (claim.subCategories.length ? ` (${claim.subCategories.join(', ')})` : '');
 
@@ -1247,18 +1330,132 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
         const { status, approvedTotal, notes } = req.body || {};
-        const allowedStatuses = ['Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'];
+        const allowedStatuses = ['Submitted', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'];
         if (status && !allowedStatuses.includes(status)) return res.status(400).json({ message: 'Invalid status' });
 
         const claim = await ExpenseClaim.findById(req.params.id);
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        const approverEmp = await Employee.findOne({ userId }).select('firstName lastName employeeId').lean() as any;
+        const roleLabel = role === 'admin' || role === 'super-admin'
+            ? 'Admin'
+            : (role === 'hr'
+                ? 'HR Manager'
+                : (role === 'finance'
+                    ? 'Finance Manager'
+                    : (role === 'manager'
+                        ? 'Line Manager'
+                        : 'Reviewer')));
+        const actionByName = approverEmp 
+            ? `${formatEmployeeFullName(approverEmp, approverEmp.employeeId)} (${roleLabel})` 
+            : (role ? `${role.toUpperCase()} (${roleLabel})` : 'Admin');
 
         if (typeof approvedTotal === 'number') {
             if (approvedTotal < 0) return res.status(400).json({ message: 'approvedTotal must be >= 0' });
             if (approvedTotal > claim.amountRequested) return res.status(400).json({ message: 'approvedTotal cannot exceed amountRequested' });
             claim.approvedTotal = approvedTotal;
         }
-        if (typeof status === 'string') claim.status = status as any;
+        if (typeof status === 'string') {
+            claim.status = status as any;
+
+            // Synchronize internal approval stages when Admin overrides status
+            (claim as any).approvals = Array.isArray(claim.approvals) ? claim.approvals : [];
+
+            if (status === 'Pending Finance') {
+                // Mark any prior stages (Line Manager / HR) as bypassed & approved by Admin
+                for (const a of claim.approvals) {
+                    if (a.stage !== 'finance' && a.status !== 'Approved') {
+                        a.status = 'Approved' as any;
+                        a.comments = `Approved & bypassed by Admin (${actionByName})`;
+                        a.decidedAt = new Date();
+                        a.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                        if (typeof approvedTotal === 'number') a.approvedAmount = approvedTotal;
+                    }
+                }
+                // Ensure Finance stage is present and Pending
+                let finStage = claim.approvals.find((a: any) => a.stage === 'finance');
+                if (!finStage) {
+                    (claim.approvals as any).push({
+                        stage: 'finance',
+                        status: 'Pending' as any,
+                        amountAllowed: typeof approvedTotal === 'number' ? approvedTotal : claim.amountAllowed,
+                    } as any);
+                } else {
+                    finStage.status = 'Pending' as any;
+                    if (typeof approvedTotal === 'number') finStage.amountAllowed = approvedTotal;
+                }
+
+                claim.comments = claim.comments || [];
+                claim.comments.push({
+                    authorUserId: new mongoose.Types.ObjectId(String(userId)),
+                    authorName: actionByName,
+                    authorRole: role,
+                    message: `Claim forwarded to Pending Finance by Admin (${actionByName}). Prior approval stages bypassed.`,
+                    createdAt: new Date(),
+                    isActionRequest: false
+                } as any);
+            } else if (status === 'Pending HR') {
+                for (const a of claim.approvals) {
+                    if (a.stage === 'lineManager' && a.status !== 'Approved') {
+                        a.status = 'Approved' as any;
+                        a.comments = `Approved & bypassed by Admin (${actionByName})`;
+                        a.decidedAt = new Date();
+                        a.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                        if (typeof approvedTotal === 'number') a.approvedAmount = approvedTotal;
+                    }
+                }
+                let hrStage = claim.approvals.find((a: any) => a.stage === 'hr');
+                if (!hrStage) {
+                    (claim.approvals as any).push({
+                        stage: 'hr',
+                        status: 'Pending' as any,
+                        amountAllowed: typeof approvedTotal === 'number' ? approvedTotal : claim.amountAllowed,
+                    } as any);
+                } else {
+                    hrStage.status = 'Pending' as any;
+                }
+            } else if (status === 'Approved') {
+                for (const a of claim.approvals) {
+                    if (a.status !== 'Approved') {
+                        a.status = 'Approved' as any;
+                        a.comments = `Directly approved by Admin (${actionByName})`;
+                        a.decidedAt = new Date();
+                        a.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                    }
+                }
+                claim.approvedTotal = typeof approvedTotal === 'number' ? approvedTotal : (claim.approvedTotal ?? claim.amountAllowed);
+
+                claim.comments = claim.comments || [];
+                claim.comments.push({
+                    authorUserId: new mongoose.Types.ObjectId(String(userId)),
+                    authorName: actionByName,
+                    authorRole: role,
+                    message: `Claim directly approved by Admin (${actionByName}).`,
+                    createdAt: new Date(),
+                    isActionRequest: false
+                } as any);
+            } else if (status === 'Declined') {
+                for (const a of claim.approvals) {
+                    if (a.status === 'Pending') {
+                        a.status = 'Declined' as any;
+                        a.comments = `Declined by Admin (${actionByName})`;
+                        a.decidedAt = new Date();
+                        a.decidedByUserId = new mongoose.Types.ObjectId(String(userId));
+                    }
+                }
+                claim.approvedTotal = 0;
+
+                claim.comments = claim.comments || [];
+                claim.comments.push({
+                    authorUserId: new mongoose.Types.ObjectId(String(userId)),
+                    authorName: actionByName,
+                    authorRole: role,
+                    message: `Claim declined by Admin (${actionByName}).`,
+                    createdAt: new Date(),
+                    isActionRequest: false
+                } as any);
+            }
+        }
         if (typeof notes === 'string' && notes.trim()) claim.notes = notes;
 
         (claim as any).audit = (claim as any).audit || {};
@@ -1266,23 +1463,10 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
         await claim.save();
 
-        // Trigger employee notification email asynchronously
+        // Trigger notifications asynchronously
         (async () => {
             try {
-                const approverEmp = await Employee.findOne({ userId }).select('firstName lastName').lean() as any;
-                const roleLabel = role === 'admin' || role === 'super-admin'
-                    ? 'Admin'
-                    : (role === 'hr'
-                        ? 'HR Manager'
-                        : (role === 'finance'
-                            ? 'Finance Manager'
-                            : (role === 'manager'
-                                ? 'Line Manager'
-                                : 'Team Lead')));
-                const actionByName = approverEmp 
-                    ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
-                    : (role ? `${role.toUpperCase()} (${roleLabel})` : '');
-
+                // 1. Notify employee
                 const emp = await Employee.findOne({
                     $or: [
                         { userId: claim.employeeUserId },
@@ -1304,8 +1488,17 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                         req.headers.origin as string
                     );
                 }
+
+                // 2. If forwarded to Finance, notify Finance team
+                if (claim.status === 'Pending Finance') {
+                    const financeEmails = await getFinanceEmails();
+                    const empName = formatEmployeeFullName(emp, claim.employeeId);
+                    for (const to of financeEmails) {
+                        void sendHRNotificationEmail(to, empName, `expense claim ${claim.claimNo} was forwarded to Finance by Admin (${actionByName}) and is ready for review/disbursement`);
+                    }
+                }
             } catch (emailErr) {
-                console.error('[Expense Email] Failed to send correction status email to employee:', emailErr);
+                console.error('[Expense Email] Failed to send correction status email:', emailErr);
             }
         })();
 
@@ -1581,7 +1774,7 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
                     const recipientEmails: string[] = [];
 
                     // 1. Manager if currently at manager review stage
-                    if (['Pending Team Lead', 'Pending Line Manager'].includes(claim.status) && emp?.jobInfo?.reportingManager) {
+                    if (claim.status === 'Pending Line Manager' && emp?.jobInfo?.reportingManager) {
                         const mgr = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager }).select('workEmail personalEmail');
                         if (mgr?.workEmail || mgr?.personalEmail) {
                             recipientEmails.push((mgr.workEmail || mgr.personalEmail) as string);

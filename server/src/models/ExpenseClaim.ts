@@ -7,7 +7,6 @@ export type ExpenseClaimForWhom = 'Self' | 'Dependent';
 export type ExpenseClaimStatus =
     | 'Draft'
     | 'Submitted'
-    | 'Pending Team Lead'
     | 'Pending Line Manager'
     | 'Pending HR'
     | 'Pending Finance'
@@ -16,7 +15,7 @@ export type ExpenseClaimStatus =
     | 'Declined'
     | 'Cancelled';
 
-export type ExpenseClaimApprovalStage = 'teamLead' | 'lineManager' | 'hr' | 'finance';
+export type ExpenseClaimApprovalStage = 'lineManager' | 'hr' | 'finance';
 
 const ClaimCommentSchema = new Schema(
     {
@@ -32,7 +31,7 @@ const ClaimCommentSchema = new Schema(
 
 const ApprovalSchema = new Schema(
     {
-        stage: { type: String, enum: ['teamLead', 'lineManager', 'hr', 'finance'], required: true },
+        stage: { type: String, enum: ['lineManager', 'hr', 'finance'], required: true },
         status: { type: String, enum: ['Pending', 'Approved', 'Declined', 'Action Required'], required: true, default: 'Pending' },
         // For manager/team-lead stages we pin the approver via PIM hierarchy
         assignedToEmployeeId: { type: String },
@@ -104,13 +103,16 @@ const ExpenseClaimSchema = new Schema(
         amountAllowed: { type: Number, required: true, min: 0 },
         approvedTotal: { type: Number, min: 0 },
 
+        mileage: { type: Number, min: 0 },
+        fuelRatePerUnit: { type: Number, min: 0 },
+
         notes: { type: String },
 
         receipts: { type: [ReceiptSchema], default: [] },
 
         status: {
             type: String,
-            enum: ['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'],
+            enum: ['Draft', 'Submitted', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'],
             default: 'Submitted',
             index: true,
         },
@@ -148,8 +150,8 @@ ExpenseClaimSchema.pre('save', function (next) {
     // Ensure audit object exists for lastUpdatedByUserId writes
     doc.audit = doc.audit || {};
     
-    // Set submittedAt when status transitions to Submitted or is new and Submitted
-    if (doc.status === 'Submitted' && !doc.audit.submittedAt) {
+    // Set submittedAt when status is not Draft and not already set
+    if (doc.status !== 'Draft' && !doc.audit.submittedAt) {
         doc.audit.submittedAt = new Date();
     }
     

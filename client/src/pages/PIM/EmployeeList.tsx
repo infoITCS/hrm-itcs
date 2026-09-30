@@ -184,9 +184,14 @@ const EmployeeList = () => {
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
             return joinDate > thirtyDaysAgo;
         }).length;
-        const activeProbation = employees.filter(e =>
-            (e.employmentStatus?.status || e.employmentStatus) === 'Probation'
-        ).length;
+        const activeProbation = employees.filter(e => {
+            const rawStatus = e.employmentStatus?.status || (typeof e.employmentStatus === 'string' ? e.employmentStatus : '');
+            const pEnd = e.employmentStatus?.probationEndDate;
+            if (rawStatus === 'Probation' && pEnd && new Date(pEnd) <= new Date()) {
+                return false;
+            }
+            return rawStatus === 'Probation';
+        }).length;
 
         return [
             { label: 'Total Workforce', value: total, icon: Users, color: 'indigo', trend: 'Global Entity' },
@@ -471,7 +476,14 @@ const EmployeeList = () => {
                                     <div className="bg-slate-50 p-2 sm:p-2.5 rounded-2xl flex-1 min-w-0">
                                         <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-0.5">Status</p>
                                         <p className="text-xs font-bold text-slate-700 whitespace-nowrap">
-                                            {emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent'}
+                                            {(() => {
+                                                const rawStatus = emp.employmentStatus?.status || (typeof emp.employmentStatus === 'string' ? emp.employmentStatus : '') || emp.jobInfo?.employmentType || 'Permanent';
+                                                const pEnd = emp.employmentStatus?.probationEndDate;
+                                                if (rawStatus === 'Probation' && pEnd && new Date(pEnd) <= new Date()) {
+                                                    return 'Permanent';
+                                                }
+                                                return rawStatus;
+                                            })()}
                                         </p>
                                     </div>
                                 </div>
@@ -545,7 +557,14 @@ const EmployeeList = () => {
                                             </td>
                                             <td className="px-4 py-4">
                                                 <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 text-[11px] font-bold">
-                                                    {emp.employmentStatus?.status || emp.jobInfo?.employmentType || 'Permanent'}
+                                                    {(() => {
+                                                        const rawStatus = emp.employmentStatus?.status || (typeof emp.employmentStatus === 'string' ? emp.employmentStatus : '') || emp.jobInfo?.employmentType || 'Permanent';
+                                                        const pEnd = emp.employmentStatus?.probationEndDate;
+                                                        if (rawStatus === 'Probation' && pEnd && new Date(pEnd) <= new Date()) {
+                                                            return 'Permanent';
+                                                        }
+                                                        return rawStatus;
+                                                    })()}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-4">

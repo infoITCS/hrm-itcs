@@ -77,10 +77,19 @@ export async function seedExpenseCategories() {
                 assignedTo: 'Manager' as const
             },
             {
-                name: 'Travel',
+                name: 'Travel & Fuel',
                 isActive: true,
                 policyLimit: 0,
-                subCategories: ['Hotel Accommodation', 'Flight / Train Ticket', 'Fuel / Mileage', 'Taxi / Ride Share', 'Meals / Per Diem', 'Other Travel'],
+                fuelRatePerUnit: 35,
+                subCategories: [
+                    'Fuel / Mileage',
+                    'Petrol / Diesel / CNG',
+                    'Taxi / Ride Share',
+                    'Hotel Accommodation',
+                    'Flight / Train Ticket',
+                    'Meals / Per Diem',
+                    'Other Travel & Fuel'
+                ],
                 requiresReceipt: false,
                 assignedTo: 'Manager' as const
             },
@@ -109,7 +118,103 @@ export async function seedExpenseCategories() {
             await ExpenseClaim.updateMany({ category: 'Postage Charges' }, { $set: { category: 'Postage and Delivery' } });
         }
 
-        // 3. Seed / sync categories
+        // 3. Merge legacy 'Travel' and 'Fuel' categories into single 'Travel & Fuel'
+        const legacyTravel = await ExpenseCategory.findOne({ name: 'Travel' });
+        const legacyFuel = await ExpenseCategory.findOne({ name: 'Fuel' });
+        if (legacyTravel || legacyFuel) {
+            let combinedCat = await ExpenseCategory.findOne({ name: 'Travel & Fuel' });
+            const allSubCats = new Set<string>([
+                'Fuel / Mileage',
+                'Petrol / Diesel / CNG',
+                'Taxi / Ride Share',
+                'Hotel Accommodation',
+                'Flight / Train Ticket',
+                'Meals / Per Diem',
+                'Other Travel & Fuel'
+            ]);
+            if (legacyTravel?.subCategories) legacyTravel.subCategories.forEach((sc: string) => allSubCats.add(sc));
+            if (legacyFuel?.subCategories) legacyFuel.subCategories.forEach((sc: string) => allSubCats.add(sc));
+
+            if (!combinedCat) {
+                combinedCat = await ExpenseCategory.create({
+                    name: 'Travel & Fuel',
+                    isActive: true,
+                    policyLimit: 0,
+                    fuelRatePerUnit: legacyFuel?.fuelRatePerUnit || legacyTravel?.fuelRatePerUnit || 35,
+                    subCategories: Array.from(allSubCats),
+                    requiresReceipt: false,
+                    assignedTo: 'Manager'
+                });
+            } else {
+                combinedCat.subCategories = Array.from(new Set([...(combinedCat.subCategories || []), ...allSubCats]));
+                if (!combinedCat.fuelRatePerUnit || combinedCat.fuelRatePerUnit === 0) {
+                    combinedCat.fuelRatePerUnit = legacyFuel?.fuelRatePerUnit || legacyTravel?.fuelRatePerUnit || 35;
+                }
+                await combinedCat.save();
+            }
+
+            // Remap existing claims
+            await ExpenseClaim.updateMany(
+                { category: { $in: ['Travel', 'Fuel'] } },
+                { $set: { category: 'Travel & Fuel' } }
+            );
+
+            // Clean up obsolete categories
+            await ExpenseCategory.deleteMany({ name: { $in: ['Travel', 'Fuel'] } });
+        }
+
+        // 4. Auto-heal and migrate any legacy 'teamLead' / 'Pending Team Lead' data
+        try {
+            await ExpenseClaim.updateMany(
+                { status: 'Pending Team Lead' },
+                { $set: { status: 'Pending Line Manager' } }
+            );
+            await ExpenseClaim.updateMany(
+                { 'approvals.stage': 'teamLead' },
+                { $set: { 'approvals.$[elem].stage': 'lineManager' } },
+                { arrayFilters: [{ 'elem.stage': 'teamLead' }] }
+            );
+
+            const stuckClaims = await ExpenseClaim.find({
+                status: 'Pending Finance',
+                'approvals': {
+                    $elemMatch: {
+                        stage: { $in: ['lineManager', 'hr'] },
+                        status: 'Pending'
+                    }
+                }
+            });
+
+            for (const claim of stuckClaims) {
+                let modified = false;
+                for (const a of (claim.approvals || [])) {
+                    if (a.stage !== 'finance' && a.status === 'Pending') {
+                        a.status = 'Approved';
+                        a.comments = a.comments || 'Bypassed by Admin for Finance review';
+                        a.decidedAt = a.decidedAt || new Date();
+                        modified = true;
+                    }
+                }
+                if (!claim.approvals?.some((a: any) => a.stage === 'finance')) {
+                    claim.approvals = claim.approvals || [];
+                    claim.approvals.push({
+                        stage: 'finance',
+                        status: 'Pending',
+                        amountAllowed: claim.amountAllowed,
+                    } as any);
+                    modified = true;
+                }
+                if (modified) {
+                    claim.markModified('approvals');
+                    await claim.save();
+                    console.log(`[AutoHeal] Unlocked stuck claim ${claim.claimNo} for Finance approval`);
+                }
+            }
+        } catch (healErr) {
+            console.error('[AutoHeal] Error healing stuck Pending Finance claims:', healErr);
+        }
+
+        // 5. Seed / sync categories
         for (const cat of defaults) {
             const existing = await ExpenseCategory.findOne({ name: cat.name });
             if (!existing) {
@@ -121,13 +226,16 @@ export async function seedExpenseCategories() {
                 if (!existing.requiresReceipt && cat.requiresReceipt) {
                     existing.requiresReceipt = cat.requiresReceipt;
                 }
+                if (cat.fuelRatePerUnit && (!existing.fuelRatePerUnit || existing.fuelRatePerUnit === 0)) {
+                    existing.fuelRatePerUnit = cat.fuelRatePerUnit;
+                }
                 await existing.save();
             }
         }
 
-        // 4. One-time Migration for existing pending claims to match updated workflow
-        // A) Manager-assigned categories: Travel, Training & Certification, Sales/Customer Gifts
-        const managerCategories = ['Travel', 'Training & Certification', 'Sales/Customer Gifts'];
+        // 5. One-time Migration for existing pending claims to match updated workflow
+        // A) Manager-assigned categories: Travel & Fuel, Training & Certification, Sales/Customer Gifts
+        const managerCategories = ['Travel & Fuel', 'Training & Certification', 'Sales/Customer Gifts'];
         const pendingManagerClaims = await ExpenseClaim.find({
             category: { $in: managerCategories },
             status: 'Pending HR'

@@ -47,8 +47,7 @@ A modern, enterprise-grade Human Resource Management (HRM) system built with **R
 ### 4. 💳 Expense Claims
 * **Category-Based Workflows**: Custom approval routing depending on expense category:
   * *Medical*: Skips manager ➔ HR ➔ Finance (strictly requires receipt, annual limit checked)
-  * *Training & Certification*: Employee ➔ Team Lead ➔ HR ➔ Finance
-  * *Travel, Sales, Other*: Employee ➔ Line Manager ➔ HR ➔ Finance
+  * *Training & Certification, Travel, Sales, Other*: Employee ➔ Line Manager ➔ HR ➔ Finance
 * **Policy Limits & Detection**: Automatic detection of out-of-policy requests, annual category caps (e.g. Medical limit), and missing receipts.
 * **Document & Receipt Attachments**: Secure file upload, storage, and preview for invoices and receipts.
 * **Payroll Integration**: Approved claims are automatically marked and pulled into the employee's next monthly payroll run as non-taxable variable earnings.

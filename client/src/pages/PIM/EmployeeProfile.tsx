@@ -709,7 +709,14 @@ const EmployeeProfile = () => {
                             <div className="flex gap-12">
                                 <Field
                                     label="Current Status"
-                                    value={typeof employee.employmentStatus === 'string' ? employee.employmentStatus : employee.employmentStatus?.status}
+                                    value={(() => {
+                                        const rawStatus = typeof employee.employmentStatus === 'string' ? employee.employmentStatus : employee.employmentStatus?.status;
+                                        const pEnd = employee.employmentStatus?.probationEndDate;
+                                        if (rawStatus === 'Probation' && pEnd && new Date(pEnd) <= new Date()) {
+                                            return 'Permanent';
+                                        }
+                                        return rawStatus;
+                                    })()}
                                 />
                                 {employee.employmentStatus?.offboardingDate && (
                                     <Field

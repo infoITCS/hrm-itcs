@@ -287,7 +287,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         let claimQuery: any = null;
         if (role === 'manager' && employee) {
             claimQuery = {
-                status: { $in: ['Pending Team Lead', 'Pending Line Manager'] },
+                status: 'Pending Line Manager',
                 employeeId: { $in: reportIds }
             };
         } else {
@@ -408,7 +408,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                         message: msg,
                         time: run.updatedAt || run.createdAt,
                         type: 'task',
-                        path: '/payroll'
+                        path: `/payroll/runs/${run._id}`
                     });
                 }
             }
@@ -456,7 +456,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             // Employee's own pending expense claims
             const pendingClaims = await ExpenseClaim.find({
                 employeeId: employee.employeeId,
-                status: { $in: ['Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance'] }
+                status: { $in: ['Pending Line Manager', 'Pending HR', 'Pending Finance'] }
             }).sort({ createdAt: -1 }).limit(5).lean();
 
             for (const claim of pendingClaims) {
@@ -1183,6 +1183,14 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
                 request.status = 'Approved';
             }
             request.paidAt = undefined;
+            if (isLoan) {
+                const emp = await Employee.findOne({ employeeId: request.employeeId });
+                if (emp && emp.loans) {
+                    const reqIdStr = request._id.toString();
+                    emp.loans = emp.loans.filter((l: any) => l.loanId !== `LOAN-REQ-${reqIdStr}` && !(l.notes && l.notes.includes(reqIdStr)));
+                    await emp.save();
+                }
+            }
             if (isPf && !request.payrollRunId) {
                 const emp = await Employee.findOne({ employeeId: request.employeeId });
                 if (emp && emp.providentFundHistory) {
@@ -1202,6 +1210,26 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
 
         if (remarks) {
             request.adminComments = remarks.trim();
+        }
+
+        // Sync ERP reference ID directly to PayrollRun if this is a payroll task
+        if (request.payrollRunId && request.erpReferenceId && payoutStatus === 'Paid') {
+            const erpRef = String(request.erpReferenceId).trim();
+            if (erpRef) {
+                if (request.requestType === 'Salary Disbursement') {
+                    await PayrollRun.findByIdAndUpdate(request.payrollRunId, {
+                        erpReferenceId: erpRef,
+                        erpStatus: 'Posted',
+                        erpPostedAt: new Date(),
+                    });
+                } else if (request.requestType === 'Loan Deduction Reconciliation') {
+                    await PayrollRun.findByIdAndUpdate(request.payrollRunId, {
+                        loanDeductionErpId: erpRef,
+                        loanDeductionErpStatus: 'Posted',
+                        loanDeductionErpPostedAt: new Date(),
+                    });
+                }
+            }
         }
 
         request.updatedAt = new Date();
@@ -1376,6 +1404,26 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
             }
         }
 
+        // Sync ERP reference ID directly to PayrollRun if this is a payroll task
+        if (request.payrollRunId && (request.erpReferenceId || req.body.erpReferenceId)) {
+            const erpRef = String(req.body.erpReferenceId || request.erpReferenceId || '').trim();
+            if (erpRef) {
+                if (request.requestType === 'Salary Disbursement') {
+                    await PayrollRun.findByIdAndUpdate(request.payrollRunId, {
+                        erpReferenceId: erpRef,
+                        erpStatus: 'Posted',
+                        erpPostedAt: new Date(),
+                    });
+                } else if (request.requestType === 'Loan Deduction Reconciliation') {
+                    await PayrollRun.findByIdAndUpdate(request.payrollRunId, {
+                        loanDeductionErpId: erpRef,
+                        loanDeductionErpStatus: 'Posted',
+                        loanDeductionErpPostedAt: new Date(),
+                    });
+                }
+            }
+        }
+
         await request.save();
 
         // Asynchronously notify employee via email on status update
@@ -1388,9 +1436,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                         ? 'HR Manager'
                         : (role === 'finance'
                             ? 'Finance Manager'
-                            : (role === 'manager'
-                                ? 'Reporting Manager'
-                                : 'Team Lead')));
+                            : 'Reporting Manager'));
                 const actionByName = approverEmp 
                     ? `${approverEmp.firstName} ${approverEmp.lastName} (${roleLabel})` 
                     : (role ? `${role.toUpperCase()} (${roleLabel})` : '');

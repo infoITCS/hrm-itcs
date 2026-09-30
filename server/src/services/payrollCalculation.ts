@@ -143,6 +143,10 @@ export async function buildPayrollPayslips(
             { payrollRunId: run._id, payoutStatus: 'Included in Payroll' },
             { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
         );
+        await EmployeeRequest.deleteMany({
+            payrollRunId: run._id,
+            status: 'Pending Finance',
+        });
     }
 
     const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
@@ -663,6 +667,71 @@ export async function buildPayrollPayslips(
             totalLoanDeductionsAmount: totals.totalLoanDeductionsAmount,
             erpPayableAmount: totals.erpPayableAmount,
         });
+
+        // ── Auto-generate "Pending Finance" tasks for Finance to log ERP IDs ──
+        const netDisbursementAmount = totals.erpPayableAmount || totals.totalPayableAmount;
+        if (netDisbursementAmount > 0) {
+            await EmployeeRequest.findOneAndUpdate(
+                {
+                    payrollRunId: run._id,
+                    category: 'Finance',
+                    requestType: 'Salary Disbursement',
+                },
+                {
+                    $set: {
+                        employeeId: 'FINANCE-BATCH',
+                        category: 'Finance',
+                        requestType: 'Salary Disbursement',
+                        status: 'Pending Finance',
+                        payoutStatus: 'Unpaid',
+                        payrollRunId: run._id,
+                        details: {
+                            runId: run._id.toString(),
+                            title: run.title,
+                            periodMonth: run.periodMonth,
+                            periodYear: run.periodYear,
+                            amount: netDisbursementAmount,
+                            requestedAmount: netDisbursementAmount,
+                            employeeCount: payslips.length,
+                            description: `Log ERP Voucher / Reference ID for ${run.title} Salary Disbursement`,
+                        },
+                        requestedAt: new Date(),
+                    },
+                },
+                { upsert: true, new: true }
+            );
+        }
+
+        if (totals.totalLoanDeductionsAmount > 0) {
+            await EmployeeRequest.findOneAndUpdate(
+                {
+                    payrollRunId: run._id,
+                    category: 'Finance',
+                    requestType: 'Loan Deduction Reconciliation',
+                },
+                {
+                    $set: {
+                        employeeId: 'FINANCE-BATCH',
+                        category: 'Finance',
+                        requestType: 'Loan Deduction Reconciliation',
+                        status: 'Pending Finance',
+                        payoutStatus: 'Unpaid',
+                        payrollRunId: run._id,
+                        details: {
+                            runId: run._id.toString(),
+                            title: `${run.title} - Loan Deductions`,
+                            periodMonth: run.periodMonth,
+                            periodYear: run.periodYear,
+                            amount: totals.totalLoanDeductionsAmount,
+                            requestedAmount: totals.totalLoanDeductionsAmount,
+                            description: `Log ERP Reference ID for ${run.title} Consolidated Loan Deductions`,
+                        },
+                        requestedAt: new Date(),
+                    },
+                },
+                { upsert: true, new: true }
+            );
+        }
     }
 
     return {

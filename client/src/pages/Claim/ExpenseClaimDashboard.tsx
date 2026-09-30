@@ -39,6 +39,7 @@ import {
     HeartHandshake,
     BookOpen,
     ExternalLink,
+    Lock,
 } from 'lucide-react';
 import MedicalAccrualCards from '../../components/MedicalAccrualCards';
 import { calculateClientMedicalAccrual } from '../../utils/medicalAccrual';
@@ -48,7 +49,6 @@ type ForWhom = 'Self' | 'Dependent';
 type Claim = any;
 
 const STATUS_COLORS: Record<string, string> = {
-    'Pending Team Lead': 'bg-amber-50 text-amber-700 border-amber-200',
     'Pending Line Manager': 'bg-amber-50 text-amber-700 border-amber-200',
     'Pending HR': 'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Pending Finance': 'bg-violet-50 text-violet-700 border-violet-200',
@@ -180,6 +180,7 @@ const ExpenseClaimDashboard = () => {
     const [dependentId, setDependentId] = useState('');
     const [purpose, setPurpose] = useState('');
     const [amountRequested, setAmountRequested] = useState<number>(0);
+    const [mileage, setMileage] = useState<number | ''>('');
     const [notes, setNotes] = useState('');
     const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
     const [scanningReceipts, setScanningReceipts] = useState(false);
@@ -269,6 +270,7 @@ const ExpenseClaimDashboard = () => {
     const [categoryModalOpen, setCategoryModalOpen] = useState(false);
     const [catFormName, setCatFormName] = useState('');
     const [catFormLimit, setCatFormLimit] = useState<number | ''>('');
+    const [catFormFuelRate, setCatFormFuelRate] = useState<number | ''>('');
     const [catFormActive, setCatFormActive] = useState(true);
     const [catFormReceipt, setCatFormReceipt] = useState(false);
     const [catFormSubCats, setCatFormSubCats] = useState('');
@@ -451,6 +453,42 @@ const ExpenseClaimDashboard = () => {
 
         return Math.max(0, selectedCat.policyLimit - claimedSoFar);
     }, [category, submitMedicalAccrual, categories, mine, history, selectedEmployeeId, isAdminLike]);
+
+    const selectedCategoryDoc = useMemo(() => categories.find(c => c.name === category), [categories, category]);
+    const isFuelCategory = useMemo(() => {
+        if (!category) return false;
+        // If subcategory is explicitly chosen, check if it's a fuel/mileage subcategory:
+        if (subCategories.length > 0 && subCategories[0]) {
+            return /fuel|mileage|petrol|diesel|cng/i.test(subCategories[0]);
+        }
+        // If category is strictly named Fuel:
+        if (/^fuel$/i.test(category.trim())) return true;
+        // If category is Travel & Fuel and no subcategory chosen yet:
+        if (/travel.*fuel|fuel.*travel/i.test(category)) {
+            const firstSub = selectedCategoryDoc?.subCategories?.[0] || '';
+            return !firstSub || /fuel|mileage|petrol|diesel|cng/i.test(firstSub);
+        }
+        if (selectedCategoryDoc?.fuelRatePerUnit && selectedCategoryDoc.fuelRatePerUnit > 0 && !/travel/i.test(category)) {
+            return true;
+        }
+        return false;
+    }, [category, subCategories, selectedCategoryDoc]);
+
+    const activeFuelRate = useMemo(() => {
+        if (selectedCategoryDoc?.fuelRatePerUnit && selectedCategoryDoc.fuelRatePerUnit > 0) {
+            return selectedCategoryDoc.fuelRatePerUnit;
+        }
+        const anyFuelCat = categories.find(c => /fuel/i.test(c.name) && c.fuelRatePerUnit && c.fuelRatePerUnit > 0);
+        return anyFuelCat?.fuelRatePerUnit || 35;
+    }, [selectedCategoryDoc, categories]);
+
+    useEffect(() => {
+        if (isFuelCategory) {
+            const m = typeof mileage === 'number' ? mileage : 0;
+            const calculated = Math.round(m * activeFuelRate);
+            setAmountRequested(calculated);
+        }
+    }, [isFuelCategory, mileage, activeFuelRate]);
 
     const fetchEmployee = useCallback(async () => {
         if (!user?.id) return;
@@ -918,7 +956,11 @@ const ExpenseClaimDashboard = () => {
             return 'Medical OPD benefit is exclusively available to confirmed Permanent employees.';
         }
 
-        if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
+        if (isFuelCategory) {
+            if (!mileage || typeof mileage !== 'number' || mileage <= 0) return 'Enter valid mileage (KM)';
+        } else {
+            if (!amountRequested || amountRequested <= 0) return 'Enter a valid amount';
+        }
         if (!category) return 'Select a category';
         
         const selectedCat = categories.find(c => c.name === category);
@@ -941,7 +983,7 @@ const ExpenseClaimDashboard = () => {
             }
         }
         return '';
-    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, forWhom, dependentId, category, categories, remainingMedicalLimit, notes, receiptFiles.length]);
+    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, mileage, isFuelCategory, forWhom, dependentId, category, categories, remainingMedicalLimit, notes, receiptFiles.length]);
 
     const handleSubmit = async () => {
         if (submitDisabledReason) return;
@@ -949,7 +991,7 @@ const ExpenseClaimDashboard = () => {
         try {
             const receipts = await Promise.all(receiptFiles.map(readFileAsBase64));
 
-            const payload = {
+            const payload: any = {
                 employeeId: selectedEmployeeId || undefined,
                 category,
                 subCategories: subCategories,
@@ -958,6 +1000,8 @@ const ExpenseClaimDashboard = () => {
                 dependentId: forWhom === 'Dependent' ? dependentId : undefined,
                 purpose: purpose.trim() || undefined,
                 amountRequested,
+                mileage: isFuelCategory && typeof mileage === 'number' && mileage > 0 ? mileage : undefined,
+                fuelRatePerUnit: isFuelCategory ? activeFuelRate : undefined,
                 notes: notes.trim() || undefined,
                 receipts,
             };
@@ -974,6 +1018,7 @@ const ExpenseClaimDashboard = () => {
             setDependentId('');
             setPurpose('');
             setAmountRequested(0);
+            setMileage('');
             setNotes('');
             setReceiptFiles([]);
             setReceiptPreview(null);
@@ -1086,7 +1131,7 @@ const ExpenseClaimDashboard = () => {
                 description: 'Updating will re-route this claim to HR for review.'
             };
         }
-        if (assigned === 'Manager' && !['Pending Line Manager', 'Pending Team Lead'].includes(currentStatus)) {
+        if (assigned === 'Manager' && currentStatus !== 'Pending Line Manager') {
             return {
                 reRoute: true,
                 target: 'Line Manager',
@@ -1338,10 +1383,16 @@ const ExpenseClaimDashboard = () => {
         if (role === 'super-admin' || role === 'admin') return true;
         if (role === 'hr' && currentStage === 'hr') return true;
         if (role === 'finance' && currentStage === 'finance') return true;
-        if (role === 'manager' && (currentStage === 'teamLead' || currentStage === 'lineManager')) return true;
+        if ((role === 'manager' || role === 'finance') && currentStage === 'lineManager') {
+            if (role === 'manager') return true;
+            const managerIdentifiers = [employee?.employeeId, employee?._id, user?.id, user?._id].filter(Boolean).map(String);
+            const isAssigned = currentPending?.assignedToEmployeeId && managerIdentifiers.includes(String(currentPending.assignedToEmployeeId));
+            const isDirectReport = decisionClaim?.employeeDetails?.jobInfo?.reportingManager && managerIdentifiers.includes(String(decisionClaim.employeeDetails.jobInfo.reportingManager));
+            if (isAssigned || isDirectReport) return true;
+        }
 
         return false;
-    }, [decisionClaim, role]);
+    }, [decisionClaim, role, employee, user]);
 
     const submitDecision = async () => {
         if (!decisionClaim?._id) return;
@@ -1449,6 +1500,7 @@ const ExpenseClaimDashboard = () => {
             const payload = {
                 name: catFormName,
                 policyLimit: typeof catFormLimit === 'number' ? catFormLimit : 0,
+                fuelRatePerUnit: typeof catFormFuelRate === 'number' ? catFormFuelRate : 0,
                 isActive: catFormActive,
                 requiresReceipt: catFormReceipt,
                 subCategories: catFormSubCats.split(',').map(s => s.trim()).filter(Boolean),
@@ -1480,6 +1532,7 @@ const ExpenseClaimDashboard = () => {
             setEditingCategory(cat);
             setCatFormName(cat.name);
             setCatFormLimit(cat.policyLimit || '');
+            setCatFormFuelRate(cat.fuelRatePerUnit || '');
             setCatFormActive(cat.isActive !== false);
             setCatFormReceipt(cat.requiresReceipt === true);
             setCatFormSubCats((cat.subCategories || []).join(', '));
@@ -1488,6 +1541,7 @@ const ExpenseClaimDashboard = () => {
             setEditingCategory(null);
             setCatFormName('');
             setCatFormLimit('');
+            setCatFormFuelRate('');
             setCatFormActive(true);
             setCatFormReceipt(false);
             setCatFormSubCats('');
@@ -1740,7 +1794,7 @@ const ExpenseClaimDashboard = () => {
                             >
                                 <option value="">All Categories</option>
                                 {Array.from(new Set([
-                                    'Medical', 'Training & Certification', 'Travel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage and Delivery', 'Meal Allowance / Kitchen Expenses', 'Other',
+                                    'Medical', 'Training & Certification', 'Travel & Fuel', 'Sales/Customer Gifts', 'Office Rent', 'Utilities', 'Postage and Delivery', 'Meal Allowance / Kitchen Expenses', 'Other',
                                     ...categories.map((c: any) => c.name)
                                 ])).map(c => (
                                     <option key={c} value={c}>{c}</option>
@@ -1753,7 +1807,7 @@ const ExpenseClaimDashboard = () => {
                                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                             >
                                 <option value="">All Statuses</option>
-                                {['Draft', 'Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
+                                {['Draft', 'Submitted', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
                                     <option key={s} value={s}>{s}</option>
                                 ))}
                             </select>
@@ -1892,8 +1946,15 @@ const ExpenseClaimDashboard = () => {
                                 <select
                                     value={category}
                                     onChange={e => {
-                                        setCategory(e.target.value);
-                                        setSubCategories([]);
+                                        const newCat = e.target.value;
+                                        setCategory(newCat);
+                                        const found = categories.find(c => c.name === newCat);
+                                        if (found?.subCategories?.length) {
+                                            setSubCategories([found.subCategories[0]]);
+                                        } else {
+                                            setSubCategories([]);
+                                        }
+                                        setMileage('');
                                     }}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                 >
@@ -1909,6 +1970,9 @@ const ExpenseClaimDashboard = () => {
                                     onChange={e => {
                                         const val = e.target.value;
                                         setSubCategories(val ? [val] : []);
+                                        if (!val || !/fuel|mileage|petrol|diesel|cng/i.test(val)) {
+                                            setMileage('');
+                                        }
                                     }}
                                     className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                                 >
@@ -1942,7 +2006,7 @@ const ExpenseClaimDashboard = () => {
                                 />
                                 {category === 'Training & Certification' && (
                                     <p className="text-[11px] text-slate-400 mt-1">
-                                        Training & Certification claims require an extra Team Lead approval layer.
+                                        Training & Certification claims require Line Manager approval.
                                     </p>
                                 )}
                             </div>
@@ -2003,25 +2067,65 @@ const ExpenseClaimDashboard = () => {
                                 </div>
                             )}
 
-                            <div>
-                                <label className="text-xs font-bold text-slate-600">Amount Requested (PKR)</label>
-                                <input
-                                    type="number"
-                                    value={amountRequested || ''}
-                                    onChange={e => setAmountRequested(Number(e.target.value))}
-                                    placeholder="0"
-                                    className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                                />
-                                 <p className="text-[11px] text-slate-400 mt-1">
-                                     {category === 'Medical' ? (
-                                         <span>
-                                             Claims exceeding {selectedEmployeeId ? "the selected employee's" : "your"} remaining <strong>{formatMoney(remainingMedicalLimit)}</strong> balance are flagged as out-of-policy.
-                                         </span>
-                                     ) : (
-                                         'Out-of-policy amounts are flagged and require HR/Senior Management authorization.'
-                                     )}
-                                 </p>
-                            </div>
+                            {isFuelCategory ? (
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                            <span>⛽ Mileage (KM)</span>
+                                            <span className="text-rose-500">*</span>
+                                        </label>
+                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200">
+                                            Rate: PKR {activeFuelRate} / KM
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min="0.1"
+                                        step="any"
+                                        value={mileage}
+                                        onChange={e => setMileage(e.target.value === '' ? '' : Number(e.target.value))}
+                                        placeholder="e.g. 25"
+                                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 font-semibold text-slate-800"
+                                    />
+                                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-amber-50/80 to-orange-50/80 border border-amber-200 text-xs">
+                                        <span className="text-amber-800 font-medium">
+                                            {typeof mileage === 'number' && mileage > 0 ? (
+                                                <span>{mileage} KM × PKR {activeFuelRate}/km</span>
+                                            ) : (
+                                                <span className="text-amber-600">Enter mileage above to auto-calculate amount</span>
+                                            )}
+                                        </span>
+                                        <span className="font-extrabold text-amber-950 text-sm">
+                                            = PKR {(typeof mileage === 'number' ? Math.round(mileage * activeFuelRate) : 0).toLocaleString('en-PK')}
+                                        </span>
+                                    </div>
+                                    {activeFuelRate <= 0 && (
+                                        <p className="text-[11px] text-rose-600 font-medium">
+                                            Fuel rate is set to 0. An admin can set the fuel rate per unit in Category Settings.
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-600">Amount Requested (PKR)</label>
+                                    <input
+                                        type="number"
+                                        value={amountRequested || ''}
+                                        onChange={e => setAmountRequested(Number(e.target.value))}
+                                        placeholder="0"
+                                        className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                    />
+                                    <p className="text-[11px] text-slate-400 mt-1">
+                                        {category === 'Medical' ? (
+                                            <span>
+                                                Claims exceeding {selectedEmployeeId ? "the selected employee's" : "your"} remaining <strong>{formatMoney(remainingMedicalLimit)}</strong> balance are flagged as out-of-policy.
+                                            </span>
+                                        ) : (
+                                            'Out-of-policy amounts are flagged and require HR/Senior Management authorization.'
+                                        )}
+                                    </p>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="text-xs font-bold text-slate-600">
@@ -2297,7 +2401,8 @@ const ExpenseClaimDashboard = () => {
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[280px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                             </tr>
@@ -2309,6 +2414,12 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
                                                 <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.mileage && (
+                                                        <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1 mt-0.5">
+                                                            <span>⛽ {c.mileage} KM</span>
+                                                            {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
+                                                        </div>
+                                                    )}
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
                                                             Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
@@ -2335,8 +2446,8 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
-                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
+                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '280px' }}>
+                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '280px' }}>
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
                                                             <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
                                                                 {flagLabel(f)}
@@ -2344,6 +2455,12 @@ const ExpenseClaimDashboard = () => {
                                                         )) : (
                                                             <span className="text-xs text-slate-400">—</span>
                                                         )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap align-middle">
+                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700" title="System-locked submission timestamp">
+                                                        <Lock size={11} className="text-slate-500 shrink-0" />
+                                                        <span>{new Date(c.audit?.submittedAt || c.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle">
@@ -2490,7 +2607,8 @@ const ExpenseClaimDashboard = () => {
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[300px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[240px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                             </tr>
                                         </thead>
@@ -2527,6 +2645,12 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
                                                 <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.mileage && (
+                                                        <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1 mt-0.5">
+                                                            <span>⛽ {c.mileage} KM</span>
+                                                            {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
+                                                        </div>
+                                                    )}
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
                                                             Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
@@ -2588,6 +2712,12 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
+                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap align-middle">
+                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700" title="System-locked submission timestamp">
+                                                        <Lock size={11} className="text-slate-500 shrink-0" />
+                                                        <span>{new Date(c.audit?.submittedAt || c.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                                    </div>
+                                                </td>
                                                 <td className="px-4 py-3 align-middle">
                                                     <button
                                                         onClick={() => openDecision(c)}
@@ -2611,7 +2741,7 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
                                                     {formatMoney(filteredApprovalsTotals.allowed)}
                                                 </td>
-                                                <td colSpan={3} className="px-4 py-3 text-xs text-slate-400"></td>
+                                                <td colSpan={4} className="px-4 py-3 text-xs text-slate-400"></td>
                                             </tr>
                                         </tfoot>
                                     )}
@@ -2759,6 +2889,12 @@ const ExpenseClaimDashboard = () => {
                                                 <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
                                                 <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
+                                                    {c.mileage && (
+                                                        <div className="text-[10px] text-amber-800 font-bold flex items-center gap-1 mt-0.5">
+                                                            <span>⛽ {c.mileage} KM</span>
+                                                            {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
+                                                        </div>
+                                                    )}
                                                     {c.amountRequested > c.amountAllowed && (
                                                         <div className="text-[10px] text-rose-500 font-bold">
                                                             Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
@@ -2855,8 +2991,11 @@ const ExpenseClaimDashboard = () => {
                                                         <span className="text-xs text-slate-400">—</span>
                                                     )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-500 align-middle">
-                                                    {c.audit?.submittedAt ? new Date(c.audit.submittedAt).toLocaleDateString('en-PK') : new Date(c.createdAt).toLocaleDateString('en-PK')}
+                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap align-middle">
+                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700" title="System-locked submission timestamp">
+                                                        <Lock size={11} className="text-slate-500 shrink-0" />
+                                                        <span>{new Date(c.audit?.submittedAt || c.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle">
                                                     {(c.receipts || []).length ? (
@@ -3209,8 +3348,13 @@ const ExpenseClaimDashboard = () => {
                                                 </span>
                                                 {!cat.isActive && <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 uppercase tracking-widest">Inactive</span>}
                                             </div>
-                                            <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-4">
+                                            <div className="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-4 flex-wrap">
                                                 <span>Limit: {cat.policyLimit > 0 ? formatMoney(cat.policyLimit) : 'No limit'}</span>
+                                                {cat.fuelRatePerUnit > 0 && (
+                                                    <span className="text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-bold flex items-center gap-1 text-[11px]">
+                                                        ⛽ PKR {cat.fuelRatePerUnit} / KM
+                                                    </span>
+                                                )}
                                                 {cat.requiresReceipt && <span className="text-indigo-600 flex items-center gap-1"><Receipt size={12}/> Receipt Req.</span>}
                                             </div>
                                         </div>
@@ -3315,6 +3459,18 @@ const ExpenseClaimDashboard = () => {
                                             <p className="text-[11px] text-slate-500 mt-1">If set &gt; 0, system tracks the user's total approved amount for this category in the current year and blocks submissions exceeding the limit (unless submitted by Admin).</p>
                                         </div>
                                         <div>
+                                            <label className="text-xs font-bold text-slate-600">Fuel Rate per Unit (PKR / KM)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={catFormFuelRate}
+                                                onChange={e => setCatFormFuelRate(e.target.value === '' ? '' : Number(e.target.value))}
+                                                className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-300 outline-none"
+                                                placeholder="e.g. 35 (Cost per KM)"
+                                            />
+                                            <p className="text-[11px] text-slate-500 mt-1">If set &gt; 0, claims in this category will prompt for mileage (KM) and auto-calculate amount = Mileage × Rate.</p>
+                                        </div>
+                                        <div>
                                             <label className="text-xs font-bold text-slate-600">Sub-categories (comma separated)</label>
                                             <textarea
                                                 value={catFormSubCats}
@@ -3378,9 +3534,15 @@ const ExpenseClaimDashboard = () => {
                                     <Receipt size={18} />
                                     {canUserDecide ? 'Claim Review' : 'Claim Details'} — {decisionClaim.claimNo}
                                 </div>
-                                <div className="text-xs text-white/75 mt-0.5">
-                                    {formatEmployeeFullName(decisionClaim.employeeDetails, 'Employee')}
-                                    {' '}({decisionClaim.employeeId})
+                                <div className="text-xs text-white/75 mt-0.5 flex items-center gap-2 flex-wrap">
+                                    <span>
+                                        {formatEmployeeFullName(decisionClaim.employeeDetails, 'Employee')}
+                                        {' '}({decisionClaim.employeeId})
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 text-white font-mono text-[11px] font-semibold border border-white/20 shadow-xs" title="Auto-recorded and locked submission timestamp">
+                                        <Lock size={10} />
+                                        Submitted: {new Date(decisionClaim.audit?.submittedAt || decisionClaim.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+                                    </span>
                                 </div>
                             </div>
                             <button
@@ -3397,6 +3559,20 @@ const ExpenseClaimDashboard = () => {
 
                                 {/* ── LEFT: Claim Details + Approval Trail ─────── */}
                                 <div className="p-6 space-y-5">
+
+                                    {/* Locked submission banner */}
+                                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                        <div className="flex items-center gap-2 text-slate-700 font-medium">
+                                            <Lock size={13} className="text-slate-500 shrink-0" />
+                                            <span>Locked Submission Timestamp:</span>
+                                            <strong className="text-slate-900 font-semibold">
+                                                {new Date(decisionClaim.audit?.submittedAt || decisionClaim.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}
+                                            </strong>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-200/80 px-2 py-0.5 rounded">
+                                            Locked
+                                        </span>
+                                    </div>
 
                                     {/* Summary cards */}
                                     <div className="grid grid-cols-2 gap-3">
@@ -3581,6 +3757,24 @@ const ExpenseClaimDashboard = () => {
                                                     )}
                                                 </div>
                                             </>
+                                        )}
+                                        {decisionClaim.mileage && (
+                                            <div className="col-span-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 shadow-2xs">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-1.5 text-amber-800 text-[11px] font-bold">
+                                                        <span>⛽ FUEL MILEAGE BREAKDOWN</span>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                                                        Rate: PKR {decisionClaim.fuelRatePerUnit || (decisionClaim.amountRequested / decisionClaim.mileage).toFixed(1)} / KM
+                                                    </span>
+                                                </div>
+                                                <div className="font-extrabold text-amber-950 text-sm mt-1">
+                                                    {decisionClaim.mileage} KM × PKR {decisionClaim.fuelRatePerUnit || (decisionClaim.amountRequested / decisionClaim.mileage).toFixed(1)} = {formatMoney(decisionClaim.amountRequested, decisionClaim.currency)}
+                                                </div>
+                                                <div className="text-[11px] text-amber-700/80 mt-0.5 font-medium">
+                                                    System auto-calculated based on entered vehicle mileage.
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
 
@@ -4589,7 +4783,7 @@ const ExpenseClaimDashboard = () => {
                                         onChange={e => setCorrectStatus(e.target.value)}
                                         className="mt-1 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
                                     >
-                                        {['Submitted', 'Pending Team Lead', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'].map(s => (
+                                        {['Submitted', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Approved', 'Declined'].map(s => (
                                             <option key={s} value={s}>{s}</option>
                                         ))}
                                     </select>

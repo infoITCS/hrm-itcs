@@ -7,6 +7,7 @@ const ExpenseCategorySchema = new Schema(
         policyLimit: { type: Number, default: 0 }, // 0 means no limit
         subCategories: [{ type: String }],
         requiresReceipt: { type: Boolean, default: false },
+        fuelRatePerUnit: { type: Number, default: 0, min: 0 }, // PKR per KM/unit
         assignedTo: { type: String, enum: ['HR', 'Finance', 'Manager'], default: 'HR' }
     },
     { timestamps: true }

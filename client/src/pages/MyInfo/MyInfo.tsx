@@ -1702,7 +1702,7 @@ const MyInfo = () => {
                                             {renderField('Reporting Manager', rawEmployee.jobInfo?.reportingManagerName || employeesList.find((e: any) => e.value === rawEmployee.jobInfo?.reportingManager)?.label || rawEmployee.jobInfo?.reportingManager)}
                                             {renderField('Joining Date', formatDate(rawEmployee.jobInfo?.joiningDate))}
                                             {renderField('Work Location', rawEmployee.jobInfo?.workLocation)}
-                                            {renderField('Status', (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status) || '-')}
+                                            {renderField('Status', (isProbationEnded ? 'Permanent' : (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status)) || '-')}
                                             {rawEmployee.employmentStatus?.probationEndDate && (
                                                 renderField(isProbationEnded ? 'Probation Ended Date' : 'Probation End Date', formatDate(rawEmployee.employmentStatus?.probationEndDate))
                                             )}
@@ -1712,7 +1712,7 @@ const MyInfo = () => {
                                             <div className="flex flex-wrap gap-12">
                                                 <div>
                                                     <label className="block text-xs font-medium text-indigo-200 uppercase mb-1">Status</label>
-                                                    <p className="text-xl font-bold">{typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status}</p>
+                                                    <p className="text-xl font-bold">{isProbationEnded ? 'Permanent' : (typeof rawEmployee.employmentStatus === 'string' ? rawEmployee.employmentStatus : rawEmployee.employmentStatus?.status)}</p>
                                                 </div>
                                                 {typeof rawEmployee.employmentStatus !== 'string' && rawEmployee.employmentStatus?.probationEndDate && (
                                                     <div>

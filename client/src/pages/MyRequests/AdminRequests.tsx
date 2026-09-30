@@ -63,7 +63,7 @@ const AdminRequests = () => {
             const isLoan = actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan';
             const effectiveErpRef = (erpReferenceId || actionModal.erpReferenceId || '').trim();
             if (status === 'Completed' && isLoan && !effectiveErpRef) {
-                showToast('ERP Transaction Reference ID is required to approve & disburse loan requests.', 'warning');
+                showToast('ERP Transaction Reference ID is required to disburse loan requests.', 'warning');
                 return;
             }
 
@@ -302,8 +302,8 @@ const AdminRequests = () => {
                                                         initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
                                                     />
                                                     <div>
-                                                        <p className="font-medium text-gray-900">{formatEmployeeFullName(req.employee, 'Employee')}</p>
-                                                        <p className="text-xs text-gray-500">{req.employee?.employeeId}</p>
+                                                        <p className="font-medium text-gray-900">{req.employeeId === 'FINANCE-BATCH' ? (req.details?.title || 'Finance Payroll Batch') : formatEmployeeFullName(req.employee, 'Employee')}</p>
+                                                        <p className="text-xs text-gray-500">{req.employeeId === 'FINANCE-BATCH' ? 'Finance Task' : req.employee?.employeeId}</p>
                                                     </div>
                                                 </div>
                                             </td>
@@ -343,6 +343,8 @@ const AdminRequests = () => {
                                                     </div>
                                                 ) : (
                                                     <div className="text-xs text-gray-600">
+                                                        {(req.details?.requestedAmount || req.details?.amount) ? <p>Amount: <strong className="text-indigo-700">Rs. {Number(req.details.requestedAmount || req.details.amount).toLocaleString()}</strong></p> : null}
+                                                        {req.details?.description && <p className="text-[11px] text-gray-500 line-clamp-1">{req.details.description}</p>}
                                                         {req.details?.quantity && <p>Qty: <strong>{req.details.quantity}</strong></p>}
                                                     </div>
                                                 )}
@@ -414,12 +416,12 @@ const AdminRequests = () => {
                                                         setLoanCustomReason(req.details?.customPlanReason || '');
                                                     }}
                                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                        (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') 
-                                                        ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                                        (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance' || ((req.category === 'Loan' || req.category === 'Request Loan' || req.requestType === 'Loan') && req.status === 'Approved')) 
+                                                        ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold'
                                                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                     }`}
                                                 >
-                                                    {(req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') ? 'Review' : 'View'}
+                                                    {((req.category === 'Loan' || req.category === 'Request Loan' || req.requestType === 'Loan') && req.status === 'Approved') ? 'Disburse' : (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') ? 'Review' : 'View'}
                                                 </button>
                                             </td>
                                         </tr>
@@ -472,7 +474,27 @@ const AdminRequests = () => {
                                         </div>
                                     </div>
                                     
-                                    {(actionModal.status === 'Approved' || actionModal.status === 'Completed' || actionModal.status === 'Rejected') && (
+                                    {((actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') && actionModal.status === 'Approved') ? (
+                                        <>
+                                            <div className="relative">
+                                                <div className="absolute -left-[30px] top-1 bg-emerald-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                                    <CheckCircle size={10} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-gray-900">Loan Approved (Management / HR)</p>
+                                                    <p className="text-[10px] text-gray-400">{new Date(actionModal.updatedAt).toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                            <div className="relative">
+                                                <div className="absolute -left-[30px] top-1 bg-amber-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                                                    <Clock size={10} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-semibold text-amber-700">Awaiting Loan Disbursement</p>
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (actionModal.status === 'Approved' || actionModal.status === 'Completed' || actionModal.status === 'Rejected') && (
                                         <div className="relative">
                                             <div className="absolute -left-[30px] top-1 bg-emerald-500 text-white w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
                                                 <CheckCircle size={10} />
@@ -542,8 +564,8 @@ const AdminRequests = () => {
                                         initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
                                     />
                                     <div>
-                                        <p className="font-semibold text-gray-900 text-sm">{formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
-                                        <p className="text-xs text-gray-500">{actionModal.employee?.employeeId || '—'}</p>
+                                        <p className="font-semibold text-gray-900 text-sm">{actionModal.employeeId === 'FINANCE-BATCH' ? (actionModal.details?.title || 'Finance Payroll Batch') : formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
+                                        <p className="text-xs text-gray-500">{actionModal.employeeId === 'FINANCE-BATCH' ? 'Finance Task' : (actionModal.employee?.employeeId || '—')}</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -809,7 +831,29 @@ const AdminRequests = () => {
                                         <p className="font-semibold text-gray-900">{actionModal.details.quantity}</p>
                                     </div>
                                 )}
+                                {(actionModal.details?.requestedAmount || actionModal.details?.amount) && actionModal.category !== 'Loan' && actionModal.category !== 'PF Withdrawal' && (
+                                    <div>
+                                        <p className="text-gray-500 text-xs">Total Amount</p>
+                                        <p className="font-semibold text-indigo-700">Rs. {Number(actionModal.details?.requestedAmount || actionModal.details?.amount).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {actionModal.details?.employeeCount && (
+                                    <div>
+                                        <p className="text-gray-500 text-xs">Employees Included</p>
+                                        <p className="font-semibold text-gray-900">{actionModal.details.employeeCount} Staff</p>
+                                    </div>
+                                )}
                             </div>
+
+                            {/* Description / Details */}
+                            {actionModal.details?.description && (
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Description</p>
+                                    <p className="text-sm text-gray-700 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                        {actionModal.details.description}
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Reason details */}
                             {actionModal.details?.reason && (
@@ -955,7 +999,7 @@ const AdminRequests = () => {
                                 <div className="space-y-1.5">
                                     <div className="flex items-center justify-between">
                                         <label className="block text-xs font-bold text-gray-500 uppercase">
-                                            ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan') && <span className="text-rose-500">*</span> }
+                                            ERP Transaction Reference ID { (actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') && (actionModal.status === 'Approved' ? <span className="text-rose-500">* (Required for Disbursement)</span> : <span className="text-gray-400 font-normal lowercase">(optional until disbursement)</span>) }
                                         </label>
                                         {isPfWithdrawal && !actionModal.erpReferenceId && (
                                             <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
@@ -1024,7 +1068,29 @@ const AdminRequests = () => {
                             ) : (actionModal.category === 'Loan' || actionModal.category === 'Request Loan' || actionModal.requestType === 'Loan') ? (
                                 <>
                                     {/* Loan Specific Workflow (Management / HR Exclusive) */}
-                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR' || actionModal.status === 'Approved') && (
+                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject Loan
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Approved')}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                            >
+                                                <CheckCircle size={15} /> Approve Loan
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Completed')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                            >
+                                                <Banknote size={15} /> Approve & Disburse
+                                            </button>
+                                        </>
+                                    )}
+                                    {actionModal.status === 'Approved' && (
                                         <>
                                             <button 
                                                 onClick={() => handleAction('Rejected')}
@@ -1036,7 +1102,7 @@ const AdminRequests = () => {
                                                 onClick={() => handleAction('Completed')}
                                                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
                                             >
-                                                <Banknote size={15} /> Approve & Disburse Loan
+                                                <Banknote size={15} /> Disburse Loan
                                             </button>
                                         </>
                                     )}

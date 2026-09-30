@@ -42,7 +42,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const role = authReq.user?.role || 'employee';
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
-        const { name, isActive, policyLimit, subCategories, requiresReceipt, assignedTo } = req.body;
+        const { name, isActive, policyLimit, fuelRatePerUnit, subCategories, requiresReceipt, assignedTo } = req.body;
 
         if (!name) {
             return res.status(400).json({ message: 'Name is required' });
@@ -52,6 +52,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             name,
             isActive: isActive ?? true,
             policyLimit: policyLimit ?? 0,
+            fuelRatePerUnit: typeof fuelRatePerUnit === 'number' && fuelRatePerUnit >= 0 ? fuelRatePerUnit : 0,
             subCategories: Array.isArray(subCategories) ? subCategories : [],
             requiresReceipt: requiresReceipt ?? false,
             assignedTo: ['HR', 'Finance', 'Manager'].includes(assignedTo) ? assignedTo : 'HR'
@@ -75,7 +76,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         const role = authReq.user?.role || 'employee';
         if (!isAdminLike(role)) return res.status(403).json({ message: 'Forbidden' });
 
-        const { name, isActive, policyLimit, subCategories, requiresReceipt, assignedTo } = req.body;
+        const { name, isActive, policyLimit, fuelRatePerUnit, subCategories, requiresReceipt, assignedTo } = req.body;
 
         const category = await ExpenseCategory.findById(req.params.id);
         if (!category) return res.status(404).json({ message: 'Category not found' });
@@ -83,6 +84,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         if (name !== undefined) category.name = name;
         if (isActive !== undefined) category.isActive = isActive;
         if (policyLimit !== undefined) category.policyLimit = policyLimit;
+        if (fuelRatePerUnit !== undefined) {
+            category.fuelRatePerUnit = typeof fuelRatePerUnit === 'number' && fuelRatePerUnit >= 0 ? fuelRatePerUnit : 0;
+        }
         if (subCategories !== undefined && Array.isArray(subCategories)) category.subCategories = subCategories;
         if (requiresReceipt !== undefined) category.requiresReceipt = requiresReceipt;
         if (assignedTo !== undefined && ['HR', 'Finance', 'Manager'].includes(assignedTo)) {
