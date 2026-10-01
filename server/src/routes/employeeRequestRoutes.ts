@@ -979,6 +979,13 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
             };
         }
 
+        // Exclude internal payroll batch finance tasks from employee request management queue
+        if ((query as any).$and) {
+            (query as any).$and.push({ employeeId: { $ne: 'FINANCE-BATCH' } });
+        } else {
+            (query as any).employeeId = { $ne: 'FINANCE-BATCH' };
+        }
+
         const requests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).lean();
         
         const employeeIds = [...new Set(requests.map(r => r.employeeId))];

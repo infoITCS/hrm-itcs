@@ -165,7 +165,7 @@ const AdminRequests = () => {
 
     const filteredRequests = requests.filter(req => {
         // Exclude internal payroll batch finance tasks completely from Request Management
-        if (req.employeeId === 'FINANCE-BATCH' || req.payrollRunId) return false;
+        if (req.employeeId === 'FINANCE-BATCH') return false;
 
         const cat = (req.category || '').toLowerCase();
         const reqType = (req.requestType || '').toLowerCase();
@@ -305,8 +305,8 @@ const AdminRequests = () => {
                                                         initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
                                                     />
                                                     <div>
-                                                        <p className="font-medium text-gray-900">{req.employeeId === 'FINANCE-BATCH' ? (req.details?.title || 'Finance Payroll Batch') : formatEmployeeFullName(req.employee, 'Employee')}</p>
-                                                        <p className="text-xs text-gray-500">{req.employeeId === 'FINANCE-BATCH' ? 'Finance Task' : req.employee?.employeeId}</p>
+                                                        <p className="font-medium text-gray-900">{formatEmployeeFullName(req.employee, 'Employee')}</p>
+                                                        <p className="text-xs text-gray-500">{req.employee?.employeeId || '—'}</p>
                                                     </div>
                                                 </div>
                                             </td>
@@ -567,8 +567,8 @@ const AdminRequests = () => {
                                         initialsClassName="bg-indigo-100 text-indigo-700 font-bold text-xs"
                                     />
                                     <div>
-                                        <p className="font-semibold text-gray-900 text-sm">{actionModal.employeeId === 'FINANCE-BATCH' ? (actionModal.details?.title || 'Finance Payroll Batch') : formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
-                                        <p className="text-xs text-gray-500">{actionModal.employeeId === 'FINANCE-BATCH' ? 'Finance Task' : (actionModal.employee?.employeeId || '—')}</p>
+                                        <p className="font-semibold text-gray-900 text-sm">{formatEmployeeFullName(actionModal.employee, 'Employee')}</p>
+                                        <p className="text-xs text-gray-500">{actionModal.employee?.employeeId || '—'}</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
