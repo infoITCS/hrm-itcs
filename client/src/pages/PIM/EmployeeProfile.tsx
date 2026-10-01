@@ -796,42 +796,21 @@ const EmployeeProfile = () => {
 
                 {/* Finance Tab — Only accessible by Super-Admin, Finance, and HR */}
                 {activeTab === 'finance' && canViewFinancials && (
-                    !isFinancialUnlocked ? (
-                        <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-8 space-y-5 animate-fadeIn">
-                            <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
-                                <Lock size={30} />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800">Confidential Financial Profile Locked</h3>
-                                <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
-                                    Salary components, compensation packages, Provident Fund balance, and bank records are protected. Enter the Universal Master Financial PIN to unlock.
+                    <div className="space-y-6 animate-fadeIn">
+                        {/* Allowances & Statutory Entitlements (Outside PIN Lock - Viewable by HR, Finance & Super-Admin) */}
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                            <div className="pb-2 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                    <Utensils size={16} className="text-emerald-600" />
+                                    Allowances & Statutory Entitlements
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                                    Operational allowances and statutory government enrollment status for this employee.
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setShowMasterPinModal(true)}
-                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-                            >
-                                <Lock size={15} /> Unlock Financial Records
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="space-y-8 animate-fadeIn">
-                            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
-                                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
-                                    <Unlock size={16} className="text-emerald-600" />
-                                    <span>Financial Profile Unlocked (Master Security Active)</span>
-                                </div>
-                                <button
-                                    onClick={() => setIsFinancialUnlocked(false)}
-                                    className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
-                                >
-                                    <Lock size={12} /> Lock
-                                </button>
-                            </div>
 
-                            {/* Allowances & Statutory Entitlements */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className={`p-2.5 rounded-xl ${employee.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                                             <Utensils size={18} />
@@ -851,7 +830,7 @@ const EmployeeProfile = () => {
                                 </div>
 
                                 {!((employee.employmentStatus?.status === 'Internship' || (typeof employee.employmentStatus === 'string' && employee.employmentStatus === 'Internship')) || (employee.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
-                                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                    <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className={`p-2.5 rounded-xl ${employee.financeInfo?.entitledForEobi === true ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
                                                 <Shield size={18} />
@@ -871,6 +850,43 @@ const EmployeeProfile = () => {
                                     </div>
                                 )}
                             </div>
+                        </div>
+
+                        {/* Confidential Financial Profile (Locked Behind Master Security PIN) */}
+                        {!isFinancialUnlocked ? (
+                            <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-8 space-y-5 animate-fadeIn">
+                                <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                                    <Lock size={30} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800">Confidential Financial Profile Locked</h3>
+                                    <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                                        Salary components, compensation packages, Provident Fund balance, and bank records are protected. Enter the Universal Master Financial PIN to unlock.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setShowMasterPinModal(true)}
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+                                >
+                                    <Lock size={15} /> Unlock Financial Records
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-8 animate-fadeIn">
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                        <Unlock size={16} className="text-emerald-600" />
+                                        <span>Financial Profile Unlocked (Master Security Active)</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsFinancialUnlocked(false)}
+                                        className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                    >
+                                        <Lock size={12} /> Lock
+                                    </button>
+                                </div>
+
+
 
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
@@ -1076,8 +1092,9 @@ const EmployeeProfile = () => {
                                 </div>
                             </div>
                         </div>
-                    )
-                )}
+                    )}
+                </div>
+            )}
 
                 {/* Benefits Tab */}
                 {activeTab === 'benefits' && (
@@ -1181,9 +1198,9 @@ const EmployeeProfile = () => {
                                     <p className="text-xs">No additional custom perks assigned.</p>
                                 </div>
                             )}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
                 {/* Documents Tab */}
                 {activeTab === 'documents' && (

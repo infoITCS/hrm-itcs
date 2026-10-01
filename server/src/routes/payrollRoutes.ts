@@ -1216,6 +1216,39 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                 }
             }
 
+            // Process PF withdrawal debits from employee balances upon approval
+            const pfWithdrawalPayout = Number(payslip.pfPayout) || 0;
+            if (pfWithdrawalPayout > 0) {
+                const existingDebit = employee.providentFundHistory?.some(
+                    (pf: any) => pf.type === 'debit' && (
+                        pf.payrollRunId === run._id.toString() ||
+                        (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear)
+                    )
+                );
+
+                if (!existingDebit) {
+                    const currentBal = Number(employee.providentFundBalance) || 0;
+                    const debitAmt = Math.min(currentBal, pfWithdrawalPayout);
+                    employee.providentFundBalance = Math.max(0, currentBal - debitAmt);
+
+                    if (!employee.providentFundHistory) {
+                        employee.providentFundHistory = [];
+                    }
+
+                    employee.providentFundHistory.push({
+                        amount: debitAmt,
+                        type: 'debit',
+                        source: 'payroll',
+                        date: new Date(),
+                        description: `PF Withdrawal (Paid in Payroll - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear})`,
+                        periodMonth: run.periodMonth,
+                        periodYear: run.periodYear,
+                        payrollRunId: run._id.toString(),
+                        erpReferenceId: String(erpReferenceId || '').trim()
+                    } as any);
+                }
+            }
+
             // Mark employee.salaryHistory arrears as processed for this run
             if (Array.isArray(employee.salaryHistory)) {
                 let historyUpdated = false;
@@ -1263,6 +1296,18 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
             }
             await payslip.save();
         }
+
+        // Mark any included PF withdrawal requests as Completed & Paid with ERP reference
+        await EmployeeRequest.updateMany(
+            {
+                payrollRunId: run._id,
+                $or: [
+                    { category: { $regex: /pf|provident/i } },
+                    { requestType: { $regex: /pf|provident/i } }
+                ]
+            },
+            { status: 'Completed', payoutStatus: 'Paid', paidAt: new Date(), erpReferenceId: String(erpReferenceId || '').trim() }
+        );
 
         run.status = 'Approved';
         run.approvedBy = authReq.user!.userId;
@@ -1327,28 +1372,42 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
             { $set: { payoutStatus: 'Paid', paidAt: new Date() } }
         );
 
-        // Process PF withdrawal debits from employee balances upon disbursement
+        // Process PF withdrawal debits from employee balances upon disbursement (if not already debited on approval)
         const payslipsForPF = await Payslip.find({ payrollRunId: run._id });
         for (const slip of payslipsForPF) {
             if (slip.pfPayout && slip.pfPayout > 0) {
                 const emp = await Employee.findOne({ employeeId: slip.employeeId });
                 if (emp) {
-                    const currentBal = emp.providentFundBalance || 0;
-                    const payoutAmt = Math.min(currentBal, slip.pfPayout);
-                    emp.providentFundBalance = Math.max(0, currentBal - payoutAmt);
-                    if (!emp.providentFundHistory) emp.providentFundHistory = [];
-                    emp.providentFundHistory.push({
-                        amount: payoutAmt,
-                        type: 'debit',
-                        source: 'payroll',
-                        date: new Date(),
-                        description: `PF Withdrawal (Disbursed in Payroll - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear})`,
-                        periodMonth: run.periodMonth,
-                        periodYear: run.periodYear,
-                        payrollRunId: run._id.toString(),
-                        erpReferenceId: erpReferenceId.trim()
-                    } as any);
-                    await emp.save();
+                    const existingDebitIndex = (emp.providentFundHistory || []).findIndex(
+                        (pf: any) => pf.type === 'debit' && (
+                            pf.payrollRunId === run._id.toString() ||
+                            (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear)
+                        )
+                    );
+
+                    if (existingDebitIndex !== -1) {
+                        if (erpReferenceId && emp.providentFundHistory[existingDebitIndex].erpReferenceId !== erpReferenceId.trim()) {
+                            emp.providentFundHistory[existingDebitIndex].erpReferenceId = erpReferenceId.trim();
+                            await emp.save();
+                        }
+                    } else {
+                        const currentBal = emp.providentFundBalance || 0;
+                        const payoutAmt = Math.min(currentBal, slip.pfPayout);
+                        emp.providentFundBalance = Math.max(0, currentBal - payoutAmt);
+                        if (!emp.providentFundHistory) emp.providentFundHistory = [];
+                        emp.providentFundHistory.push({
+                            amount: payoutAmt,
+                            type: 'debit',
+                            source: 'payroll',
+                            date: new Date(),
+                            description: `PF Withdrawal (Disbursed in Payroll - ${MONTH_NAMES[run.periodMonth]} ${run.periodYear})`,
+                            periodMonth: run.periodMonth,
+                            periodYear: run.periodYear,
+                            payrollRunId: run._id.toString(),
+                            erpReferenceId: erpReferenceId.trim()
+                        } as any);
+                        await emp.save();
+                    }
                 }
             }
         }
@@ -1449,14 +1508,14 @@ router.delete('/:runId', authenticate, async (req: Request, res: Response, next:
                     }
                 }
 
-                // Rollback PF contribution credited during approve
+                // Rollback PF contributions and withdrawal debits applied for this run
                 if (emp.providentFundHistory && emp.providentFundHistory.length > 0) {
                     const runPfEntries = emp.providentFundHistory.filter(
                         (pf: any) => pf.payrollRunId === run._id.toString() || (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear)
                     );
-                    const totalCredited = runPfEntries.reduce((sum: number, pf: any) => sum + (pf.type === 'credit' ? Number(pf.amount) || 0 : -(Number(pf.amount) || 0)), 0);
-                    if (totalCredited > 0) {
-                        emp.providentFundBalance = Math.max(0, (Number(emp.providentFundBalance) || 0) - totalCredited);
+                    if (runPfEntries.length > 0) {
+                        const netRunEffect = runPfEntries.reduce((sum: number, pf: any) => sum + (pf.type === 'credit' ? Number(pf.amount) || 0 : -(Number(pf.amount) || 0)), 0);
+                        emp.providentFundBalance = Math.max(0, (Number(emp.providentFundBalance) || 0) - netRunEffect);
                         emp.providentFundHistory = emp.providentFundHistory.filter(
                             (pf: any) => !(pf.payrollRunId === run._id.toString() || (pf.source === 'payroll' && pf.periodMonth === run.periodMonth && pf.periodYear === run.periodYear))
                         );

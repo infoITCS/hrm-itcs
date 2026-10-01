@@ -2222,40 +2222,141 @@ const AddEmployeeWizard = () => {
 
                 {/* Step 7: Finance — admin only (#9) */}
                 {step === 7 && isAdmin && (
-                    !isFinancialUnlocked ? (
-                        <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-8 space-y-5 animate-fadeIn">
-                            <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
-                                <Lock size={30} />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800">Financial Configuration Locked</h3>
-                                <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
-                                    Configuring base salary, probation terms, bank details, and Provident Fund balance requires Universal Master Security authorization.
+                    <div className="space-y-6 pb-20 animate-slide-up">
+                        {/* Allowances & Statutory Entitlements (Outside PIN Lock - Accessible to HR & Admins) */}
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                            <div className="pb-2 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                    <Utensils size={16} className="text-emerald-600" />
+                                    Allowances & Statutory Entitlements
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                                    Operational allowances and statutory government enrollment settings. Accessible directly to HR & Admins.
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowMasterPinModal(true)}
-                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-                            >
-                                <Lock size={15} /> Unlock with Master Security PIN
-                            </button>
+
+                            {/* Meal Allowance Entitlement Toggle */}
+                            <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                    <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                                        <Utensils size={18} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-gray-800">Entitled for Meal Allowance</h4>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            If enabled, monthly meal stipend is calculated based on office present days. If disabled, this employee receives Rs. 0 meal allowance on payroll runs.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <span className={`text-xs font-bold ${formData.financeInfo?.entitledForMealAllowance !== false ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                        {formData.financeInfo?.entitledForMealAllowance !== false ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const currentVal = formData.financeInfo?.entitledForMealAllowance !== false;
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                financeInfo: {
+                                                    ...prev.financeInfo,
+                                                    entitledForMealAllowance: !currentVal
+                                                }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                formData.financeInfo?.entitledForMealAllowance !== false ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* EOBI Entitlement Toggle — Excluded for intern staff */}
+                            {!(formData.employmentStatus?.status === 'Internship' || (formData.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
+                                <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>
+                                            <Shield size={18} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-gray-800">EOBI Entitlement</h4>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                Employees' Old-Age Benefits Institution (EOBI) statutory pension contribution. If enabled, employee is marked eligible for EOBI deduction tracking on payroll.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <span className={`text-xs font-bold ${formData.financeInfo?.entitledForEobi === true ? 'text-indigo-700' : 'text-slate-500'}`}>
+                                            {formData.financeInfo?.entitledForEobi === true ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const currentVal = formData.financeInfo?.entitledForEobi === true;
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    financeInfo: {
+                                                        ...prev.financeInfo,
+                                                        entitledForEobi: !currentVal
+                                                    }
+                                                }));
+                                            }}
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-600' : 'bg-slate-300'
+                                            }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                    formData.financeInfo?.entitledForEobi === true ? 'translate-x-5' : 'translate-x-0'
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    ) : (
-                        <div className="space-y-8 animate-slide-up pb-20">
-                            <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
-                                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
-                                    <Unlock size={16} className="text-emerald-600" />
-                                    <span>Financial Session Unlocked (Master Security Active)</span>
+
+                        {/* Confidential Compensation & Financial Records (Locked Behind Master PIN) */}
+                        {!isFinancialUnlocked ? (
+                            <div className="p-8 sm:p-12 bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100/50 text-center max-w-lg mx-auto my-6 space-y-5 animate-fadeIn">
+                                <div className="w-16 h-16 bg-amber-50 ring-8 ring-amber-50/50 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
+                                    <Lock size={30} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800">Confidential Financial Configuration Locked</h3>
+                                    <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto leading-relaxed">
+                                        Configuring base salary, probation terms, bank details, and Provident Fund balance requires Universal Master Security authorization.
+                                    </p>
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => setIsFinancialUnlocked(false)}
-                                    className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                    onClick={() => setShowMasterPinModal(true)}
+                                    className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
                                 >
-                                    <Lock size={12} /> Lock
+                                    <Lock size={15} /> Unlock with Master Security PIN
                                 </button>
                             </div>
+                        ) : (
+                            <div className="space-y-8 animate-slide-up">
+                                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/80 px-4 py-2.5 rounded-2xl">
+                                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                        <Unlock size={16} className="text-emerald-600" />
+                                        <span>Financial Session Unlocked (Master Security Active)</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsFinancialUnlocked(false)}
+                                        className="px-3 py-1 bg-white hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                    >
+                                        <Lock size={12} /> Lock
+                                    </button>
+                                </div>
 
                             {/* Salary & Employment Terms */}
                             <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 shadow-xs">
@@ -2601,91 +2702,7 @@ const AddEmployeeWizard = () => {
                             </div>
                         )}
 
-                        {/* Meal Allowance Entitlement Toggle */}
-                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                                <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
-                                    <Utensils size={18} />
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-gray-800">Entitled for Meal Allowance</h4>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                        If enabled, monthly meal stipend is calculated based on office present days. If disabled, this employee receives Rs. 0 meal allowance on payroll runs.
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3 shrink-0">
-                                <span className={`text-xs font-bold ${formData.financeInfo?.entitledForMealAllowance !== false ? 'text-emerald-700' : 'text-slate-500'}`}>
-                                    {formData.financeInfo?.entitledForMealAllowance !== false ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const currentVal = formData.financeInfo?.entitledForMealAllowance !== false;
-                                        setFormData(prev => ({
-                                            ...prev,
-                                            financeInfo: {
-                                                ...prev.financeInfo,
-                                                entitledForMealAllowance: !currentVal
-                                            }
-                                        }));
-                                    }}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                        formData.financeInfo?.entitledForMealAllowance !== false ? 'bg-emerald-600' : 'bg-slate-300'
-                                    }`}
-                                >
-                                    <span
-                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                            formData.financeInfo?.entitledForMealAllowance !== false ? 'translate-x-5' : 'translate-x-0'
-                                        }`}
-                                    />
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* EOBI Entitlement Toggle — Excluded for intern staff */}
-                        {!(formData.employmentStatus?.status === 'Internship' || (formData.jobInfo?.designation || '').toLowerCase().includes('intern')) && (
-                            <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div className="flex items-start gap-3">
-                                    <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>
-                                        <Shield size={18} />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-gray-800">EOBI Entitlement</h4>
-                                        <p className="text-xs text-gray-500 mt-0.5">
-                                            Employees' Old-Age Benefits Institution (EOBI) statutory pension contribution. If enabled, employee is marked eligible for EOBI deduction tracking on payroll.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0">
-                                    <span className={`text-xs font-bold ${formData.financeInfo?.entitledForEobi === true ? 'text-indigo-700' : 'text-slate-500'}`}>
-                                        {formData.financeInfo?.entitledForEobi === true ? '✓ Yes (Entitled)' : '✕ No (Excluded)'}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const currentVal = formData.financeInfo?.entitledForEobi === true;
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                financeInfo: {
-                                                    ...prev.financeInfo,
-                                                    entitledForEobi: !currentVal
-                                                }
-                                            }));
-                                        }}
-                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                            formData.financeInfo?.entitledForEobi === true ? 'bg-indigo-600' : 'bg-slate-300'
-                                        }`}
-                                    >
-                                        <span
-                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                                formData.financeInfo?.entitledForEobi === true ? 'translate-x-5' : 'translate-x-0'
-                                            }`}
-                                        />
-                                    </button>
-                                </div>
-                            </div>
-                        )}
 
                         {/* Salary Structure & Bank Details (Restricted to Super-Admin & Finance) */}
                         {canEditFinancials ? (
@@ -3101,9 +3118,10 @@ const AddEmployeeWizard = () => {
                                 </div>
                             </div>
                         </div>
-
                     </div>
-                ))}
+                )}
+            </div>
+        )}
 
                 {/* Step 7: Documents — step 8 for admins, step 7 for non-admins */}
                 {step === (isAdmin ? 8 : 7) && (
