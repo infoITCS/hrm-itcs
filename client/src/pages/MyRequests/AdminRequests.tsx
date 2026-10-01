@@ -164,6 +164,9 @@ const AdminRequests = () => {
     const isManagerRole = (user?.role || '').toLowerCase().trim() === 'manager';
 
     const filteredRequests = requests.filter(req => {
+        // Exclude internal payroll batch finance tasks completely from Request Management
+        if (req.employeeId === 'FINANCE-BATCH' || req.payrollRunId) return false;
+
         const cat = (req.category || '').toLowerCase();
         const reqType = (req.requestType || '').toLowerCase();
         const isLoan = cat.includes('loan') || reqType.includes('loan');
@@ -604,9 +607,14 @@ const AdminRequests = () => {
                                                 <p className="font-semibold text-gray-900">Rs. {Math.ceil(Number(actionModal.details?.recommendedMonthlyDeduction) || 0).toLocaleString()}</p>
                                             </div>
                                         </div>
-                                        {actionModal.employee && (
+                                        {actionModal.employee && ['Pending', 'Pending HR', 'Pending Finance'].includes(actionModal.status) && (
                                             (() => {
-                                                const activeLoans = (actionModal.employee.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+                                                const activeLoans = (actionModal.employee.loans || []).filter((l: any) => 
+                                                    l.status === 'Active' && 
+                                                    Number(l.remainingAmount) > 0 &&
+                                                    l.loanId !== actionModal._id &&
+                                                    l.loanId !== actionModal.erpReferenceId
+                                                );
                                                 const existingLoanBalance = Math.ceil(activeLoans.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.remainingAmount || 0)), 0));
                                                 const existingRate = Math.ceil(activeLoans.length > 0 ? Math.max(...activeLoans.map((l: any) => Number(l.monthlyInstallment || 0))) : 0);
                                                 const reqAmt = Math.ceil(Number(actionModal.details?.requestedAmount || 0));
