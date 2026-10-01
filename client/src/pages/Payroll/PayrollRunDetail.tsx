@@ -5,7 +5,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt
+    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -173,6 +173,20 @@ const PayslipEditPanel = ({
 
     const [earnings, setEarnings] = useState<Earning[]>(payslip.earnings.map(e => ({ ...e })));
     const [deductions, setDeductions] = useState<Deduction[]>(payslip.deductions.map(d => ({ ...d })));
+
+    // Drag & Drop reorder states (isolated per section)
+    const [draggedEarningIdx, setDraggedEarningIdx] = useState<number | null>(null);
+    const [dragOverEarningIdx, setDragOverEarningIdx] = useState<number | null>(null);
+    const [draggedDeductionIdx, setDraggedDeductionIdx] = useState<number | null>(null);
+    const [dragOverDeductionIdx, setDragOverDeductionIdx] = useState<number | null>(null);
+
+    const reorderList = <T,>(list: T[], fromIndex: number, toIndex: number): T[] => {
+        if (fromIndex === toIndex) return list;
+        const result = [...list];
+        const [moved] = result.splice(fromIndex, 1);
+        result.splice(toIndex, 0, moved);
+        return result;
+    };
     const [paymentMethod, setPaymentMethod] = useState(payslip.paymentMethod || 'Bank Transfer');
     const [beneficiaryAccount, setBeneficiaryAccount] = useState(payslip.beneficiaryAccount || empOwnAccount);
     const [beneficiaryName, setBeneficiaryName] = useState(payslip.beneficiaryName || empOwnName);
@@ -416,7 +430,52 @@ const PayslipEditPanel = ({
                                 const isPreset = presetEarnings.includes(e.component) && e.component !== 'Custom / Other';
                                 const isClaim = (e as any).expenseClaim === true || isExpenseClaimPayrollEarning(e);
                                 return (
-                                    <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
+                                    <div 
+                                        key={i} 
+                                        onDragOver={ev => {
+                                            if (draggedEarningIdx === null) return;
+                                            ev.preventDefault();
+                                            ev.dataTransfer.dropEffect = 'move';
+                                            if (dragOverEarningIdx !== i) setDragOverEarningIdx(i);
+                                        }}
+                                        onDragLeave={ev => {
+                                            if (!ev.currentTarget.contains(ev.relatedTarget as Node)) {
+                                                if (dragOverEarningIdx === i) setDragOverEarningIdx(null);
+                                            }
+                                        }}
+                                        onDrop={ev => {
+                                            ev.preventDefault();
+                                            if (draggedEarningIdx !== null && draggedEarningIdx !== i) {
+                                                setEarnings(prev => reorderList(prev, draggedEarningIdx, i));
+                                            }
+                                            setDraggedEarningIdx(null);
+                                            setDragOverEarningIdx(null);
+                                        }}
+                                        className={`flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border transition-all ${
+                                            draggedEarningIdx === i
+                                                ? 'opacity-40 border-dashed border-indigo-400 bg-indigo-50/30'
+                                                : dragOverEarningIdx === i
+                                                ? 'border-indigo-500 bg-indigo-50/50 shadow-xs ring-1 ring-indigo-400'
+                                                : 'border-slate-100 hover:border-slate-200'
+                                        }`}
+                                    >
+                                        {/* Drag Handle */}
+                                        <div
+                                            draggable
+                                            onDragStart={ev => {
+                                                ev.dataTransfer.effectAllowed = 'move';
+                                                ev.dataTransfer.setData('text/plain', String(i));
+                                                setDraggedEarningIdx(i);
+                                            }}
+                                            onDragEnd={() => {
+                                                setDraggedEarningIdx(null);
+                                                setDragOverEarningIdx(null);
+                                            }}
+                                            className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200/60 rounded transition-colors shrink-0"
+                                            title="Drag up or down to reorder"
+                                        >
+                                            <GripVertical size={14} />
+                                        </div>
                                         <select
                                             value={isPreset ? e.component : 'Custom / Other'}
                                             onChange={ev => {
@@ -495,7 +554,52 @@ const PayslipEditPanel = ({
                             {deductions.map((d, i) => {
                                 const isPreset = presetDeductions.includes(d.component) && d.component !== 'Custom / Other';
                                 return (
-                                    <div key={i} className="flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border border-slate-100">
+                                    <div 
+                                        key={i} 
+                                        onDragOver={ev => {
+                                            if (draggedDeductionIdx === null) return;
+                                            ev.preventDefault();
+                                            ev.dataTransfer.dropEffect = 'move';
+                                            if (dragOverDeductionIdx !== i) setDragOverDeductionIdx(i);
+                                        }}
+                                        onDragLeave={ev => {
+                                            if (!ev.currentTarget.contains(ev.relatedTarget as Node)) {
+                                                if (dragOverDeductionIdx === i) setDragOverDeductionIdx(null);
+                                            }
+                                        }}
+                                        onDrop={ev => {
+                                            ev.preventDefault();
+                                            if (draggedDeductionIdx !== null && draggedDeductionIdx !== i) {
+                                                setDeductions(prev => reorderList(prev, draggedDeductionIdx, i));
+                                            }
+                                            setDraggedDeductionIdx(null);
+                                            setDragOverDeductionIdx(null);
+                                        }}
+                                        className={`flex items-center gap-2 bg-slate-50/60 p-1.5 rounded-lg border transition-all ${
+                                            draggedDeductionIdx === i
+                                                ? 'opacity-40 border-dashed border-indigo-400 bg-indigo-50/30'
+                                                : dragOverDeductionIdx === i
+                                                ? 'border-indigo-500 bg-indigo-50/50 shadow-xs ring-1 ring-indigo-400'
+                                                : 'border-slate-100 hover:border-slate-200'
+                                        }`}
+                                    >
+                                        {/* Drag Handle */}
+                                        <div
+                                            draggable
+                                            onDragStart={ev => {
+                                                ev.dataTransfer.effectAllowed = 'move';
+                                                ev.dataTransfer.setData('text/plain', String(i));
+                                                setDraggedDeductionIdx(i);
+                                            }}
+                                            onDragEnd={() => {
+                                                setDraggedDeductionIdx(null);
+                                                setDragOverDeductionIdx(null);
+                                            }}
+                                            className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200/60 rounded transition-colors shrink-0"
+                                            title="Drag up or down to reorder"
+                                        >
+                                            <GripVertical size={14} />
+                                        </div>
                                         <select
                                             value={isPreset ? d.component : 'Custom / Other'}
                                             onChange={ev => {
