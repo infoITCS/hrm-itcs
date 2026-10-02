@@ -276,8 +276,10 @@ const MyRequests = () => {
         
         const shouldProceedAnyways = anyways === true;
         
-        // Loan PF Cap & 1-Year Payback Validation
-        if (activeCategory.systemType === 'loan' || activeCategory.title?.toLowerCase().includes('loan')) {
+        const isLoanPause = activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause');
+
+        // Loan PF Cap & 1-Year Payback Validation (strictly for new loan applications, NOT loan pause requests)
+        if (!isLoanPause && (activeCategory.systemType === 'loan' || (activeCategory.title?.toLowerCase().includes('loan') && !activeCategory.title?.toLowerCase().includes('pause')))) {
             if (!isPermanent) {
                 triggerAlert('Benefit Restricted', 'The employee loan facility is exclusively available to confirmed Permanent staff.', 'warning');
                 return;
@@ -316,7 +318,6 @@ const MyRequests = () => {
             };
             let type = selectedOption;
 
-            const isLoanPause = activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause');
             const isWfh = activeCategory.title === 'Work From Home (WFH)' || 
                           activeCategory.systemType === 'wfh' || 
                           activeCategory.title?.toLowerCase().includes('work from home') || 
