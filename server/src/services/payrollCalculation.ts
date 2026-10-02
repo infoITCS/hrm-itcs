@@ -31,6 +31,60 @@ function getEmploymentStatus(emp: any): string {
     return emp.employmentStatus.status || '';
 }
 
+/**
+ * Calculates effective service start date, strictly starting from Probation
+ * (excluding initial internship duration if the employee joined as an intern).
+ */
+export function getEffectiveServiceStartDate(emp: any): Date | null {
+    const rawStatus = getEmploymentStatus(emp);
+    const status = (rawStatus || '').trim().toLowerCase();
+
+    // Active interns are not eligible for work anniversary bonus
+    if (status === 'internship' || (emp.jobInfo?.designation || '').toLowerCase().includes('intern')) {
+        return null;
+    }
+
+    // If employee transitioned through probation and has a probationEndDate recorded
+    if (emp.employmentStatus?.probationEndDate) {
+        const pEnd = new Date(emp.employmentStatus.probationEndDate);
+        if (!isNaN(pEnd.getTime())) {
+            const probationMonths = Number(emp.financeInfo?.probationMonths) || 3;
+            const derivedProbationStart = new Date(pEnd);
+            derivedProbationStart.setMonth(derivedProbationStart.getMonth() - probationMonths);
+
+            // If joiningDate was before probation started (e.g. initial internship period),
+            // exclude the internship months by anchoring to the derived probation start date!
+            if (emp.jobInfo?.joiningDate) {
+                const jDate = new Date(emp.jobInfo.joiningDate);
+                if (!isNaN(jDate.getTime()) && jDate < derivedProbationStart) {
+                    return derivedProbationStart;
+                }
+            }
+        }
+    }
+
+    if (emp.jobInfo?.joiningDate) {
+        const jDate = new Date(emp.jobInfo.joiningDate);
+        if (!isNaN(jDate.getTime())) return jDate;
+    }
+
+    return null;
+}
+
+/**
+ * Work Anniversary Bonus Tiers:
+ * - 1st Year: PKR 15,000
+ * - 2nd Year: PKR 25,000
+ * - 3rd Year onwards: PKR 50,000
+ */
+export function calculateAnniversaryBonus(yearsCompleted: number): number {
+    if (yearsCompleted <= 0) return 0;
+    if (yearsCompleted === 1) return 15000;
+    if (yearsCompleted === 2) return 25000;
+    if (yearsCompleted >= 3) return 50000;
+    return 0;
+}
+
 function resolveEmployeeEarnings(emp: any): { component: string; amount: number; type: 'fixed' | 'variable'; expenseClaim?: boolean }[] {
     const fromComponents = (emp.salaryComponents || [])
         .filter((sc: any) => sc && sc.component && (Number(sc.amount) || 0) > 0)
@@ -465,25 +519,29 @@ export async function buildPayrollPayslips(
 
         let hasAnniversaryInMonth = false;
         let yearsCompleted = 0;
-        if (emp.jobInfo?.joiningDate) {
-            const joiningDate = new Date(emp.jobInfo.joiningDate);
-            const joiningMonth = joiningDate.getMonth() + 1;
-            const joiningYear = joiningDate.getFullYear();
+        let anniversaryBonusAmount = 0;
+        const serviceStartDate = getEffectiveServiceStartDate(emp);
+        if (serviceStartDate) {
+            const startMonth = serviceStartDate.getMonth() + 1;
+            const startYear = serviceStartDate.getFullYear();
 
-            if (joiningMonth === run.periodMonth && joiningYear < run.periodYear) {
-                hasAnniversaryInMonth = true;
-                yearsCompleted = run.periodYear - joiningYear;
+            if (startMonth === run.periodMonth && startYear < run.periodYear) {
+                yearsCompleted = run.periodYear - startYear;
+                anniversaryBonusAmount = calculateAnniversaryBonus(yearsCompleted);
+                if (anniversaryBonusAmount > 0) {
+                    hasAnniversaryInMonth = true;
+                }
             }
         }
 
         let notes = '';
-        if (hasAnniversaryInMonth) {
+        if (hasAnniversaryInMonth && anniversaryBonusAmount > 0) {
             earnings.push({
                 component: 'Anniversary Bonus',
-                amount: 0,
+                amount: anniversaryBonusAmount,
                 type: 'fixed',
             });
-            notes = `Eligible for Work Anniversary Bonus (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
+            notes = `Work Anniversary Bonus: PKR ${anniversaryBonusAmount.toLocaleString()} (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
         }
 
         const empStatus = getEmploymentStatus(emp);

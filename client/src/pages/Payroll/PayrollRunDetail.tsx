@@ -42,11 +42,15 @@ interface Payslip {
     status: 'Draft' | 'Finalized';
     paymentMethod: string;
     notes?: string;
+    periodMonth?: number;
+    periodYear?: number;
     employeeDetails?: {
         firstName: string;
         middleName?: string;
         lastName: string;
-        jobInfo?: { designation?: string; department?: string };
+        employmentStatus?: { status?: string; probationEndDate?: string };
+        jobInfo?: { designation?: string; department?: string; joiningDate?: string };
+        financeInfo?: { probationMonths?: number };
         bankDetails?: { accountNumber?: string; bankName?: string; iban?: string };
         avatar?: string;
     };
@@ -138,11 +142,59 @@ const PRESET_DEDUCTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper to calculate anniversary bonus excluding internship duration
+// ─────────────────────────────────────────────────────────────────────────────
+const calculateAnniversaryBonusFromEmployee = (empDetails: any, targetYear?: number): { years: number; amount: number } => {
+    if (!empDetails) return { years: 0, amount: 0 };
+    const rawStatus = typeof empDetails.employmentStatus === 'string'
+        ? empDetails.employmentStatus
+        : (empDetails.employmentStatus?.status || '');
+    const status = (rawStatus || '').trim().toLowerCase();
+
+    // Active interns do not qualify for anniversary bonus
+    if (status === 'internship' || (empDetails.jobInfo?.designation || '').toLowerCase().includes('intern')) {
+        return { years: 0, amount: 0 };
+    }
+
+    let serviceStart: Date | null = null;
+    if (empDetails.employmentStatus?.probationEndDate) {
+        const pEnd = new Date(empDetails.employmentStatus.probationEndDate);
+        if (!isNaN(pEnd.getTime())) {
+            const probationMonths = Number(empDetails.financeInfo?.probationMonths) || 3;
+            const derivedStart = new Date(pEnd);
+            derivedStart.setMonth(derivedStart.getMonth() - probationMonths);
+
+            // Exclude internship if joiningDate was earlier than probation start
+            if (empDetails.jobInfo?.joiningDate) {
+                const jDate = new Date(empDetails.jobInfo.joiningDate);
+                if (!isNaN(jDate.getTime()) && jDate < derivedStart) {
+                    serviceStart = derivedStart;
+                }
+            }
+        }
+    }
+
+    if (!serviceStart && empDetails.jobInfo?.joiningDate) {
+        const jDate = new Date(empDetails.jobInfo.joiningDate);
+        if (!isNaN(jDate.getTime())) serviceStart = jDate;
+    }
+
+    if (!serviceStart) return { years: 0, amount: 0 };
+
+    const effectiveYear = targetYear || new Date().getFullYear();
+    const years = effectiveYear - serviceStart.getFullYear();
+    if (years <= 0) return { years: 0, amount: 0 };
+    if (years === 1) return { years: 1, amount: 15000 };
+    if (years === 2) return { years: 2, amount: 25000 };
+    return { years, amount: 50000 };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Inline Payslip Edit Panel with Category Dropdowns & Dynamic Beneficiary
 // ─────────────────────────────────────────────────────────────────────────────
 const PayslipEditPanel = ({
-    payslip, currency, allPayslips, onClose, onSaved,
-}: { payslip: Payslip; currency: string; allPayslips: Payslip[]; onClose: () => void; onSaved: () => void }) => {
+    payslip, currency, allPayslips, periodYear, onClose, onSaved,
+}: { payslip: Payslip; currency: string; allPayslips: Payslip[]; periodYear?: number; onClose: () => void; onSaved: () => void }) => {
     const empBank = payslip.employeeDetails?.bankDetails;
     const empOwnAccount = empBank?.accountNumber || empBank?.iban || '';
     const empOwnBank = empBank?.bankName || 'Meezan Bank';
@@ -179,7 +231,17 @@ const PayslipEditPanel = ({
         fetchComponents();
     }, []);
 
-    const [earnings, setEarnings] = useState<Earning[]>(payslip.earnings.map(e => ({ ...e })));
+    const effectivePeriodYear = periodYear || payslip.periodYear;
+    const [earnings, setEarnings] = useState<Earning[]>(() => {
+        const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
+        return payslip.earnings.map(e => {
+            // Auto-populate 0 or blank Anniversary Bonus amounts from tenure
+            if (e.component === 'Anniversary Bonus' && (!e.amount || Number(e.amount) === 0) && bonusInfo.amount > 0) {
+                return { ...e, amount: bonusInfo.amount };
+            }
+            return { ...e };
+        });
+    });
     const [deductions, setDeductions] = useState<Deduction[]>(payslip.deductions.map(d => ({ ...d })));
 
     // Drag & Drop reorder states (isolated per section)
@@ -488,7 +550,19 @@ const PayslipEditPanel = ({
                                             value={isPreset ? e.component : 'Custom / Other'}
                                             onChange={ev => {
                                                 const val = ev.target.value;
-                                                setEarnings(arr => arr.map((x, j) => j === i ? { ...x, component: val === 'Custom / Other' ? '' : val } : x));
+                                                setEarnings(arr => arr.map((x, j) => {
+                                                    if (j !== i) return x;
+                                                    let newAmount = x.amount;
+                                                    if (val === 'Anniversary Bonus' && (!x.amount || Number(x.amount) === 0)) {
+                                                        const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
+                                                        if (bonusInfo.amount > 0) newAmount = bonusInfo.amount;
+                                                    }
+                                                    return {
+                                                        ...x,
+                                                        component: val === 'Custom / Other' ? '' : val,
+                                                        amount: newAmount,
+                                                    };
+                                                }));
                                             }}
                                             className="w-48 shrink-0 h-8 border border-slate-200 rounded-lg px-2 text-xs text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
                                         >
@@ -511,6 +585,14 @@ const PayslipEditPanel = ({
                                                 {isClaim && (
                                                     <span className="text-[10px] bg-sky-50 text-sky-700 font-bold px-2 py-0.5 rounded border border-sky-200 uppercase tracking-wider">
                                                         Claim Reimbursement
+                                                    </span>
+                                                )}
+                                                {e.component === 'Anniversary Bonus' && (
+                                                    <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
+                                                        {(() => {
+                                                            const b = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
+                                                            return b.years > 0 ? `${b.years}${b.years === 1 ? 'st' : b.years === 2 ? 'nd' : b.years === 3 ? 'rd' : 'th'} Yr Bonus` : 'Anniversary Bonus';
+                                                        })()}
                                                     </span>
                                                 )}
                                             </div>
@@ -1527,6 +1609,7 @@ const PayrollRunDetail = () => {
                     payslip={editingPayslip}
                     currency={run.currency}
                     allPayslips={payslips}
+                    periodYear={run.periodYear}
                     onClose={() => setEditingPayslip(null)}
                     onSaved={() => { setEditingPayslip(null); setRefreshCounter(c => c + 1); }}
                 />

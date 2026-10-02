@@ -752,7 +752,7 @@ router.get('/payslips/:payslipId', authenticate, async (req: Request, res: Respo
     try {
         const authReq = req as AuthRequest;
         const payslip = await Payslip.findById(req.params.payslipId)
-            .populate('employeeDetails', 'firstName middleName lastName jobInfo bankDetails avatar')
+            .populate('employeeDetails', 'firstName middleName lastName jobInfo employmentStatus financeInfo bankDetails avatar')
             .populate('payrollRunId')
             .lean() as any;
 
@@ -1122,7 +1122,7 @@ router.get('/:runId', authenticate, async (req: Request, res: Response, next: Ne
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
         const payslips = await Payslip.find({ payrollRunId: runId })
-            .populate('employeeDetails', 'firstName middleName lastName jobInfo bankDetails avatar')
+            .populate('employeeDetails', 'firstName middleName lastName jobInfo employmentStatus financeInfo bankDetails avatar')
             .lean();
 
         return res.json({ run, payslips });
