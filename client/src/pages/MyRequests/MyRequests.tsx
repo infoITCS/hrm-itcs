@@ -27,6 +27,8 @@ const MyRequests = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     
     // Alert configurations
+    const [requestToCancel, setRequestToCancel] = useState<string | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
     const [alertConfig, setAlertConfig] = useState<{
         isOpen: boolean;
         title: string;
@@ -278,6 +280,13 @@ const MyRequests = () => {
         
         const isLoanPause = activeCategory.title === 'Loan Pause Request' || activeCategory.title?.toLowerCase().includes('loan pause');
 
+        if (isLoanPause) {
+            if (activeLoanBalance <= 0) {
+                triggerAlert('No Active Loan', 'You currently do not have an active loan balance to pause.', 'warning');
+                return;
+            }
+        }
+
         // Loan PF Cap & 1-Year Payback Validation (strictly for new loan applications, NOT loan pause requests)
         if (!isLoanPause && (activeCategory.systemType === 'loan' || (activeCategory.title?.toLowerCase().includes('loan') && !activeCategory.title?.toLowerCase().includes('pause')))) {
             if (!isPermanent) {
@@ -445,9 +454,16 @@ const MyRequests = () => {
         setShowModal(true);
     };
 
-    const handleCancelRequest = async (id: string, e?: React.MouseEvent) => {
+    const handleCancelRequest = (id: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
-        if (!confirm('Are you sure you want to cancel this request?')) return;
+        setRequestToCancel(id);
+    };
+
+    const confirmCancelRequest = async () => {
+        if (!requestToCancel || isCancelling) return;
+        const id = requestToCancel;
+        setIsCancelling(true);
+        setRequestToCancel(null);
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.baseURL}/api/my-requests/${id}`, {
@@ -466,6 +482,9 @@ const MyRequests = () => {
             }
         } catch (err) {
             console.error(err);
+            triggerAlert('Error', 'An unexpected error occurred while cancelling the request.', 'error');
+        } finally {
+            setIsCancelling(false);
         }
     };
 
@@ -523,6 +542,11 @@ const MyRequests = () => {
                         <div 
                             key={cat._id}
                             onClick={() => { 
+                                const isLoanPauseCat = cat.title === 'Loan Pause Request' || cat.title?.toLowerCase().includes('loan pause');
+                                if (isLoanPauseCat && activeLoanBalance <= 0) {
+                                    triggerAlert('No Active Loan', 'You currently do not have an active loan balance to pause.', 'warning');
+                                    return;
+                                }
                                 const visibleOptions = cat.options.filter((opt: string) => !(cat.hiddenOptions || []).includes(opt));
                                 setActiveCategory(cat); 
                                 setSelectedOption(visibleOptions[0] || '');
@@ -1468,6 +1492,19 @@ const MyRequests = () => {
                 title={alertConfig.title}
                 message={alertConfig.message}
                 type={alertConfig.type}
+            />
+
+            {/* Cancel Request Confirmation Modal */}
+            <AlertModal
+                isOpen={!!requestToCancel}
+                onClose={() => setRequestToCancel(null)}
+                title="Cancel Request"
+                message="Are you sure you want to cancel this request? This action cannot be undone."
+                type="error"
+                showCancel
+                confirmText={isCancelling ? "Cancelling..." : "Yes, Cancel Request"}
+                cancelText="Keep Request"
+                onConfirm={confirmCancelRequest}
             />
 
             {/* Provident Fund Exceeded Confirmation Dialog */}

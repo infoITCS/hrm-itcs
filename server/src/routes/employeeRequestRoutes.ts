@@ -615,7 +615,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(400).json({ message: 'Employee profile not found for the logged-in user' });
         }
 
-        const isLoan = category === 'Loan' || category === 'Request Loan' || requestType === 'Loan' || category?.toLowerCase().includes('loan') || requestType?.toLowerCase().includes('loan');
+        const isLoanPause = category === 'Loan Pause Request' || requestType === 'Loan Pause' || category?.toLowerCase().includes('loan pause') || requestType?.toLowerCase().includes('loan pause');
+        const isLoan = !isLoanPause && (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan' || (category?.toLowerCase().includes('loan') && !category?.toLowerCase().includes('pause')) || (requestType?.toLowerCase().includes('loan') && !requestType?.toLowerCase().includes('pause')));
         const isPfWithdrawal = category === 'PF Withdrawal' || category === 'Request Provident Fund' || requestType === 'PF Withdrawal' || category === 'Provident Fund';
 
         const empStatus = typeof employee.employmentStatus === 'string'
@@ -623,10 +624,24 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             : employee.employmentStatus?.status;
         const isPermanent = (empStatus || '').trim().toLowerCase() === 'permanent';
 
+        if (isLoanPause) {
+            let activeBalance = 0;
+            try {
+                const loanDetails = await getEmployeeLoanDetails(employee.employeeId);
+                activeBalance = Math.ceil(loanDetails.summary.remainingBalance || 0);
+            } catch {}
+
+            if (activeBalance <= 0) {
+                return res.status(400).json({
+                    message: 'You currently do not have an active loan balance to pause.'
+                });
+            }
+        }
+
         const newRequest = new EmployeeRequest({
             employeeId: employee.employeeId,
-            category: isPfWithdrawal ? 'PF Withdrawal' : category,
-            requestType: isPfWithdrawal ? 'PF Withdrawal' : requestType,
+            category: isPfWithdrawal ? 'PF Withdrawal' : (isLoanPause ? 'Loan Pause Request' : category),
+            requestType: isPfWithdrawal ? 'PF Withdrawal' : (isLoanPause ? 'Loan Pause' : requestType),
             status: 'Pending',
             details
         });
