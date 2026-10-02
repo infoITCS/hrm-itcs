@@ -731,10 +731,7 @@ export async function getEmployeeMonthlyAttendance(
             const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
             const isFuture = dateStr > todayStr;
             const weekend = isWeekend(dateStr);
-            const defaultStatus = weekend ? 'Weekend' : (isFuture ? 'N/A' : 'Absent');
-            if (defaultStatus === 'Absent') {
-                summary.absentDays++;
-            }
+            const defaultStatus = weekend ? 'Weekend' : 'N/A';
             days.push({
                 date: dateStr,
                 checkIn: undefined,
@@ -742,7 +739,7 @@ export async function getEmployeeMonthlyAttendance(
                 workDurationMinutes: 0,
                 lateMinutes: 0,
                 status: defaultStatus as any,
-                note: undefined
+                note: weekend ? undefined : (isFuture ? undefined : 'No Punch')
             });
         }
     }

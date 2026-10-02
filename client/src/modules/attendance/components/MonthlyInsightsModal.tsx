@@ -25,6 +25,7 @@ const STATUS_CLASS_MAP: Record<string, string> = {
     'Half-Day Leave': 'bg-teal-50 text-teal-700 border-teal-200',
     Weekend: 'bg-slate-50 text-slate-500 border-slate-100',
     Holiday: 'bg-cyan-50 text-cyan-600 border-cyan-100',
+    'N/A': 'bg-slate-50 text-slate-500 border-slate-200',
 };
 
 const COLOR_TEXT_MAP: Record<string, string> = {

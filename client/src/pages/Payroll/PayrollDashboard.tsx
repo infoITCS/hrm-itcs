@@ -4,7 +4,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import {
     Banknote, Plus, RefreshCw, ChevronRight,
     CheckCircle2, Clock, Send, Loader2, X,
-    TrendingUp, Users, Download,
+    TrendingUp, Users, Download, AlertCircle,
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -109,6 +109,22 @@ const countWorkingDays = (startStr: string, endStr: string) => {
     return count;
 };
 
+const countWorkingDaysInMonth = (mStr: string, yStr: string) => {
+    const m = Number(mStr);
+    const y = Number(yStr);
+    if (!m || !y) return 22;
+    const first = new Date(Date.UTC(y, m - 1, 1, 12, 0, 0));
+    const last = new Date(Date.UTC(y, m, 0, 12, 0, 0));
+    let count = 0;
+    const cur = new Date(first);
+    while (cur <= last) {
+        const day = cur.getUTCDay();
+        if (day !== 0 && day !== 6) count++;
+        cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return count > 0 ? count : 22;
+};
+
 const CreateRunModal = ({
     onClose, onCreated,
 }: { onClose: () => void; onCreated: () => void }) => {
@@ -143,6 +159,34 @@ const CreateRunModal = ({
 
     const workingDays = countWorkingDays(startDate, endDate);
 
+    const [priorGapInfo, setPriorGapInfo] = useState<any>(null);
+    const [includePriorAdjustment, setIncludePriorAdjustment] = useState(true);
+
+    useEffect(() => {
+        let isMounted = true;
+        const checkGap = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get(api.payrollPriorPeriodGap(month, year), {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (isMounted) {
+                    if (res.data?.hasGap) {
+                        setPriorGapInfo(res.data);
+                        setIncludePriorAdjustment(true);
+                    } else {
+                        setPriorGapInfo(null);
+                        setIncludePriorAdjustment(false);
+                    }
+                }
+            } catch (err) {
+                if (isMounted) setPriorGapInfo(null);
+            }
+        };
+        checkGap();
+        return () => { isMounted = false; };
+    }, [month, year]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -163,6 +207,14 @@ const CreateRunModal = ({
                 endDate,
                 currency,
                 notes: notes.trim() || undefined,
+                includePriorPeriodAdjustment: Boolean(priorGapInfo?.hasGap && includePriorAdjustment),
+                priorPeriodGap: priorGapInfo?.hasGap && includePriorAdjustment ? {
+                    startDate: priorGapInfo.gapStartDate,
+                    endDate: priorGapInfo.gapEndDate,
+                    prevRunId: priorGapInfo.prevRunId,
+                    prevMonth: priorGapInfo.prevMonth,
+                    prevYear: priorGapInfo.prevYear,
+                } : undefined,
             }, {
                 headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
             });
@@ -226,9 +278,14 @@ const CreateRunModal = ({
                             <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wide">
                                 Payroll Calculation Period
                             </label>
-                            <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
-                                {workingDays} Working Days
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full" title="Standard working days in the salary month">
+                                    {countWorkingDaysInMonth(month, year)} Month Days
+                                </span>
+                                <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full" title="Days in selected attendance cutoff cycle">
+                                    {workingDays} Cycle Days
+                                </span>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -255,9 +312,57 @@ const CreateRunModal = ({
                         </div>
 
                         <p className="text-[11px] text-slate-500 italic">
-                            Payroll calculation and working days will be counted from <strong>{startDate || '—'}</strong> to <strong>{endDate || '—'}</strong>.
+                            Attendance and meal allowances will be evaluated from <strong>{startDate || '—'}</strong> to <strong>{endDate || '—'}</strong>. Daily penalty rates are split by each calendar month's standard working days.
                         </p>
                     </div>
+
+                    {/* Prior Month Early Cutoff Detection Alert & Reconcile Checkbox */}
+                    {priorGapInfo?.hasGap && (
+                        <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3.5 space-y-2.5 animate-fadeIn">
+                            <div className="flex items-start gap-2.5">
+                                <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0 mt-0.5">
+                                    <AlertCircle size={15} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">
+                                        Prior Month Early Cutoff Detected ({priorGapInfo.prevMonthName} {priorGapInfo.prevYear})
+                                    </h4>
+                                    <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                        {priorGapInfo.prevMonthName} payroll ended early on <span className="font-semibold font-mono">{priorGapInfo.prevEndDate}</span>.
+                                        Uncounted days remain from <span className="font-semibold font-mono">{priorGapInfo.gapStartDate}</span> to <span className="font-semibold font-mono">{priorGapInfo.gapEndDate}</span>.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/70 space-y-2">
+                                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={includePriorAdjustment}
+                                        onChange={e => setIncludePriorAdjustment(e.target.checked)}
+                                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                                    />
+                                    <div className="flex-1 text-xs">
+                                        <span className="font-bold text-slate-800 block">
+                                            Reconcile leftover {priorGapInfo.prevMonthName} attendance ({priorGapInfo.gapStartDate} → {priorGapInfo.gapEndDate})
+                                        </span>
+                                        <span className="text-[11px] text-slate-500 mt-0.5 block leading-normal">
+                                            Automatically calculates meal allowances for presence on these dates and applies late/absence penalties at {priorGapInfo.prevMonthName}'s daily rate.
+                                        </span>
+                                    </div>
+                                </label>
+
+                                {startDate && startDate <= priorGapInfo.gapEndDate && (
+                                    <div className="bg-amber-100/70 border border-amber-200 text-amber-900 text-[10px] rounded px-2.5 py-1.5 flex items-center gap-1.5">
+                                        <span>ℹ️</span>
+                                        <span>
+                                            Cycle start date ({startDate}) covers {priorGapInfo.prevMonthName} {priorGapInfo.gapStartDate === priorGapInfo.gapEndDate ? priorGapInfo.gapStartDate : `${priorGapInfo.gapStartDate} → ${priorGapInfo.gapEndDate}`}. With this box checked, leftover days are isolated and calculated at {priorGapInfo.prevMonthName}'s rate as arrears (no double counting).
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-semibold text-slate-600 mb-1">Currency</label>

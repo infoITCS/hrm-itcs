@@ -33,6 +33,15 @@ export interface IPayrollRun extends Document {
     loanDeductionErpPostedAt?: Date;
     /** Sum of all employee loan deductions processed in this payroll run */
     totalLoanDeductionsAmount?: number;
+    /** Whether to reconcile and calculate uncounted days from previous month's early payroll */
+    includePriorPeriodAdjustment?: boolean;
+    priorPeriodGap?: {
+        startDate: string;
+        endDate: string;
+        prevRunId?: string;
+        prevMonth?: number;
+        prevYear?: number;
+    };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -77,6 +86,14 @@ const PayrollRunSchema: Schema = new Schema(
         loanDeductionErpNotes: { type: String },
         loanDeductionErpPostedAt: { type: Date },
         totalLoanDeductionsAmount: { type: Number, min: 0 },
+        includePriorPeriodAdjustment: { type: Boolean, default: false },
+        priorPeriodGap: {
+            startDate: { type: String },
+            endDate: { type: String },
+            prevRunId: { type: String },
+            prevMonth: { type: Number },
+            prevYear: { type: Number },
+        },
     },
     { timestamps: true }
 );

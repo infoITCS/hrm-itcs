@@ -29,7 +29,7 @@ const STATUS_CONFIG: Record<string, { bg: string; text: string; border: string; 
     'Half-Day Leave': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', label: 'Half Day Leave' },
     Weekend:       { bg: 'bg-slate-50', text: 'text-slate-400', border: 'border-slate-100', label: 'Weekend' },
     Holiday:       { bg: 'cyan-50', text: 'text-cyan-700', border: 'border-cyan-200', label: 'Holiday' },
-    'N/A':         { bg: 'bg-slate-50', text: 'text-slate-400', border: 'border-slate-200', label: 'N/A' },
+    'N/A':         { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200', label: 'No Punch' },
 };
 
 export default function AttendanceCalendarView({
@@ -51,6 +51,11 @@ export default function AttendanceCalendarView({
     const dayMap = new Map<string, MonthlyDayEntry>();
     days.forEach((d) => dayMap.set(d.date, d));
 
+    const isWeekendDay = (dateStr: string) => {
+        const d = new Date(dateStr + 'T00:00:00').getDay();
+        return d === 0 || d === 6;
+    };
+
     // Calculate Summary Stats from days (only count absent if on or before today)
     const stats = {
         present: days.filter(d => d.status === 'Present').length,
@@ -58,7 +63,8 @@ export default function AttendanceCalendarView({
         absent: days.filter(d => d.status === 'Absent' && d.date <= todayStr).length,
         halfDay: days.filter(d => d.status === 'Half-Day' || d.status === 'Half-Day Leave').length,
         onLeave: days.filter(d => d.status === 'On Leave' || d.status === 'Half-Day Leave').length,
-        weekend: days.filter(d => d.status === 'Weekend').length,
+        weekend: days.filter(d => d.status === 'Weekend' || (isWeekendDay(d.date) && d.status === 'N/A')).length,
+        noPunch: days.filter(d => d.status === 'N/A' && !isWeekendDay(d.date) && d.date <= todayStr).length,
     };
 
     const handleSelectDay = (day: MonthlyDayEntry) => {
@@ -69,12 +75,14 @@ export default function AttendanceCalendarView({
         const dayNum = i + 1;
         const dateStr = `${month}-${String(dayNum).padStart(2, '0')}`;
         const isFuture = dateStr > todayStr;
+        const weekend = isWeekendDay(dateStr);
         return (
             dayMap.get(dateStr) || {
                 date: dateStr,
                 workDurationMinutes: 0,
                 lateMinutes: 0,
-                status: (isFuture ? 'N/A' : 'Absent') as AttendanceStatus,
+                status: (weekend ? 'Weekend' : 'N/A') as AttendanceStatus,
+                note: weekend ? undefined : (isFuture ? undefined : 'No Punch'),
             }
         );
     });
@@ -102,6 +110,12 @@ export default function AttendanceCalendarView({
                         <span className="w-2 h-2 rounded-full bg-rose-500" />
                         Absent: {stats.absent}
                     </span>
+                    {stats.noPunch > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-bold" title="Unpunched past working days">
+                            <span className="w-2 h-2 rounded-full bg-slate-400" />
+                            No Punch: {stats.noPunch}
+                        </span>
+                    )}
                     {stats.halfDay > 0 && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-50 text-yellow-700 border border-yellow-200 font-bold">
                             <span className="w-2 h-2 rounded-full bg-yellow-500" />
@@ -148,6 +162,7 @@ export default function AttendanceCalendarView({
                         const isToday = day.date === todayStr;
                         const isFuture = day.date > todayStr;
                         const isWeekend = day.status === 'Weekend';
+                        const isNoPunch = day.status === 'N/A' && !isFuture && !isWeekend;
                         const cfg = STATUS_CONFIG[day.status] || {
                             bg: 'bg-slate-50',
                             text: 'text-slate-600',
@@ -169,7 +184,9 @@ export default function AttendanceCalendarView({
                                             ? 'bg-slate-50/60 border-slate-100 hover:border-slate-200'
                                             : isFuture
                                                 ? 'bg-white border-slate-100 hover:border-slate-200'
-                                                : `${cfg.bg} ${cfg.border} hover:shadow-md hover:-translate-y-0.5`
+                                                : isNoPunch
+                                                    ? 'bg-slate-50/70 border-slate-200/80 hover:border-slate-300'
+                                                    : `${cfg.bg} ${cfg.border} hover:shadow-md hover:-translate-y-0.5`
                                 } cursor-pointer`}
                             >
                                 {/* Tile Header */}
@@ -206,12 +223,14 @@ export default function AttendanceCalendarView({
                                             className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md inline-block truncate ${
                                                 isWeekend
                                                     ? 'bg-slate-200/60 text-slate-500'
-                                                    : (isFuture || day.status === 'N/A')
+                                                    : isFuture
                                                         ? 'bg-slate-100 text-slate-400'
-                                                        : `${cfg.bg} ${cfg.text}`
+                                                        : isNoPunch
+                                                            ? 'bg-slate-200/70 text-slate-600'
+                                                            : `${cfg.bg} ${cfg.text}`
                                             }`}
                                         >
-                                            {(isFuture || day.status === 'N/A') && !hasPunches ? 'N/A' : cfg.label}
+                                            {isWeekend ? 'Weekend' : isFuture ? 'N/A' : (day.status === 'N/A' && !hasPunches ? 'No Punch' : cfg.label)}
                                         </span>
                                     </div>
 
@@ -238,7 +257,7 @@ export default function AttendanceCalendarView({
                                         </div>
                                     ) : (
                                         <div className="text-[10px] text-slate-400 italic">
-                                            {isWeekend ? 'Off day' : isFuture ? '—' : 'No records'}
+                                            {isWeekend ? 'Off day' : isFuture ? '—' : 'No record'}
                                         </div>
                                     )}
                                 </div>
@@ -296,7 +315,11 @@ export default function AttendanceCalendarView({
                             <div>
                                 <div className="text-xs text-slate-400 font-bold uppercase tracking-wide">Status</div>
                                 <div className="text-base font-extrabold text-slate-800 mt-0.5 flex items-center gap-2">
-                                    <span>{selectedDay.status}</span>
+                                    <span>
+                                        {selectedDay.status === 'N/A'
+                                            ? (selectedDay.date > todayStr ? 'Future Date' : 'No Punch Recorded')
+                                            : selectedDay.status}
+                                    </span>
                                     {selectedDay.isWfh && (
                                         <span className="text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
                                             Work From Home
@@ -306,10 +329,18 @@ export default function AttendanceCalendarView({
                             </div>
                             <span
                                 className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider ${
-                                    STATUS_CONFIG[selectedDay.status]?.bg || 'bg-slate-100'
-                                } ${STATUS_CONFIG[selectedDay.status]?.text || 'text-slate-600'}`}
+                                    selectedDay.status === 'N/A'
+                                        ? 'bg-slate-200/70 text-slate-700'
+                                        : (STATUS_CONFIG[selectedDay.status]?.bg || 'bg-slate-100')
+                                } ${
+                                    selectedDay.status === 'N/A'
+                                        ? ''
+                                        : (STATUS_CONFIG[selectedDay.status]?.text || 'text-slate-600')
+                                }`}
                             >
-                                {STATUS_CONFIG[selectedDay.status]?.label || selectedDay.status}
+                                {selectedDay.status === 'N/A'
+                                    ? (selectedDay.date > todayStr ? 'N/A' : 'No Punch')
+                                    : (STATUS_CONFIG[selectedDay.status]?.label || selectedDay.status)}
                             </span>
                         </div>
 

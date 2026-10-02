@@ -11,7 +11,7 @@ import ExpenseClaim from '../models/ExpenseClaim';
 import { getHolidayDatesInPeriod } from '../utils/holidayUtils';
 import { generateCustomerReference } from '../utils/encryption';
 import { formatEmployeeFullName } from '../utils/nameHelper';
-import { applyFirstPenaltyExemption, statusToPenaltyType } from '../utils/attendancePenaltyPolicy';
+import { applyFirstPenaltyExemption, statusToPenaltyType, getWorkingDaysInMonth } from '../utils/attendancePenaltyPolicy';
 import {
     isExpenseClaimPayrollEarning,
     payrollComponentForClaimCategory,
@@ -155,25 +155,35 @@ export async function buildPayrollPayslips(
     const periodStart = run.startDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
     const periodEnd = run.endDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
 
-    let workingDaysCount = 0;
-    const curDate = new Date(periodStart + 'T12:00:00.000Z');
-    const stopDate = new Date(periodEnd + 'T12:00:00.000Z');
-    while (curDate <= stopDate) {
-        const dayOfWeek = curDate.getUTCDay();
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) workingDaysCount++;
-        curDate.setUTCDate(curDate.getUTCDate() + 1);
-    }
-    const monthlyWorkingDays = workingDaysCount > 0 ? workingDaysCount : 22;
+    // Standard working days (Mon-Fri) for the calendar salary month (e.g. September = 22)
+    const monthlyWorkingDays = getWorkingDaysInMonth(run.periodYear, run.periodMonth);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Prior Period Gap Reconciliation (e.g. Leftover Oct 16–31 after early run)
+    // ─────────────────────────────────────────────────────────────────────────
+    const hasPriorGap = Boolean(run.includePriorPeriodAdjustment && run.priorPeriodGap?.startDate && run.priorPeriodGap?.endDate);
+    const gapStart = hasPriorGap ? run.priorPeriodGap!.startDate : null;
+    const gapEnd = hasPriorGap ? run.priorPeriodGap!.endDate : null;
+    const gapPrevMonth = hasPriorGap ? (run.priorPeriodGap!.prevMonth || (run.periodMonth === 1 ? 12 : run.periodMonth - 1)) : 0;
+    const gapPrevYear = hasPriorGap ? (run.priorPeriodGap!.prevYear || (run.periodMonth === 1 ? run.periodYear - 1 : run.periodYear)) : 0;
+    const gapPrevMonthName = MONTH_NAMES[gapPrevMonth] || 'Prior Period';
+    const gapWorkingDays = hasPriorGap ? getWorkingDaysInMonth(gapPrevYear, gapPrevMonth) : 22;
+
+    // Helper to prevent double counting: if a date is within the reconciled prior period gap,
+    // it will be processed exclusively under the prior period gap adjustment, not the main cycle.
+    const isGapDate = (d: string) => Boolean(hasPriorGap && gapStart && gapEnd && d >= gapStart && d <= gapEnd);
 
     const mealRecords = await AttendanceRecord.find({
         date: { $gte: periodStart, $lte: periodEnd },
         status: 'Present',
         isWfh: { $ne: true },
         note: { $not: /wfh|work from home/i },
-    }).select('employeeId').lean() as any[];
+    }).select('employeeId date').lean() as any[];
 
     const mealDaysMap: Record<string, number> = {};
     for (const r of mealRecords) {
+        if (isGapDate(r.date)) continue;
         mealDaysMap[r.employeeId] = (mealDaysMap[r.employeeId] ?? 0) + 1;
     }
 
@@ -212,12 +222,59 @@ export async function buildPayrollPayslips(
         appliedBy: { $ne: 'system' }
     }).select('employeeId startDate endDate duration').lean() as any[];
 
+    const gapMealDaysMap: Record<string, number> = {};
+    const gapPenaltiesMap: Record<string, { date: string; type: 'half' | 'full' }[]> = {};
+
+    if (hasPriorGap && gapStart && gapEnd) {
+        const gapMealRecords = await AttendanceRecord.find({
+            date: { $gte: gapStart, $lte: gapEnd },
+            status: 'Present',
+            isWfh: { $ne: true },
+            note: { $not: /wfh|work from home/i },
+        }).select('employeeId').lean() as any[];
+
+        for (const r of gapMealRecords) {
+            gapMealDaysMap[r.employeeId] = (gapMealDaysMap[r.employeeId] ?? 0) + 1;
+        }
+
+        const gapHolidayDates = await getHolidayDatesInPeriod(gapStart, gapEnd);
+        const gapApprovedLeaves = await LeaveRequest.find({
+            status: 'Approved',
+            startDate: { $lte: new Date(`${gapEnd}T23:59:59.999Z`) },
+            endDate: { $gte: new Date(`${gapStart}T00:00:00.000Z`) },
+            appliedBy: { $ne: 'system' }
+        }).select('employeeId startDate endDate duration').lean() as any[];
+
+        const gapRecords = await AttendanceRecord.find({
+            date: { $gte: gapStart, $lte: gapEnd },
+        }).select('employeeId status date').lean() as any[];
+
+        for (const r of gapRecords) {
+            if (r.date > todayStr || r.status === 'N/A') continue;
+            if (gapHolidayDates.has(r.date)) continue;
+
+            const hasFullDayLeave = gapApprovedLeaves.some(l => {
+                if (l.employeeId !== r.employeeId) return false;
+                const s = new Date(l.startDate).toISOString().slice(0, 10);
+                const e = new Date(l.endDate).toISOString().slice(0, 10);
+                return r.date >= s && r.date <= e && l.duration === 'Full Day';
+            });
+            if (hasFullDayLeave) continue;
+
+            const penaltyType = statusToPenaltyType(r.status);
+            if (!penaltyType) continue;
+
+            if (!gapPenaltiesMap[r.employeeId]) gapPenaltiesMap[r.employeeId] = [];
+            gapPenaltiesMap[r.employeeId].push({ date: r.date, type: penaltyType });
+        }
+    }
+
     const employeeAttendanceMap: Record<string, any> = {};
     const attendanceDeductionsMap: Record<string, { penalties: { date: string; type: 'half' | 'full' }[] }> = {};
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-
     for (const r of periodRecords) {
+        // Skip dates that are being reconciled under prior period gap adjustment (prevent double counting)
+        if (isGapDate(r.date)) continue;
         // Never process attendance stats or penalties for future dates that have not arrived yet, or N/A records
         if (r.date > todayStr) continue;
         if (r.status === 'N/A') continue;
@@ -443,6 +500,16 @@ export async function buildPayrollPayslips(
             });
         }
 
+        // Prior Period Leftover Meal Allowance (e.g. October 16–31 presence credited in November)
+        const gapMealDays = isEntitledToMeal ? (gapMealDaysMap[emp.employeeId] ?? 0) : 0;
+        if (isEntitledToMeal && gapMealDays > 0) {
+            earnings.push({
+                component: `Meal Allowance (${gapPrevMonthName} Arrears: ${gapMealDays} days)`,
+                amount: gapMealDays * MEAL_RATE,
+                type: 'variable',
+            });
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         // Retroactive Salary Arrears & PF Adjustment Calculation
         // ─────────────────────────────────────────────────────────────────────
@@ -514,36 +581,91 @@ export async function buildPayrollPayslips(
         if (attInfo?.penalties?.length) {
             const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
             const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
-            const dailyRate = basicSal / monthlyWorkingDays;
-
-            const { halfDays, fullDays, exempted } = applyFirstPenaltyExemption(attInfo.penalties);
+            const { halfDays, fullDays, exempted, billablePenalties, exemptedPenalty } = applyFirstPenaltyExemption(attInfo.penalties);
             if (exempted) {
-                attendancePenaltyNote = 'First attendance penalty exempted this period.';
+                const exDateStr = exemptedPenalty?.date ? ` (${exemptedPenalty.date})` : '';
+                attendancePenaltyNote = `First attendance penalty exempted this period${exDateStr}.`;
             }
 
-            if (halfDays > 0) {
-                const halfDayAmount = Math.round(halfDays * 0.5 * dailyRate);
-                if (halfDayAmount > 0) {
-                    const unitStr = halfDays === 1 ? 'half-day' : 'half-days';
-                    deductions.push({
-                        component: `Half-Day Penalty (${halfDays} ${unitStr})`,
-                        amount: halfDayAmount,
-                    });
-                    totalDeductions += halfDayAmount;
+            let halfDayAmount = 0;
+            let absentAmount = 0;
+
+            // Split penalty rates by the specific calendar month of each occurrence
+            for (const p of billablePenalties) {
+                const [pYearStr, pMonthStr] = (p.date || '').split('-');
+                const pYear = parseInt(pYearStr, 10) || run.periodYear;
+                const pMonth = parseInt(pMonthStr, 10) || run.periodMonth;
+                const monthWorkingDays = getWorkingDaysInMonth(pYear, pMonth);
+                const dailyRate = monthWorkingDays > 0 ? basicSal / monthWorkingDays : basicSal / 22;
+
+                if (p.type === 'half') {
+                    halfDayAmount += Math.round(0.5 * dailyRate);
+                } else if (p.type === 'full') {
+                    absentAmount += Math.round(1.0 * dailyRate);
                 }
             }
 
-            if (fullDays > 0) {
-                const absentAmount = Math.round(fullDays * 1.0 * dailyRate);
-                if (absentAmount > 0) {
-                    const unitStr = fullDays === 1 ? 'day' : 'days';
-                    deductions.push({
-                        component: `Absence Penalty (${fullDays} ${unitStr})`,
-                        amount: absentAmount,
-                    });
-                    totalDeductions += absentAmount;
+            if (halfDays > 0 && halfDayAmount > 0) {
+                const unitStr = halfDays === 1 ? 'half-day' : 'half-days';
+                deductions.push({
+                    component: `Half-Day Penalty (${halfDays} ${unitStr})`,
+                    amount: halfDayAmount,
+                });
+                totalDeductions += halfDayAmount;
+            }
+
+            if (fullDays > 0 && absentAmount > 0) {
+                const unitStr = fullDays === 1 ? 'day' : 'days';
+                deductions.push({
+                    component: `Absence Penalty (${fullDays} ${unitStr})`,
+                    amount: absentAmount,
+                });
+                totalDeductions += absentAmount;
+            }
+        }
+
+        // Prior Period Leftover Late / Absence Deductions (calculated with prior month working days)
+        const gapPenalties = gapPenaltiesMap[emp.employeeId] || [];
+        let priorAdjNote = '';
+        if (gapPenalties.length > 0) {
+            const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
+            const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
+            const priorDailyRate = basicSal / gapWorkingDays;
+
+            let gapHalfDays = 0;
+            let gapFullDays = 0;
+            let gapHalfDayTotal = 0;
+            let gapFullDayTotal = 0;
+
+            for (const p of gapPenalties) {
+                if (p.type === 'half') {
+                    gapHalfDays++;
+                    gapHalfDayTotal += Math.round(0.5 * priorDailyRate);
+                } else if (p.type === 'full') {
+                    gapFullDays++;
+                    gapFullDayTotal += Math.round(1.0 * priorDailyRate);
                 }
             }
+
+            if (gapHalfDays > 0 && gapHalfDayTotal > 0) {
+                const unitStr = gapHalfDays === 1 ? 'half-day' : 'half-days';
+                deductions.push({
+                    component: `Half-Day Penalty (${gapPrevMonthName}: ${gapHalfDays} ${unitStr})`,
+                    amount: gapHalfDayTotal,
+                });
+                totalDeductions += gapHalfDayTotal;
+            }
+
+            if (gapFullDays > 0 && gapFullDayTotal > 0) {
+                const unitStr = gapFullDays === 1 ? 'day' : 'days';
+                deductions.push({
+                    component: `Absence Penalty (${gapPrevMonthName}: ${gapFullDays} ${unitStr})`,
+                    amount: gapFullDayTotal,
+                });
+                totalDeductions += gapFullDayTotal;
+            }
+
+            priorAdjNote = `${gapPrevMonthName} attendance reconciliation applied (${gapStart} to ${gapEnd}).`;
         }
 
         let loanDeductAmount = 0;
@@ -612,7 +734,7 @@ export async function buildPayrollPayslips(
             leaveDays: 0,
         };
 
-        const payslipNotes = [notes, loanPauseNote, attendancePenaltyNote, retroactiveArrearsNote].filter(Boolean).join(' • ');
+        const payslipNotes = [notes, loanPauseNote, attendancePenaltyNote, priorAdjNote, retroactiveArrearsNote].filter(Boolean).join(' • ');
 
         payslips.push({
             payslipNo,

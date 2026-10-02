@@ -53,6 +53,7 @@ export const api = {
 
     // Payroll
     payrollRuns: `${API_BASE_URL}/api/payroll`,
+    payrollPriorPeriodGap: (month: number | string, year: number | string) => `${API_BASE_URL}/api/payroll/prior-period-gap?month=${month}&year=${year}`,
     payrollRun: (id: string) => `${API_BASE_URL}/api/payroll/${id}`,
     payrollGenerate: (id: string) => `${API_BASE_URL}/api/payroll/${id}/generate`,
     payrollPreviewAmounts: (id: string) => `${API_BASE_URL}/api/payroll/${id}/preview-amounts`,

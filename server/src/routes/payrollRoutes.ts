@@ -18,6 +18,7 @@ import { sendPayslipDisbursedEmail } from '../utils/email';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { generateCustomerReference, encryptFinancialField, decryptFinancialField } from '../utils/encryption';
 import { buildPayrollPayslips, computePayrollAmountTotals } from '../services/payrollCalculation';
+import { getWorkingDaysInMonth } from '../utils/attendancePenaltyPolicy';
 import * as XLSX from 'xlsx';
 
 const router = express.Router();
@@ -96,6 +97,64 @@ async function generatePayslipNo(year: number, month: number): Promise<string> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * @route   GET /api/payroll/prior-period-gap
+ * @desc    Check if the previous month's payroll ended early and has uncounted days
+ * @access  admin, super-admin
+ */
+router.get('/prior-period-gap', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { month, year } = req.query;
+        if (!month || !year) {
+            return res.status(400).json({ message: 'month and year are required.' });
+        }
+        const m = Number(month);
+        const y = Number(year);
+
+        const prevMonth = m === 1 ? 12 : m - 1;
+        const prevYear = m === 1 ? y - 1 : y;
+
+        const prevRun = await PayrollRun.findOne({
+            periodYear: prevYear,
+            periodMonth: prevMonth,
+            status: { $ne: 'Cancelled' }
+        }).sort({ createdAt: -1 }).lean() as any;
+
+        if (!prevRun || !prevRun.endDate) {
+            return res.json({ hasGap: false });
+        }
+
+        const prevLastDay = new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate();
+        const prevMonthEndStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(prevLastDay).padStart(2, '0')}`;
+
+        if (prevRun.endDate < prevMonthEndStr) {
+            const nextDate = new Date(prevRun.endDate + 'T12:00:00.000Z');
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+            const gapStartStr = nextDate.toISOString().slice(0, 10);
+            const gapEndStr = prevMonthEndStr;
+
+            if (gapStartStr <= gapEndStr) {
+                const prevMonthName = MONTH_NAMES[prevMonth];
+                return res.json({
+                    hasGap: true,
+                    prevRunId: prevRun._id,
+                    prevMonth,
+                    prevYear,
+                    prevMonthName,
+                    prevEndDate: prevRun.endDate,
+                    gapStartDate: gapStartStr,
+                    gapEndDate: gapEndStr,
+                    message: `${prevMonthName} ${prevYear} payroll ended early on ${prevRun.endDate}. Uncounted days remain from ${gapStartStr} to ${gapEndStr}.`,
+                });
+            }
+        }
+
+        return res.json({ hasGap: false });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
  * @route   POST /api/payroll
  * @desc    Create a new Draft payroll run for a given month/year
  * @access  admin, super-admin
@@ -107,7 +166,16 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             return res.status(403).json({ message: 'Forbidden. Admin access required.' });
         }
 
-        const { periodMonth, periodYear, startDate, endDate, currency = 'PKR', notes } = req.body;
+        const {
+            periodMonth,
+            periodYear,
+            startDate,
+            endDate,
+            currency = 'PKR',
+            notes,
+            includePriorPeriodAdjustment = false,
+            priorPeriodGap
+        } = req.body;
 
         if (!periodMonth || !periodYear) {
             return res.status(400).json({ message: 'periodMonth and periodYear are required.' });
@@ -154,6 +222,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             status: 'Draft',
             erpTaskId,
             erpStatus: 'Pending',
+            includePriorPeriodAdjustment: Boolean(includePriorPeriodAdjustment),
+            priorPeriodGap: priorPeriodGap || undefined,
         });
 
         return res.status(201).json(run);
@@ -186,7 +256,7 @@ router.put('/:runId', authenticate, async (req: Request, res: Response, next: Ne
             return res.status(400).json({ message: `Cannot modify a payroll run with status "${run.status}".` });
         }
 
-        const { startDate, endDate, notes, title } = req.body;
+        const { startDate, endDate, notes, title, includePriorPeriodAdjustment, priorPeriodGap } = req.body;
 
         if (startDate !== undefined) {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
@@ -208,6 +278,12 @@ router.put('/:runId', authenticate, async (req: Request, res: Response, next: Ne
 
         if (notes !== undefined) run.notes = notes;
         if (title !== undefined && String(title).trim()) run.title = String(title).trim();
+        if (includePriorPeriodAdjustment !== undefined) {
+            run.includePriorPeriodAdjustment = Boolean(includePriorPeriodAdjustment);
+        }
+        if (priorPeriodGap !== undefined) {
+            run.priorPeriodGap = priorPeriodGap;
+        }
 
         await run.save();
         return res.json(run);
@@ -272,15 +348,7 @@ async function getOrComputeAttendanceSummary(employeeId: string, year: number, m
     const periodStart = customStart || `${year}-${String(month).padStart(2, '0')}-01`;
     const periodEnd = customEnd || `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    let workingDays = 0;
-    const cur = new Date(periodStart + 'T12:00:00.000Z');
-    const stop = new Date(periodEnd + 'T12:00:00.000Z');
-    while (cur <= stop) {
-        const dayOfWeek = cur.getUTCDay();
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) workingDays++;
-        cur.setUTCDate(cur.getUTCDate() + 1);
-    }
-    if (workingDays === 0) workingDays = 22;
+    const workingDays = getWorkingDaysInMonth(year, month);
 
     const records = await AttendanceRecord.find({
         employeeId,

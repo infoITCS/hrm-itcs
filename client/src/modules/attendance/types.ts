@@ -143,7 +143,7 @@ export const STATUS_LABELS: Record<Exclude<StatusFilter, ''>, string> = {
     'Half-Day Leave': 'Half-Day Leave',
     OnTime:        'On Time',
     StillIn:       'Still In',
-    'N/A':         'N/A',
+    'N/A':         'No Punch',
 };
 
 export interface MonthlyDayEntry {

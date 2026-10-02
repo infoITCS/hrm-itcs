@@ -5,7 +5,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical
+    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical, AlertCircle
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -74,6 +74,14 @@ interface PayrollRun {
     totalExpenseClaimsAmount?: number;
     totalLoanDeductionsAmount?: number;
     erpPayableAmount?: number;
+    includePriorPeriodAdjustment?: boolean;
+    priorPeriodGap?: {
+        startDate: string;
+        endDate: string;
+        prevRunId?: string;
+        prevMonth?: number;
+        prevYear?: number;
+    };
 }
 
 interface ExpenseClaimPreview {
@@ -790,6 +798,8 @@ const PayrollRunDetail = () => {
     const [showEditPeriodModal, setShowEditPeriodModal] = useState(false);
     const [editStartInput, setEditStartInput] = useState('');
     const [editEndInput, setEditEndInput] = useState('');
+    const [editPriorGapInfo, setEditPriorGapInfo] = useState<any>(null);
+    const [editIncludePriorAdjustment, setEditIncludePriorAdjustment] = useState(false);
 
     const countWorkingDays = (startStr: string, endStr: string) => {
         if (!startStr || !endStr || startStr > endStr) return 0;
@@ -804,14 +814,43 @@ const PayrollRunDetail = () => {
         return count;
     };
 
-    const handleOpenEditPeriod = () => {
+    const countWorkingDaysInMonth = (year?: number, month?: number) => {
+        if (!year || !month) return 22;
+        const first = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
+        const last = new Date(Date.UTC(year, month, 0, 12, 0, 0));
+        let count = 0;
+        const cur = new Date(first);
+        while (cur <= last) {
+            const day = cur.getUTCDay();
+            if (day !== 0 && day !== 6) count++;
+            cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+        return count > 0 ? count : 22;
+    };
+
+    const handleOpenEditPeriod = async () => {
         if (!run) return;
         const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
         const curStart = run.startDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-01`;
         const curEnd = run.endDate || `${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-${String(defaultLastDay).padStart(2, '0')}`;
         setEditStartInput(curStart);
         setEditEndInput(curEnd);
+        setEditIncludePriorAdjustment(Boolean(run.includePriorPeriodAdjustment));
         setShowEditPeriodModal(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(api.payrollPriorPeriodGap(run.periodMonth, run.periodYear), {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.data?.hasGap) {
+                setEditPriorGapInfo(res.data);
+            } else {
+                setEditPriorGapInfo(null);
+            }
+        } catch {
+            setEditPriorGapInfo(null);
+        }
     };
 
     const handleSavePeriod = async () => {
@@ -828,6 +867,14 @@ const PayrollRunDetail = () => {
             await axios.put(api.payrollRun(id!), {
                 startDate: editStartInput,
                 endDate: editEndInput,
+                includePriorPeriodAdjustment: Boolean(editPriorGapInfo?.hasGap && editIncludePriorAdjustment),
+                priorPeriodGap: editPriorGapInfo?.hasGap && editIncludePriorAdjustment ? {
+                    startDate: editPriorGapInfo.gapStartDate,
+                    endDate: editPriorGapInfo.gapEndDate,
+                    prevRunId: editPriorGapInfo.prevRunId,
+                    prevMonth: editPriorGapInfo.prevMonth,
+                    prevYear: editPriorGapInfo.prevYear,
+                } : undefined,
             }, authHeader);
             setShowEditPeriodModal(false);
             setRefreshCounter(c => c + 1);
@@ -1178,7 +1225,7 @@ const PayrollRunDetail = () => {
                                         {run.startDate && run.endDate ? `${run.startDate} → ${run.endDate}` : `${MONTH_NAMES[run.periodMonth]} ${run.periodYear}`}
                                     </span>
                                     <span className="text-indigo-600 font-bold ml-0.5">
-                                        ({countWorkingDays(run.startDate || '', run.endDate || '') || 22} Working Days)
+                                        ({countWorkingDaysInMonth(run.periodYear, run.periodMonth)} Month Working Days)
                                     </span>
                                 </span>
                                 {run.status === 'Draft' && (
@@ -1502,9 +1549,14 @@ const PayrollRunDetail = () => {
                         <div className="space-y-3">
                             <div className="flex items-center justify-between text-xs">
                                 <span className="font-bold text-slate-700 uppercase">Payroll Calculation Period</span>
-                                <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                                    {countWorkingDays(editStartInput, editEndInput)} Working Days
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full" title="Standard working days in the salary month">
+                                        {countWorkingDaysInMonth(run?.periodYear, run?.periodMonth)} Month Days
+                                    </span>
+                                    <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full" title="Days in selected attendance cutoff cycle">
+                                        {countWorkingDays(editStartInput, editEndInput)} Cycle Days
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -1531,8 +1583,56 @@ const PayrollRunDetail = () => {
                             </div>
 
                             <p className="text-[11px] text-slate-500 italic">
-                                Changing the date range updates which days are counted for payroll calculation and working days.
+                                Attendance and meal allowances will be evaluated from <strong>{editStartInput || '—'}</strong> to <strong>{editEndInput || '—'}</strong>. Daily penalty rates are split by each calendar month's standard working days.
                             </p>
+
+                            {/* Prior Month Early Cutoff Detection Alert & Reconcile Checkbox */}
+                            {editPriorGapInfo?.hasGap && (
+                                <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3.5 space-y-2.5 animate-fadeIn">
+                                    <div className="flex items-start gap-2.5">
+                                        <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg shrink-0 mt-0.5">
+                                            <AlertCircle size={15} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">
+                                                Prior Month Early Cutoff Detected ({editPriorGapInfo.prevMonthName} {editPriorGapInfo.prevYear})
+                                            </h4>
+                                            <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                                {editPriorGapInfo.prevMonthName} payroll ended early on <span className="font-semibold font-mono">{editPriorGapInfo.prevEndDate}</span>.
+                                                Uncounted days remain from <span className="font-semibold font-mono">{editPriorGapInfo.gapStartDate}</span> to <span className="font-semibold font-mono">{editPriorGapInfo.gapEndDate}</span>.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/70 space-y-2">
+                                        <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={editIncludePriorAdjustment}
+                                                onChange={e => setEditIncludePriorAdjustment(e.target.checked)}
+                                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 mt-0.5 cursor-pointer"
+                                            />
+                                            <div className="flex-1 text-xs">
+                                                <span className="font-bold text-slate-800 block">
+                                                    Reconcile leftover {editPriorGapInfo.prevMonthName} attendance ({editPriorGapInfo.gapStartDate} → {editPriorGapInfo.gapEndDate})
+                                                </span>
+                                                <span className="text-[11px] text-slate-500 mt-0.5 block leading-normal">
+                                                    Automatically calculates meal allowances for presence on these dates and applies late/absence penalties at {editPriorGapInfo.prevMonthName}'s daily rate.
+                                                </span>
+                                            </div>
+                                        </label>
+
+                                        {editStartInput && editStartInput <= editPriorGapInfo.gapEndDate && (
+                                            <div className="bg-amber-100/70 border border-amber-200 text-amber-900 text-[10px] rounded px-2.5 py-1.5 flex items-center gap-1.5">
+                                                <span>ℹ️</span>
+                                                <span>
+                                                    Cycle start date ({editStartInput}) covers {editPriorGapInfo.prevMonthName} {editPriorGapInfo.gapStartDate === editPriorGapInfo.gapEndDate ? editPriorGapInfo.gapStartDate : `${editPriorGapInfo.gapStartDate} → ${editPriorGapInfo.gapEndDate}`}. With this box checked, leftover days are isolated and calculated at {editPriorGapInfo.prevMonthName}'s rate as arrears (no double counting).
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
