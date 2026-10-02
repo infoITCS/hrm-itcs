@@ -161,8 +161,7 @@ const calculateAnniversaryBonusFromEmployee = (empDetails: any, targetYear?: num
         const pEnd = new Date(empDetails.employmentStatus.probationEndDate);
         if (!isNaN(pEnd.getTime())) {
             const probationMonths = Number(empDetails.financeInfo?.probationMonths) || 3;
-            const derivedStart = new Date(pEnd);
-            derivedStart.setMonth(derivedStart.getMonth() - probationMonths);
+            const derivedStart = new Date(pEnd.getFullYear(), pEnd.getMonth() - probationMonths, Math.min(pEnd.getDate(), 28));
 
             // Exclude internship if joiningDate was earlier than probation start
             if (empDetails.jobInfo?.joiningDate) {

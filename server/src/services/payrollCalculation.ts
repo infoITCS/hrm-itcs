@@ -49,8 +49,8 @@ export function getEffectiveServiceStartDate(emp: any): Date | null {
         const pEnd = new Date(emp.employmentStatus.probationEndDate);
         if (!isNaN(pEnd.getTime())) {
             const probationMonths = Number(emp.financeInfo?.probationMonths) || 3;
-            const derivedProbationStart = new Date(pEnd);
-            derivedProbationStart.setMonth(derivedProbationStart.getMonth() - probationMonths);
+            // Safe month subtraction avoiding JS Date rollover (e.g. May 31 - 3 months -> Feb 31 -> March)
+            const derivedProbationStart = new Date(pEnd.getFullYear(), pEnd.getMonth() - probationMonths, Math.min(pEnd.getDate(), 28));
 
             // If joiningDate was before probation started (e.g. initial internship period),
             // exclude the internship months by anchoring to the derived probation start date!
@@ -536,11 +536,16 @@ export async function buildPayrollPayslips(
 
         let notes = '';
         if (hasAnniversaryInMonth && anniversaryBonusAmount > 0) {
-            earnings.push({
-                component: 'Anniversary Bonus',
-                amount: anniversaryBonusAmount,
-                type: 'fixed',
-            });
+            const existingBonusIdx = earnings.findIndex((e: any) => e.component === 'Anniversary Bonus');
+            if (existingBonusIdx >= 0) {
+                earnings[existingBonusIdx].amount = anniversaryBonusAmount;
+            } else {
+                earnings.push({
+                    component: 'Anniversary Bonus',
+                    amount: anniversaryBonusAmount,
+                    type: 'fixed',
+                });
+            }
             notes = `Work Anniversary Bonus: PKR ${anniversaryBonusAmount.toLocaleString()} (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
         }
 
