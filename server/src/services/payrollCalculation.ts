@@ -291,7 +291,7 @@ export async function buildPayrollPayslips(
         }
         if (r.status === 'Present') employeeAttendanceMap[r.employeeId].presentDays++;
         else if (r.status === 'Late') employeeAttendanceMap[r.employeeId].lateDays++;
-        else if (r.status === 'Half-Day') employeeAttendanceMap[r.employeeId].halfDays++;
+        else if (r.status === 'Half-Day' || r.status === 'Early Leave') employeeAttendanceMap[r.employeeId].halfDays++;
         else if (r.status === 'Half-Day Leave') employeeAttendanceMap[r.employeeId].leaveDays += 0.5;
         else if (r.status === 'Absent') employeeAttendanceMap[r.employeeId].absentDays++;
         else if (r.status === 'On Leave') employeeAttendanceMap[r.employeeId].leaveDays++;
