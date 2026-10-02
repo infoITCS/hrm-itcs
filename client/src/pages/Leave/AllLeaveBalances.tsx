@@ -24,6 +24,8 @@ interface EmployeeBalance {
     balances: LeaveBalanceItem[];
 }
 
+const roundDays = (num: any) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) => {
     const { role } = usePermissions();
     const { showToast } = useToast();
@@ -497,19 +499,19 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
                                                                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border tracking-wide shadow-xs min-w-[70px] ${
                                                                     monthDays > 0 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'
                                                                 }`}>
-                                                                    {monthDays}d in {currentMonthLabel}
+                                                                    {roundDays(monthDays)}d in {currentMonthLabel}
                                                                 </span>
                                                                 <span className="text-[9px] text-slate-400 mt-1 font-bold">
-                                                                    {bal.available} avail ({bal.used} yr)
+                                                                    {roundDays(bal.available)} avail ({roundDays(bal.used)} yr)
                                                                 </span>
                                                             </>
                                                         ) : (
                                                             <>
                                                                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border tracking-wide shadow-xs min-w-[65px] ${colorClass}`}>
-                                                                    {bal.available} / {bal.total}
+                                                                    {roundDays(bal.available)} / {roundDays(bal.total)}
                                                                 </span>
                                                                 <span className="text-[9px] text-slate-400 mt-1 font-bold">
-                                                                    {bal.used} used {bal.pending > 0 && `(${bal.pending} pend)`}
+                                                                    {roundDays(bal.used)} used {bal.pending > 0 && `(${roundDays(bal.pending)} pend)`}
                                                                 </span>
                                                             </>
                                                         )}

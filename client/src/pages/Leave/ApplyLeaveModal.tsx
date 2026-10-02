@@ -37,7 +37,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
     const selectedTypeCode = selectedLeaveType ? selectedLeaveType.code : (formData.type || '').toLowerCase();
     const activeBalance = localBalance || balance;
     const balCategory = activeBalance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
-    const availableDays = balCategory ? Math.max(0, balCategory.total - (balCategory.used || 0) - (balCategory.pending || 0)) : 0;
+    const availableDays = balCategory 
+        ? Math.max(0, Math.round((balCategory.total - (balCategory.used || 0) - (balCategory.pending || 0) + Number.EPSILON) * 100) / 100) 
+        : 0;
     const sandwichEnabled = selectedLeaveType ? selectedLeaveType.sandwichRuleEnabled !== false : true;
 
     // Real-time duplicate & overlap conflict detection
@@ -238,6 +240,35 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                 }
             }
 
+            if (formData.duration === 'Half Day - Morning' || formData.duration === 'Half Day - Afternoon') {
+                if (formData.startDate !== formData.endDate) {
+                    setError('Half day leave must be on a single date');
+                    setLoading(false);
+                    return;
+                }
+                diffDays = 0.5;
+            } else if (formData.duration === 'Specify Time') {
+                if (formData.startDate !== formData.endDate) {
+                    setError('Specify time leave must be on a single date');
+                    setLoading(false);
+                    return;
+                }
+                if (!formData.startTime || !formData.endTime) {
+                    setError('Start and end time are required');
+                    setLoading(false);
+                    return;
+                }
+                const [sH, sM] = formData.startTime.split(':').map(Number);
+                const [eH, eM] = formData.endTime.split(':').map(Number);
+                const diffHours = (eH + eM / 60) - (sH + sM / 60);
+                if (diffHours <= 0) {
+                    setError('End time must be after start time');
+                    setLoading(false);
+                    return;
+                }
+                diffDays = Number(Math.max(0.1, (diffHours / 8)).toFixed(2));
+            }
+
             if (diffDays === 0 && start.getTime() <= end.getTime()) {
                 setError('Selected range contains only weekends. No leave days will be deducted.');
                 setLoading(false);
@@ -246,8 +277,10 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
             
             const isEditing = Boolean(editLeave);
             const effectiveAvailableDays = isEditing ? (availableDays + (editLeave.totalDays || 0)) : availableDays;
-            if (diffDays > effectiveAvailableDays) {
-                setError(`Requested ${diffDays} day(s) exceeds your available ${effectiveAvailableDays} day(s) balance.`);
+            const roundedDiff = Math.round((diffDays + Number.EPSILON) * 100) / 100;
+            const roundedAvail = Math.round((effectiveAvailableDays + Number.EPSILON) * 100) / 100;
+            if (roundedDiff > roundedAvail) {
+                setError(`Requested ${roundedDiff} day(s) exceeds your available ${roundedAvail} day(s) balance.`);
                 setLoading(false);
                 return;
             }

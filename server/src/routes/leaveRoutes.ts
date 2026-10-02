@@ -13,6 +13,8 @@ import { formatEmployeeFullName } from '../utils/nameHelper';
 
 const router = express.Router();
 
+const roundDays = (num: any): number => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 /**
  * Sandwich Rule: Calculate leave days between two dates.
  * Weekends (Saturdays/Sundays) are excluded, unless they are "sandwiched"
@@ -103,6 +105,16 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[], isPermanent
             modified = true;
         }
     }
+
+    // 3. Clean any floating point noise from balances
+    if (balance.balances && Array.isArray(balance.balances)) {
+        for (const b of balance.balances) {
+            if (b.total !== undefined) b.total = roundDays(b.total);
+            if (b.used !== undefined) b.used = roundDays(b.used);
+            if (b.pending !== undefined) b.pending = roundDays(b.pending);
+        }
+    }
+
     return modified;
 };
 
@@ -518,18 +530,22 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                     }
                 }
 
+                const effectiveUsed = roundDays(balCat ? balCat.used : 0);
+                const effectivePending = roundDays(balCat ? balCat.pending : 0);
+                const effectiveTotalNum = roundDays(effectiveTotal);
+                const effectiveMonthUsed = roundDays(monthUsed);
+                const availableDays = (!isPermanent && type.isPaid !== false)
+                    ? 0
+                    : roundDays(Math.max(0, effectiveTotalNum - effectiveUsed - effectivePending));
+
                 return {
                     leaveTypeCode: type.code,
                     leaveTypeName: type.name,
-                    total: effectiveTotal,
-                    used: balCat ? balCat.used : 0,
-                    monthUsed: monthUsed,
-                    pending: balCat ? balCat.pending : 0,
-                    available: (!isPermanent && type.isPaid !== false)
-                        ? 0
-                        : (balCat 
-                            ? Math.max(0, effectiveTotal - (balCat.used || 0) - (balCat.pending || 0)) 
-                            : effectiveTotal)
+                    total: effectiveTotalNum,
+                    used: effectiveUsed,
+                    monthUsed: effectiveMonthUsed,
+                    pending: effectivePending,
+                    available: availableDays
                 };
             });
 
@@ -1020,13 +1036,18 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         throw new Error(`Insufficient balance category for ${type}`);
                     }
 
-                    const available = category.total - (category.used + category.pending);
+                    const currentTotal = roundDays(category.total);
+                    const currentUsed = roundDays(category.used);
+                    const currentPending = roundDays(category.pending);
+                    const available = roundDays(Math.max(0, currentTotal - currentUsed - currentPending));
                     if (available < days) {
                         throw new Error(`Insufficient ${leaveType.name} leave balance for year ${year}. Requested: ${days}, Available: ${available}`);
                     }
 
                     // Reserve
-                    category.pending += days;
+                    category.pending = roundDays(currentPending + days);
+                    category.used = currentUsed;
+                    category.total = currentTotal;
                     balance.markModified('balances');
                     await balance.save({ session });
                 }
@@ -1045,7 +1066,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                     duration,
                     startTime: duration === 'Specify Time' ? startTime : undefined,
                     endTime: duration === 'Specify Time' ? endTime : undefined,
-                    totalDays: totalDeducted,
+                    totalDays: roundDays(totalDeducted),
                     status: 'Pending',
                     appliedBy: authReq.user?.userId,
                     appliedOn: new Date()
@@ -1455,10 +1476,9 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                     if (balance) {
                         const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                         if (category) {
-                            category.pending -= days;
-                            if (category.pending < 0) category.pending = 0;
+                            category.pending = Math.max(0, roundDays(category.pending - days));
                             if (status === 'Approved') {
-                                category.used += days;
+                                category.used = roundDays(category.used + days);
                             }
                             balance.markModified('balances');
                             await balance.save({ session });
@@ -1614,14 +1634,12 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
                         const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                         if (category) {
                             // Undo old status
-                            if (oldStatus === 'Pending') category.pending -= days;
-                            if (oldStatus === 'Approved') category.used -= days;
-                            if (category.pending < 0) category.pending = 0;
-                            if (category.used < 0) category.used = 0;
+                            if (oldStatus === 'Pending') category.pending = Math.max(0, roundDays(category.pending - days));
+                            if (oldStatus === 'Approved') category.used = Math.max(0, roundDays(category.used - days));
                             
                             // Apply new status
-                            if (status === 'Pending') category.pending += days;
-                            if (status === 'Approved') category.used += days;
+                            if (status === 'Pending') category.pending = roundDays(category.pending + days);
+                            if (status === 'Approved') category.used = roundDays(category.used + days);
                             
                             balance.markModified('balances');
                             await balance.save({ session });

@@ -16,6 +16,8 @@ import AllLeaveBalances from './AllLeaveBalances';
 
 // ── Components ──────────────────────────────────────────────────────────────
 
+const roundDays = (num: any) => Math.round((Number(num || 0) + Number.EPSILON) * 100) / 100;
+
 const BalanceCard = ({ title, used, pending, total, icon: Icon, color }: any) => {
     const totalSafe = Math.max(0.1, total || 0);
     const usedSafe = Math.max(0, (used || 0) + (pending || 0));
@@ -43,13 +45,13 @@ const BalanceCard = ({ title, used, pending, total, icon: Icon, color }: any) =>
                     <Icon size={24} />
                 </div>
                 <div className="text-right">
-                    <span className="text-2xl font-bold text-slate-800">{available}</span>
+                    <span className="text-2xl font-bold text-slate-800">{roundDays(available)}</span>
                     <span className="text-slate-400 text-xs block">Days Left</span>
                 </div>
             </div>
             
             <h3 className="font-bold text-slate-700 mb-1">{title}</h3>
-            <p className="text-xs text-slate-400 mb-4">{used} used, {pending || 0} pending of {total}</p>
+            <p className="text-xs text-slate-400 mb-4">{roundDays(used)} used, {roundDays(pending)} pending of {roundDays(total)}</p>
 
             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                 <div 
