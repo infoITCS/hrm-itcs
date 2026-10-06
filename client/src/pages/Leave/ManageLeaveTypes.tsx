@@ -28,7 +28,7 @@ const ManageLeaveTypes = () => {
     const loadData = async () => {
         setLoadingTypes(true);
         try {
-            const typesRes = await fetch(`${api.baseURL}/api/leaves/types`, { headers: { Authorization: `Bearer ${token}` } });
+            const typesRes = await fetch(`${api.baseURL}/api/leaves/types?forManagement=true`, { headers: { Authorization: `Bearer ${token}` } });
             if (typesRes.ok) {
                 const typesData = await typesRes.json();
                 setTypes(typesData.data || []);

@@ -785,8 +785,8 @@ export default function CompanyPolicy() {
                                     </ul>
                                 </div>
 
-                                <div>
-                                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                                <div className="space-y-3">
+                                    <h3 className="text-base font-bold text-white flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-purple-400" /> Maternity & Paternity Leave
                                     </h3>
                                     <div className="overflow-x-auto border border-white/10 rounded-xl">
@@ -796,29 +796,53 @@ export default function CompanyPolicy() {
                                                     <th className="p-3">Category</th>
                                                     <th className="p-3">Child / Event</th>
                                                     <th className="p-3">Paid Entitlement</th>
+                                                    <th className="p-3">Calculation Basis</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-white/10 text-purple-100/80">
                                                 <tr>
-                                                    <td className="p-3 font-semibold text-white" rowSpan={3}>Maternity Leave</td>
+                                                    <td className="p-3 font-semibold text-white" rowSpan={3}>Maternity Leave (Married Female Staff)</td>
                                                     <td className="p-3">First Child</td>
-                                                    <td className="p-3 font-bold text-purple-300">180 days (6 months)</td>
+                                                    <td className="p-3 font-bold text-purple-300">180 calendar days (6 months)</td>
+                                                    <td className="p-3 text-[11px] text-purple-200/70" rowSpan={3}>Continuous calendar days (weekends & public holidays included)</td>
                                                 </tr>
                                                 <tr>
                                                     <td className="p-3">Second Child</td>
-                                                    <td className="p-3 font-bold text-purple-300">120 days (4 months)</td>
+                                                    <td className="p-3 font-bold text-purple-300">120 calendar days (4 months)</td>
                                                 </tr>
                                                 <tr>
                                                     <td className="p-3">Third Child</td>
-                                                    <td className="p-3 font-bold text-purple-300">90 days (3 months)</td>
+                                                    <td className="p-3 font-bold text-purple-300">90 calendar days (3 months)</td>
                                                 </tr>
                                                 <tr>
-                                                    <td className="p-3 font-semibold text-white">Paternity Leave</td>
+                                                    <td className="p-3 font-semibold text-white">Paternity Leave (Married Male Staff)</td>
                                                     <td className="p-3">Per Child</td>
                                                     <td className="p-3 font-bold text-emerald-400">1 week (7 business days)</td>
+                                                    <td className="p-3 text-[11px] text-purple-200/70">Business days (weekends & public holidays excluded)</td>
                                                 </tr>
                                             </tbody>
                                         </table>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-purple-100/85">
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+                                            <h4 className="font-bold text-purple-300 uppercase tracking-wide text-[11px]">Maternity Leave Conditions</h4>
+                                            <ul className="list-disc list-inside space-y-1.5 leading-relaxed text-purple-100/80">
+                                                <li><b>Eligibility:</b> Granted to eligible married female employees to support them during childbirth and recovery.</li>
+                                                <li><b>Tenure Requirement:</b> Must have completed at least six (6) months of continuous employment with the Company prior to the expected delivery date.</li>
+                                                <li><b>Commencement:</b> Leave may commence before or after childbirth based on medical advice and personal circumstances, subject to prior notification to HR and reporting manager with medical documentation.</li>
+                                                <li><b>Exhausted Entitlement:</b> Employees who have exhausted their 3-child paid maternity quota or who do not meet the 6-month service requirement may apply for unpaid leave or utilize accrued annual leaves subject to management approval.</li>
+                                            </ul>
+                                        </div>
+
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2">
+                                            <h4 className="font-bold text-emerald-300 uppercase tracking-wide text-[11px]">Paternity Leave Conditions</h4>
+                                            <ul className="list-disc list-inside space-y-1.5 leading-relaxed text-purple-100/80">
+                                                <li><b>Eligibility:</b> Granted to eligible married male employees upon the birth of a child.</li>
+                                                <li><b>Entitlement:</b> One (1) week equivalent to seven (7) business working days (weekends and gazetted holidays excluded).</li>
+                                                <li><b>Notification:</b> Prior notice with supporting birth/medical records to HR and department supervisor.</li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -7,6 +7,9 @@ export interface ILeaveType extends Document {
     isPaid: boolean;
     isActive: boolean;
     sandwichRuleEnabled: boolean;
+    isCalendarDays?: boolean;
+    genderRestricted?: 'male' | 'female' | 'all';
+    maritalStatusRestricted?: 'married' | 'any';
     createdAt: Date;
     updatedAt: Date;
 }
@@ -17,7 +20,10 @@ const LeaveTypeSchema: Schema = new Schema({
     defaultDays: { type: Number, required: true, default: 0 },
     isPaid: { type: Boolean, required: true, default: true },
     isActive: { type: Boolean, required: true, default: true },
-    sandwichRuleEnabled: { type: Boolean, required: true, default: true }
+    sandwichRuleEnabled: { type: Boolean, required: true, default: true },
+    isCalendarDays: { type: Boolean, default: false },
+    genderRestricted: { type: String, enum: ['male', 'female', 'all'], default: 'all' },
+    maritalStatusRestricted: { type: String, enum: ['married', 'any'], default: 'any' }
 }, { timestamps: true });
 
 

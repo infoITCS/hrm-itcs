@@ -136,6 +136,7 @@ export interface IEmployee extends Document {
         relation: string;
         phone: string;
     }[];
+    maternityBaselineChildCount?: number; // Initial count of children born prior to company records
     dependents?: {
         name: string;
         relation: string;
@@ -304,6 +305,7 @@ const EmployeeSchema: Schema = new Schema({
         relation: { type: String },
         phone: { type: String }
     }],
+    maternityBaselineChildCount: { type: Number, default: 0 },
     dependents: [{
         name: { type: String },
         relation: { type: String },

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle, Send } from 'lucide-react';
 import { api } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import FormattedDateInput from '../../components/Common/FormattedDateInput';
 
@@ -17,6 +18,7 @@ interface ApplyLeaveModalProps {
 }
 
 const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, allEmployees, editLeave, existingLeaves }: ApplyLeaveModalProps) => {
+    const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -33,7 +35,26 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
     });
     const [types, setTypes] = useState<any[]>([]);
 
-    const selectedLeaveType = types.find(t => t.name === formData.type);
+    const activeEmp = selectedEmployeeId
+        ? allEmployees?.find((e: any) => e.employeeId === selectedEmployeeId || e._id === selectedEmployeeId)
+        : allEmployees?.find((e: any) => 
+            (user?.id && (e.userId === user.id || e._id === user.id || e.userId === String(user.id))) ||
+            (user?.email && (e.email === user.email || e.workEmail === user.email))
+        );
+
+    const visibleTypes = types.filter(t => {
+        if (activeEmp) {
+            const g = (activeEmp.gender || '').trim().toLowerCase();
+            const m = (activeEmp.maritalStatus || '').trim().toLowerCase();
+            if (t.code === 'maternity' && (g !== 'female' || m !== 'married')) return false;
+            if (t.code === 'paternity' && (g !== 'male' || m !== 'married')) return false;
+            if (t.genderRestricted && t.genderRestricted !== 'all' && t.genderRestricted !== g) return false;
+            if (t.maritalStatusRestricted && t.maritalStatusRestricted === 'married' && m !== 'married') return false;
+        }
+        return true;
+    });
+
+    const selectedLeaveType = visibleTypes.find(t => t.name === formData.type) || types.find(t => t.name === formData.type);
     const selectedTypeCode = selectedLeaveType ? selectedLeaveType.code : (formData.type || '').toLowerCase();
     const activeBalance = localBalance || balance;
     const balCategory = activeBalance?.balances?.find((b: any) => b.leaveTypeCode === selectedTypeCode);
@@ -123,21 +144,19 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
         fetchLocalBalance();
     }, [selectedEmployeeId]);
 
-    // Fetch active leave types and reset state when modal opens/closes
+    // Fetch active leave types whenever modal is open or selected employee changes
     useEffect(() => {
         const fetchTypes = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch(`${api.baseURL}/api/leaves/types?activeOnly=true`, {
+                const empQuery = selectedEmployeeId ? `&employeeId=${encodeURIComponent(selectedEmployeeId)}` : '';
+                const res = await fetch(`${api.baseURL}/api/leaves/types?activeOnly=true${empQuery}`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.success && data.data) {
                         setTypes(data.data);
-                        if (data.data.length > 0) {
-                            setFormData(prev => ({ ...prev, type: data.data[0].name }));
-                        }
                     }
                 }
             } catch (err) {
@@ -147,6 +166,12 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
 
         if (isOpen) {
             fetchTypes();
+        }
+    }, [isOpen, selectedEmployeeId]);
+
+    // Reset state when modal opens or editLeave changes
+    useEffect(() => {
+        if (isOpen) {
             if (editLeave) {
                 setFormData({
                     startDate: editLeave.startDate ? new Date(editLeave.startDate).toISOString().split('T')[0] : '',
@@ -173,6 +198,12 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
             setFormData(prev => ({ ...prev, endDate: prev.startDate }));
         }
     }, [formData.duration, formData.startDate]);
+
+    useEffect(() => {
+        if (visibleTypes.length > 0 && !visibleTypes.some(t => t.name === formData.type)) {
+            setFormData(prev => ({ ...prev, type: visibleTypes[0].name }));
+        }
+    }, [selectedEmployeeId, types]);
 
     if (!isOpen) return null;
 
@@ -214,7 +245,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
             for (let i = 0; i < dates.length; i++) {
                 const d = dates[i];
                 const dayOfWeek = d.getDay();
-                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                if (selectedLeaveType?.isCalendarDays) {
+                    diffDays++;
+                } else if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                     diffDays++;
                 } else if (sandwichEnabled) {
                     // Sandwiched?
@@ -450,16 +483,32 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                                 onChange={e => setFormData({...formData, type: e.target.value})}
                                 className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 pr-8 text-xs focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700 cursor-pointer"
                             >
-                                {types.map(t => (
+                                {visibleTypes.map(t => (
                                     <option key={t._id} value={t.name}>
                                         {t.name.toLowerCase().includes('leave') ? t.name : `${t.name} Leave`}
                                     </option>
                                 ))}
-                                {types.length === 0 && (
+                                {visibleTypes.length === 0 && (
                                     <option value="Annual">Annual Leave</option>
                                 )}
                             </select>
-                            {selectedLeaveType && selectedLeaveType.isPaid !== false && balCategory?.total === 0 && (
+                            {selectedLeaveType?.code === 'maternity' && (
+                                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-xl flex items-start gap-2 text-xs text-purple-900 mt-1.5">
+                                    <AlertCircle size={14} className="text-purple-600 shrink-0 mt-0.5" />
+                                    <span className="text-[11px] leading-tight">
+                                        <strong>Maternity Policy:</strong> Continuous calendar days (weekends & holidays included). 1st Child: 180d, 2nd: 120d, 3rd: 90d. Minimum 6 months continuous service required.
+                                    </span>
+                                </div>
+                            )}
+                            {selectedLeaveType?.code === 'paternity' && (
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2 text-xs text-emerald-900 mt-1.5">
+                                    <AlertCircle size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                                    <span className="text-[11px] leading-tight">
+                                        <strong>Paternity Policy:</strong> 1 week (7 business days, weekends excluded). Restricted to married male employees.
+                                    </span>
+                                </div>
+                            )}
+                            {selectedLeaveType && selectedLeaveType.isPaid !== false && balCategory?.total === 0 && selectedLeaveType.code !== 'maternity' && selectedLeaveType.code !== 'paternity' && (
                                 <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-900 mt-1.5">
                                     <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
                                     <span className="text-[11px] leading-tight">
@@ -483,7 +532,9 @@ const ApplyLeaveModal = ({ isOpen, onClose, onSuccess, balance, isAdminLike, all
                         <div className="flex items-center gap-2 px-1 text-indigo-600/70">
                             <AlertCircle size={12} />
                             <p className="text-[9px] font-medium tracking-tight">
-                                Syncs automatically with attendance. Weekends {sandwichEnabled ? 'included if sandwiched' : 'excluded'}.
+                                {selectedLeaveType?.isCalendarDays
+                                    ? 'Continuous calendar days (weekends & public holidays are included).'
+                                    : `Syncs automatically with attendance. Weekends ${sandwichEnabled ? 'included if sandwiched' : 'excluded'}.`}
                             </p>
                         </div>
 

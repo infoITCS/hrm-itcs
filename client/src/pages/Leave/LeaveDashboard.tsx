@@ -271,11 +271,14 @@ const LeaveDashboard = () => {
         if (code === 'annual') color = 'indigo';
         else if (code === 'sick') color = 'rose';
         else if (code === 'casual') color = 'amber';
+        else if (code === 'maternity') color = 'indigo';
+        else if (code === 'paternity') color = 'emerald';
         
         let icon = FileText;
         if (code === 'annual') icon = Plane;
         else if (code === 'sick') icon = Heart;
         else if (code === 'casual') icon = Calendar;
+        else if (code === 'maternity' || code === 'paternity') icon = Heart;
 
         return { color, icon };
     };
@@ -354,22 +357,32 @@ const STATUS_COLORS: any = {
 
             {/* Balances Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {balance?.balances?.filter((b: any) => leaveTypes.some(t => t.code === b.leaveTypeCode)).map((balCategory: any, idx: number) => {
-                    const typeDetails = leaveTypes.find(t => t.code === balCategory.leaveTypeCode);
-                    const title = typeDetails ? typeDetails.name : (balCategory.leaveTypeCode.charAt(0).toUpperCase() + balCategory.leaveTypeCode.slice(1));
-                    const { color, icon } = getCardStyling(balCategory.leaveTypeCode, idx);
-                    return (
-                        <BalanceCard 
-                            key={balCategory.leaveTypeCode}
-                            title={title.toLowerCase().includes('leave') ? title : `${title} Leave`} 
-                            used={balCategory.used || 0} 
-                            pending={balCategory.pending || 0}
-                            total={balCategory.total || 0} 
-                            icon={icon} 
-                            color={color} 
-                        />
-                    );
-                })}
+                {(() => {
+                    const seenCodes = new Set<string>();
+                    return balance?.balances
+                        ?.filter((b: any) => {
+                            if (!b.leaveTypeCode || seenCodes.has(b.leaveTypeCode)) return false;
+                            if (!leaveTypes.some(t => t.code === b.leaveTypeCode)) return false;
+                            seenCodes.add(b.leaveTypeCode);
+                            return true;
+                        })
+                        .map((balCategory: any, idx: number) => {
+                            const typeDetails = leaveTypes.find(t => t.code === balCategory.leaveTypeCode);
+                            const title = typeDetails ? typeDetails.name : (balCategory.leaveTypeCode.charAt(0).toUpperCase() + balCategory.leaveTypeCode.slice(1));
+                            const { color, icon } = getCardStyling(balCategory.leaveTypeCode, idx);
+                            return (
+                                <BalanceCard 
+                                    key={balCategory.leaveTypeCode}
+                                    title={title.toLowerCase().includes('leave') ? title : `${title} Leave`} 
+                                    used={balCategory.used || 0} 
+                                    pending={balCategory.pending || 0}
+                                    total={balCategory.total || 0} 
+                                    icon={icon} 
+                                    color={color} 
+                                />
+                            );
+                        });
+                })()}
                 {(!balance?.balances || balance.balances.length === 0) && (
                     <div className="col-span-full py-10 text-center bg-white border border-slate-100 rounded-2xl">
                         <p className="text-sm text-slate-400 font-bold">No leave balances initialized.</p>

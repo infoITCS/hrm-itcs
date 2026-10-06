@@ -36,7 +36,6 @@ const getLeaveDaysCountWithSandwich = (start: Date, end: Date, sandwichEnabled: 
         if (dayOfWeek !== 0 && dayOfWeek !== 6) {
             count++;
         } else if (sandwichEnabled) {
-            // Weekend day. Sandwiched if there is a weekday in the request before AND after it.
             let hasBefore = false;
             let hasAfter = false;
             for (let j = 0; j < i; j++) {
@@ -62,15 +61,224 @@ const getLeaveDaysCountWithSandwich = (start: Date, end: Date, sandwichEnabled: 
 };
 
 /**
+ * Universal day count helper accounting for calendar days vs business/sandwich days.
+ */
+const getLeaveDaysCount = (start: Date, end: Date, leaveType: any): number => {
+    if (leaveType?.isCalendarDays) {
+        return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+    }
+    return getLeaveDaysCountWithSandwich(start, end, leaveType?.sandwichRuleEnabled !== false);
+};
+
+/**
+ * Calculates days to deduct per calendar year, respecting calendar days, business days, and sandwich rule.
+ */
+const calculateLeaveDaysPerYear = (
+    start: Date,
+    end: Date,
+    leaveType: any,
+    duration?: string,
+    durationDeduction?: number
+): Map<number, number> => {
+    const yearDaysMap = new Map<number, number>();
+    const dates: Date[] = [];
+    let cur = new Date(start);
+    while (cur <= end) {
+        dates.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    const isCalendar = leaveType?.isCalendarDays === true;
+    const sandwichEnabled = leaveType?.sandwichRuleEnabled !== false;
+
+    for (let i = 0; i < dates.length; i++) {
+        const d = dates[i];
+        const dayOfWeek = d.getDay();
+        let shouldCount = false;
+
+        if (isCalendar) {
+            shouldCount = true;
+        } else if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            shouldCount = true;
+        } else if (sandwichEnabled) {
+            let hasBefore = false;
+            let hasAfter = false;
+            for (let j = 0; j < i; j++) {
+                if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                    hasBefore = true;
+                    break;
+                }
+            }
+            for (let j = i + 1; j < dates.length; j++) {
+                if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
+                    hasAfter = true;
+                    break;
+                }
+            }
+            if (hasBefore && hasAfter) {
+                shouldCount = true;
+            }
+        }
+
+        if (shouldCount) {
+            const year = d.getFullYear();
+            let dayDeduction = 1;
+            if (duration && duration !== 'Full Day' && dates.length === 1) {
+                dayDeduction = durationDeduction || 0.5;
+            }
+            yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
+        }
+    }
+    return yearDaysMap;
+};
+
+/**
+ * Maternity Leave Entitlement Calculator:
+ * - Married female employees only
+ * - Minimum 6 continuous months of service prior to reference date
+ * - 1st Child: 180 calendar days
+ * - 2nd Child: 120 calendar days
+ * - 3rd Child: 90 calendar days
+ * - 4th+ Child: 0 paid days
+ */
+export const getMaternityEntitlement = async (
+    employee: any,
+    referenceDate: Date = new Date()
+): Promise<{ eligible: boolean; reason?: string; childTier: number; entitledDays: number }> => {
+    const gender = (employee?.gender || '').trim().toLowerCase();
+    const maritalStatus = (employee?.maritalStatus || '').trim().toLowerCase();
+
+    if (gender !== 'female') {
+        return { eligible: false, reason: 'Maternity leave is restricted to female employees.', childTier: 0, entitledDays: 0 };
+    }
+    if (maritalStatus !== 'married') {
+        return { eligible: false, reason: 'Maternity leave is restricted to married female employees.', childTier: 0, entitledDays: 0 };
+    }
+
+    const joiningDate = employee?.jobInfo?.joiningDate ? new Date(employee.jobInfo.joiningDate) : null;
+    if (!joiningDate || isNaN(joiningDate.getTime())) {
+        return { eligible: false, reason: 'Employee joining date is missing. At least 6 months continuous service required.', childTier: 0, entitledDays: 0 };
+    }
+
+    const sixMonthsAfterJoining = new Date(joiningDate);
+    sixMonthsAfterJoining.setMonth(sixMonthsAfterJoining.getMonth() + 6);
+    if (referenceDate < sixMonthsAfterJoining) {
+        return { eligible: false, reason: 'Minimum 6 months continuous service required to qualify for paid maternity leave.', childTier: 0, entitledDays: 0 };
+    }
+
+    const baselineChildCount = (typeof employee.maternityBaselineChildCount === 'number')
+        ? employee.maternityBaselineChildCount
+        : (employee.dependents?.filter((d: any) => /child|son|daughter/i.test(d.relation || '')).length || 0);
+
+    const lookupIds = [employee.employeeId, employee.userId, employee._id ? String(employee._id) : ''].filter(Boolean);
+    const priorApprovedCount = await LeaveRequest.countDocuments({
+        employeeId: { $in: lookupIds },
+        status: 'Approved',
+        type: { $regex: /maternity/i }
+    });
+
+    const currentChildTier = baselineChildCount + priorApprovedCount + 1;
+    let entitledDays = 0;
+    if (currentChildTier === 1) entitledDays = 180;
+    else if (currentChildTier === 2) entitledDays = 120;
+    else if (currentChildTier === 3) entitledDays = 90;
+    else entitledDays = 0;
+
+    return {
+        eligible: entitledDays > 0,
+        reason: entitledDays === 0 ? 'Paid maternity leave exhausted (maximum 3 children entitlement reached).' : undefined,
+        childTier: currentChildTier,
+        entitledDays
+    };
+};
+
+/**
+ * Paternity Leave Entitlement:
+ * - Married male employees only
+ * - 1 week = 7 business days per child
+ */
+export const getPaternityEntitlement = (employee: any): { eligible: boolean; reason?: string; entitledDays: number } => {
+    const gender = (employee?.gender || '').trim().toLowerCase();
+    const maritalStatus = (employee?.maritalStatus || '').trim().toLowerCase();
+
+    if (gender !== 'male') {
+        return { eligible: false, reason: 'Paternity leave is restricted to male employees.', entitledDays: 0 };
+    }
+    if (maritalStatus !== 'married') {
+        return { eligible: false, reason: 'Paternity leave is restricted to married male employees.', entitledDays: 0 };
+    }
+
+    return { eligible: true, entitledDays: 7 };
+};
+
+/**
+ * Resolves the dynamic quota for a given leave type and employee.
+ */
+const resolveEmployeeQuotaForType = async (
+    type: any,
+    emp: any,
+    isPermanent: boolean,
+    refDate: Date = new Date()
+): Promise<number> => {
+    if (!type.isPaid) return type.defaultDays || 0;
+    const code = type.code;
+
+    if (code === 'maternity') {
+        const mat = await getMaternityEntitlement(emp, refDate);
+        return mat.entitledDays;
+    }
+    if (code === 'paternity') {
+        const pat = getPaternityEntitlement(emp);
+        return pat.entitledDays;
+    }
+
+    if (!isPermanent) return 0;
+    return type.defaultDays;
+};
+
+/**
  * Dynamic balancer initialization helper.
  * Self-heals/migrates old hardcoded schemas on the fly.
  * When isPermanent is false, paid leave quotas are set to 0.
+ * Dynamic child-tier and gender restrictions are computed for Maternity & Paternity.
  */
-const ensureBalancesInitialized = (balance: any, activeTypes: any[], isPermanent: boolean = true): boolean => {
+const ensureBalancesInitialized = async (
+    balance: any,
+    activeTypes: any[],
+    isPermanent: boolean = true,
+    employee?: any,
+    refDate: Date = new Date()
+): Promise<boolean> => {
     let modified = false;
     if (!balance.balances) {
         balance.balances = [];
         modified = true;
+    }
+
+    // Deduplicate any duplicate leaveTypeCode entries in balance.balances
+    if (balance.balances && Array.isArray(balance.balances)) {
+        const seenCodes = new Set<string>();
+        const uniqueBalances: any[] = [];
+        for (const b of balance.balances) {
+            const code = b.leaveTypeCode;
+            if (!code) continue;
+            if (!seenCodes.has(code)) {
+                seenCodes.add(code);
+                uniqueBalances.push(b);
+            } else {
+                const existing = uniqueBalances.find(item => item.leaveTypeCode === code);
+                if (existing) {
+                    existing.total = Math.max(existing.total || 0, b.total || 0);
+                    existing.used = Math.max(existing.used || 0, b.used || 0);
+                    existing.pending = Math.max(existing.pending || 0, b.pending || 0);
+                }
+                modified = true;
+            }
+        }
+        if (uniqueBalances.length !== balance.balances.length) {
+            balance.balances = uniqueBalances;
+            modified = true;
+        }
     }
 
     // 1. Migrate legacy columns if present
@@ -91,7 +299,8 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[], isPermanent
     // 2. Map all active categories
     for (const t of activeTypes) {
         const existing = balance.balances.find((b: any) => b.leaveTypeCode === t.code);
-        const quota = (!isPermanent && t.isPaid !== false) ? 0 : t.defaultDays;
+        const quota = await resolveEmployeeQuotaForType(t, employee, isPermanent, refDate);
+
         if (!existing) {
             balance.balances.push({
                 leaveTypeCode: t.code,
@@ -100,9 +309,16 @@ const ensureBalancesInitialized = (balance: any, activeTypes: any[], isPermanent
                 pending: 0
             });
             modified = true;
-        } else if (!isPermanent && t.isPaid !== false && existing.total > 0) {
-            existing.total = 0;
-            modified = true;
+        } else {
+            if (t.code === 'maternity' || t.code === 'paternity') {
+                if (existing.total !== quota) {
+                    existing.total = quota;
+                    modified = true;
+                }
+            } else if (!isPermanent && t.isPaid !== false && existing.total > 0) {
+                existing.total = 0;
+                modified = true;
+            }
         }
     }
 
@@ -431,7 +647,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         const activeTypes = await LeaveType.find({ isActive: true }).sort({ name: 1 });
 
         // Fetch all employees
-        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo employmentStatus');
+        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo employmentStatus gender maritalStatus dependents maternityBaselineChildCount');
 
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
@@ -468,6 +684,8 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
 
             const empStatus = (empObj.employmentStatus?.status || empObj.employmentStatus || '').toString().trim().toLowerCase();
             const isPermanent = empStatus === 'permanent';
+            const empGender = (empObj.gender || '').trim().toLowerCase();
+            const empMarital = (empObj.maritalStatus || '').trim().toLowerCase();
 
             // Find existing balance doc matching any identifier (employeeId, userId, or _id)
             let empBalanceDoc = balances.find(b => 
@@ -477,9 +695,17 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
             );
             
             let empBalances = activeTypes.map(type => {
+                let isRestrictedForEmp = false;
+                if (type.genderRestricted && type.genderRestricted !== 'all' && type.genderRestricted !== empGender) {
+                    isRestrictedForEmp = true;
+                }
+                if (type.maritalStatusRestricted && type.maritalStatusRestricted === 'married' && empMarital !== 'married') {
+                    isRestrictedForEmp = true;
+                }
+
                 let balCat = empBalanceDoc?.balances?.find((b: any) => b.leaveTypeCode === type.code);
                 const rawTotal = balCat ? balCat.total : type.defaultDays;
-                const effectiveTotal = (!isPermanent && type.isPaid !== false) ? 0 : rawTotal;
+                const effectiveTotal = (!isPermanent && type.isPaid !== false) || isRestrictedForEmp ? 0 : rawTotal;
 
                 // Calculate month-specific used leaves if monthQuery is active
                 let monthUsed = 0;
@@ -534,7 +760,7 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                 const effectivePending = roundDays(balCat ? balCat.pending : 0);
                 const effectiveTotalNum = roundDays(effectiveTotal);
                 const effectiveMonthUsed = roundDays(monthUsed);
-                const availableDays = (!isPermanent && type.isPaid !== false)
+                const availableDays = (!isPermanent && type.isPaid !== false) || isRestrictedForEmp
                     ? 0
                     : roundDays(Math.max(0, effectiveTotalNum - effectiveUsed - effectivePending));
 
@@ -593,12 +819,29 @@ router.get('/balance', authenticate, async (req: Request, res: Response, next: N
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
-        const modified = ensureBalancesInitialized(balance, activeTypes, isPermanent);
+        const modified = await ensureBalancesInitialized(balance, activeTypes, isPermanent, targetEmpObj);
         if (modified || balance.isNew) {
             await balance.save();
         }
 
-        res.json({ success: true, data: balance });
+        // Return balance filtered to only categories applicable to this employee's profile
+        const balanceData = balance.toObject ? balance.toObject() : JSON.parse(JSON.stringify(balance));
+        if (targetEmpObj) {
+            const empGender = (targetEmpObj.gender || '').trim().toLowerCase();
+            const empMarital = (targetEmpObj.maritalStatus || '').trim().toLowerCase();
+            const allowedCodes = new Set(
+                activeTypes
+                    .filter(t => {
+                        if (t.genderRestricted && t.genderRestricted !== 'all' && t.genderRestricted !== empGender) return false;
+                        if (t.maritalStatusRestricted && t.maritalStatusRestricted === 'married' && empMarital !== 'married') return false;
+                        return true;
+                    })
+                    .map(t => t.code)
+            );
+            balanceData.balances = (balanceData.balances || []).filter((b: any) => allowedCodes.has(b.leaveTypeCode));
+        }
+
+        res.json({ success: true, data: balanceData });
     } catch (error) {
         next(error);
     }
@@ -614,7 +857,35 @@ router.get('/types', authenticate, async (req: Request, res: Response, next: Nex
         if (!isAdmin || req.query.activeOnly === 'true') {
             query.isActive = true;
         }
-        const types = await LeaveType.find(query).sort({ createdAt: 1 });
+        let types = await LeaveType.find(query).sort({ createdAt: 1 });
+
+        // If employeeId is specified (or requester is not managing leave settings), filter types based on target employee profile
+        const isForManagement = req.query.forManagement === 'true';
+        const targetEmpId = req.query.employeeId ? String(req.query.employeeId) : (!isForManagement ? user?.userId : null);
+
+        if (targetEmpId) {
+            const { employee } = await resolveEmployeeLookupIds(targetEmpId);
+            if (employee) {
+                const empGender = (employee.gender || '').trim().toLowerCase();
+                const empMarital = (employee.maritalStatus || '').trim().toLowerCase();
+                types = types.filter(t => {
+                    if (t.code === 'maternity' && (empGender !== 'female' || empMarital !== 'married')) {
+                        return false;
+                    }
+                    if (t.code === 'paternity' && (empGender !== 'male' || empMarital !== 'married')) {
+                        return false;
+                    }
+                    if (t.genderRestricted && t.genderRestricted !== 'all' && t.genderRestricted !== empGender) {
+                        return false;
+                    }
+                    if (t.maritalStatusRestricted && t.maritalStatusRestricted === 'married' && empMarital !== 'married') {
+                        return false;
+                    }
+                    return true;
+                });
+            }
+        }
+
         res.json({ success: true, data: types });
     } catch (error) {
         next(error);
@@ -737,7 +1008,7 @@ router.put('/balance/:employeeId', authenticate, async (req: Request, res: Respo
         }
 
         const activeTypes = await LeaveType.find({ isActive: true });
-        ensureBalancesInitialized(balance, activeTypes, balIsPermanent);
+        await ensureBalancesInitialized(balance, activeTypes, balIsPermanent, balEmpObj);
 
         if (Array.isArray(incomingBalances) && incomingBalances.length > 0) {
             for (const b of incomingBalances) {
@@ -942,7 +1213,33 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
         const leaveTypeCode = leaveType.code;
 
-        const sandwichEnabled = leaveType.sandwichRuleEnabled !== false;
+        // Gender & Marital Restrictions Check
+        const empGender = (empDocObj?.gender || '').trim().toLowerCase();
+        const empMarital = (empDocObj?.maritalStatus || '').trim().toLowerCase();
+
+        if (leaveType.genderRestricted && leaveType.genderRestricted !== 'all' && leaveType.genderRestricted !== empGender) {
+            return res.status(403).json({
+                success: false,
+                message: `${leaveType.name} is exclusively available to ${leaveType.genderRestricted} employees.`
+            });
+        }
+
+        if (leaveType.maritalStatusRestricted && leaveType.maritalStatusRestricted === 'married' && empMarital !== 'married') {
+            return res.status(403).json({
+                success: false,
+                message: `${leaveType.name} is exclusively available to married employees.`
+            });
+        }
+
+        if (leaveTypeCode === 'maternity') {
+            const matCheck = await getMaternityEntitlement(empDocObj, start);
+            if (!matCheck.eligible) {
+                return res.status(403).json({
+                    success: false,
+                    message: matCheck.reason || 'Not eligible for paid maternity leave.'
+                });
+            }
+        }
 
         let requestedDurationDays = 1;
         if (duration === 'Half Day - Morning' || duration === 'Half Day - Afternoon') {
@@ -964,56 +1261,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             requestedDurationDays = Number((diffHours / 8).toFixed(2));
         }
 
-        const daysRequested = getLeaveDaysCountWithSandwich(start, end, sandwichEnabled);
+        const daysRequested = getLeaveDaysCount(start, end, leaveType);
         if (daysRequested <= 0) {
-            return res.status(400).json({ message: 'Leave request must include at least one working day' });
+            return res.status(400).json({ message: 'Leave request must include at least one valid day' });
         }
 
-        // 2. Calculate Sandwich/working days per year
-        const yearDaysMap = new Map<number, number>();
-        const dates: Date[] = [];
-        let cur = new Date(start);
-        while (cur <= end) {
-            dates.push(new Date(cur));
-            cur.setDate(cur.getDate() + 1);
-        }
-
-        for (let i = 0; i < dates.length; i++) {
-            const d = dates[i];
-            const dayOfWeek = d.getDay();
-            let isSandwiched = false;
-            
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                isSandwiched = true;
-            } else if (sandwichEnabled) {
-                let hasBefore = false;
-                let hasAfter = false;
-                for (let j = 0; j < i; j++) {
-                    if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                        hasBefore = true;
-                        break;
-                    }
-                }
-                for (let j = i + 1; j < dates.length; j++) {
-                    if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                        hasAfter = true;
-                        break;
-                    }
-                }
-                if (hasBefore && hasAfter) {
-                    isSandwiched = true;
-                }
-            }
-
-            if (isSandwiched) {
-                const year = d.getFullYear();
-                let dayDeduction = 1;
-                if (duration !== 'Full Day' && dates.length === 1) {
-                    dayDeduction = requestedDurationDays;
-                }
-                yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
-            }
-        }
+        // 2. Calculate days per year
+        const yearDaysMap = calculateLeaveDaysPerYear(start, end, leaveType, duration, requestedDurationDays);
 
         // 3. Atomically check balances and reserve pending
         const session = await mongoose.startSession();
@@ -1029,7 +1283,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                         balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
                     }
 
-                    ensureBalancesInitialized(balance, activeTypes, isPermanent);
+                    await ensureBalancesInitialized(balance, activeTypes, isPermanent, empDocObj, start);
 
                     const category = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                     if (!category) {
@@ -1207,7 +1461,34 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         }
 
         const leaveTypeCode = leaveType.code;
-        const sandwichEnabled = leaveType.sandwichRuleEnabled !== false;
+
+        // Gender & Marital Restrictions Check
+        const editGender = (editEmp?.gender || '').trim().toLowerCase();
+        const editMarital = (editEmp?.maritalStatus || '').trim().toLowerCase();
+
+        if (leaveType.genderRestricted && leaveType.genderRestricted !== 'all' && leaveType.genderRestricted !== editGender) {
+            return res.status(403).json({
+                success: false,
+                message: `${leaveType.name} is exclusively available to ${leaveType.genderRestricted} employees.`
+            });
+        }
+
+        if (leaveType.maritalStatusRestricted && leaveType.maritalStatusRestricted === 'married' && editMarital !== 'married') {
+            return res.status(403).json({
+                success: false,
+                message: `${leaveType.name} is exclusively available to married employees.`
+            });
+        }
+
+        if (leaveTypeCode === 'maternity') {
+            const matCheck = await getMaternityEntitlement(editEmp, start);
+            if (!matCheck.eligible) {
+                return res.status(403).json({
+                    success: false,
+                    message: matCheck.reason || 'Not eligible for paid maternity leave.'
+                });
+            }
+        }
 
         let requestedDurationDays = 1;
         if (duration === 'Half Day - Morning' || duration === 'Half Day - Afternoon') {
@@ -1229,9 +1510,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
             requestedDurationDays = Number((diffHours / 8).toFixed(2));
         }
 
-        const daysRequested = getLeaveDaysCountWithSandwich(start, end, sandwichEnabled);
+        const daysRequested = getLeaveDaysCount(start, end, leaveType);
         if (daysRequested <= 0) {
-            return res.status(400).json({ success: false, message: 'Leave request must include at least one working day' });
+            return res.status(400).json({ success: false, message: 'Leave request must include at least one valid day' });
         }
 
         // Calculate old days per year for rollback
@@ -1241,74 +1522,8 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         const oldLeaveType = await LeaveType.findOne({ $or: [{ name: leave.type }, { code: oldRequestedTypeCode }] });
         const oldTypeCode = oldLeaveType ? oldLeaveType.code : oldRequestedTypeCode;
 
-        const oldYearDaysMap = new Map<number, number>();
-        const oldDates: Date[] = [];
-        let oldCur = new Date(oldStart);
-        while (oldCur <= oldEnd) {
-            oldDates.push(new Date(oldCur));
-            oldCur.setDate(oldCur.getDate() + 1);
-        }
-        for (let i = 0; i < oldDates.length; i++) {
-            const d = oldDates[i];
-            const dayOfWeek = d.getDay();
-            let isSandwiched = false;
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                isSandwiched = true;
-            } else if (oldLeaveType ? oldLeaveType.sandwichRuleEnabled !== false : true) {
-                let hasBefore = false;
-                let hasAfter = false;
-                for (let j = 0; j < i; j++) {
-                    if (oldDates[j].getDay() !== 0 && oldDates[j].getDay() !== 6) { hasBefore = true; break; }
-                }
-                for (let j = i + 1; j < oldDates.length; j++) {
-                    if (oldDates[j].getDay() !== 0 && oldDates[j].getDay() !== 6) { hasAfter = true; break; }
-                }
-                if (hasBefore && hasAfter) isSandwiched = true;
-            }
-            if (isSandwiched) {
-                const year = d.getFullYear();
-                let dayDeduction = 1;
-                if (leave.duration && leave.duration !== 'Full Day' && oldDates.length === 1) {
-                    dayDeduction = leave.totalDays || 0.5;
-                }
-                oldYearDaysMap.set(year, (oldYearDaysMap.get(year) || 0) + dayDeduction);
-            }
-        }
-
-        // Calculate new days per year
-        const newYearDaysMap = new Map<number, number>();
-        const newDates: Date[] = [];
-        let newCur = new Date(start);
-        while (newCur <= end) {
-            newDates.push(new Date(newCur));
-            newCur.setDate(newCur.getDate() + 1);
-        }
-        for (let i = 0; i < newDates.length; i++) {
-            const d = newDates[i];
-            const dayOfWeek = d.getDay();
-            let isSandwiched = false;
-            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                isSandwiched = true;
-            } else if (sandwichEnabled) {
-                let hasBefore = false;
-                let hasAfter = false;
-                for (let j = 0; j < i; j++) {
-                    if (newDates[j].getDay() !== 0 && newDates[j].getDay() !== 6) { hasBefore = true; break; }
-                }
-                for (let j = i + 1; j < newDates.length; j++) {
-                    if (newDates[j].getDay() !== 0 && newDates[j].getDay() !== 6) { hasAfter = true; break; }
-                }
-                if (hasBefore && hasAfter) isSandwiched = true;
-            }
-            if (isSandwiched) {
-                const year = d.getFullYear();
-                let dayDeduction = 1;
-                if (duration !== 'Full Day' && newDates.length === 1) {
-                    dayDeduction = requestedDurationDays;
-                }
-                newYearDaysMap.set(year, (newYearDaysMap.get(year) || 0) + dayDeduction);
-            }
-        }
+        const oldYearDaysMap = calculateLeaveDaysPerYear(oldStart, oldEnd, oldLeaveType, leave.duration, leave.totalDays);
+        const newYearDaysMap = calculateLeaveDaysPerYear(start, end, leaveType, duration, requestedDurationDays);
 
         const session = await mongoose.startSession();
         let totalNewDeducted = 0;
@@ -1336,7 +1551,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
                     if (!balance) {
                         balance = new LeaveBalance({ employeeId: canonicalEmployeeId, year, balances: [] });
                     }
-                    ensureBalancesInitialized(balance, activeTypes, editIsPermanent);
+                    await ensureBalancesInitialized(balance, activeTypes, editIsPermanent, editEmp, start);
                     const cat = balance.balances.find((b: any) => b.leaveTypeCode === leaveTypeCode);
                     if (!cat) {
                         throw new Error(`Insufficient balance category for ${leaveType.name}`);
@@ -1423,51 +1638,7 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response, next
                 const leaveTypeCode = leaveType ? leaveType.code : requestedTypeCode;
 
                 // Calculate days per year
-                const yearDaysMap = new Map<number, number>();
-                const dates: Date[] = [];
-                let cur = new Date(start);
-                while (cur <= end) {
-                    dates.push(new Date(cur));
-                    cur.setDate(cur.getDate() + 1);
-                }
-
-                for (let i = 0; i < dates.length; i++) {
-                    const d = dates[i];
-                    const dayOfWeek = d.getDay();
-                    let isSandwiched = false;
-                    
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        isSandwiched = true;
-                    } else if (leaveType?.sandwichRuleEnabled !== false) {
-                        // Only count sandwiched weekends if the leave type has sandwich rule enabled
-                        let hasBefore = false;
-                        let hasAfter = false;
-                        for (let j = 0; j < i; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasBefore = true;
-                                break;
-                            }
-                        }
-                        for (let j = i + 1; j < dates.length; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasAfter = true;
-                                break;
-                            }
-                        }
-                        if (hasBefore && hasAfter) {
-                            isSandwiched = true;
-                        }
-                    }
-
-                    if (isSandwiched) {
-                        const year = d.getFullYear();
-                        let dayDeduction = 1;
-                        if (leave.duration && leave.duration !== 'Full Day' && dates.length === 1) {
-                            dayDeduction = leave.totalDays || 0.5;
-                        }
-                        yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
-                    }
-                }
+                const yearDaysMap = calculateLeaveDaysPerYear(start, end, leaveType, leave.duration, leave.totalDays);
 
                 const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
 
@@ -1584,47 +1755,8 @@ router.put('/:id/revert-status', authenticate, async (req: Request, res: Respons
                 }).session(session);
                 const leaveTypeCode = leaveType ? leaveType.code : requestedTypeCode;
 
-                // Calculate days per year (same sandwich logic)
-                const yearDaysMap = new Map<number, number>();
-                const dates: Date[] = [];
-                let cur = new Date(start);
-                while (cur <= end) {
-                    dates.push(new Date(cur));
-                    cur.setDate(cur.getDate() + 1);
-                }
-
-                for (let i = 0; i < dates.length; i++) {
-                    const d = dates[i];
-                    const dayOfWeek = d.getDay();
-                    let isSandwiched = false;
-                    
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        isSandwiched = true;
-                    } else {
-                        let hasBefore = false;
-                        let hasAfter = false;
-                        for (let j = 0; j < i; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasBefore = true; break;
-                            }
-                        }
-                        for (let j = i + 1; j < dates.length; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasAfter = true; break;
-                            }
-                        }
-                        if (hasBefore && hasAfter) isSandwiched = true;
-                    }
-
-                    if (isSandwiched) {
-                        const year = d.getFullYear();
-                        let dayDeduction = 1;
-                        if (leave.duration && leave.duration !== 'Full Day' && dates.length === 1) {
-                            dayDeduction = leave.totalDays || 0.5;
-                        }
-                        yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
-                    }
-                }
+                // Calculate days per year
+                const yearDaysMap = calculateLeaveDaysPerYear(start, end, leaveType, leave.duration, leave.totalDays);
 
                 const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
 
@@ -1722,50 +1854,7 @@ router.put('/:id/cancel', authenticate, async (req: Request, res: Response, next
                 const leaveTypeCode = leaveType ? leaveType.code : requestedTypeCode;
 
                 // Calculate days per year
-                const yearDaysMap = new Map<number, number>();
-                const dates: Date[] = [];
-                let cur = new Date(start);
-                while (cur <= end) {
-                    dates.push(new Date(cur));
-                    cur.setDate(cur.getDate() + 1);
-                }
-
-                for (let i = 0; i < dates.length; i++) {
-                    const d = dates[i];
-                    const dayOfWeek = d.getDay();
-                    let isSandwiched = false;
-                    
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        isSandwiched = true;
-                    } else {
-                        let hasBefore = false;
-                        let hasAfter = false;
-                        for (let j = 0; j < i; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasBefore = true;
-                                break;
-                            }
-                        }
-                        for (let j = i + 1; j < dates.length; j++) {
-                            if (dates[j].getDay() !== 0 && dates[j].getDay() !== 6) {
-                                hasAfter = true;
-                                break;
-                            }
-                        }
-                        if (hasBefore && hasAfter) {
-                            isSandwiched = true;
-                        }
-                    }
-
-                    if (isSandwiched) {
-                        const year = d.getFullYear();
-                        let dayDeduction = 1;
-                        if (leave.duration && leave.duration !== 'Full Day' && dates.length === 1) {
-                            dayDeduction = leave.totalDays || 0.5;
-                        }
-                        yearDaysMap.set(year, (yearDaysMap.get(year) || 0) + dayDeduction);
-                    }
-                }
+                const yearDaysMap = calculateLeaveDaysPerYear(start, end, leaveType, leave.duration, leave.totalDays);
 
                 const { lookupIds } = await resolveEmployeeLookupIds(leave.employeeId, session);
 
