@@ -24,7 +24,9 @@ export interface IPayrollRun extends Document {
     totalPayableAmount?: number;
     /** Sum of expense claim reimbursements included in this run */
     totalExpenseClaimsAmount?: number;
-    /** Amount to post to ERP (totalPayable minus expense claims — claims have their own ERP IDs) */
+    /** Sum of PF withdrawals included in this run */
+    totalPfWithdrawalsAmount?: number;
+    /** Amount to post to ERP (totalPayable minus expense claims & PF withdrawals plus loan deductions) */
     erpPayableAmount?: number;
     /** Loan Deduction External ERP Voucher / Reference ID */
     loanDeductionErpId?: string;
@@ -76,6 +78,7 @@ const PayrollRunSchema: Schema = new Schema(
         erpPostedAt: { type: Date },
         totalPayableAmount: { type: Number, min: 0 },
         totalExpenseClaimsAmount: { type: Number, min: 0 },
+        totalPfWithdrawalsAmount: { type: Number, min: 0 },
         erpPayableAmount: { type: Number, min: 0 },
         loanDeductionErpId: { type: String },
         loanDeductionErpStatus: {

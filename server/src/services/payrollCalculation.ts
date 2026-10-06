@@ -124,6 +124,7 @@ export function computePayrollAmountTotals(payslips: any[]) {
     let totalPayableAmount = 0;
     let totalExpenseClaimsAmount = 0;
     let totalLoanDeductionsAmount = 0;
+    let totalPfWithdrawalsAmount = 0;
 
     for (const ps of payslips) {
         totalPayableAmount += Number(ps.netPay) || 0;
@@ -141,13 +142,24 @@ export function computePayrollAmountTotals(payslips: any[]) {
                 }
             }
         }
+        const pfPayout = Number(ps.pfPayout) || 0;
+        if (pfPayout > 0) {
+            totalPfWithdrawalsAmount += pfPayout;
+        } else {
+            for (const e of ps.earnings || []) {
+                if (/pf withdrawal|provident fund withdrawal/i.test(e.component || '')) {
+                    totalPfWithdrawalsAmount += Number(e.amount) || 0;
+                }
+            }
+        }
     }
 
     return {
         totalPayableAmount,
         totalExpenseClaimsAmount,
         totalLoanDeductionsAmount,
-        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount + totalLoanDeductionsAmount,
+        totalPfWithdrawalsAmount,
+        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount - totalPfWithdrawalsAmount + totalLoanDeductionsAmount,
     };
 }
 
@@ -852,6 +864,7 @@ export async function buildPayrollPayslips(
             totalPayableAmount: totals.totalPayableAmount,
             totalExpenseClaimsAmount: totals.totalExpenseClaimsAmount,
             totalLoanDeductionsAmount: totals.totalLoanDeductionsAmount,
+            totalPfWithdrawalsAmount: totals.totalPfWithdrawalsAmount,
             erpPayableAmount: totals.erpPayableAmount,
         });
     }

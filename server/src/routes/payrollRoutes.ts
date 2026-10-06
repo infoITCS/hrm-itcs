@@ -1172,6 +1172,7 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
             totalPayableAmount: result.totals.totalPayableAmount,
             totalExpenseClaimsAmount: result.totals.totalExpenseClaimsAmount,
             totalLoanDeductionsAmount: result.totals.totalLoanDeductionsAmount,
+            totalPfWithdrawalsAmount: result.totals.totalPfWithdrawalsAmount,
             erpPayableAmount: result.totals.erpPayableAmount,
         });
     } catch (err: any) {
@@ -1211,7 +1212,7 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
         const { erpReferenceId } = req.body || {};
         if (!erpReferenceId || !String(erpReferenceId).trim()) {
             return res.status(400).json({
-                message: 'Payroll ERP Reference ID is required to approve. Enter the ERP ID for the payroll amount excluding expense claims.',
+                message: 'Payroll ERP Reference ID is required to approve. Enter the ERP ID for the payroll amount excluding expense claims and PF withdrawals.',
             });
         }
 
@@ -1223,6 +1224,7 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
         run.totalPayableAmount = totals.totalPayableAmount;
         run.totalExpenseClaimsAmount = totals.totalExpenseClaimsAmount;
         run.totalLoanDeductionsAmount = totals.totalLoanDeductionsAmount;
+        run.totalPfWithdrawalsAmount = totals.totalPfWithdrawalsAmount;
         run.erpPayableAmount = totals.erpPayableAmount;
 
         await Payslip.updateMany(

@@ -5,7 +5,7 @@ import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
     TrendingDown, CreditCard, RefreshCw,
-    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical, AlertCircle
+    Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical, AlertCircle, Wallet
 } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../utils/api';
@@ -77,6 +77,7 @@ interface PayrollRun {
     totalPayableAmount?: number;
     totalExpenseClaimsAmount?: number;
     totalLoanDeductionsAmount?: number;
+    totalPfWithdrawalsAmount?: number;
     erpPayableAmount?: number;
     includePriorPeriodAdjustment?: boolean;
     priorPeriodGap?: {
@@ -101,6 +102,7 @@ interface AmountPreview {
     totalPayableAmount: number;
     totalExpenseClaimsAmount: number;
     totalLoanDeductionsAmount?: number;
+    totalPfWithdrawalsAmount?: number;
     erpPayableAmount: number;
     claimCount: number;
     expenseClaimsIncluded: ExpenseClaimPreview[];
@@ -1051,6 +1053,7 @@ const PayrollRunDetail = () => {
                 totalPayableAmount: res.data.totalPayableAmount ?? 0,
                 totalExpenseClaimsAmount: res.data.totalExpenseClaimsAmount ?? 0,
                 totalLoanDeductionsAmount: res.data.totalLoanDeductionsAmount ?? 0,
+                totalPfWithdrawalsAmount: res.data.totalPfWithdrawalsAmount ?? 0,
                 erpPayableAmount: res.data.erpPayableAmount ?? 0,
                 claimCount: res.data.claimCount ?? 0,
                 expenseClaimsIncluded: res.data.expenseClaimsIncluded ?? [],
@@ -1218,6 +1221,14 @@ const PayrollRunDetail = () => {
         const loanDeds = (p.deductions || []).filter((d: any) => d.component === 'Loan Deduction');
         return s + loanDeds.reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
     }, 0);
+    const totalPfWithdrawals = payslips.reduce((s, p) => {
+        const pf = Number(p.pfPayout) || 0;
+        if (pf > 0) return s + pf;
+        const pfEarn = (p.earnings || [])
+            .filter((e: any) => /pf withdrawal|provident fund withdrawal/i.test(e.component || ''))
+            .reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
+        return s + pfEarn;
+    }, 0);
 
     const displayAmounts = useMemo(() => {
         if (amountPreview) {
@@ -1225,6 +1236,7 @@ const PayrollRunDetail = () => {
                 totalPayableAmount: amountPreview.totalPayableAmount,
                 totalExpenseClaimsAmount: amountPreview.totalExpenseClaimsAmount,
                 totalLoanDeductionsAmount: amountPreview.totalLoanDeductionsAmount ?? totalLoanDeductions,
+                totalPfWithdrawalsAmount: amountPreview.totalPfWithdrawalsAmount ?? totalPfWithdrawals,
                 erpPayableAmount: amountPreview.erpPayableAmount,
                 claimCount: amountPreview.claimCount,
             };
@@ -1241,12 +1253,13 @@ const PayrollRunDetail = () => {
                 totalPayableAmount: totalPayable,
                 totalExpenseClaimsAmount: claims,
                 totalLoanDeductionsAmount: totalLoanDeductions,
-                erpPayableAmount: totalPayable - claims + totalLoanDeductions,
+                totalPfWithdrawalsAmount: totalPfWithdrawals,
+                erpPayableAmount: totalPayable - claims - totalPfWithdrawals + totalLoanDeductions,
                 claimCount: 0,
             };
         }
         return null;
-    }, [amountPreview, payslips, totalLoanDeductions]);
+    }, [amountPreview, payslips, totalLoanDeductions, totalPfWithdrawals]);
 
     if (!isAdminRole) return <div className="p-6 text-rose-600">Access denied.</div>;
 
@@ -1444,13 +1457,13 @@ const PayrollRunDetail = () => {
                             Payroll & ERP Amount Split
                         </h2>
                         <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-                            Expense claims and loan deductions are posted to ERP under separate vouchers.
+                            Expense claims, PF withdrawals, and loan deductions are posted to ERP under separate vouchers.
                             When you approve, you will enter a Payroll ERP ID for the salary portion only ({fmt(displayAmounts.erpPayableAmount)}).
                         </p>
                     </div>
 
                     <div className="p-5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className={`grid grid-cols-1 sm:grid-cols-2 ${(displayAmounts.totalPfWithdrawalsAmount ?? 0) > 0 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
                             <div className="rounded-xl p-4 bg-indigo-50 border border-indigo-100">
                                 <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Total Payable (Payslips)</p>
                                 <p className="text-xl font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
@@ -1463,6 +1476,15 @@ const PayrollRunDetail = () => {
                                 <p className="text-xl font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
                                 <p className="text-[10px] text-amber-700/80 mt-1">Separate ERP IDs — deducted</p>
                             </div>
+                            {(displayAmounts.totalPfWithdrawalsAmount ?? 0) > 0 && (
+                                <div className="rounded-xl p-4 bg-sky-50 border border-sky-100">
+                                    <p className="text-[11px] font-bold text-sky-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                        <Wallet size={11} /> PF Withdrawals
+                                    </p>
+                                    <p className="text-xl font-black text-sky-900">{fmt(displayAmounts.totalPfWithdrawalsAmount!)}</p>
+                                    <p className="text-[10px] text-sky-700/80 mt-1">Separate PF fund — deducted</p>
+                                </div>
+                            )}
                             <div className="rounded-xl p-4 bg-purple-50 border border-purple-100">
                                 <p className="text-[11px] font-bold text-purple-700 uppercase tracking-wider mb-1 flex items-center gap-1">
                                     <CreditCard size={11} /> Loan Deductions
@@ -1523,7 +1545,7 @@ const PayrollRunDetail = () => {
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                         <p className="text-xs text-indigo-600 mb-1 flex items-center gap-1"><CreditCard size={12} /> Total Net Pay</p>
                         <p className="text-xl font-bold text-indigo-700">{fmt(totalNet)}</p>
-                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims + totalLoanDeductions))}</p>
+                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims - totalPfWithdrawals + totalLoanDeductions))}</p>
                     </div>
                 </div>
             )}
@@ -1756,7 +1778,7 @@ const PayrollRunDetail = () => {
                             Finalize payslips and record the Payroll ERP voucher. Post only the <strong>Payroll ERP Amount</strong> to ERP — expense claims already have separate ERP IDs.
                         </p>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className={`grid grid-cols-2 ${(displayAmounts.totalPfWithdrawalsAmount ?? 0) > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-2 text-center`}>
                             <div className="rounded-xl p-2.5 bg-indigo-50 border border-indigo-100">
                                 <p className="text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Total Payable</p>
                                 <p className="text-xs font-black text-indigo-900">{fmt(displayAmounts.totalPayableAmount)}</p>
@@ -1765,6 +1787,12 @@ const PayrollRunDetail = () => {
                                 <p className="text-[10px] font-bold text-amber-700 uppercase mb-0.5">Expense Claims</p>
                                 <p className="text-xs font-black text-amber-900">{fmt(displayAmounts.totalExpenseClaimsAmount)}</p>
                             </div>
+                            {(displayAmounts.totalPfWithdrawalsAmount ?? 0) > 0 && (
+                                <div className="rounded-xl p-2.5 bg-sky-50 border border-sky-100">
+                                    <p className="text-[10px] font-bold text-sky-700 uppercase mb-0.5">PF Withdrawals</p>
+                                    <p className="text-xs font-black text-sky-900">{fmt(displayAmounts.totalPfWithdrawalsAmount!)}</p>
+                                </div>
+                            )}
                             <div className="rounded-xl p-2.5 bg-purple-50 border border-purple-100">
                                 <p className="text-[10px] font-bold text-purple-700 uppercase mb-0.5">Loan Deductions</p>
                                 <p className="text-xs font-black text-purple-900">{fmt(displayAmounts.totalLoanDeductionsAmount ?? 0)}</p>
@@ -1788,7 +1816,7 @@ const PayrollRunDetail = () => {
                                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono font-semibold text-sm"
                             />
                             <p className="text-[10px] text-slate-400 mt-1.5">
-                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims; loan deductions posted separately).
+                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims & PF withdrawals; loan deductions posted separately).
                             </p>
                         </div>
 
@@ -1828,9 +1856,9 @@ const PayrollRunDetail = () => {
                         </div>
 
                         <p className="text-xs text-slate-500 leading-relaxed">
-                            Enter the ERP voucher for the <strong>payroll amount excluding expense claims</strong>.
+                            Enter the ERP voucher for the <strong>payroll amount excluding expense claims and PF withdrawals</strong>.
                             {amountPreview && (
-                                <> Post <strong>{fmt(amountPreview.erpPayableAmount)}</strong> to ERP — claims ({fmt(amountPreview.totalExpenseClaimsAmount)}) already have separate ERP IDs.</>
+                                <> Post <strong>{fmt(amountPreview.erpPayableAmount)}</strong> to ERP — claims ({fmt(amountPreview.totalExpenseClaimsAmount)}) and PF withdrawals already have separate records.</>
                             )}
                         </p>
 
