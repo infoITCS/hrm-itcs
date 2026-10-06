@@ -48,6 +48,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Performance', icon: Star, path: '/performance', roles: null, module: 'performance' },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
+        { name: 'Company Policy', icon: FileText, path: '/company-policy', roles: null },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },
         { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
         { name: 'My Loans', icon: HandCoins, path: '/my-loans', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },

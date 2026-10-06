@@ -20,7 +20,8 @@ import {
     AlertCircle,
     X,
     Banknote,
-    Phone
+    Phone,
+    BookOpen
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -666,7 +667,16 @@ const Dashboard = () => {
                         <h1 className="text-2xl sm:text-3xl min-[992px]:text-4xl font-bold mb-2 tracking-tight">{welcome.title}</h1>
                         <p className="text-white/90 max-w-xl text-base md:text-lg">{welcome.subtitle}</p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => navigate('/company-policy')}
+                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/20 hover:bg-white/30 active:bg-white/40 backdrop-blur-sm border border-white/30 font-semibold text-xs text-white transition-all shadow-sm active:scale-95 cursor-pointer"
+                            title="Open Company Policy Manual"
+                        >
+                            <BookOpen size={16} />
+                            <span>Company Policy</span>
+                        </button>
                         <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 font-semibold text-sm uppercase tracking-wider shadow-lg">
                             <BadgeIcon size={18} />
                             {welcome.badge}
@@ -925,6 +935,41 @@ const Dashboard = () => {
 
                 {/* Sidebar Area (Right) */}
                 <div className="flex flex-col gap-6 lg:col-span-1">
+                    {/* Company Policy Quick Access Card */}
+                    <div className="bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/50 rounded-2xl border border-indigo-100 shadow-sm p-6 relative overflow-hidden group hover:border-indigo-200 transition-all">
+                        <div className="flex items-start justify-between gap-3 mb-2.5">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-100">
+                                    <BookOpen size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-800">Company Policy Manual</h3>
+                                    <p className="text-xs text-slate-500 font-medium">Workplace rules & benefits</p>
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                            Access code of conduct, OPD medical policy, PF rules, and leave entitlement guidelines.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                                type="button"
+                                onClick={() => navigate('/company-policy')}
+                                className="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                            >
+                                <BookOpen size={14} /> Full Manual
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => navigate('/company-policy#sec-10')}
+                                className="py-2 px-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                title="Jump to OPD Medical Coverage Policy"
+                            >
+                                OPD Policy
+                            </button>
+                        </div>
+                    </div>
+
                     {/* Today's Leaves Widget */}
                     <div className="bg-gradient-to-b from-indigo-50 to-white rounded-2xl border border-indigo-100 shadow-sm p-6">
                         <div className="flex items-center gap-3 mb-6">
