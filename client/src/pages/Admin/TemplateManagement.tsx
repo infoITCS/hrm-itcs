@@ -68,6 +68,7 @@ const PLACEHOLDERS = [
     { tag: '{{salutation}}', desc: "Mr. / Ms." },
     { tag: '{{workLocation}}', desc: "Work Location / Office City" },
     { tag: '{{city}}', desc: "City name" },
+    { tag: '{{stipend}}', desc: "Monthly Internship Stipend (e.g. PKR 20,000)" },
     { tag: '{{internshipDuration}}', desc: "Duration of Internship (e.g. 3 Months)" },
     { tag: '{{noticePeriod}}', desc: "Notice period (e.g. 30 Days)" },
     { tag: '{{probationNoticePeriod}}', desc: "Notice period during probation (e.g. 15 Days)" },

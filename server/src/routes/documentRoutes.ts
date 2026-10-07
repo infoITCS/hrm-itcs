@@ -43,21 +43,102 @@ const getPronouns = (gender?: string) => {
 function parseTemplate(content: string, vars: Record<string, string>): string {
     let output = content;
     for (const [key, val] of Object.entries(vars)) {
-        const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+        const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
         output = output.replace(regex, val || '');
     }
+
+    // Bracketed placeholders fallback (e.g. [Location], [Payment Date], [Probation Days], etc.)
+    const bracketReplacements: Record<string, string> = {
+        'location': vars.workLocation || vars.location || vars.city || 'Karachi',
+        'work location': vars.workLocation || vars.location || vars.city || 'Karachi',
+        'payment date': vars.paymentDate || '5th',
+        'probation days': vars.probationDays || '90',
+        'working days': vars.workingDays || 'Monday to Friday',
+        'working hours': vars.workingHours || '09:00 AM - 06:00 PM',
+        'start time': vars.startTime || '09:00 AM',
+        'end time': vars.endTime || '06:00 PM',
+        'notice period': vars.noticePeriod || '30 Days',
+        'authorized signatory name': (vars.signatoryName && vars.signatoryName !== 'Authorized Signatory') ? vars.signatoryName : 'Afreen Saeed',
+        'designation': (vars.signatoryDesignation && vars.signatoryDesignation !== 'Manager Human Resources') ? vars.signatoryDesignation : 'Manager HR, IT Consulting and Services (ITCS)',
+        'reporting manager': vars.reportingManager || '',
+        'employee name': vars.employeeName || '',
+        'gross salary': vars.grossSalary || '',
+        'joining date': vars.joiningDate || '',
+        'date': vars.date || ''
+    };
+
+    for (const [bKey, bVal] of Object.entries(bracketReplacements)) {
+        const escaped = bKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regexBracket = new RegExp(`\\[\\s*${escaped}\\s*\\]`, 'gi');
+        output = output.replace(regexBracket, bVal);
+    }
+
+    // Strip parenthetical legal quote labels: ("Contract"), ("the Company"), ("the Employee")
+    output = output.replace(/\s*\(["“']?Contract["”']?\)/gi, '');
+    output = output.replace(/\s*\(["“']?the Company["”']?\)/gi, '');
+    output = output.replace(/\s*\(["“']?the Employee["”']?\)/gi, '');
+
     return output;
 }
 
-// Helper to draw letterhead (branded design)
+// Helper to format date with ordinal (e.g. 24th September 2026)
+const formatOrdinalDate = (d: Date): string => {
+    const day = d.getDate();
+    const month = d.toLocaleDateString('en-US', { month: 'long' });
+    const year = d.getFullYear();
+    const suffix = (day >= 11 && day <= 13) ? 'th' : ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][day % 10] || 'th';
+    return `${day}${suffix} ${month} ${year}`;
+};
+
+// Helper to convert number to words (e.g. 300000 -> Three Hundred Thousand only)
+const numberToWords = (num: number): string => {
+    if (isNaN(num) || num <= 0) return '';
+    const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    function inWords(n: number): string {
+        if (n === 0) return '';
+        if (n < 20) return a[n] + ' ';
+        if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '') + ' ';
+        if (n < 1000) return a[Math.floor(n / 100)] + ' Hundred ' + inWords(n % 100);
+        if (n < 1000000) return inWords(Math.floor(n / 1000)) + 'Thousand ' + inWords(n % 1000);
+        return inWords(Math.floor(n / 1000000)) + 'Million ' + inWords(n % 1000000);
+    }
+    return inWords(Math.round(num)).trim() + ' only';
+};
+
+// Signature candidates for HR documents
+const signatureCandidates = [
+    path.join(__dirname, '../../uploads/afreen_signature.jpg'),
+    path.join(__dirname, '../../../client/public/afreen_signature.jpg'),
+    path.join(__dirname, '../../uploads/afreen_signature.png'),
+    path.join(__dirname, '../../../client/public/afreen_signature.png')
+];
+
+// Specific signature candidates for Appointment Letter
+const appointmentSignatureCandidates = [
+    path.join(__dirname, '../../uploads/appointment_signature.png'),
+    path.join(__dirname, '../../../client/public/appointment_signature.png'),
+    path.join(__dirname, '../../uploads/appointment_signature.jpg'),
+    path.join(__dirname, '../../../client/public/appointment_signature.jpg')
+];
+
+const stampCandidates = [
+    path.join(__dirname, '../../uploads/itcs_stamp.jpg'),
+    path.join(__dirname, '../../../client/public/itcs_stamp.jpg'),
+    path.join(__dirname, '../../uploads/itcs_stamp.png'),
+    path.join(__dirname, '../../../client/public/itcs_stamp.png')
+];
+
 // Helper to draw letterhead (branded design matching ITCS official template)
-const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, company?: any) => {
+const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
     const savedY = doc.y;
     const oldBottomMargin = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
-    const darkPurple = company?.branding?.primaryColor || '#1C0626';
-    const magentaAccent = company?.branding?.secondaryColor || '#721466';
+    const darkPurple = company?.branding?.primaryColor || '#2B0938';
+    const plumMid = '#451052';
+    const magentaAccent = company?.branding?.secondaryColor || '#5E1568';
 
     // 1. Logo (Top-Left)
     let logoDrawn = false;
@@ -65,7 +146,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
         try {
             const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
             const buffer = Buffer.from(base64Data, 'base64');
-            doc.image(buffer, 60, 22, { width: 140, height: 60, fit: [140, 60] });
+            doc.image(buffer, 48, 20, { width: 140, height: 60, fit: [140, 60] });
             logoDrawn = true;
         } catch (err) {
             console.error('Error rendering base64 company logo in letterhead:', err);
@@ -84,7 +165,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
         for (const p of candidatePaths) {
             if (fs.existsSync(p)) {
                 try {
-                    doc.image(p, 60, 22, { width: 140, height: 60, fit: [140, 60] });
+                    doc.image(p, 48, 20, { width: 140, height: 60, fit: [140, 60] });
                     logoDrawn = true;
                     break;
                 } catch (err) {
@@ -96,104 +177,560 @@ const drawLetterhead = (doc: any, verifyUrl: string, qrCodeDataUri: string, comp
 
     if (!logoDrawn) {
         const companyName = company?.name || 'IT CONSULTING & SERVICES';
-        doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text(companyName.toUpperCase(), 60, 35);
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text(companyName.toUpperCase(), 48, 35);
     }
 
-    // 2. Top-Right Geometric Purple Decoration (ITCS Official Polygon Ribbon)
-    // Upper Dark Purple Polygon (#1C0626)
+    // 2. Top-Right Geometric Purple Decoration (ITCS Official Origami Ribbon)
+    // Upper Dark Purple Polygon
     doc.save()
-       .moveTo(doc.page.width - 170, 0)
-       .lineTo(doc.page.width - 55, 75)
-       .lineTo(doc.page.width - 55, 115)
-       .lineTo(doc.page.width, 40)
+       .moveTo(doc.page.width - 150, 0)
        .lineTo(doc.page.width, 0)
+       .lineTo(doc.page.width, 115)
+       .lineTo(doc.page.width - 50, 95)
        .closePath()
        .fill(darkPurple);
 
-    // Lower Magenta Accent Flap Polygon (#721466)
+    // Mid plum facet
     doc.save()
-       .moveTo(doc.page.width - 55, 75)
-       .lineTo(doc.page.width - 55, 115)
+       .moveTo(doc.page.width - 150, 0)
+       .lineTo(doc.page.width - 50, 95)
+       .lineTo(doc.page.width - 50, 115)
+       .lineTo(doc.page.width - 110, 0)
+       .closePath()
+       .fill(plumMid);
+
+    // Lower Magenta Accent Flap Polygon
+    doc.save()
+       .moveTo(doc.page.width - 50, 95)
+       .lineTo(doc.page.width - 50, 115)
        .lineTo(doc.page.width, 175)
-       .lineTo(doc.page.width, 40)
+       .lineTo(doc.page.width, 115)
        .closePath()
        .fill(magentaAccent);
 
-    // 3. Header Divider Line
-    doc.moveTo(60, 105)
-       .lineTo(doc.page.width - 65, 105)
-       .strokeColor('#888888')
-       .lineWidth(0.8)
-       .stroke();
-
-    // 4. Footer Dashed Line
-    doc.moveTo(60, doc.page.height - 110)
-       .lineTo(doc.page.width - 60, doc.page.height - 110)
-       .dash(2, { space: 2 })
-       .strokeColor('#333333')
-       .stroke();
-
-    // 5. QR Code centered above footer banner
-    if (qrCodeDataUri) {
-        try {
-            const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
-            const imageBuffer = Buffer.from(base64Data, 'base64');
-            doc.image(imageBuffer, (doc.page.width / 2) - 22, doc.page.height - 100, { width: 44 });
-        } catch (e) {}
-    }
-
-    // Text above banner
-    doc.fillColor('#444444')
-       .fontSize(7)
+    // 3. Spaced Subtext above Banner
+    doc.fillColor('#475569')
+       .fontSize(7.5)
        .font('Helvetica-Bold')
-       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 45, doc.page.height - 52, { align: 'center', width: doc.page.width - 90, lineBreak: false });
+       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 40, doc.page.height - 47, { align: 'center', width: doc.page.width - 80, lineBreak: false });
 
-    // 6. Bottom Purple Banner
-    const bannerHeight = 38;
+    // 4. Bottom Purple Ribbon Banner
+    const bannerHeight = 36;
     const bannerY = doc.page.height - bannerHeight;
 
-    // Dark Purple Background Banner
-    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(darkPurple);
+    // Background bar
+    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill('#3B0A42');
 
-    // Left and Right Magenta Accent Polygons
+    // Left and Right Magenta Accent Chevrons
     doc.save()
        .moveTo(0, bannerY)
-       .lineTo(85, bannerY)
-       .lineTo(120, doc.page.height)
+       .lineTo(95, bannerY)
+       .lineTo(110, doc.page.height)
        .lineTo(0, doc.page.height)
        .closePath()
        .fill(magentaAccent);
 
     doc.save()
-       .moveTo(doc.page.width - 85, bannerY)
+       .moveTo(doc.page.width - 95, bannerY)
        .lineTo(doc.page.width, bannerY)
        .lineTo(doc.page.width, doc.page.height)
-       .lineTo(doc.page.width - 120, doc.page.height)
+       .lineTo(doc.page.width - 110, doc.page.height)
        .closePath()
        .fill(magentaAccent);
 
-    // Banner White Text (Addresses & Info)
-    doc.fillColor('#FFFFFF').fontSize(6.5).font('Helvetica-Bold');
-    if (company?.contact?.addressLine1 && company.contact.addressLine1.trim().length > 10) {
-        const line1 = company.contact.addressLine1 || '';
-        const line2 = company.contact.addressLine2 ? ` | ${company.contact.addressLine2}` : '';
-        const line3 = `Info: ${company.contact.email || 'INFO@ITCS.COM.PK'} | Call: ${company.contact.phone || '+92 21 111-482-711'}` + (company.contact.website ? ` | Web: ${company.contact.website}` : '');
-        doc.text(`${line1}${line2}`, 10, bannerY + 8, { align: 'center', width: doc.page.width - 20, lineBreak: false });
-        doc.text(line3, 10, bannerY + 20, { align: 'center', width: doc.page.width - 20, lineBreak: false });
-    } else {
-        doc.text('Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', 10, bannerY + 6, { align: 'center', width: doc.page.width - 20, lineBreak: false });
-        doc.text('Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', 10, bannerY + 16, { align: 'center', width: doc.page.width - 20, lineBreak: false });
-        doc.text('Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', 10, bannerY + 26, { align: 'center', width: doc.page.width - 20, lineBreak: false });
-        
-        doc.fontSize(6).text('INFO@ITCS.COM.PK', 15, bannerY + 16, { width: 100, align: 'left', lineBreak: false });
-        doc.fontSize(6).text('+92 21 111-482-711', doc.page.width - 115, bannerY + 16, { width: 100, align: 'right', lineBreak: false });
-    }
+    // Left Email Icon (Envelope vector) + address
+    const envX = 42;
+    const envY = bannerY + 6;
+    doc.save()
+       .rect(envX, envY, 11, 7).strokeColor('#FFFFFF').lineWidth(0.8).stroke()
+       .moveTo(envX, envY).lineTo(envX + 5.5, envY + 3.5).lineTo(envX + 11, envY).stroke()
+       .restore();
+    doc.fillColor('#FFFFFF').fontSize(6).font('Helvetica-Bold')
+       .text('INFO@ITCS.COM.PK', 5, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
+
+    // Right Phone Icon (Phone vector) + number
+    const phX = doc.page.width - 50;
+    const phY = bannerY + 5;
+    doc.save()
+       .roundedRect(phX, phY, 7, 10, 1).strokeColor('#FFFFFF').lineWidth(0.8).stroke()
+       .circle(phX + 3.5, phY + 7.5, 0.5).fillColor('#FFFFFF').fill()
+       .restore();
+    doc.fillColor('#FFFFFF').fontSize(6).font('Helvetica-Bold')
+       .text('+92 21 111-482-711', doc.page.width - 90, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
+
+    // Middle 3 Office Addresses with bold cities
+    const addrY = bannerY + 5;
+    const addrWidth = doc.page.width - 220;
+    const addrX = 110;
+
+    const renderAddrLine = (city: string, text: string, yPos: number) => {
+        doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#FFFFFF');
+        const cityPrefix = city + ': ';
+        const cityWidth = doc.widthOfString(cityPrefix);
+        const textWidth = doc.font('Helvetica').widthOfString(text);
+        const totalW = cityWidth + textWidth;
+        const startX = addrX + Math.max(0, (addrWidth - totalW) / 2);
+
+        doc.font('Helvetica-Bold').text(cityPrefix, startX, yPos, { continued: true });
+        doc.font('Helvetica').text(text, { continued: false });
+    };
+
+    renderAddrLine('Karachi', '6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', addrY);
+    renderAddrLine('Lahore', 'Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', addrY + 9.5);
+    renderAddrLine('Islamabad', 'Office # 14, Ground Floor, Malik Plaza F-8 Markaz', addrY + 19);
 
     // Restore text defaults and saved layout position
     doc.page.margins.bottom = oldBottomMargin;
-    doc.undash();
     doc.y = savedY;
     doc.fillColor('#1E293B').font('Helvetica').fontSize(10);
+};
+
+// Inline rich markdown renderer (**bold text**)
+function renderRichText(
+    doc: any,
+    text: string,
+    options: { x?: number; width?: number; fontSize?: number; fontColor?: string; lineGap?: number; align?: string } = {}
+) {
+    const x = options.x !== undefined ? options.x : 48;
+    const width = options.width || (doc.page.width - 96);
+    const fontSize = options.fontSize || 9.5;
+    const fontColor = options.fontColor || '#1E293B';
+    const lineGap = options.lineGap !== undefined ? options.lineGap : 2.5;
+    const align = options.align || 'left';
+
+    if (!text.includes('**')) {
+        doc.fontSize(fontSize).font('Helvetica').fillColor(fontColor).text(text, x, doc.y, {
+            width,
+            align,
+            lineGap
+        });
+        return;
+    }
+
+    const parts: { text: string; bold: boolean }[] = [];
+    const regex = /\*\*(.*?)\*\*/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            parts.push({ text: text.substring(lastIndex, match.index), bold: false });
+        }
+        parts.push({ text: match[1], bold: true });
+        lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+        parts.push({ text: text.substring(lastIndex), bold: false });
+    }
+
+    doc.fontSize(fontSize).fillColor(fontColor);
+    for (let i = 0; i < parts.length; i++) {
+        const isLast = i === parts.length - 1;
+        doc.font(parts[i].bold ? 'Helvetica-Bold' : 'Helvetica')
+           .text(parts[i].text, i === 0 ? x : undefined, i === 0 ? doc.y : undefined, {
+               continued: !isLast,
+               width,
+               align,
+               lineGap
+           });
+    }
+}
+
+// Helper to render bullet points or key-value lines
+function renderBulletOrKeyValue(doc: any, line: string, options: { x?: number; width?: number; fontSize?: number } = {}) {
+    const startX = options.x || 68;
+    const width = options.width || (doc.page.width - startX - 48);
+    const fontSize = options.fontSize || 9.5;
+
+    let cleanLine = line.trim();
+    if (cleanLine.startsWith('•') || cleanLine.startsWith('-') || cleanLine.startsWith('*')) {
+        cleanLine = cleanLine.replace(/^[•\-\*]\s*/, '');
+    }
+
+    const colonIdx = cleanLine.indexOf(':');
+    if (colonIdx > 0 && colonIdx < 35 && !cleanLine.toLowerCase().startsWith('http')) {
+        const key = cleanLine.substring(0, colonIdx).replace(/\*\*/g, '').trim();
+        const val = cleanLine.substring(colonIdx + 1).replace(/\*\*/g, '').trim();
+
+        if (val.length === 0) {
+            doc.moveDown(0.25);
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C')
+               .text(key + ':', 48, doc.y, { align: 'left' });
+            doc.moveDown(0.2);
+            return;
+        }
+
+        doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#0B4F6C')
+           .text('• ', startX, doc.y, { continued: true });
+        doc.font('Helvetica-Bold').fillColor('#1E293B')
+           .text(key + ': ', { continued: true });
+        doc.font('Helvetica').fillColor('#1E293B')
+           .text(val, { width, continued: false, lineGap: 1.5 });
+    } else {
+        doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#0B4F6C')
+           .text('• ', startX, doc.y, { continued: true });
+        doc.font('Helvetica').fillColor('#1E293B')
+           .text(cleanLine.replace(/\*\*/g, ''), { width, continued: false, lineGap: 1.5 });
+    }
+    doc.moveDown(0.2);
+}
+
+// Master complete document renderer
+const renderCompleteDocument = (
+    doc: any,
+    documentType: string,
+    template: { subject?: string; content?: string; documentType?: string },
+    vars: Record<string, string>,
+    company: any,
+    verifyUrl: string,
+    qrCodeDataUri: string
+) => {
+    // 1. Draw Letterhead on first page
+    drawLetterhead(doc, verifyUrl, company);
+
+    // Subsequent pages (if document spans more than one page)
+    doc.on('pageAdded', () => {
+        drawLetterhead(doc, verifyUrl, company);
+    });
+
+    const docTitle = (template.subject || documentType).toUpperCase();
+    const isInternship = docTitle.includes('INTERNSHIP') || documentType.toLowerCase().includes('internship');
+
+    // Title: Left-aligned, Dark Ocean Teal (#0B4F6C), bold uppercase
+    doc.y = 112;
+    doc.fontSize(15.5)
+       .font('Helvetica-Bold')
+       .fillColor('#0B4F6C')
+       .text(docTitle, 48, 112, { align: 'left', lineBreak: true });
+    doc.moveDown(0.5);
+
+    // Two-Column Header Block (Date on left, Recipient on right)
+    const headerY = doc.y;
+
+    // Left: Date
+    doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
+       .text('Date: ', 48, headerY, { continued: true });
+    doc.font('Helvetica').text(vars.date || formatOrdinalDate(new Date()), { continued: false });
+
+    // Right: Recipient block (if employee is specified)
+    const recipientName = vars.employeeName || vars.internName || '';
+    const recipientCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
+    const recipientEmail = vars.personalEmail || vars.workEmail || '';
+
+    let recipientBottomY = headerY + 14;
+    if (recipientName && recipientName !== '—') {
+        const rightBoxWidth = 220;
+        const rightBoxX = doc.page.width - 48 - rightBoxWidth;
+
+        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
+           .text(`To: ${recipientName}`, rightBoxX, headerY, { width: rightBoxWidth, align: 'right' });
+
+        doc.fontSize(9).font('Helvetica').fillColor('#334155')
+           .text(`${recipientCity}, Pakistan`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right' });
+
+        if (recipientEmail && recipientEmail !== '—') {
+            doc.fontSize(8.5).font('Helvetica').fillColor('#334155')
+               .text(`Email: ${recipientEmail}`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right' });
+        }
+        recipientBottomY = doc.y;
+    }
+
+    // Set Y below whichever column is taller
+    doc.y = Math.max(headerY + 28, recipientBottomY) + 8;
+
+    // Format & Parse Content
+    const parsedBody = parseTemplate(template.content || '', vars);
+    const rawLines = parsedBody.replace(/\r\n/g, '\n').split('\n');
+
+    let inSignatory = false;
+    let inAcceptance = false;
+    let hasRenderedSignatory = false;
+    let hasRenderedAcceptance = false;
+
+    for (let i = 0; i < rawLines.length; i++) {
+        const line = rawLines[i];
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+            if (!inSignatory && !inAcceptance) {
+                doc.moveDown(0.25);
+            }
+            continue;
+        }
+
+        const trimmedUpper = trimmed.toUpperCase();
+
+        // Skip lines that duplicate the header section already drawn
+        if (trimmedUpper.startsWith('DATE:') || trimmedUpper === 'DATE') continue;
+        if (trimmedUpper.startsWith('TO:') || trimmedUpper.startsWith('TO ' + recipientName.toUpperCase())) continue;
+        if (recipientName && (trimmedUpper === recipientName.toUpperCase() || trimmedUpper.replace(/\s+/g, '') === recipientName.toUpperCase().replace(/\s+/g, ''))) continue;
+        if (trimmedUpper === `${recipientCity.toUpperCase()}, PAKISTAN` || trimmedUpper === 'KARACHI, PAKISTAN' || trimmedUpper === 'ISLAMABAD, PAKISTAN' || trimmedUpper === 'LAHORE, PAKISTAN') continue;
+        if (trimmedUpper.startsWith('EMAIL:') && (trimmed.includes('@') || trimmed.length < 50)) continue;
+        if (trimmedUpper === docTitle || trimmedUpper.replace(/\s+/g, '') === docTitle.replace(/\s+/g, '')) continue;
+        if (trimmedUpper === 'PRIVATE AND CONFIDENTIAL') continue;
+
+        // Skip duplicate address and company name headers that some old templates had typed in body
+        if (trimmedUpper === 'IT CONSULTING AND SERVICES (ITCS)' || trimmedUpper === 'IT CONSULTING AND SERVICES' || trimmedUpper === 'ITCS') continue;
+        if (trimmedUpper.includes('IT CONSULTING AND SERVICES') && trimmedUpper.includes('6/K, BLOCK 2')) continue;
+        if (trimmedUpper.startsWith('6/K, BLOCK 2') || trimmedUpper.includes('P.E.C.H.S')) continue;
+
+        // Skip subsequent signatory lines if signatory block was already rendered
+        if (inSignatory) {
+            if (trimmedUpper.includes('AFREEN SAEED') || 
+                trimmedUpper.includes('FARAZ ANWER') ||
+                trimmedUpper.includes('FOUNDER & CEO') ||
+                trimmedUpper.includes('FOUNDER AND CEO') ||
+                trimmedUpper.includes('MANAGER HR') || 
+                trimmedUpper.includes('HUMAN RESOURCE') || 
+                trimmedUpper.includes('HR & PAYROLL DEPARTMENT') ||
+                trimmedUpper.includes('PAYROLL DEPARTMENT') ||
+                trimmedUpper.includes('AUTHORIZED SIGNATORY') ||
+                trimmedUpper.includes('IT CONSULTING AND SERVICES') ||
+                trimmedUpper.includes('INFO@ITCS') ||
+                trimmedUpper.includes('AFREEN@ITCS') ||
+                trimmedUpper.startsWith('[AUTHORIZED SIGNATORY') ||
+                trimmedUpper.startsWith('[DESIGNATION]')) {
+                continue;
+            } else if (trimmedUpper.includes('ACCEPTANCE') || trimmedUpper.startsWith('EMPLOYEE SIGNATURE') || trimmedUpper.startsWith('SIGNATURE:')) {
+                inSignatory = false;
+                // fall through to acceptance handling
+            } else {
+                inSignatory = false;
+            }
+        }
+
+        // Skip subsequent acceptance lines if acceptance block was already rendered
+        if (inAcceptance) {
+            if (trimmedUpper.startsWith('I, ') || 
+                trimmedUpper.startsWith('SIGNATURE:') || 
+                trimmedUpper.startsWith('DATE:') ||
+                trimmedUpper.startsWith('EMPLOYEE SIGNATURE') ||
+                trimmedUpper.includes('ACCEPT THE') ||
+                trimmedUpper.includes('TERMS AND CONDITIONS')) {
+                continue;
+            } else {
+                inAcceptance = false;
+            }
+        }
+
+        // Subject Line
+        if (trimmedUpper.startsWith('SUBJECT:')) {
+            const subjText = trimmed.replace(/^subject:\s*/i, '').trim();
+            doc.moveDown(0.3);
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B')
+               .text('Subject: ', 48, doc.y, { continued: true });
+            doc.text(subjText, { continued: false });
+            doc.moveDown(0.35);
+            continue;
+        }
+
+        // Salutation (Dear ... / To Whom It May Concern)
+        if (trimmedUpper.startsWith('DEAR ') || trimmedUpper.startsWith('TO WHOM IT MAY CONCERN')) {
+            doc.moveDown(0.2);
+            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
+               .text(trimmed, 48, doc.y, { align: 'left' });
+            doc.moveDown(0.35);
+            continue;
+        }
+
+        // Acceptance Section
+        const isAcceptanceLine = 
+            trimmedUpper === 'ACCEPTANCE' || 
+            trimmedUpper === 'EMPLOYEE ACCEPTANCE' || 
+            trimmedUpper.startsWith('ACCEPTANCE OF') ||
+            trimmedUpper.startsWith('EMPLOYEE SIGNATURE') ||
+            (trimmedUpper.startsWith('SIGNATURE:') && !hasRenderedAcceptance);
+
+        if (isAcceptanceLine && !hasRenderedAcceptance) {
+            inAcceptance = true;
+            hasRenderedAcceptance = true;
+            doc.moveDown(0.35);
+
+            // Divider line
+            const dividerY = doc.y;
+            doc.moveTo(48, dividerY)
+               .lineTo(doc.page.width - 48, dividerY)
+               .strokeColor('#CBD5E1')
+               .lineWidth(0.8)
+               .stroke();
+
+            doc.y = dividerY + 6;
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C').text('Employee Acceptance', 48, doc.y);
+            doc.moveDown(0.25);
+
+            const empName = vars.employeeName || 'Employee';
+            const offerTerm = isInternship ? 'internship offer' : (documentType.toLowerCase().includes('contract') ? 'employment contract' : (documentType.toLowerCase().includes('offer') ? 'employment offer' : 'offer'));
+
+            doc.fontSize(9).font('Helvetica').fillColor('#1E293B')
+               .text('I, ', 48, doc.y, { continued: true });
+            doc.font('Helvetica-Bold').text(empName, { continued: true });
+            doc.font('Helvetica').text(`, accept the ${offerTerm} and agree to abide by all its terms and conditions.`, { continued: false });
+
+            doc.moveDown(0.3);
+
+            const signLineY = doc.y;
+            doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B')
+               .text('Signature: ', 48, signLineY, { continued: true });
+            doc.font('Helvetica').fillColor('#94A3B8').text('____________________', { continued: false });
+
+            doc.moveDown(0.25);
+            doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B')
+               .text('Date: ', 48, doc.y, { continued: true });
+            doc.font('Helvetica').fillColor('#94A3B8').text('________________________', { continued: false });
+
+            // Place Dynamic Verification QR Code beside signature lines (on the right)
+            if (qrCodeDataUri) {
+                try {
+                    const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                    const imageBuffer = Buffer.from(base64Data, 'base64');
+                    doc.image(imageBuffer, doc.page.width - 110, signLineY - 12, { width: 46, height: 46 });
+                } catch (e) {}
+            }
+            continue;
+        }
+
+        // Signatory Section
+        if (trimmedUpper.startsWith('SINCERELY') || trimmedUpper.startsWith('WITH WARM REGARDS') || trimmedUpper.startsWith('YOURS FAITHFULLY')) {
+            inSignatory = true;
+            hasRenderedSignatory = true;
+            doc.moveDown(0.5);
+
+            doc.fontSize(9.5).font('Helvetica').fillColor('#1E293B').text('Sincerely,', 48, doc.y);
+            doc.moveDown(0.15);
+
+            const isAppointment = documentType.toLowerCase().includes('appointment') || docTitle.toLowerCase().includes('appointment');
+
+            if (isAppointment) {
+                doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text('ITCS (IT Consulting and Services)', 48, doc.y);
+                doc.moveDown(0.2);
+
+                const sigImgY = doc.y + 2;
+                let sigDrawn = false;
+                for (const p of appointmentSignatureCandidates) {
+                    if (fs.existsSync(p)) {
+                        try {
+                            doc.image(p, 48, sigImgY, { height: 42 });
+                            sigDrawn = true;
+                            break;
+                        } catch (e) {}
+                    }
+                }
+
+                let stampDrawn = false;
+                for (const p of stampCandidates) {
+                    if (fs.existsSync(p)) {
+                        try {
+                            doc.image(p, 130, sigImgY + 2, { height: 38 });
+                            stampDrawn = true;
+                            break;
+                        } catch (e) {}
+                    }
+                }
+
+                doc.y = sigImgY + 46;
+                const ceoName = (vars.signatoryName && vars.signatoryName !== 'Afreen Saeed' && vars.signatoryName !== 'Authorized Signatory')
+                    ? vars.signatoryName
+                    : 'Faraz Anwer';
+                const ceoTitle = (vars.signatoryDesignation && !vars.signatoryDesignation.includes('Manager HR') && !vars.signatoryDesignation.includes('Authorized Signatory'))
+                    ? vars.signatoryDesignation
+                    : 'Founder & CEO';
+
+                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(ceoName, 48, doc.y);
+                doc.fontSize(9.5).font('Helvetica').fillColor('#1E293B').text(ceoTitle, 48, doc.y);
+                doc.moveDown(0.3);
+                continue;
+            }
+
+            // Standard HR signatory for other letters
+            const defaultName = 'Afreen Saeed';
+            const sigName = vars.signatoryName || defaultName;
+            const sigNameFormatted = sigName.endsWith(',') ? sigName : sigName + ',';
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(sigNameFormatted, 48, doc.y);
+
+            // Draw signature image and stamp image side-by-side
+            const sigImgY = doc.y + 2;
+            let sigDrawn = false;
+            for (const p of signatureCandidates) {
+                if (fs.existsSync(p)) {
+                    try {
+                        doc.image(p, 48, sigImgY, { height: 35 });
+                        sigDrawn = true;
+                        break;
+                    } catch (e) {}
+                }
+            }
+
+            let stampDrawn = false;
+            for (const p of stampCandidates) {
+                if (fs.existsSync(p)) {
+                    try {
+                        doc.image(p, 130, sigImgY, { height: 35 });
+                        stampDrawn = true;
+                        break;
+                    } catch (e) {}
+                }
+            }
+
+            doc.y = sigImgY + 39;
+            const sigTitle = vars.signatoryDesignation || 'Manager HR, IT Consulting and Services (ITCS)';
+            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text(sigTitle, 48, doc.y);
+
+            const isPayslipDoc = documentType.toLowerCase().includes('pay slip') || documentType.toLowerCase().includes('salary') || docTitle.toLowerCase().includes('pay slip') || docTitle.toLowerCase().includes('salary statement');
+            if (isPayslipDoc) {
+                doc.moveDown(0.15);
+                doc.fontSize(9).font('Helvetica').fillColor('#1E293B').text('HR & Payroll Department', 48, doc.y);
+            }
+
+            doc.moveDown(0.3);
+            continue;
+        }
+
+        // Section Heading (e.g. "Salary and Benefits:", "Terms and Conditions:", "1. Position and Duties")
+        const isHeading = 
+            (trimmed.endsWith(':') && trimmed.length < 50 && !trimmed.includes('.') && !trimmed.startsWith('•') && !trimmed.startsWith('-') && !trimmed.startsWith('*')) ||
+            (trimmedUpper === trimmed && trimmed.length >= 4 && trimmed.length < 50 && !trimmed.includes('.') && !trimmedUpper.startsWith('HTTP')) ||
+            /^\d+\.\s+[A-Za-z\s]+$/.test(trimmed);
+
+        if (isHeading) {
+            doc.moveDown(0.35);
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C')
+               .text(trimmed, 48, doc.y, { align: 'left' });
+            doc.moveDown(0.2);
+            continue;
+        }
+
+        // Key-Value detail or bullet line
+        const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
+        const colonIdx = trimmed.indexOf(':');
+        const hasValue = colonIdx > 0 && trimmed.substring(colonIdx + 1).trim().length > 0;
+        const isKeyValue = colonIdx > 0 && colonIdx < 30 && hasValue && !trimmedUpper.startsWith('HTTP') && !trimmedUpper.startsWith('NOTE:');
+
+        if (isBullet || isKeyValue) {
+            renderBulletOrKeyValue(doc, trimmed);
+            continue;
+        }
+
+        // Standard Body Paragraph with rich inline bolding
+        renderRichText(doc, trimmed, {
+            x: 48,
+            width: doc.page.width - 96,
+            fontSize: 9.5,
+            fontColor: '#1E293B',
+            lineGap: 2.5,
+            align: 'left'
+        });
+        doc.moveDown(0.25);
+    }
+
+    // Fallback: If document had no acceptance block, place QR code beside signatory or bottom-right
+    if (!hasRenderedAcceptance && qrCodeDataUri) {
+        try {
+            const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            const targetQrY = Math.min(doc.page.height - 100, Math.max(doc.y - 45, doc.page.height - 110));
+            doc.image(imageBuffer, doc.page.width - 96, targetQrY, { width: 44, height: 44 });
+        } catch (e) {}
+    }
 };
 
 // Generate a document
@@ -229,6 +766,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         // Auto-seed or update default template if missing/outdated
         const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as an {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
 
+        const defaultAppointmentText = `With reference to your application for employment with ITCS (IT Consulting and Services), we are pleased to offer you the position of {{designation}}. You will be based in {{workLocation}} with effect from {{joiningDate}} on the terms and conditions given below.\n\nYour terms of appointment will be governed by the rules and regulations applicable to the above-mentioned designation as per the Human Resources Policy Manual of the Company. The Company, however, reserves the right to change the applicable rules and regulations at its entire discretion, without advance notice, in which case your employment shall be governed by such revised rules and regulations.\n\nSalary and Benefits:\nYour monthly gross salary will be Rs. {{grossSalary}} ({{grossSalaryWords}}) during the probationary period and will remain Rs. {{grossSalary}} ({{grossSalaryWords}}) upon successful completion of probation and confirmation.\n\nYour benefit entitlement will be in accordance with the policies approved by the Company and shall be subject to the applicable Company policies from time to time.\n\nUpon successful completion of the probationary period, you will be entitled to the following benefits, subject to Company policy:\n• Meal allowance/benefit\n• Fuel allowance/benefit\n• Company-provided SIM card and applicable mobile package\n• Provident Fund / Company Share Plan, as applicable under Company policy\n• Medical allowance\n• Any other benefits applicable to employees in your cadre under Company policy\n\nThe above benefits shall become applicable after successful completion of the probationary period and confirmation. The Company reserves the right to modify its benefit policies from time to time, and you shall be bound by such modifications.\n\nProbationary Period:\nYour confirmation is subject to a satisfactory probationary period of three (3) months. The Company reserves the right to extend the probationary period at its discretion. Unless your employment is confirmed in writing, you shall continue to be employed on probation.\n\nOn satisfactory completion of your probation period, your employment with the Company may be confirmed in writing, whereupon you will be entitled to the Company benefits applicable to permanent staff in your cadre from the date of confirmation.\n\nAnnual Incentive Plan:\nYou will be entitled to the Annual Incentive Plan of the Company, if applicable, as per Company Policy.\n\nMedical Policy:\nUpon confirmation, you will be entitled to the applicable medical allowance/benefit in accordance with the Company’s prevailing Medical Policy.\n\nMobile Connection:\nUpon confirmation, you will be entitled to a Company-provided SIM card and mobile package, subject to the applicable Company policy and usage limits.\n\nReporting Hierarchy:\nYour reporting line will be to {{reportingManager}}, who will assign you duties and responsibilities in carrying out your day-to-day activities. The Company may, at its discretion, change the reporting line and/or the requirements of the position assigned.\n\nReferences / Academic Verification:\nThe Company reserves the right to solicit information regarding yourself from any of your previous employers. Upon your representation, we understand that your educational degree(s) are from accredited institution(s); however, the Company further reserves the right to seek verification regarding your educational qualifications and respective academic institutions from relevant authorities. Your appointment and confirmation are subject to receiving satisfactory references/authentication when such reference/verification checks are conducted.\n\nTermination of Service:\nDuring the probationary period, either the Company or you may terminate the employment without cause and at any time by giving 24 hours’ notice in writing to the other party.\n\nAfter confirmation, either party may terminate this Agreement without cause by giving 30 days’ notice in writing to the other party, or by making payment equivalent to 30 days’ salary in lieu of notice.\n\nNotwithstanding anything herein contained, the Company shall be entitled to terminate your employment with immediate effect and without advance notice (or any payment in lieu of notice) in case of misconduct, which shall include but shall not be limited to willful insubordination.\n\nThe Company reserves the right to terminate the services at any time without prior notice if the employee’s continued association/employment with the Company is prejudicial to the image and/or interests of the Company.\n\nIn case of termination of service due to misconduct or disciplinary action, the Company will reserve the right to withhold compensation to the extent permitted under applicable law and Company policy.\n\nEmployee Provident Fund / Company Share Plan:\nUpon confirmation, you will be entitled to participate in the Provident Fund and/or Company Share Plan, as applicable, subject to the eligibility criteria, terms and conditions, and policies of the Company.\n\nLeave Entitlement:\nYou will be allowed twenty (20) working days of Annual Leave for each completed year of service. Earned Leave can be availed after confirmation only as detailed in policy. You are also entitled to ten (10) paid sick leaves.\n\nLeave cannot be encashed or accumulated. Any leave balance at the end of the calendar year will automatically lapse. The Company may frame and modify Leave rules from time to time, which shall be binding upon you.\n\nTraining and Development:\nThe Company offers training and development opportunities for all employees. All local and foreign training will be governed by the prevailing Training Policy.\n\nRetirement:\nYou will be retired from the service of the Company on attaining the age of 60 years. You may be retired earlier on the grounds of ill health or physical or mental incapacity to work, subject to applicable Company policy and law.\n\nFalse Information:\nIf the Company determines at any time that your recruitment was made as a result of the submission of false information and/or forged documents, the employment contract will be automatically cancelled without prior notice, reward, or compensation, subject to applicable law.\n\nExclusive Service and Confidentiality Agreement:\nDuring the period of your employment with the Company, you will perform all such duties anywhere in Pakistan as are assigned to you from time to time by the Company or its associates depending upon the exigencies of business. The Company also reserves the right to transfer you to any location within Pakistan.\n\nSince in the course of your employment you would be disclosed information which is confidential and proprietary to the Company, and which it would be a breach of trust to disclose or make available, particularly to a competitor of the Company, you undertake to maintain complete confidentiality in regard to the Company’s information, processes, operations, and business activities at all times, whether during or after your employment with the Company.\n\nWhile in the Company’s service, you will not be employed at any time directly or indirectly with any other employer or any other business, subject to applicable law and Company policy.\n\nService Rules and Regulations:\nYour appointment is subject to the rules and regulations in force in the Company or any amendments, alterations, or modifications that may be made therein from time to time.\n\nWe welcome you to ITCS (IT Consulting and Services) and wish you a successful career with the Company.\n\nValidity:\nPlease provide the Company with your acceptance of the offer and joining date by returning a signed copy of this letter within 7 working days. This offer will expire if:\na) You do not provide your acceptance within 7 days; and/or\nb) You do not join, at the latest, within 10 working days after your proposed and mutually agreed joining date.\n\nSincerely,\nITCS (IT Consulting and Services)\n\nFaraz Anwer\nFounder & CEO\n\nEmployee Acceptance\nI, {{employeeName}}, accept the appointment offer and its terms.\nSignature: ____________________\nDate: ________________________`;
+
         if (template && (rawDocType === 'Experience Letter' || template.documentType === 'Experience Letter') && !template.content.includes('Afreen Saeed')) {
             await DocumentTemplate.updateOne(
                 { _id: template._id },
@@ -238,64 +777,73 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             template.content = defaultExperienceText;
         }
 
+        if (template && (rawDocType === 'Appointment Letter' || template.documentType === 'Appointment Letter') && !template.content.includes('Exclusive Service')) {
+            await DocumentTemplate.updateOne(
+                { _id: template._id },
+                { $set: { subject: 'APPOINTMENT LETTER', content: defaultAppointmentText } }
+            );
+            template.subject = 'APPOINTMENT LETTER';
+            template.content = defaultAppointmentText;
+        }
+
         // Auto-seed default template if not found in database
         if (!template) {
             const defaultTemplates: Record<string, { subject: string; content: string }> = {
-                'Consolidated Pay Slip (6 Months)': {
-                    subject: 'CONSOLIDATED SALARY STATEMENT (6 MONTHS)',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nConsolidated 6-Month Salary Breakdown:\n- Basic Salary: PKR {{basicSalary}}\n- Monthly Gross Salary: PKR {{grossSalary}}\n- Monthly Total Deductions: PKR {{totalDeductions}}\n- Monthly Net Take-Home Pay: PKR {{netPay}}\n\nThis consolidated pay slip is issued upon official request for {{purpose}}.`
-                },
-                'Consolidated Pay Slip (3 Months)': {
-                    subject: 'CONSOLIDATED SALARY STATEMENT (3 MONTHS)',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nConsolidated Salary Disbursement Summary (Past 3 Months):\n- Month 1 ({{month1Name}}): Gross PKR {{month1Gross}} | Net PKR {{month1NetPay}}\n- Month 2 ({{month2Name}}): Gross PKR {{month2Gross}} | Net PKR {{month2NetPay}}\n- Month 3 ({{month3Name}}): Gross PKR {{month3Gross}} | Net PKR {{month3NetPay}}\n\nTotal Net Salary Disbursed: PKR {{totalNetPay3Months}}.\n\nThis statement is issued upon official request for {{purpose}}.`
-                },
-                'Pay Slip': {
-                    subject: 'SALARY PAY SLIP',
-                    content: `SALARY PAY SLIP\n\nEmployee Name: {{employeeName}} (ID: {{employeeId}})\nDesignation: {{designation}} | Department: {{department}}\nPay Period: {{payPeriod}}\n\nBasic Salary: PKR {{basicSalary}}\nAllowances: PKR {{allowances}}\nGross Salary: PKR {{grossSalary}}\nTotal Deductions: PKR {{totalDeductions}}\nNet Take-Home Salary: PKR {{netPay}}`
+                'Internship Offer Letter': {
+                    subject: 'INTERNSHIP OFFER LETTER',
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Internship Offer – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nWe are pleased to offer you an Internship position with our ITCS office in {{workLocation}}. The details of your internship are as follows:\n\n• Position: {{designation}}\n• Location: {{workLocation}}\n• Stipend: PKR {{stipend}}\n• Joining date: {{joiningDate}}\n• Working Days: {{workingDays}}\n• Working Hours: {{workingHours}}\n\nDuring your internship, you will work with our {{department}} team in {{workLocation}}, adhere to company policies, and maintain confidentiality. This internship does not guarantee permanent employment and may be ended by either party with reasonable notice. Please confirm your acceptance of this offer by signing below and returning a copy of this letter. We look forward to having you on board and wish you a rewarding learning experience.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nAcceptance\nI, {{employeeName}}, accept the internship offer and its terms and conditions.\nSignature: ____________________\nDate: ________________________`
                 },
                 'Job Offer Letter': {
                     subject: 'OFFER OF EMPLOYMENT',
-                    content: `Dear {{employeeName}},\n\nWe are pleased to offer you the position of {{designation}} in the {{department}} department at {{companyName}}. Your expected date of joining will be {{joiningDate}}.\n\nYour starting gross salary will be PKR {{grossSalary}} per month.\n\nWelcome to {{companyName}}!`
-                },
-                'Internship Offer Letter': {
-                    subject: 'INTERNSHIP OFFER LETTER',
-                    content: `Dear {{employeeName}},\n\nWe are pleased to offer you an internship position as {{designation}} in the {{department}} department at {{companyName}} for a duration of {{internshipDuration}} starting from {{joiningDate}}.\n\nWe wish you a rewarding learning experience at {{companyName}}.`
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Offer of Employment – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nWe are pleased to offer you the position of {{designation}} at IT Consulting and Services (ITCS). We look forward to welcoming you to our team. The details of your offer are as follows:\n\n• Position: {{designation}}\n• Department: {{department}}\n• Location: {{workLocation}}\n• Base Salary: PKR {{confirmedSalary}} per month\n• Probation Period: {{probationDays}} Days\n• Joining Date: {{joiningDate}}\n• Working Days: {{workingDays}}\n• Working Hours: {{workingHours}}\n\nCompensation During Probation:\nFor the period of probation, your base salary will be PKR {{probationSalary}} per month. During this time, the company will provide resources to support your duties: {{companyResources}}.\n\nCompensation After Probation:\nUpon successful completion of the probation period, your compensation package will be revised to PKR {{confirmedSalary}} per month, with benefits including {{benefitsList}}.\n\nGeneral Terms:\nYour employment will be governed by company policies, procedures, and code of conduct. Please confirm your acceptance of this offer by signing below and returning a copy of this letter.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nEmployee Acceptance\nI, {{employeeName}}, accept the employment offer and agree to abide by all its terms and conditions.\nSignature: ____________________\nDate: ________________________`
                 },
                 'Appointment Letter': {
-                    subject: 'LETTER OF APPOINTMENT',
-                    content: `Dear {{employeeName}},\n\nFurther to your acceptance of our offer, we are pleased to appoint you as {{designation}} in the {{department}} department at {{companyName}} effective {{joiningDate}}.\n\nYour employment will be governed by the standard policies and code of conduct of {{companyName}}.`
+                    subject: 'APPOINTMENT LETTER',
+                    content: defaultAppointmentText
                 },
                 'Employment Contract': {
                     subject: 'EMPLOYMENT CONTRACT & TERMS OF SERVICE',
-                    content: `EMPLOYMENT AGREEMENT\n\nThis agreement is made between {{companyName}} and {{employeeName}} (CNIC: {{cnic}}), appointed as {{designation}} in {{department}}.\n\n1. Commencement: Effective {{joiningDate}}.\n2. Monthly Gross Salary: PKR {{grossSalary}}.\n3. Working Hours: {{workingHours}} ({{workingDays}}).\n\nSigned on behalf of {{companyName}}.`
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Employment Contract & Terms of Service – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nThis Employment Contract is executed between IT Consulting and Services (ITCS) and {{employeeName}} (CNIC: {{cnic}}), appointed as {{designation}} in the {{department}} department.\n\nTerms and Conditions:\n• Commencement Date: {{joiningDate}}\n• Designation & Department: {{designation}}, {{department}}\n• Work Location: {{workLocation}}\n• Monthly Gross Salary: PKR {{grossSalary}}\n• Working Schedule: {{workingHours}} ({{workingDays}})\n• Probation Period: {{probationDays}} Days\n• Notice Period: {{noticePeriod}}\n\nBoth parties agree to uphold confidentiality, company policies, and professional integrity.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nEmployee Acceptance\nI, {{employeeName}}, accept this Employment Contract and agree to abide by all its terms and conditions.\nSignature: ____________________\nDate: ________________________`
+                },
+                'Consolidated Pay Slip (6 Months)': {
+                    subject: 'CONSOLIDATED SALARY STATEMENT (6 MONTHS)',
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Consolidated Salary Statement (6 Months) – ITCS\n\nTo Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nEmployee & Financial Details:\n• Employee ID: {{employeeId}}\n• CNIC Number: {{cnic}}\n• Designation & Department: {{designation}}, {{department}}\n• Date of Joining: {{joiningDate}}\n• Monthly Basic Salary: PKR {{basicSalary}}\n• Monthly Gross Salary: PKR {{grossSalary}}\n• Monthly Net Take-Home Pay: PKR {{netPay}}\n• Bank Details: {{paymentMethod}}\n\nAll monthly salaries for the past 6 months have been directly remitted into {{pronounPossessive}} bank account. This statement is issued upon request for {{purpose}}.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`
+                },
+                'Consolidated Pay Slip (3 Months)': {
+                    subject: 'CONSOLIDATED SALARY STATEMENT (3 MONTHS)',
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Consolidated Salary Statement (3 Months) – ITCS\n\nTo Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (Employee ID: {{employeeId}}), holding CNIC {{cnic}}, is employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nConsolidated 3-Month Salary Disbursement Summary:\n• Month 1 ({{month1Name}}): Gross PKR {{month1Gross}} | Deductions PKR {{month1Deductions}} | Net Pay PKR {{month1NetPay}}\n• Month 2 ({{month2Name}}): Gross PKR {{month2Gross}} | Deductions PKR {{month2Deductions}} | Net Pay PKR {{month2NetPay}}\n• Month 3 ({{month3Name}}): Gross PKR {{month3Gross}} | Deductions PKR {{month3Deductions}} | Net Pay PKR {{month3NetPay}}\n• Total Net Salary Disbursed (3 Months): PKR {{totalNetPay3Months}}\n\nThis consolidated statement is issued upon official request for {{purpose}} without financial liability on ITCS.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`
+                },
+                'Pay Slip': {
+                    subject: 'SALARY PAY SLIP',
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Salary Pay Slip – {{payPeriod}}\n\nEmployee Details:\n• Employee Name: {{employeeName}} (ID: {{employeeId}})\n• Designation: {{designation}}\n• Department: {{department}}\n• Pay Period: {{payPeriod}}\n\nEarnings & Deductions Summary:\n• Basic Salary: PKR {{basicSalary}}\n• Total Allowances: PKR {{allowances}}\n• Gross Salary: PKR {{grossSalary}}\n• Income Tax: PKR {{taxAmount}}\n• Other Deductions: PKR {{otherDeductions}}\n• Total Deductions: PKR {{totalDeductions}}\n• Net Take-Home Pay: PKR {{netPay}}\n\nThis pay slip is an official record of monthly salary disbursed via bank transfer.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`
                 },
                 'No Objection Certificate (NOC)': {
                     subject: 'NO OBJECTION CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed full-time with {{companyName}} as {{designation}} in the {{department}} department.\n\n{{companyName}} has no objection to {{pronounObject}} pursuing {{purpose}}.\n\nThis certificate is issued at the specific request of the employee.`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: No Objection Certificate – ITCS\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed full-time with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nIT Consulting and Services (ITCS) has no objection to {{pronounObject}} pursuing {{purpose}}.\n\nThis certificate is issued at the specific request of the employee and does not constitute any financial liability on ITCS.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Character Certificate': {
                     subject: 'CHARACTER CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}}, holding CNIC {{cnic}}, has been working with {{companyName}} as {{designation}} since {{joiningDate}}.\n\nDuring {{pronounPossessive}} tenure, {{pronounSubject}} has demonstrated excellent moral character, professional integrity, and exemplary conduct.\n\nThis certificate is issued upon request for {{purpose}}.`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Character Certificate – ITCS\n\nThis is to certify that {{salutation}} {{employeeName}}, holding CNIC {{cnic}}, has been associated with IT Consulting and Services (ITCS) as {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{pronounSubject}} has demonstrated excellent moral character, professional integrity, and exemplary conduct. {{pronounCapitalizedSubject}} was not involved in any disciplinary misconduct.\n\nThis certificate is issued upon request of the employee for {{purpose}}.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Income Verification Letter': {
                     subject: 'INCOME VERIFICATION CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} is an active full-time employee at {{companyName}}, working as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nFinancial Summary:\n- Basic Salary: PKR {{basicSalary}}\n- Monthly Gross Salary: PKR {{grossSalary}}\n- Monthly Net Pay: PKR {{netPay}}\n\nThis income verification letter is issued upon official request for {{purpose}}.`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Income Verification Certificate – ITCS\n\nThis is to certify that {{salutation}} {{employeeName}} is an active full-time employee at IT Consulting and Services (ITCS), working as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nFinancial Summary:\n• Basic Salary: PKR {{basicSalary}} per month\n• Monthly Allowances: PKR {{allowances}}\n• Monthly Gross Salary: PKR {{grossSalary}}\n• Monthly Net Pay: PKR {{netPay}}\n• Payment Method: {{paymentMethod}}\n\nThis income verification certificate is issued upon official request for {{purpose}} and is valid as of the date of issuance.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Experience Letter': {
                     subject: 'EXPERIENCE LETTER',
-                    content: `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as an {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Experience Certificate – ITCS\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in future endeavors. We wish {{pronounObject}} every success in professional career.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Employment Certificate': {
                     subject: 'EMPLOYMENT VERIFICATION CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed with {{companyName}} as {{designation}} in the {{department}} department since {{joiningDate}}.\n\nThis certificate is issued upon request of the employee for {{purpose}}.`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Employment Verification Certificate – ITCS\n\nThis is to certify that {{salutation}} {{employeeName}} (CNIC: {{cnic}}) is currently employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department since {{joiningDate}}.\n\n• Current Designation: {{designation}}\n• Department: {{department}}\n• Date of Joining: {{joiningDate}}\n• Monthly Gross Salary: PKR {{grossSalary}}\n\nThis certificate is issued upon request of the employee for {{purpose}}.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Internship Completion Certificate': {
                     subject: 'INTERNSHIP COMPLETION CERTIFICATE',
-                    content: `To Whom It May Concern,\n\nThis is to certify that {{salutation}} {{employeeName}} has successfully completed an internship as {{designation}} in the {{department}} department at {{companyName}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} internship, {{pronounSubject}} displayed commendable enthusiasm and learning aptitude.`
+                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Internship Completion Certificate – ITCS\n\nThis is to certify that {{salutation}} {{employeeName}} has successfully completed an internship as {{designation}} in the {{department}} department at IT Consulting and Services (ITCS) from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} internship, {{pronounSubject}} worked on {{jobResponsibilities}} and displayed commendable enthusiasm and learning aptitude.\n\nWe found {{pronounPossessive}} conduct to be exemplary, and we wish {{pronounObject}} continued success in future academic and professional endeavors.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 },
                 'Relieving Letter': {
                     subject: 'RELIEVING LETTER',
-                    content: `Dear {{employeeName}},\n\nThis refers to your resignation from {{companyName}}. You are hereby relieved of your responsibilities as {{designation}} in the {{department}} department effective {{lastWorkingDay}}.\n\nWe thank you for your service and wish you best of luck for the future.`
+                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Relieving Letter – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nThis refers to your resignation from IT Consulting and Services (ITCS). You are hereby relieved of your responsibilities as {{designation}} in the {{department}} department effective from {{lastWorkingDay}}.\n\nAll dues, including full and final settlement, will be processed in accordance with company policy within {{settlementDays}} days.\n\nWe thank you for your contributions during your tenure and wish you the best of luck for the future.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
                 }
             };
 
@@ -342,11 +890,12 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
 
         // Initialize PDF Kit with page margins adjusted for side spacing and letterhead header/footer
         const doc = new PDFDocument({
+            size: 'A4',
             margins: {
-                top: 125,
-                bottom: 125,
-                left: 65,
-                right: 65
+                top: 105,
+                bottom: 55,
+                left: 48,
+                right: 48
             }
         });
 
@@ -355,13 +904,6 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         res.setHeader('Content-Disposition', `attachment; filename="${documentType.replace(/\s+/g, '_')}_${employee.employeeId}.pdf"`);
         doc.pipe(res);
 
-        // Draw letterhead on the first page
-        drawLetterhead(doc, verifyUrl, qrCodeDataUri, company);
-
-        // Draw letterhead on subsequent pages
-        doc.on('pageAdded', () => {
-            drawLetterhead(doc, verifyUrl, qrCodeDataUri, company);
-        });
 
         // Resolve data variables
         const employeeName = `${employee.firstName} ${employee.lastName}`;
@@ -553,7 +1095,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             grossSalary: req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : ''),
             purpose: req.body.customVars?.purpose || purposeText,
             purposeDetail: req.body.customVars?.purposeDetail || req.body.purposeDetail || '',
-            date: issueDate.toLocaleDateString(),
+            date: formatOrdinalDate(issueDate),
+            stipend: req.body.customVars?.stipend || req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '20,000')),
             pronounSubject: pr.subject,
             pronounObject: pr.object,
             pronounPossessive: pr.possessive,
@@ -581,10 +1124,14 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             generalJobDescription: employee.jobInfo?.designation ? `${employee.jobInfo.designation} tasks and project delivery` : 'key projects and organizational goals',
             jobDescription: employee.jobInfo?.designation ? `${employee.jobInfo.designation} tasks and project delivery` : 'key projects and organizational goals',
             salutation: (employee.gender || '').toLowerCase() === 'female' ? 'Ms.' : 'Mr.',
-            workLocation: employee.jobInfo?.workLocation || '',
-            officeLocation: employee.jobInfo?.workLocation || '',
-            city: employee.address?.city || employee.jobInfo?.workLocation || '',
-            personalCity: employee.address?.city || '',
+            workLocation: employee.jobInfo?.workLocation || employee.address?.city || 'Karachi',
+            officeLocation: employee.jobInfo?.workLocation || employee.address?.city || 'Karachi',
+            location: employee.jobInfo?.workLocation || employee.address?.city || 'Karachi',
+            paymentDate: req.body.customVars?.paymentDate || '5th',
+            startTime: '09:00 AM',
+            endTime: '06:00 PM',
+            city: employee.address?.city || employee.jobInfo?.workLocation || 'Karachi',
+            personalCity: employee.address?.city || 'Karachi',
             internshipDuration: '3 Months',
             duration: '3 Months',
             employmentType: 'Internship',
@@ -632,8 +1179,9 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             month3NetPay: req.body.customVars?.month3NetPay || consolidated3Data[2].netPay,
             totalNetPay3Months: req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
             totalNetPay: req.body.customVars?.totalNetPay || req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
-            signatoryName: 'Authorized Signatory',
-            signatoryDesignation: 'Manager Human Resources',
+            grossSalaryWords: numberToWords(Number(String(req.body.customVars?.grossSalary || singleGrossSal || totalGrossSalary || 0).replace(/[^0-9]/g, ''))),
+            signatoryName: req.body.customVars?.signatoryName || ((rawDocType || '').toLowerCase().includes('appointment') ? 'Faraz Anwer' : 'Afreen Saeed'),
+            signatoryDesignation: req.body.customVars?.signatoryDesignation || ((rawDocType || '').toLowerCase().includes('appointment') ? 'Founder & CEO' : 'Manager HR, IT Consulting and Services (ITCS)'),
             hrEmail: company?.contact?.email || 'info@itcs.com.pk',
             hrPhone: company?.contact?.phone || '+92 21 111-482-711',
             ...(req.body.customVars || {}),
@@ -729,56 +1277,15 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             }
         }
 
-        doc.y = 120; // Start printing content below the header divider
-
-        // Format body content
-        const parsedBody = parseTemplate(template.content, vars);
-        const lines = parsedBody.split('\n');
-
-        // Draw document subject / title centered at top
-        doc.fontSize(16).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(template.subject || documentType, { align: 'center' });
-        doc.moveDown(1.2);
-
-        const docTitleUpper = (template.subject || documentType).toUpperCase();
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const trimmed = line.trim();
-
-            if (!trimmed) {
-                doc.moveDown(0.3);
-                continue;
-            }
-
-            const trimmedUpper = trimmed.toUpperCase();
-            // Skip line if it duplicates the document main title
-            if (trimmedUpper === docTitleUpper || trimmedUpper.replace(/\s+/g, '') === docTitleUpper.replace(/\s+/g, '')) {
-                continue;
-            }
-
-            // Check if line is a standalone uppercase section title
-            const isHeading = trimmedUpper === trimmed && trimmed.length >= 4 && !trimmed.startsWith('DATE:') && !trimmed.startsWith('TO WHOM') && !trimmed.startsWith('DEAR') && !trimmed.startsWith('SINCERELY');
-
-            if (isHeading) {
-                doc.fontSize(14).font('Helvetica-Bold').fillColor(company?.branding?.primaryColor || '#1E293B').text(trimmed, { align: 'center' });
-                doc.moveDown(0.6);
-            } else if (trimmed.toLowerCase().startsWith('date:')) {
-                doc.fontSize(10).font('Helvetica').fillColor('#475569').text(trimmed, { align: 'left' });
-                doc.moveDown(0.4);
-            } else if (trimmed.toLowerCase().startsWith('to whom it may concern') || trimmed.toLowerCase().startsWith('dear ')) {
-                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(trimmed, { align: 'left' });
-                doc.moveDown(0.4);
-            } else if (trimmed.toLowerCase().startsWith('sincerely,')) {
-                doc.moveDown(0.6);
-                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(trimmed, { align: 'left' });
-                doc.moveDown(0.3);
-            } else {
-                doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(trimmed, {
-                    align: 'justify',
-                    lineGap: 2.5
-                });
-            }
-        }
+        renderCompleteDocument(
+            doc,
+            documentType,
+            template,
+            vars,
+            company,
+            verifyUrl,
+            qrCodeDataUri
+        );
 
         doc.end();
 
@@ -945,10 +1452,19 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             month3NetPay: '188,050',
             totalNetPay3Months: '564,150',
             totalNetPay: '564,150',
-            signatoryName: 'Authorized Signatory',
-            signatoryDesignation: 'Manager Human Resources',
+            grossSalaryWords: 'Three Hundred Thousand only',
+            signatoryName: (templateData?.documentType || '').toLowerCase().includes('appointment') ? 'Faraz Anwer' : 'Afreen Saeed',
+            signatoryDesignation: (templateData?.documentType || '').toLowerCase().includes('appointment') ? 'Founder & CEO' : 'Manager HR, IT Consulting and Services (ITCS)',
             hrEmail: companyData?.contact?.email || 'info@itcs.com.pk',
-            hrPhone: companyData?.contact?.phone || '+92 21 111-482-711'
+            hrPhone: companyData?.contact?.phone || '+92 21 111-482-711',
+            city: 'Karachi',
+            workLocation: 'Karachi',
+            location: 'Karachi',
+            paymentDate: '5th',
+            startTime: '09:00 AM',
+            endTime: '06:00 PM',
+            noticePeriod: '30 Days',
+            stipend: 'PKR 20,000'
         };
 
         const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -956,11 +1472,12 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
         const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
         const doc = new PDFDocument({
+            size: 'A4',
             margins: {
-                top: 125,
-                bottom: 125,
-                left: 50,
-                right: 50
+                top: 105,
+                bottom: 55,
+                left: 48,
+                right: 48
             }
         });
 
@@ -968,28 +1485,15 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
         res.setHeader('Content-Disposition', 'inline; filename="preview.pdf"');
         doc.pipe(res);
 
-        // Draw letterhead using preview company details
-        drawLetterhead(doc, verifyUrl, qrCodeDataUri, companyData);
-
-        doc.on('pageAdded', () => {
-            drawLetterhead(doc, verifyUrl, qrCodeDataUri, companyData);
-        });
-
-        doc.y = 120;
-
-        // Render subject line
-        const subject = templateData?.subject || 'SUBJECT / DOCUMENT TITLE';
-        doc.fontSize(16).font('Helvetica-Bold').fillColor(companyData?.branding?.primaryColor || '#1E293B').text(subject, { align: 'center' });
-        doc.moveDown(1.5);
-
-        // Parse content
-        const bodyContent = templateData?.content || 'Configure template letter content body details...';
-        const parsedBody = parseTemplate(bodyContent, dummyVars);
-
-        doc.fontSize(10).font('Helvetica').fillColor('#1E293B').text(parsedBody, {
-            align: 'justify',
-            lineGap: 2.5
-        });
+        renderCompleteDocument(
+            doc,
+            templateData?.documentType || 'Document',
+            templateData || { subject: 'OFFICIAL DOCUMENT', content: 'Configure template letter content body details...' },
+            dummyVars,
+            companyData,
+            verifyUrl,
+            qrCodeDataUri
+        );
 
         doc.end();
 
