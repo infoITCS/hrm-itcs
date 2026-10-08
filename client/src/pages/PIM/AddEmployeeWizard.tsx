@@ -811,6 +811,23 @@ const AddEmployeeWizard = () => {
                 };
             }
 
+            // Sanitize empty date strings to null to prevent Mongoose CastError
+            if ((employeeData as any).employmentStatus) {
+                const es = (employeeData as any).employmentStatus;
+                (employeeData as any).employmentStatus = {
+                    ...es,
+                    probationEndDate: es.probationEndDate || null,
+                    offboardingDate: es.offboardingDate || null
+                };
+            }
+            if ((employeeData as any).dateOfBirth === '') {
+                (employeeData as any).dateOfBirth = null;
+            }
+            if ((employeeData as any).jobInfo) {
+                if ((employeeData as any).jobInfo.joiningDate === '') (employeeData as any).jobInfo.joiningDate = null;
+                if ((employeeData as any).jobInfo.shift === '') (employeeData as any).jobInfo.shift = null;
+            }
+
             const url = isEditMode ? `${api.employees}/${id}` : api.employees;
             const method = isEditMode ? 'PUT' : 'POST';
 

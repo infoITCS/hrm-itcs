@@ -28,6 +28,7 @@ import logger from '../utils/logger';
 import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../utils/defaultSalaryComponents';
 import { ensureProbationUpgraded, upgradeCompletedProbations, isProbationPeriodEnded } from '../services/probationUpgradeService';
 import { decryptEmployeeFields } from '../utils/encryption';
+import { triggerOffboardingTasks } from '../services/workflowService';
 
 
 
@@ -145,6 +146,60 @@ async function populateReportingManagerNames(employees: any[]): Promise<void> {
                 e.jobInfo.reportingManagerName = name;
             }
         }
+    }
+}
+
+/**
+ * Sanitizes incoming employee payload before Mongoose validation and saving.
+ * Converts empty strings on Date/ObjectId fields to null to avoid CastErrors,
+ * and strips empty strings on regex-validated fields (like email) to avoid ValidationErrors.
+ */
+function sanitizeEmployeePayload(data: any): void {
+    if (!data || typeof data !== 'object') return;
+
+    // Convert empty string dates to null to avoid Mongoose CastError
+    if (data.dateOfBirth === '') data.dateOfBirth = null;
+
+    if (data.employmentStatus && typeof data.employmentStatus === 'object') {
+        if (data.employmentStatus.offboardingDate === '') data.employmentStatus.offboardingDate = null;
+        if (data.employmentStatus.probationEndDate === '') data.employmentStatus.probationEndDate = null;
+    }
+
+    if (data.jobInfo && typeof data.jobInfo === 'object') {
+        if (data.jobInfo.joiningDate === '') data.jobInfo.joiningDate = null;
+        if (data.jobInfo.shift === '') data.jobInfo.shift = null;
+    }
+
+    // Delete empty strings on fields with regex validators to avoid Mongoose ValidationError
+    if (data.email === '') delete data.email;
+    if (data.workEmail === '') delete data.workEmail;
+
+    // Sanitize dates in subdocument arrays
+    if (Array.isArray(data.dependents)) {
+        data.dependents.forEach((d: any) => {
+            if (d && typeof d === 'object' && d.dateOfBirth === '') d.dateOfBirth = null;
+        });
+    }
+    if (Array.isArray(data.immigrationHistory)) {
+        data.immigrationHistory.forEach((ih: any) => {
+            if (ih && typeof ih === 'object') {
+                if (ih.issueDate === '') ih.issueDate = null;
+                if (ih.expiryDate === '') ih.expiryDate = null;
+            }
+        });
+    }
+    if (Array.isArray(data.employmentHistory)) {
+        data.employmentHistory.forEach((eh: any) => {
+            if (eh && typeof eh === 'object') {
+                if (eh.startDate === '') eh.startDate = null;
+                if (eh.endDate === '') eh.endDate = null;
+            }
+        });
+    }
+    if (Array.isArray(data.benefits)) {
+        data.benefits.forEach((b: any) => {
+            if (b && typeof b === 'object' && b.eligibleDate === '') b.eligibleDate = null;
+        });
     }
 }
 
@@ -435,6 +490,7 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             : EMPLOYEE_EDITABLE_FIELDS;
 
         const employeeData = pick(req.body, allowedFields) as any;
+        sanitizeEmployeePayload(employeeData);
 
         const canEditFinancials = ['super-admin', 'hr', 'admin', 'finance'].includes(role);
         if (!canEditFinancials) {
@@ -555,9 +611,9 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
             employmentStatus: {
                 status: 'Probation', // Default
                 ...employeeData.employmentStatus,
-                probationEndDate: employeeData.employmentStatus?.probationEndDate
-                    ? new Date(employeeData.employmentStatus.probationEndDate)
-                    : defaultProbationEnd
+                probationEndDate: (employeeData.employmentStatus?.status === 'Probation' || !employeeData.employmentStatus?.status)
+                    ? (employeeData.employmentStatus?.probationEndDate ? new Date(employeeData.employmentStatus.probationEndDate) : defaultProbationEnd)
+                    : (employeeData.employmentStatus?.probationEndDate ? new Date(employeeData.employmentStatus.probationEndDate) : undefined)
             }
         });
 
@@ -1726,6 +1782,62 @@ router.post('/:id/pf-claim', authenticate, async (req: Request, res: Response, n
     }
 });
 
+/**
+ * PATCH /api/employees/:id/pf-erp-ref
+ * Updates ERP reference ID on an employee's PF history entry.
+ * Accessible to super-admin, admin, and finance.
+ */
+router.patch('/:id/pf-erp-ref', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const role = (authReq.user?.role || '').toLowerCase();
+        if (!['super-admin', 'admin', 'finance'].includes(role)) {
+            return res.status(403).json({ message: 'Forbidden. Finance or Admin access required.' });
+        }
+
+        const { erpReferenceId, entryId, periodMonth, periodYear } = req.body;
+        if (!erpReferenceId || !String(erpReferenceId).trim()) {
+            return res.status(400).json({ message: 'ERP Reference ID is required.' });
+        }
+
+        const employee = await Employee.findOne({ employeeId: req.params.id });
+        if (!employee) return res.status(404).json({ message: 'Employee not found.' });
+
+        const history = employee.providentFundHistory || [];
+        let updated = false;
+
+        if (entryId) {
+            const entry = history.find((h: any) => h._id?.toString() === entryId);
+            if (entry) {
+                entry.erpReferenceId = String(erpReferenceId).trim();
+                updated = true;
+            }
+        } else if (periodMonth && periodYear) {
+            const entry = history.find((h: any) => h.periodMonth === Number(periodMonth) && h.periodYear === Number(periodYear));
+            if (entry) {
+                entry.erpReferenceId = String(erpReferenceId).trim();
+                updated = true;
+            }
+        } else {
+            // Update the latest unlogged entry
+            const unlogged = history.filter((h: any) => !h.erpReferenceId);
+            if (unlogged.length > 0) {
+                unlogged[unlogged.length - 1].erpReferenceId = String(erpReferenceId).trim();
+                updated = true;
+            }
+        }
+
+        if (updated) {
+            employee.markModified('providentFundHistory');
+            await employee.save();
+        }
+
+        return res.json({ message: 'PF ERP Reference saved successfully.', employeeId: employee.employeeId });
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response, next: Function) => {
     const authReq = req as AuthRequest;
     try {
@@ -2108,6 +2220,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
 
         // Use native pick to only allow whitelisted fields from the request body
         const updates = pick(req.body, allowedFields) as any;
+        sanitizeEmployeePayload(updates);
         // Attachments are always managed via dedicated endpoints
         delete updates.attachments;
 
@@ -2403,6 +2516,16 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
             });
         }
 
+        // Trigger offboarding tasks if status is changed to Terminated, Resigned, or Offboarded
+        const oldStatus = originalEmployeeObj.employmentStatus?.status || (typeof originalEmployeeObj.employmentStatus === 'string' ? originalEmployeeObj.employmentStatus : '');
+        const newStatus = updatedEmployee.employmentStatus?.status || (typeof updatedEmployee.employmentStatus === 'string' ? updatedEmployee.employmentStatus : '');
+        const offboardingStatuses = ['Terminated', 'Resigned', 'Offboarded'];
+        if (offboardingStatuses.includes(newStatus) && oldStatus !== newStatus) {
+            triggerOffboardingTasks(updatedEmployee, null, newStatus, req.headers.origin as string).catch(err => {
+                logger.error(`[EmployeeUpdate] Failed triggering offboarding workflow:`, err);
+            });
+        }
+
         // Log action
         await createAuditLog('UPDATE', req.params.id, authReq.user?.userId || 'unknown', { diff });
 
@@ -2414,7 +2537,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         
         // Distinguish client-side validation errors from internal server errors
         if (err.name === 'ValidationError' || err.name === 'CastError' || err.statusCode === 400) {
-            return res.status(400).json({ message: "Invalid request parameters or data format" });
+            return res.status(400).json({ message: err.message || "Invalid request parameters or data format" });
         }
         
         res.status(500).json({ message: "Internal server error" });
@@ -2440,6 +2563,11 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Fu
         if (employee.userId) {
             await User.findByIdAndUpdate(employee.userId, { isActive: false });
         }
+
+        // Trigger offboarding tasks
+        triggerOffboardingTasks(employee, null, 'Deleted', req.headers.origin as string).catch(err => {
+            logger.error(`[EmployeeDelete] Failed triggering offboarding workflow:`, err);
+        });
 
         await createAuditLog('DELETE', req.params.id, authReq.user?.userId || 'unknown', { name: `${employee.firstName} ${employee.lastName}` });
 
