@@ -36,6 +36,12 @@ const AdminRequests = () => {
     // Search and filter state
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter]);
 
     useEffect(() => {
         fetchRequests();
@@ -190,6 +196,9 @@ const AdminRequests = () => {
         return matchesSearch && matchesStatus;
     });
 
+    const totalPages = Math.max(1, Math.ceil(filteredRequests.length / pageSize));
+    const paginatedRequests = filteredRequests.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-6">
             <div className="flex items-center justify-between">
@@ -267,6 +276,7 @@ const AdminRequests = () => {
                 {loading ? (
                     <div className="text-center py-10">Loading...</div>
                 ) : (
+                    <>
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-sm">
@@ -282,7 +292,7 @@ const AdminRequests = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {filteredRequests.map(req => {
+                                    {paginatedRequests.map(req => {
                                         const reqCat = (req.category || '').toLowerCase();
                                         const reqTypeStr = (req.requestType || '').toLowerCase();
                                         const isPauseRequest = reqCat.includes('pause') || reqTypeStr.includes('pause');
@@ -441,6 +451,81 @@ const AdminRequests = () => {
                             </table>
                         </div>
                     </div>
+
+                    {filteredRequests.length > 0 && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white rounded-xl border border-gray-200 shadow-sm mt-4">
+                            <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center gap-2">
+                                    <span>Rows per page:</span>
+                                    <select
+                                        value={pageSize}
+                                        onChange={(e) => {
+                                            setPageSize(Number(e.target.value));
+                                            setCurrentPage(1);
+                                        }}
+                                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-semibold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    Showing <span className="font-bold text-gray-700">{(currentPage - 1) * pageSize + 1}</span> to{' '}
+                                    <span className="font-bold text-gray-700">{Math.min(currentPage * pageSize, filteredRequests.length)}</span> of{' '}
+                                    <span className="font-bold text-gray-700">{filteredRequests.length}</span> entries
+                                </div>
+                            </div>
+                            {totalPages > 1 && (
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                        .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                                        .reduce((acc: (number | string)[], page, index, array) => {
+                                            if (index > 0 && page - (array[index - 1] as number) > 1) {
+                                                acc.push('...');
+                                            }
+                                            acc.push(page);
+                                            return acc;
+                                        }, [])
+                                        .map((item, idx) =>
+                                            typeof item === 'number' ? (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => setCurrentPage(item)}
+                                                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
+                                                        currentPage === item
+                                                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                                            : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {item}
+                                                </button>
+                                            ) : (
+                                                <span key={idx} className="px-1 text-gray-400 text-xs">...</span>
+                                            )
+                                        )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    </>
                 )}
                 </>
             )}
