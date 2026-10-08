@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock, Utensils, CheckCircle2, XCircle, Loader2, ShieldCheck, Receipt } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, FileText, Trash2, Globe, Users, GraduationCap, Edit2, Shield, Phone, Briefcase, Download, AlertCircle, History, Camera, CreditCard, Banknote, DollarSign, Plus, Eye, EyeOff, Navigation, Cloud, Lock, Utensils, CheckCircle2, XCircle, Loader2, ShieldCheck, Receipt, Clock } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -498,6 +498,7 @@ const MyInfo = () => {
             probationDays: 90,
             entitledForMealAllowance: true,
             entitledForEobi: false,
+            exemptFromAttendancePenalties: false,
             salaryEffectiveDate: new Date().toISOString().split('T')[0],
             salaryRevisionReason: ''
         },
@@ -707,6 +708,7 @@ const MyInfo = () => {
                                 probationDays: employee.financeInfo?.probationDays || 0,
                                 entitledForMealAllowance: employee.financeInfo?.entitledForMealAllowance !== false,
                                 entitledForEobi: employee.financeInfo?.entitledForEobi === true,
+                                exemptFromAttendancePenalties: employee.financeInfo?.exemptFromAttendancePenalties === true,
                                 salaryEffectiveDate: new Date().toISOString().split('T')[0],
                                 salaryRevisionReason: ''
                             },
@@ -1848,6 +1850,30 @@ const MyInfo = () => {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Attendance & Late Penalties Exemption */}
+                                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4">
+                                        <div className="flex items-center gap-3.5">
+                                            <div className={`p-2.5 rounded-xl ${rawEmployee.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Clock size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-sm font-bold text-gray-900">Late Penalties</h4>
+                                                <p className="text-xs text-gray-500">Attendance penalty deductions status</p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            {rawEmployee.financeInfo?.exemptFromAttendancePenalties === true ? (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                    <CheckCircle2 size={13} /> Exempt
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                                    <XCircle size={13} /> Standard Policy
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
 
                                     <div>
                                         <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Salary Breakdown Components</h3>
@@ -3931,6 +3957,48 @@ const MyInfo = () => {
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Attendance & Late Penalties Exemption Toggle */}
+                                        <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-start gap-3">
+                                                <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
+                                                    <Clock size={18} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-gray-800">Exempt from Late Penalties</h4>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        If enabled, no attendance, late, or half-day salary penalty deductions will be applied on payroll runs.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className={`text-xs font-bold ${formData.financeInfo?.exemptFromAttendancePenalties === true ? 'text-amber-700' : 'text-slate-500'}`}>
+                                                    {formData.financeInfo?.exemptFromAttendancePenalties === true ? '✓ Yes (Exempt)' : '✕ No (Standard Policy)'}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const currentVal = formData.financeInfo?.exemptFromAttendancePenalties === true;
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            financeInfo: {
+                                                                ...prev.financeInfo,
+                                                                exemptFromAttendancePenalties: !currentVal
+                                                            }
+                                                        }));
+                                                    }}
+                                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                        formData.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-600' : 'bg-slate-300'
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                            formData.financeInfo?.exemptFromAttendancePenalties === true ? 'translate-x-5' : 'translate-x-0'
+                                                        }`}
+                                                    />
+                                                </button>
+                                            </div>
+                                        </div>
 
                                         <div className="flex justify-between items-end mb-6">
                                             <div>

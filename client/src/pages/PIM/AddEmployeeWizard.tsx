@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, ShieldCheck, Lock, Unlock, Utensils, Calendar, History, Loader2 } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Save, Upload, Check, X, User, Briefcase, FileText, Trash2, Globe, Users, GraduationCap, CreditCard, Banknote, Plus, Download, AlertCircle, Eye, Shield, ShieldCheck, Lock, Unlock, Utensils, Calendar, History, Loader2, Clock } from 'lucide-react';
 import CustomSelect from '../../components/UI/CustomSelect';
 import AddressForm from '../../components/UI/AddressForm';
 import RelationSelect from '../../components/UI/RelationSelect';
@@ -380,6 +380,27 @@ const AddEmployeeWizard = () => {
         }
     }, [isEditMode, canCreateUser, navigate]);
 
+    const [searchParams] = useSearchParams();
+
+    // Auto-populate user details when navigating from User Management Smart Prompt
+    useEffect(() => {
+        if (!isEditMode) {
+            const queryUserId = searchParams.get('userId');
+            const queryFirstName = searchParams.get('firstName');
+            const queryLastName = searchParams.get('lastName');
+            const queryEmail = searchParams.get('email');
+            if (queryUserId || queryFirstName || queryLastName || queryEmail) {
+                setFormData(prev => ({
+                    ...prev,
+                    ...(queryUserId ? { userId: queryUserId } : {}),
+                    ...(queryFirstName ? { firstName: queryFirstName } : {}),
+                    ...(queryLastName ? { lastName: queryLastName } : {}),
+                    ...(queryEmail ? { email: queryEmail, workEmail: queryEmail } : {})
+                }));
+            }
+        }
+    }, [searchParams, isEditMode]);
+
     // Client-side ID generation removed to prevent race conditions. 
     // The server now handles auto-generating the next ITCS-XXX ID.
 
@@ -447,6 +468,7 @@ const AddEmployeeWizard = () => {
             probationDays: 90,
             entitledForMealAllowance: true,
             entitledForEobi: false,
+            exemptFromAttendancePenalties: false,
             salaryEffectiveDate: new Date().toISOString().split('T')[0],
             salaryRevisionReason: ''
         },
@@ -629,6 +651,7 @@ const AddEmployeeWizard = () => {
                                 probationDays: found.financeInfo?.probationDays || 0,
                                 entitledForMealAllowance: found.financeInfo?.entitledForMealAllowance !== false,
                                 entitledForEobi: found.financeInfo?.entitledForEobi === true,
+                                exemptFromAttendancePenalties: found.financeInfo?.exemptFromAttendancePenalties === true,
                                 salaryEffectiveDate: new Date().toISOString().split('T')[0],
                                 salaryRevisionReason: ''
                             },
@@ -2320,6 +2343,48 @@ const AddEmployeeWizard = () => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* Attendance & Late Penalties Exemption Toggle */}
+                            <div className="bg-slate-50/80 p-5 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                    <div className={`p-2.5 rounded-xl shrink-0 ${formData.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
+                                        <Clock size={18} />
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-gray-800">Exempt from Late Penalties</h4>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            If enabled, no attendance, late, or half-day salary penalty deductions will be applied on payroll runs.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <span className={`text-xs font-bold ${formData.financeInfo?.exemptFromAttendancePenalties === true ? 'text-amber-700' : 'text-slate-500'}`}>
+                                        {formData.financeInfo?.exemptFromAttendancePenalties === true ? '✓ Yes (Exempt)' : '✕ No (Standard Policy)'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const currentVal = formData.financeInfo?.exemptFromAttendancePenalties === true;
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                financeInfo: {
+                                                    ...prev.financeInfo,
+                                                    exemptFromAttendancePenalties: !currentVal
+                                                }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            formData.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-600' : 'bg-slate-300'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                formData.financeInfo?.exemptFromAttendancePenalties === true ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Confidential Compensation & Financial Records (Locked Behind Master PIN) */}

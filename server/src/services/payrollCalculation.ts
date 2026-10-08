@@ -85,6 +85,69 @@ export function calculateAnniversaryBonus(yearsCompleted: number): number {
     return 0;
 }
 
+/**
+ * Safely extracts calendar year and 1-indexed month (1-12) from a Date or date string,
+ * immune to UTC / local timezone boundary offsets.
+ */
+export function parseDateYearMonth(dateInput: any): { year: number; month: number } | null {
+    if (!dateInput) return null;
+    if (typeof dateInput === 'string') {
+        const parts = dateInput.split('T')[0].split('-');
+        if (parts.length >= 2) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+                return { year: y, month: m };
+            }
+        }
+    }
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    const iso = d.toISOString().slice(0, 10);
+    const [y, m] = iso.split('-').map(Number);
+    if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+        return { year: y, month: m };
+    }
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+/**
+ * Calculates work anniversary eligibility and bonus for a specific payroll period.
+ */
+export function getEmployeeAnniversaryBonus(emp: any, periodYear: number, periodMonth: number): {
+    isAnniversaryMonth: boolean;
+    yearsCompleted: number;
+    amount: number;
+} {
+    const rawStatus = getEmploymentStatus(emp);
+    const status = (rawStatus || '').trim().toLowerCase();
+
+    // Active interns are not eligible for work anniversary bonus
+    if (status === 'internship' || (emp.jobInfo?.designation || '').toLowerCase().includes('intern')) {
+        return { isAnniversaryMonth: false, yearsCompleted: 0, amount: 0 };
+    }
+
+    const joiningDate = emp.jobInfo?.joiningDate || getEffectiveServiceStartDate(emp);
+    const parsed = parseDateYearMonth(joiningDate);
+    if (!parsed) {
+        return { isAnniversaryMonth: false, yearsCompleted: 0, amount: 0 };
+    }
+
+    if (parsed.month === periodMonth && periodYear > parsed.year) {
+        const yearsCompleted = periodYear - parsed.year;
+        const amount = calculateAnniversaryBonus(yearsCompleted);
+        if (amount > 0) {
+            return {
+                isAnniversaryMonth: true,
+                yearsCompleted,
+                amount,
+            };
+        }
+    }
+
+    return { isAnniversaryMonth: false, yearsCompleted: 0, amount: 0 };
+}
+
 function resolveEmployeeEarnings(emp: any): { component: string; amount: number; type: 'fixed' | 'variable'; expenseClaim?: boolean }[] {
     const fromComponents = (emp.salaryComponents || [])
         .filter((sc: any) => sc && sc.component && (Number(sc.amount) || 0) > 0)
@@ -529,36 +592,20 @@ export async function buildPayrollPayslips(
             usedPfRequestIds.push(...empPfInfo.requestIds);
         }
 
-        let hasAnniversaryInMonth = false;
-        let yearsCompleted = 0;
-        let anniversaryBonusAmount = 0;
-        const serviceStartDate = getEffectiveServiceStartDate(emp);
-        if (serviceStartDate) {
-            const startMonth = serviceStartDate.getMonth() + 1;
-            const startYear = serviceStartDate.getFullYear();
-
-            if (startMonth === run.periodMonth && startYear < run.periodYear) {
-                yearsCompleted = run.periodYear - startYear;
-                anniversaryBonusAmount = calculateAnniversaryBonus(yearsCompleted);
-                if (anniversaryBonusAmount > 0) {
-                    hasAnniversaryInMonth = true;
-                }
-            }
-        }
-
+        const anniversaryBonus = getEmployeeAnniversaryBonus(emp, run.periodYear, run.periodMonth);
         let notes = '';
-        if (hasAnniversaryInMonth && anniversaryBonusAmount > 0) {
+        if (anniversaryBonus.isAnniversaryMonth && anniversaryBonus.amount > 0) {
             const existingBonusIdx = earnings.findIndex((e: any) => e.component === 'Anniversary Bonus');
             if (existingBonusIdx >= 0) {
-                earnings[existingBonusIdx].amount = anniversaryBonusAmount;
+                earnings[existingBonusIdx].amount = anniversaryBonus.amount;
             } else {
                 earnings.push({
                     component: 'Anniversary Bonus',
-                    amount: anniversaryBonusAmount,
+                    amount: anniversaryBonus.amount,
                     type: 'fixed',
                 });
             }
-            notes = `Work Anniversary Bonus: PKR ${anniversaryBonusAmount.toLocaleString()} (${yearsCompleted} Year${yearsCompleted > 1 ? 's' : ''} completed).`;
+            notes = `Work Anniversary Bonus: PKR ${anniversaryBonus.amount.toLocaleString()} (${anniversaryBonus.yearsCompleted} Year${anniversaryBonus.yearsCompleted > 1 ? 's' : ''} completed).`;
         }
 
         const empStatus = getEmploymentStatus(emp);
@@ -652,8 +699,9 @@ export async function buildPayrollPayslips(
         let totalDeductions = 0;
         let attendancePenaltyNote = '';
 
+        const isExemptFromPenalties = emp.financeInfo?.exemptFromAttendancePenalties === true;
         const attInfo = attendanceDeductionsMap[emp.employeeId];
-        if (attInfo?.penalties?.length) {
+        if (!isExemptFromPenalties && attInfo?.penalties?.length) {
             const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
             const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
             const { halfDays, fullDays, exempted, billablePenalties, exemptedPenalty } = applyFirstPenaltyExemption(attInfo.penalties);
@@ -697,12 +745,14 @@ export async function buildPayrollPayslips(
                 });
                 totalDeductions += absentAmount;
             }
+        } else if (isExemptFromPenalties && attInfo?.penalties?.length) {
+            attendancePenaltyNote = 'Attendance penalties waived (Exempt).';
         }
 
         // Prior Period Leftover Late / Absence Deductions (calculated with prior month working days)
         const gapPenalties = gapPenaltiesMap[emp.employeeId] || [];
         let priorAdjNote = '';
-        if (gapPenalties.length > 0) {
+        if (!isExemptFromPenalties && gapPenalties.length > 0) {
             const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
             const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
             const priorDailyRate = basicSal / gapWorkingDays;

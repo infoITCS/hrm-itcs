@@ -6,7 +6,7 @@ import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
     DollarSign, Banknote, Globe, Trash2, Camera, Gift, AlertTriangle, LogOut, Lock, Unlock, Utensils,
-    ShieldCheck, RefreshCw, CheckCircle2
+    ShieldCheck, RefreshCw, CheckCircle2, Clock
 } from 'lucide-react';
 import MedicalAccrualCards from '../../components/MedicalAccrualCards';
 import { calculateClientMedicalAccrual } from '../../utils/medicalAccrual';
@@ -849,6 +849,25 @@ const EmployeeProfile = () => {
                                         </span>
                                     </div>
                                 )}
+
+                                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2.5 rounded-xl ${employee.financeInfo?.exemptFromAttendancePenalties === true ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <Clock size={18} />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-bold text-gray-800">Late Penalties</h4>
+                                            <p className="text-[11px] text-gray-400">Attendance penalty deductions</p>
+                                        </div>
+                                    </div>
+                                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                        employee.financeInfo?.exemptFromAttendancePenalties === true
+                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                        {employee.financeInfo?.exemptFromAttendancePenalties === true ? '✓ Exempt' : '✕ Standard Policy'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 

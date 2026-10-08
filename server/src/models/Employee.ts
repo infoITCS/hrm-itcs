@@ -66,6 +66,7 @@ export interface IEmployee extends Document {
         probationDays?: number;
         entitledForMealAllowance?: boolean;
         entitledForEobi?: boolean;
+        exemptFromAttendancePenalties?: boolean;
     };
     bankDetails?: {
         bankName?: string;
@@ -261,7 +262,8 @@ const EmployeeSchema: Schema = new Schema({
         probationMonths: { type: Number, default: 3 },
         probationDays: { type: Number, default: 90 },
         entitledForMealAllowance: { type: Boolean, default: true },
-        entitledForEobi: { type: Boolean, default: false }
+        entitledForEobi: { type: Boolean, default: false },
+        exemptFromAttendancePenalties: { type: Boolean, default: false }
     },
     bankDetails: {
         bankName: { type: String },

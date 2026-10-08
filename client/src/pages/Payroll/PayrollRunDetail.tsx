@@ -144,10 +144,39 @@ const PRESET_DEDUCTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper to calculate anniversary bonus excluding internship duration
+// Helper to safely extract calendar year and month without timezone drift
 // ─────────────────────────────────────────────────────────────────────────────
-const calculateAnniversaryBonusFromEmployee = (empDetails: any, targetYear?: number): { years: number; amount: number } => {
-    if (!empDetails) return { years: 0, amount: 0 };
+const parseDateYearMonth = (dateInput: any): { year: number; month: number } | null => {
+    if (!dateInput) return null;
+    if (typeof dateInput === 'string') {
+        const parts = dateInput.split('T')[0].split('-');
+        if (parts.length >= 2) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+                return { year: y, month: m };
+            }
+        }
+    }
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    const iso = d.toISOString().slice(0, 10);
+    const [y, m] = iso.split('-').map(Number);
+    if (!isNaN(y) && !isNaN(m) && m >= 1 && m <= 12) {
+        return { year: y, month: m };
+    }
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper to calculate anniversary bonus for the employee and payroll period
+// ─────────────────────────────────────────────────────────────────────────────
+const calculateAnniversaryBonusFromEmployee = (
+    empDetails: any,
+    targetYear?: number,
+    targetMonth?: number
+): { isAnniversaryMonth: boolean; years: number; amount: number } => {
+    if (!empDetails) return { isAnniversaryMonth: false, years: 0, amount: 0 };
     const rawStatus = typeof empDetails.employmentStatus === 'string'
         ? empDetails.employmentStatus
         : (empDetails.employmentStatus?.status || '');
@@ -155,39 +184,31 @@ const calculateAnniversaryBonusFromEmployee = (empDetails: any, targetYear?: num
 
     // Active interns do not qualify for anniversary bonus
     if (status === 'internship' || (empDetails.jobInfo?.designation || '').toLowerCase().includes('intern')) {
-        return { years: 0, amount: 0 };
+        return { isAnniversaryMonth: false, years: 0, amount: 0 };
     }
 
-    let serviceStart: Date | null = null;
-    if (empDetails.employmentStatus?.probationEndDate) {
-        const pEnd = new Date(empDetails.employmentStatus.probationEndDate);
-        if (!isNaN(pEnd.getTime())) {
-            const probationMonths = Number(empDetails.financeInfo?.probationMonths) || 3;
-            const derivedStart = new Date(pEnd.getFullYear(), pEnd.getMonth() - probationMonths, Math.min(pEnd.getDate(), 28));
-
-            // Exclude internship if joiningDate was earlier than probation start
-            if (empDetails.jobInfo?.joiningDate) {
-                const jDate = new Date(empDetails.jobInfo.joiningDate);
-                if (!isNaN(jDate.getTime()) && jDate < derivedStart) {
-                    serviceStart = derivedStart;
-                }
-            }
-        }
+    const joiningRaw = empDetails.jobInfo?.joiningDate;
+    const parsed = parseDateYearMonth(joiningRaw);
+    if (!parsed) {
+        return { isAnniversaryMonth: false, years: 0, amount: 0 };
     }
-
-    if (!serviceStart && empDetails.jobInfo?.joiningDate) {
-        const jDate = new Date(empDetails.jobInfo.joiningDate);
-        if (!isNaN(jDate.getTime())) serviceStart = jDate;
-    }
-
-    if (!serviceStart) return { years: 0, amount: 0 };
 
     const effectiveYear = targetYear || new Date().getFullYear();
-    const years = effectiveYear - serviceStart.getFullYear();
-    if (years <= 0) return { years: 0, amount: 0 };
-    if (years === 1) return { years: 1, amount: 15000 };
-    if (years === 2) return { years: 2, amount: 25000 };
-    return { years, amount: 50000 };
+    const effectiveMonth = targetMonth;
+
+    if (effectiveMonth !== undefined && parsed.month !== effectiveMonth) {
+        return { isAnniversaryMonth: false, years: 0, amount: 0 };
+    }
+
+    const years = effectiveYear - parsed.year;
+    if (years <= 0) return { isAnniversaryMonth: false, years: 0, amount: 0 };
+
+    let amount = 0;
+    if (years === 1) amount = 15000;
+    else if (years === 2) amount = 25000;
+    else if (years >= 3) amount = 50000;
+
+    return { isAnniversaryMonth: true, years, amount };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,15 +254,26 @@ const PayslipEditPanel = ({
     }, []);
 
     const effectivePeriodYear = periodYear || payslip.periodYear;
+    const effectivePeriodMonth = payslip.periodMonth;
+    const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear, effectivePeriodMonth);
     const [earnings, setEarnings] = useState<Earning[]>(() => {
-        const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
-        return payslip.earnings.map(e => {
+        let list = payslip.earnings.map(e => {
             // Auto-populate 0 or blank Anniversary Bonus amounts from tenure
             if (e.component === 'Anniversary Bonus' && (!e.amount || Number(e.amount) === 0) && bonusInfo.amount > 0) {
                 return { ...e, amount: bonusInfo.amount };
             }
             return { ...e };
         });
+
+        // Automatically add Anniversary Bonus if it is the employee's anniversary month and not already listed
+        if (bonusInfo.isAnniversaryMonth && bonusInfo.amount > 0 && !list.some(e => e.component === 'Anniversary Bonus')) {
+            list = [
+                ...list,
+                { component: 'Anniversary Bonus', amount: bonusInfo.amount, type: 'fixed' as const }
+            ];
+        }
+
+        return list;
     });
     const [deductions, setDeductions] = useState<Deduction[]>(payslip.deductions.map(d => ({ ...d })));
 
@@ -555,7 +587,7 @@ const PayslipEditPanel = ({
                                                     if (j !== i) return x;
                                                     let newAmount = x.amount;
                                                     if (val === 'Anniversary Bonus' && (!x.amount || Number(x.amount) === 0)) {
-                                                        const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
+                                                        const bonusInfo = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear, effectivePeriodMonth);
                                                         if (bonusInfo.amount > 0) newAmount = bonusInfo.amount;
                                                     }
                                                     return {
@@ -591,8 +623,8 @@ const PayslipEditPanel = ({
                                                 {e.component === 'Anniversary Bonus' && (
                                                     <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
                                                         {(() => {
-                                                            const b = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear);
-                                                            return b.years > 0 ? `${b.years}${b.years === 1 ? 'st' : b.years === 2 ? 'nd' : b.years === 3 ? 'rd' : 'th'} Yr Bonus` : 'Anniversary Bonus';
+                                                            const b = calculateAnniversaryBonusFromEmployee(payslip.employeeDetails, effectivePeriodYear, effectivePeriodMonth);
+                                                            return b.years > 0 ? `🎉 ${b.years}${b.years === 1 ? 'st' : b.years === 2 ? 'nd' : b.years === 3 ? 'rd' : 'th'} Yr Bonus (PKR ${b.amount.toLocaleString()})` : 'Anniversary Bonus';
                                                         })()}
                                                     </span>
                                                 )}
@@ -1579,9 +1611,22 @@ const PayrollRunDetail = () => {
                                     return (
                                         <tr key={ps._id} className="hover:bg-slate-50/50 transition-colors">
                                             <td className="px-5 py-3.5">
-                                                <p className="font-semibold text-slate-800">
-                                                    {formatEmployeeFullName(ps.employeeDetails, ps.employeeId)}
-                                                </p>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <p className="font-semibold text-slate-800">
+                                                        {formatEmployeeFullName(ps.employeeDetails, ps.employeeId)}
+                                                    </p>
+                                                    {(() => {
+                                                        const anniEarn = ps.earnings?.find(e => e.component === 'Anniversary Bonus' && (Number(e.amount) || 0) > 0);
+                                                        if (anniEarn) {
+                                                            return (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title={`Anniversary Bonus: ${fmt(anniEarn.amount)}`}>
+                                                                    🎉 Anniversary Bonus
+                                                                </span>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </div>
                                                 <p className="text-xs text-slate-400">
                                                     {ps.employeeDetails?.jobInfo?.designation} • {ps.employeeId}
                                                 </p>
