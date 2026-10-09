@@ -781,7 +781,10 @@ const Dashboard = () => {
                             <FileCheck size={100} className="text-rose-500 -rotate-12" />
                         </div>
                             <div className="flex items-center justify-between mb-5 relative z-10">
-                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <h3 
+                                    onClick={() => navigate('/notifications')}
+                                    className="text-lg font-bold text-slate-800 flex items-center gap-2 cursor-pointer hover:text-indigo-600 transition-colors"
+                                >
                                     <div className="p-1.5 bg-rose-100 text-rose-600 rounded-lg">
                                         <FileCheck size={18} />
                                     </div>
@@ -790,6 +793,13 @@ const Dashboard = () => {
                                         <span className="bg-rose-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold inline-flex items-center justify-center min-w-[24px] h-[24px] ml-1 shadow-sm">{pendingTasks.length}</span>
                                     )}
                                 </h3>
+                                <button
+                                    onClick={() => navigate('/notifications')}
+                                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                                >
+                                    <span>View All</span>
+                                    <ArrowRight size={13} />
+                                </button>
                             </div>
                             {pendingTasks.length > 0 ? (
                                 <div className="space-y-3 relative z-10 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">

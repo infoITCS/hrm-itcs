@@ -1499,9 +1499,15 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
                 const payslips = await Payslip.find({ payrollRunId: run._id }).lean() as any[];
                 for (const slip of payslips) {
                     const emp = await Employee.findOne({ employeeId: slip.employeeId })
-                        .select('firstName lastName workEmail contactInfo userId')
+                        .select('firstName lastName workEmail contactInfo userId employmentStatus isDeleted')
                         .populate('userId', 'email')
                         .lean() as any;
+
+                    const empStatus = (emp?.employmentStatus?.status || '').trim().toLowerCase();
+                    if (['resigned', 'terminated', 'on hold', 'hold'].includes(empStatus) || emp?.isDeleted) {
+                        console.info(`[Payroll Email] Skipping payslip email for employee ${slip.employeeId}: status is ${emp?.employmentStatus?.status || 'Inactive'}`);
+                        continue;
+                    }
 
                     const recipientEmail = emp?.workEmail || emp?.contactInfo?.email || emp?.userId?.email;
                     if (!recipientEmail) {
@@ -1758,7 +1764,14 @@ router.put('/:runId/erp-task', authenticate, async (req: Request, res: Response,
         const run = await PayrollRun.findById(req.params.runId);
         if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
 
-        const { erpReferenceId, erpStatus, erpNotes } = req.body;
+        const {
+            erpReferenceId,
+            erpStatus,
+            erpNotes,
+            loanDeductionErpId,
+            loanDeductionErpStatus,
+            loanDeductionErpNotes,
+        } = req.body;
 
         if (erpReferenceId !== undefined) run.erpReferenceId = String(erpReferenceId).trim();
         if (erpStatus !== undefined) {
@@ -1767,8 +1780,86 @@ router.put('/:runId/erp-task', authenticate, async (req: Request, res: Response,
         }
         if (erpNotes !== undefined) run.erpNotes = erpNotes;
 
+        if (loanDeductionErpId !== undefined) {
+            const cleanLoanErp = String(loanDeductionErpId).trim();
+            run.loanDeductionErpId = cleanLoanErp;
+            if (cleanLoanErp) {
+                await Payslip.updateMany(
+                    {
+                        payrollRunId: run._id,
+                        $or: [
+                            { loanDeductionErpId: { $in: [null, ''] } },
+                            { loanDeductionErpId: { $exists: false } }
+                        ]
+                    },
+                    { $set: { loanDeductionErpId: cleanLoanErp } }
+                );
+            }
+        }
+        if (loanDeductionErpStatus !== undefined) {
+            run.loanDeductionErpStatus = loanDeductionErpStatus;
+            if (loanDeductionErpStatus === 'Posted') run.loanDeductionErpPostedAt = new Date();
+        }
+        if (loanDeductionErpNotes !== undefined) run.loanDeductionErpNotes = loanDeductionErpNotes;
+
         await run.save();
         return res.json(run);
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   PUT /api/payroll/payslips/:payslipId/loan-erp
+ * @desc    Record or update individual employee loan deduction ERP Reference ID on payslip
+ * @access  admin, super-admin, finance
+ */
+router.put('/payslips/:payslipId/loan-erp', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin or Finance access required.' });
+        }
+
+        const { payslipId } = req.params;
+        const { erpReferenceId, loanDeductionErpId } = req.body || {};
+        const cleanErpId = String(loanDeductionErpId || erpReferenceId || '').trim();
+
+        const payslip = await Payslip.findById(payslipId);
+        if (!payslip) {
+            return res.status(404).json({ message: 'Payslip record not found.' });
+        }
+
+        payslip.loanDeductionErpId = cleanErpId;
+        await payslip.save();
+
+        // Check if all payslips with loan deductions in this run are now posted
+        if (payslip.payrollRunId) {
+            const run = await PayrollRun.findById(payslip.payrollRunId);
+            if (run) {
+                const unpostedPayslips = await Payslip.find({
+                    payrollRunId: run._id,
+                    $or: [
+                        { loanDeductionErpId: { $in: [null, ''] } },
+                        { loanDeductionErpId: { $exists: false } }
+                    ]
+                }).select('loanDeduction');
+
+                const { decryptNumber } = await import('../utils/encryption');
+                const stillPending = unpostedPayslips.some((p: any) => decryptNumber(p.loanDeduction) > 0);
+                if (!stillPending) {
+                    run.loanDeductionErpStatus = 'Posted';
+                    if (!run.loanDeductionErpPostedAt) run.loanDeductionErpPostedAt = new Date();
+                    if (!run.loanDeductionErpId) run.loanDeductionErpId = cleanErpId;
+                    await run.save();
+                }
+            }
+        }
+
+        return res.json({
+            message: 'Employee loan deduction ERP ID saved successfully.',
+            payslip
+        });
     } catch (err) {
         next(err);
     }

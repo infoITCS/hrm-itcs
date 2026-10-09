@@ -7,6 +7,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AuthUtils } from '../middleware/auth.utils';
 import crypto from 'crypto';
 import { sendWelcomeEmail, sendTestEmail } from '../utils/email';
+import { triggerOnboardingTasks } from '../services/workflowService';
 import RolePermission from '../models/RolePermission';
 import { SYSTEM_MODULES, computeEffectivePermissionsAndScopes, getDefaultScopeForRole, getDefaultSubTabAccess } from '../utils/permissionUtils';
 
@@ -119,6 +120,10 @@ router.post('/users', authenticate, requireAdmin, async (req: Request, res: Resp
 
         // Send Welcome Email
         await sendWelcomeEmail(email, userPassword, req.headers.origin);
+
+        // Trigger Onboarding Workflow Task & Tech Team Provisioning Email
+        const linkedEmp = employeeId ? await Employee.findOne({ employeeId }) : null;
+        await triggerOnboardingTasks(newUser, linkedEmp, req.headers.origin);
 
         await AuditLog.create({
             action: 'CREATE',
@@ -643,8 +648,8 @@ router.post('/users/:id/permissions/reset', authenticate, requireAdmin, async (r
 const requireLoanAccess = (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     const role = (authReq.user?.role || '').toLowerCase().trim();
-    if (role !== 'super-admin' && role !== 'admin' && role !== 'hr') {
-        return res.status(403).json({ message: 'Forbidden. Super Admin, Admin, or HR access required.' });
+    if (role !== 'super-admin' && role !== 'admin' && role !== 'hr' && role !== 'finance') {
+        return res.status(403).json({ message: 'Forbidden. Super Admin, Admin, HR, or Finance access required.' });
     }
     next();
 };
@@ -796,14 +801,14 @@ router.get('/loans/:employeeId/details', authenticate, requireLoanAccess, async 
 router.patch('/loans/:employeeId', authenticate, requireLoanAccess, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
-        const { remainingBalance, monthlyInstallment } = req.body;
+        const { remainingBalance, monthlyInstallment, isCustomPlan, customPlanReason } = req.body;
         if (remainingBalance === undefined || monthlyInstallment === undefined) {
             return res.status(400).json({ message: 'remainingBalance and monthlyInstallment are required.' });
         }
         const { updateEmployeeLoan } = await import('../services/loanManagementService');
         const updated = await updateEmployeeLoan(
             req.params.employeeId,
-            { remainingBalance, monthlyInstallment },
+            { remainingBalance, monthlyInstallment, isCustomPlan, customPlanReason },
             authReq.user?.userId || 'admin'
         );
 
@@ -815,6 +820,8 @@ router.patch('/loans/:employeeId', authenticate, requireLoanAccess, async (req: 
             details: {
                 remainingBalance,
                 monthlyInstallment,
+                isCustomPlan: Boolean(isCustomPlan),
+                customPlanReason: customPlanReason || '',
             },
         });
 

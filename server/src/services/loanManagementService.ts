@@ -3,6 +3,7 @@ import EmployeeRequest from '../models/EmployeeRequest';
 import Payslip from '../models/Payslip';
 import PayrollRun from '../models/PayrollRun';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { decryptNumber } from '../utils/encryption';
 
 export interface EmployeeLoanSummary {
     employeeId: string;
@@ -809,6 +810,29 @@ export async function updateEmployeeMonthlyLoanErpId(
     const cleanId = String(erpReferenceId || '').trim();
     payslip.loanDeductionErpId = cleanId;
     await payslip.save();
+
+    // Check if all payslips with loan deductions in this run are now posted
+    if (payslip.payrollRunId) {
+        const run = await PayrollRun.findById(payslip.payrollRunId);
+        if (run) {
+            const unpostedPayslips = await Payslip.find({
+                payrollRunId: run._id,
+                $or: [
+                    { loanDeductionErpId: { $in: [null, ''] } },
+                    { loanDeductionErpId: { $exists: false } }
+                ]
+            }).select('loanDeduction');
+
+            const stillPending = unpostedPayslips.some((p: any) => decryptNumber(p.loanDeduction) > 0);
+            if (!stillPending) {
+                run.loanDeductionErpStatus = 'Posted';
+                if (!run.loanDeductionErpPostedAt) run.loanDeductionErpPostedAt = new Date();
+                if (!run.loanDeductionErpId) run.loanDeductionErpId = cleanId;
+                await run.save();
+            }
+        }
+    }
+
     return payslip;
 }
 

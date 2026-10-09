@@ -8,6 +8,7 @@ import AttachmentFile from '../models/AttachmentFile';
 import User from '../models/User.model';
 import ExpenseClaim from '../models/ExpenseClaim';
 import PayrollRun from '../models/PayrollRun';
+import Payslip from '../models/Payslip';
 import LeaveRequest from '../models/LeaveRequest';
 import AttendanceRecord from '../models/AttendanceRecord';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
@@ -16,6 +17,7 @@ import { sendEmployeeRequestSubmittedEmail, sendEmployeeRequestStatusEmail } fro
 import logger from '../utils/logger';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { getEmployeeLoanDetails, calculateConsolidatedMonthlyInstallment } from '../services/loanManagementService';
+import { decryptNumber } from '../utils/encryption';
 
 const router = express.Router();
 
@@ -201,8 +203,8 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
             }
         }
 
-        // --- PF Withdrawal & Loan ERP Entry Required Notifications for Super Admin & HR ---
-        if (isHrOrAdmin) {
+        // --- PF Withdrawal & Loan ERP Entry Required Notifications for Finance, Super Admin & HR ---
+        if (isHrOrAdmin || isFinanceOrAdmin) {
             const erpMissingRequests = await EmployeeRequest.find({
                 $and: [
                     {
@@ -382,34 +384,163 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                 }
             }
 
-            // --- Payroll Approvals / ERP Tasks ---
+            // --- Payroll Approvals / ERP Tasks for Finance, Admin & Super Admin ---
             if (role === 'admin' || role === 'super-admin' || role === 'finance') {
-                const pendingPayroll = await PayrollRun.find({
+                // 1. Payroll Run ERP Reference Task
+                const unpostedPayroll = await PayrollRun.find({
+                    status: { $in: ['Approved', 'Disbursed'] },
                     $or: [
-                        { status: 'Approved' },
-                        { status: 'Disbursed', erpReferenceId: { $in: [null, ''] } }
+                        { erpReferenceId: { $in: [null, ''] } },
+                        { erpStatus: { $ne: 'Posted' } }
                     ]
-                }).sort({ updatedAt: -1 }).limit(5).lean();
+                }).sort({ periodYear: -1, periodMonth: -1 }).limit(10).lean();
 
-                for (const run of pendingPayroll as any[]) {
-                    let title = '';
-                    let msg = '';
-                    if (run.status === 'Approved') {
-                        title = `Payroll Disbursement Pending`;
-                        msg = `${run.title} is approved. Disburse it and log in ERP.`;
-                    } else {
-                        title = `ERP Entry Required: Payroll`;
-                        msg = `${run.title} disbursed. Log in ERP and write transaction ID.`;
-                    }
-
+                for (const run of unpostedPayroll as any[]) {
+                    const payableAmt = run.erpPayableAmount || run.totalPayableAmount || 0;
                     notifications.push({
-                        id: run._id.toString(),
-                        title,
-                        message: msg,
-                        time: run.updatedAt || run.createdAt,
+                        id: `payroll-erp-${run._id}`,
+                        title: `ERP Entry Required: Payroll (${run.title || `${run.periodMonth}/${run.periodYear}`})`,
+                        message: `Post Net Salaries of Rs. ${payableAmt.toLocaleString()} in ERP and enter Voucher ID.`,
+                        time: run.approvedAt || run.updatedAt || run.createdAt,
                         type: 'task',
-                        path: `/payroll/runs/${run._id}`
+                        category: 'payroll-erp',
+                        path: `/payroll/runs/${run._id}`,
+                        actionable: true,
+                        meta: {
+                            runId: run._id.toString(),
+                            amount: payableAmt,
+                            runTitle: run.title,
+                            targetField: 'erpReferenceId'
+                        }
                     });
+                }
+
+                // 2. Loan Recovery (Salary Deductions) ERP Tasks - Batch & Per-Person
+                const unpostedLoanRuns = await PayrollRun.find({
+                    status: { $in: ['Approved', 'Disbursed'] },
+                    loanDeductionErpStatus: { $ne: 'Posted' }
+                }).sort({ periodYear: -1, periodMonth: -1 }).limit(10).lean();
+
+                if (unpostedLoanRuns.length > 0) {
+                    const runIds = unpostedLoanRuns.map((r: any) => r._id);
+                    const runMap = new Map(unpostedLoanRuns.map((r: any) => [r._id.toString(), r]));
+
+                    const unpostedPayslips = await Payslip.find({
+                        payrollRunId: { $in: runIds },
+                        $or: [
+                            { loanDeductionErpId: { $in: [null, ''] } },
+                            { loanDeductionErpId: { $exists: false } }
+                        ]
+                    }).select('_id employeeId payrollRunId loanDeduction loanDeductionErpId createdAt updatedAt').lean();
+
+                    const pendingLoanPayslips = (unpostedPayslips as any[]).filter(ps => decryptNumber(ps.loanDeduction) > 0);
+
+                    if (pendingLoanPayslips.length > 0) {
+                        const empIds = [...new Set(pendingLoanPayslips.map(p => p.employeeId))];
+                        const employees = await Employee.find({ employeeId: { $in: empIds } })
+                            .select('employeeId firstName lastName personalInfo')
+                            .lean();
+                        const empMap = new Map(employees.map((e: any) => [e.employeeId, e]));
+
+                        // Generate per-person loan recovery tasks
+                        for (const ps of pendingLoanPayslips) {
+                            const amt = decryptNumber(ps.loanDeduction);
+                            const run = runMap.get(ps.payrollRunId?.toString()) || {};
+                            const emp = empMap.get(ps.employeeId);
+                            const empName = emp ? formatEmployeeFullName(emp, 'Employee') : ps.employeeId;
+                            const runTitle = run.title || `${run.periodMonth || ''}/${run.periodYear || ''}`;
+
+                            notifications.push({
+                                id: `loan-rec-ps-${ps._id}`,
+                                title: `ERP Entry Required: Loan Recovery - ${empName} (${runTitle})`,
+                                message: `Post Rs. ${amt.toLocaleString()} loan recovery deduction in ERP for ${empName} (${ps.employeeId}) and enter Voucher ID.`,
+                                time: run.approvedAt || ps.updatedAt || ps.createdAt || new Date(),
+                                type: 'task',
+                                category: 'loan-recovery-erp',
+                                path: '/admin/loans',
+                                actionable: true,
+                                meta: {
+                                    payslipId: ps._id.toString(),
+                                    runId: run._id ? run._id.toString() : '',
+                                    employeeId: ps.employeeId,
+                                    employeeName: empName,
+                                    amount: amt,
+                                    runTitle,
+                                    targetField: 'loanDeductionErpId'
+                                }
+                            });
+                        }
+
+                        // Also include batch summary task per run if multiple employees exist
+                        for (const run of unpostedLoanRuns as any[]) {
+                            const runPs = pendingLoanPayslips.filter(p => p.payrollRunId?.toString() === run._id.toString());
+                            if (runPs.length > 0) {
+                                const totalBatchAmt = runPs.reduce((sum, p) => sum + decryptNumber(p.loanDeduction), 0);
+                                notifications.push({
+                                    id: `payroll-loan-rec-${run._id}`,
+                                    title: `ERP Entry Required: Loan Recovery Batch (${run.title || `${run.periodMonth}/${run.periodYear}`})`,
+                                    message: `Post Rs. ${totalBatchAmt.toLocaleString()} salary loan recovery deductions in bulk across ${runPs.length} employees in ERP and enter Voucher ID.`,
+                                    time: run.approvedAt || run.updatedAt || run.createdAt || new Date(),
+                                    type: 'task',
+                                    category: 'loan-recovery-erp',
+                                    path: `/payroll/runs/${run._id}`,
+                                    actionable: true,
+                                    meta: {
+                                        runId: run._id.toString(),
+                                        amount: totalBatchAmt,
+                                        runTitle: run.title,
+                                        isBatch: true,
+                                        employeeCount: runPs.length,
+                                        targetField: 'loanDeductionErpId'
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 3. Matured PF ERP Entries Task (Strictly only for employees whose PF is matured: Permanent & tenure >= 36 months)
+                const thresholdMaturityDate = new Date();
+                thresholdMaturityDate.setMonth(thresholdMaturityDate.getMonth() - 36);
+
+                const maturedEmployeesWithPF = await Employee.find({
+                    'jobInfo.joiningDate': { $lte: thresholdMaturityDate },
+                    $or: [
+                        { 'employmentStatus.status': 'Permanent' },
+                        { employmentStatus: 'Permanent' }
+                    ],
+                    'providentFundHistory.0': { $exists: true }
+                }).select('employeeId firstName lastName providentFundHistory jobInfo').limit(15).lean();
+
+                for (const emp of maturedEmployeesWithPF as any[]) {
+                    const unloggedEntries = (emp.providentFundHistory || []).filter((h: any) => {
+                        const hasNoErp = !h.erpReferenceId || String(h.erpReferenceId).trim() === '';
+                        const amt = decryptNumber(h.amount);
+                        return hasNoErp && amt > 0;
+                    });
+                    if (unloggedEntries.length > 0) {
+                        const latest = unloggedEntries[unloggedEntries.length - 1];
+                        const empName = formatEmployeeFullName(emp, 'Employee');
+                        const decryptedAmt = decryptNumber(latest.amount);
+                        notifications.push({
+                            id: `matured-pf-${emp.employeeId}-${latest.periodMonth || ''}-${latest.periodYear || ''}`,
+                            title: `ERP Entry Required: Matured PF (${empName})`,
+                            message: `Log Rs. ${decryptedAmt.toLocaleString()} matured PF contribution in ERP (${emp.employeeId}) and enter Voucher ID.`,
+                            time: latest.date || new Date(),
+                            type: 'task',
+                            category: 'pf-erp',
+                            path: `/provident-fund`,
+                            actionable: true,
+                            meta: {
+                                employeeId: emp.employeeId,
+                                amount: decryptedAmt,
+                                periodMonth: latest.periodMonth,
+                                periodYear: latest.periodYear,
+                                entryId: latest._id ? latest._id.toString() : undefined,
+                                targetField: 'pfErpRef'
+                            }
+                        });
+                    }
                 }
             }
 

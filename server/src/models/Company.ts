@@ -20,6 +20,11 @@ export interface ICompany extends Document {
         pfContributionRate?: number;
         defaultBankName?: string;
     };
+    workflowSettings?: {
+        techEmail?: string;
+        adminEmail?: string;
+        hrEmail?: string;
+    };
 }
 
 const CompanySchema: Schema = new Schema({
@@ -41,6 +46,11 @@ const CompanySchema: Schema = new Schema({
         mealRatePerDay: { type: Number, default: 500 },
         pfContributionRate: { type: Number, default: 15 },
         defaultBankName: { type: String, default: 'Meezan Bank' }
+    },
+    workflowSettings: {
+        techEmail: { type: String, default: '' },
+        adminEmail: { type: String, default: '' },
+        hrEmail: { type: String, default: '' }
     }
 }, { timestamps: true });
 

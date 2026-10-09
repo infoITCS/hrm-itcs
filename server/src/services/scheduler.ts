@@ -105,7 +105,8 @@ const isEmployeeProfileComplete = (emp: any, user?: any): boolean => {
         try {
             const activeUsers = await User.find({ isActive: true, role: 'employee' }).select('email firstName avatar').lean();
             const activeEmployees = await Employee.find({
-                'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+                'employmentStatus.status': { $nin: ['Terminated', 'Resigned', 'On Hold', 'Hold'] },
+                isDeleted: { $ne: true }
             }).select('-attachments.fileData').lean() as any[];
 
             // Map employees by both userId (string & ObjectId) and email addresses
@@ -162,6 +163,8 @@ const isEmployeeProfileComplete = (emp: any, user?: any): boolean => {
             const currentDay = today.getDate();
 
             const employees = await Employee.find({
+                'employmentStatus.status': { $nin: ['Terminated', 'Resigned', 'On Hold', 'Hold'] },
+                isDeleted: { $ne: true },
                 $or: [
                     {
                         $expr: {

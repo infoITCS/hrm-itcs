@@ -103,6 +103,7 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
         firstName: user.firstName || employee?.firstName,
         lastName: user.lastName || employee?.lastName,
         avatar: avatarUrl,
+        department: employee?.jobInfo?.department,
         hasProfile: !!employee,
         permissions: computed.permissions,
         scopes: computed.scopes,
@@ -474,6 +475,7 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
     res.json({
       ...userObj,
       id: userObj._id,
+      department: employee?.jobInfo?.department,
       hasProfile: !!employee,
       permissions: computed.permissions,
       scopes: computed.scopes,

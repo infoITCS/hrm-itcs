@@ -1,5 +1,8 @@
 import nodemailer from 'nodemailer';
 import logger from './logger';
+import Employee from '../models/Employee';
+import User from '../models/User.model';
+import { isEmailEligibleStatus } from './employmentStatus';
 
 
 const transporter = nodemailer.createTransport({
@@ -92,6 +95,7 @@ export interface DispatchMailOptions {
     subject: string;
     html: string;
     from?: string;
+    skipStatusCheck?: boolean; // Set to true for system-critical or test dispatches
     attachments?: Array<{
         filename: string;
         content: any;
@@ -218,6 +222,78 @@ async function sendViaBrevo(mailOptions: DispatchMailOptions): Promise<{ success
 }
 
 /**
+ * Filters out recipients whose employment status is Resigned, Terminated, or On Hold.
+ * Resolves both Employee records directly and via linked User accounts.
+ */
+async function filterEligibleRecipients(recipients: string[]): Promise<{ eligible: string[]; suppressed: string[] }> {
+    if (recipients.length === 0) return { eligible: [], suppressed: [] };
+
+    try {
+        const lowerEmails = [...new Set(recipients.map(e => e.trim().toLowerCase()).filter(Boolean))];
+        if (lowerEmails.length === 0) return { eligible: [], suppressed: [] };
+
+        // 1. Resolve matching users to obtain their User IDs
+        const matchingUsers = await User.find({ email: { $in: lowerEmails } }).select('_id email').lean() as any[];
+        const userIds = matchingUsers.map(u => String(u._id));
+
+        // 2. Query Employee records matching direct emails or linked userIds
+        const queryOr: any[] = [
+            { email: { $in: lowerEmails } },
+            { workEmail: { $in: lowerEmails } },
+            { otherEmail: { $in: lowerEmails } }
+        ];
+        if (userIds.length > 0) {
+            queryOr.push({ userId: { $in: userIds } });
+        }
+
+        const matchingEmployees = await Employee.find({ $or: queryOr })
+            .select('userId email workEmail otherEmail employmentStatus isDeleted firstName lastName')
+            .lean() as any[];
+
+        if (!matchingEmployees || matchingEmployees.length === 0) {
+            return { eligible: recipients, suppressed: [] };
+        }
+
+        const suppressedEmailSet = new Set<string>();
+
+        for (const emp of matchingEmployees) {
+            const status = emp.employmentStatus?.status;
+            const isEligible = isEmailEligibleStatus(status) && !emp.isDeleted;
+
+            if (!isEligible) {
+                if (emp.email) suppressedEmailSet.add(emp.email.trim().toLowerCase());
+                if (emp.workEmail) suppressedEmailSet.add(emp.workEmail.trim().toLowerCase());
+                if (emp.otherEmail) suppressedEmailSet.add(emp.otherEmail.trim().toLowerCase());
+
+                if (emp.userId) {
+                    const matchedUser = matchingUsers.find(u => String(u._id) === String(emp.userId));
+                    if (matchedUser?.email) {
+                        suppressedEmailSet.add(matchedUser.email.trim().toLowerCase());
+                    }
+                }
+            }
+        }
+
+        const eligible: string[] = [];
+        const suppressed: string[] = [];
+
+        for (const r of recipients) {
+            const clean = r.trim();
+            if (suppressedEmailSet.has(clean.toLowerCase())) {
+                suppressed.push(clean);
+            } else {
+                eligible.push(clean);
+            }
+        }
+
+        return { eligible, suppressed };
+    } catch (err: any) {
+        logger.warn(`[Email Dispatcher] Recipient status verification error: ${err?.message || err}. Proceeding with delivery.`);
+        return { eligible: recipients, suppressed: [] };
+    }
+}
+
+/**
  * Unified email dispatcher:
  * 1. Tries Brevo (Sendinblue) API first (fast, secure, isolated from M365, 300 free/day).
  * 2. Falls back to Microsoft Graph API if Brevo is not configured or fails.
@@ -228,6 +304,28 @@ export async function dispatchEmail(
     mailOptions: DispatchMailOptions,
     debugNote?: string
 ): Promise<{ success: boolean; error?: string }> {
+    // ── Employment Status Guard ──────────────────────────────────────────────
+    // If recipient is Resigned, Terminated, or On Hold, stop sending emails to them.
+    if (!mailOptions.skipStatusCheck) {
+        const rawRecipients = (Array.isArray(mailOptions.to) ? mailOptions.to : [mailOptions.to])
+            .filter(Boolean)
+            .map(e => (typeof e === 'string' ? e.trim() : ''))
+            .filter(Boolean);
+
+        const { eligible, suppressed } = await filterEligibleRecipients(rawRecipients);
+
+        if (suppressed.length > 0) {
+            logger.info(`🚫 [Email Dispatcher] Suppressed email to [${suppressed.join(', ')}] — recipient status is Resigned, Terminated, or On Hold. Subject: "${mailOptions.subject}"`);
+        }
+
+        if (eligible.length === 0) {
+            // All recipients are blocked / inactive, safely exit
+            return { success: true };
+        }
+
+        mailOptions.to = eligible.length === 1 ? eligible[0] : eligible;
+    }
+
     // ── Local Development Terminal Mock ──────────────────────────────────────
     // In local development, all emails print directly to terminal without calling Brevo.
     // This protects employee mailboxes and preserves Brevo daily quota.
@@ -803,10 +901,11 @@ export const sendPendingErpTasksReminderEmail = async (to: string, pendingCount:
 };
 
 export const sendTestEmail = async (to: string) => {
-    const mailOptions = {
+    const mailOptions: DispatchMailOptions = {
         from: `"ITCS HRM Test" <${process.env.SMTP_USER || 'noreply@itcs.com'}>`,
         to,
         subject: 'ITCS HRM - Email System Test',
+        skipStatusCheck: true,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaec; border-radius: 10px; background-color: #f9fafb;">
                 <h2 style="color: #4f46e5; text-align: center;">Email Delivery Test Successful! 🎉</h2>
@@ -882,10 +981,11 @@ export const sendPayslipDisbursedEmail = async (
 };
 
 export const sendMasterPinResetOtpEmail = async (to: string, otp: string) => {
-    const mailOptions = {
+    const mailOptions: DispatchMailOptions = {
         from: `"${getSenderName('Security')}" <${process.env.SMTP_USER || 'security@itcs.com'}>`,
         to,
         subject: '🔒 Critical Security Alert: Master Financial PIN Reset OTP',
+        skipStatusCheck: true,
         html: `
             <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
                 <div style="text-align: center; margin-bottom: 24px;">

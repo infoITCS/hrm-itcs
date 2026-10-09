@@ -10,6 +10,7 @@ export interface User {
     firstName?: string;
     lastName?: string;
     microsoftId?: string;
+    department?: string;
     hasProfile?: boolean;
     needsPasswordSetup?: boolean;
     permissions?: Record<string, boolean>;

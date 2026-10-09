@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, Building2, Paintbrush, PhoneCall, Eye, Upload, Trash2 } from 'lucide-react';
+import { Save, Loader2, Building2, Paintbrush, PhoneCall, Eye, Upload, Trash2, Workflow } from 'lucide-react';
 import api from '../../utils/api';
 import PdfPreviewModal from '../../components/UI/PdfPreviewModal';
 
@@ -26,6 +26,11 @@ const CompanyManagement = () => {
             phone: '',
             email: '',
             website: '',
+        },
+        workflowSettings: {
+            techEmail: '',
+            adminEmail: '',
+            hrEmail: '',
         }
     });
 
@@ -52,6 +57,11 @@ const CompanyManagement = () => {
                             phone: data.contact?.phone || '',
                             email: data.contact?.email || '',
                             website: data.contact?.website || '',
+                        },
+                        workflowSettings: {
+                            techEmail: data.workflowSettings?.techEmail || '',
+                            adminEmail: data.workflowSettings?.adminEmail || '',
+                            hrEmail: data.workflowSettings?.hrEmail || '',
                         }
                     });
                 }
@@ -360,6 +370,89 @@ const CompanyManagement = () => {
                                 }))}
                                 placeholder="e.g. www.acme.com"
                             />
+                        </div>
+                    </div>
+
+                    {/* Workflow & Department Notification Emails */}
+                    <div className="md:col-span-2 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+                        <div className="flex items-start justify-between flex-wrap gap-2">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <Workflow className="text-indigo-600" size={20} />
+                                    Workflow & Notification Routing
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Configure recipient email addresses for automated onboarding and offboarding task alerts.
+                                </p>
+                            </div>
+                            <span className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
+                                Automated Checklists
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
+                            {/* Tech Team Email */}
+                            <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/70 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700">Tech Team Email</label>
+                                </div>
+                                <input
+                                    type="email"
+                                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-800"
+                                    value={formData.workflowSettings?.techEmail || ''}
+                                    onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        workflowSettings: { ...prev.workflowSettings, techEmail: e.target.value }
+                                    }))}
+                                    placeholder="e.g. it-support@itcs.com"
+                                />
+                                <p className="text-[11px] text-slate-500 leading-snug">
+                                    Notified on new user creation to provision work email, and on offboarding to revoke access/VPN.
+                                </p>
+                            </div>
+
+                            {/* Admin Team Email */}
+                            <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/70 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700">Admin Team Email</label>
+                                </div>
+                                <input
+                                    type="email"
+                                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium text-slate-800"
+                                    value={formData.workflowSettings?.adminEmail || ''}
+                                    onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        workflowSettings: { ...prev.workflowSettings, adminEmail: e.target.value }
+                                    }))}
+                                    placeholder="e.g. admin@itcs.com"
+                                />
+                                <p className="text-[11px] text-slate-500 leading-snug">
+                                    Notified on offboarding to collect company laptop, fuel card, and mobile SIM.
+                                </p>
+                            </div>
+
+                            {/* HR Team Email */}
+                            <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/70 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700">HR Team Email</label>
+                                </div>
+                                <input
+                                    type="email"
+                                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all font-medium text-slate-800"
+                                    value={formData.workflowSettings?.hrEmail || ''}
+                                    onChange={(e) => setFormData(prev => ({
+                                        ...prev,
+                                        workflowSettings: { ...prev.workflowSettings, hrEmail: e.target.value }
+                                    }))}
+                                    placeholder="e.g. hr@itcs.com"
+                                />
+                                <p className="text-[11px] text-slate-500 leading-snug">
+                                    Notified on offboarding to schedule exit interview and complete clearance checklist.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

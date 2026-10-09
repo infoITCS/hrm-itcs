@@ -440,11 +440,15 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
  */
 router.put('/company', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { name, logoUrl, branding, contact } = req.body;
+        const { name, logoUrl, branding, contact, payrollSettings, workflowSettings } = req.body;
+
+        const updateFields: any = { name, logoUrl, branding, contact };
+        if (payrollSettings) updateFields.payrollSettings = payrollSettings;
+        if (workflowSettings) updateFields.workflowSettings = workflowSettings;
 
         const company = await Company.findOneAndUpdate(
             {},
-            { name, logoUrl, branding, contact },
+            { $set: updateFields },
             { new: true, upsert: true, runValidators: true }
         );
 

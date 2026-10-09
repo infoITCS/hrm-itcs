@@ -597,6 +597,7 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
             .populate('employeeDetails', 'firstName middleName lastName employeeId')
+            .populate('payrollRunId', 'title periodMonth periodYear status')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {
@@ -729,6 +730,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
             .populate('employeeDetails', 'firstName middleName lastName employeeId')
+            .populate('payrollRunId', 'title periodMonth periodYear status')
             .lean();
         res.json({ success: true, data: claims });
     } catch (err) {

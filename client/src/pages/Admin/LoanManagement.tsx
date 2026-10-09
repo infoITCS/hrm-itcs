@@ -5,7 +5,7 @@ import { formatEmployeeFullName } from '../../utils/nameHelper';
 import {
     Banknote, Search, Pencil, Save, X, Loader2, Users, TrendingDown, Wallet,
     Eye, Calendar, History, FileText, ChevronRight, Download, CheckCircle2,
-    AlertCircle, RefreshCw, Layers, Check, Edit2, Plus
+    AlertCircle, AlertTriangle, RefreshCw, Layers, Check, Edit2, Plus
 } from 'lucide-react';
 
 interface LoanRow {
@@ -120,6 +120,7 @@ export default function LoanManagement() {
     const [editInstallment, setEditInstallment] = useState('');
     const [editIsCustomPlan, setEditIsCustomPlan] = useState(false);
     const [editCustomReason, setEditCustomReason] = useState('');
+    const [overrideAlertModal, setOverrideAlertModal] = useState(false);
     const [saving, setSaving] = useState(false);
 
     // Detail Modal State
@@ -252,10 +253,22 @@ export default function LoanManagement() {
 
     const openEdit = (row: LoanRow) => {
         setEditing(row);
-        setEditBalance(String(row.remainingBalance ?? 0));
-        setEditInstallment(String(row.monthlyInstallment ?? 0));
-        setEditIsCustomPlan(Boolean(row.isCustomPlan));
-        setEditCustomReason(row.customPlanReason || '');
+        const bal = Math.max(0, Math.ceil(Number(row.remainingBalance ?? 0)));
+        const standardRate = Math.ceil(bal / 12);
+        setEditBalance(String(bal));
+
+        // If it already has an active custom plan and custom installment, preserve it.
+        // Otherwise, default to standard 1-year rate.
+        if (row.isCustomPlan && row.monthlyInstallment && Number(row.monthlyInstallment) > 0) {
+            setEditInstallment(String(row.monthlyInstallment));
+            setEditIsCustomPlan(true);
+            setEditCustomReason(row.customPlanReason || '');
+        } else {
+            setEditInstallment(String(standardRate));
+            setEditIsCustomPlan(false);
+            setEditCustomReason('');
+        }
+        setOverrideAlertModal(false);
     };
 
     const openViewDetails = async (employeeId: string) => {
@@ -280,14 +293,41 @@ export default function LoanManagement() {
         }
     };
 
-    const saveEdit = async () => {
+    const handleSaveClick = () => {
+        if (!editing) return;
+        const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+        const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
+        const min1YearRate = Math.ceil(bal / 12);
+
+        if (bal > 0 && inst <= 0) {
+            showToast('Monthly installment must be greater than 0', false);
+            return;
+        }
+
+        // If balance > 0 and installment is less than 1-year rate, repayment term exceeds 12 months (breaks 1-year rule).
+        // Trigger alert modal!
+        if (bal > 0 && inst < min1YearRate) {
+            setOverrideAlertModal(true);
+            return;
+        }
+
+        // Complies with 1-year rule (or bal is 0)
+        performSave({
+            balance: bal,
+            installment: inst,
+            isCustomPlan: false,
+            customPlanReason: '',
+        });
+    };
+
+    const performSave = async (options: {
+        balance: number;
+        installment: number;
+        isCustomPlan: boolean;
+        customPlanReason: string;
+    }) => {
         if (!editing) return;
         setSaving(true);
-        const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
-        const minRate = Math.ceil(bal / 12);
-        const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
-        const finalInst = bal > 0 ? (editIsCustomPlan ? (inst > 0 ? Math.min(bal, inst) : minRate) : (inst >= minRate ? inst : minRate)) : 0;
-
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.admin}/loans/${editing.employeeId}`, {
@@ -297,10 +337,10 @@ export default function LoanManagement() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    remainingBalance: bal,
-                    monthlyInstallment: finalInst,
-                    isCustomPlan: editIsCustomPlan,
-                    customPlanReason: editIsCustomPlan ? editCustomReason.trim() : undefined,
+                    remainingBalance: options.balance,
+                    monthlyInstallment: options.installment,
+                    isCustomPlan: options.isCustomPlan,
+                    customPlanReason: options.isCustomPlan ? options.customPlanReason.trim() : undefined,
                 }),
             });
             const body = await res.json().catch(() => ({}));
@@ -309,6 +349,7 @@ export default function LoanManagement() {
                 return;
             }
             showToast('Loan updated successfully', true);
+            setOverrideAlertModal(false);
             setEditing(null);
             await loadBalances();
             if (viewingEmployeeId === editing.employeeId) {
@@ -1106,7 +1147,14 @@ export default function LoanManagement() {
                         </div>
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Remaining Balance (PKR)</label>
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Remaining Balance (PKR)</label>
+                                    {Number(editBalance) > 0 && (
+                                        <span className="text-[11px] text-slate-500 font-medium">
+                                            1-Yr Default: <strong className="text-slate-800">{fmtPKR(Math.ceil(Number(editBalance) / 12))}/mo</strong>
+                                        </span>
+                                    )}
+                                </div>
                                 <input
                                     type="number"
                                     min={0}
@@ -1116,117 +1164,102 @@ export default function LoanManagement() {
                                         setEditBalance(val);
                                         const bal = Math.max(0, Math.ceil(Number(val) || 0));
                                         const minRate = Math.ceil(bal / 12);
-                                        if (!editIsCustomPlan && bal > 0 && (!editInstallment || Number(editInstallment) < minRate)) {
+                                        if (!editIsCustomPlan && bal > 0) {
                                             setEditInstallment(String(minRate));
                                         }
                                     }}
-                                    className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
                                 />
                             </div>
 
                             <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase block mb-1.5">Repayment Plan Policy</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setEditIsCustomPlan(false);
-                                            const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
-                                            const minRate = Math.ceil(bal / 12);
-                                            if (Number(editInstallment) < minRate) {
+                                <div className="flex justify-between items-center mb-1">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase">Monthly Installment (PKR)</label>
+                                    {Number(editBalance) > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                                                const minRate = Math.ceil(bal / 12);
                                                 setEditInstallment(String(minRate));
-                                            }
-                                        }}
-                                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                                            !editIsCustomPlan 
-                                                ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-400/20' 
-                                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <p className={`text-xs font-bold ${!editIsCustomPlan ? 'text-emerald-900' : 'text-slate-700'}`}>Standard 1-Year</p>
-                                        <p className="text-[10px] text-slate-500 mt-0.5">Payable within 12 months max</p>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditIsCustomPlan(true)}
-                                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                                            editIsCustomPlan 
-                                                ? 'bg-purple-50/80 border-purple-300 ring-2 ring-purple-400/20' 
-                                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <p className={`text-xs font-bold ${editIsCustomPlan ? 'text-purple-900' : 'text-slate-700'}`}>Custom Plan</p>
-                                        <p className="text-[10px] text-slate-500 mt-0.5">Management / HR override</p>
-                                    </button>
+                                                setEditIsCustomPlan(false);
+                                                setEditCustomReason('');
+                                            }}
+                                            className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                                        >
+                                            ↺ Set 1-Year Default ({fmtPKR(Math.ceil(Number(editBalance) / 12))}/mo)
+                                        </button>
+                                    )}
                                 </div>
-                            </div>
-
-                            <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Monthly Installment (PKR)</label>
                                 <input
                                     type="number"
                                     min={0}
                                     value={editInstallment}
-                                    onChange={(e) => setEditInstallment(e.target.value)}
-                                    className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
+                                    onChange={(e) => {
+                                        setEditInstallment(e.target.value);
+                                        const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                                        const inst = Math.max(0, Math.ceil(Number(e.target.value) || 0));
+                                        const minRate = Math.ceil(bal / 12);
+                                        if (inst < minRate && bal > 0) {
+                                            setEditIsCustomPlan(true);
+                                        } else {
+                                            setEditIsCustomPlan(false);
+                                        }
+                                    }}
+                                    className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-100 outline-none"
                                 />
+
+                                {(() => {
+                                    const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                                    const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
+                                    const minRate = Math.ceil(bal / 12);
+                                    if (bal <= 0) return null;
+
+                                    if (inst > 0 && inst < minRate) {
+                                        const months = Math.ceil(bal / inst);
+                                        const years = (months / 12).toFixed(1);
+                                        return (
+                                            <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                                                <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                                                    <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                                                    <span>Extends Beyond 1-Year Rule · Term: {months} Months (~{years} Yrs)</span>
+                                                </div>
+                                                <p className="text-[11px] text-amber-800 leading-relaxed">
+                                                    Standard policy is 12 months max (min. {fmtPKR(minRate)}/mo). Clicking <strong>Save Changes</strong> will prompt an override alert to confirm this extended schedule.
+                                                </p>
+                                            </div>
+                                        );
+                                    }
+
+                                    if (inst >= minRate) {
+                                        const months = Math.ceil(bal / inst);
+                                        return (
+                                            <div className="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 font-medium">
+                                                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                                                    <span>Complies with 1-Year Rule (Completes in <strong>{months} {months === 1 ? 'month' : 'months'}</strong>)</span>
+                                                </div>
+                                                <span className="text-[11px] text-emerald-700 font-bold">{fmtPKR(inst)}/mo</span>
+                                            </div>
+                                        );
+                                    }
+
+                                    return null;
+                                })()}
                             </div>
 
                             {editIsCustomPlan && (
                                 <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase">Approval Reason / Management Note</label>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Override Reason / Management Note (Optional)</label>
                                     <input
                                         type="text"
                                         value={editCustomReason}
                                         onChange={(e) => setEditCustomReason(e.target.value)}
-                                        placeholder="e.g. Special high-balance loan approved by CEO"
-                                        className="w-full mt-1 border border-slate-200 rounded-xl px-4 py-2 text-xs focus:ring-2 focus:ring-purple-200 outline-none"
+                                        placeholder="e.g. Special extended schedule approved by Management"
+                                        className="w-full border border-slate-200 rounded-xl px-4 py-2 text-xs focus:ring-2 focus:ring-purple-200 outline-none"
                                     />
                                 </div>
                             )}
-
-                            {(() => {
-                                const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
-                                const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
-                                const minRate = Math.ceil(bal / 12);
-                                if (bal <= 0) return null;
-
-                                if (editIsCustomPlan) {
-                                    const months = inst > 0 ? Math.ceil(bal / inst) : 0;
-                                    const years = months > 0 ? (months / 12).toFixed(1) : '0';
-                                    return (
-                                        <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 space-y-1">
-                                            <p className="font-bold flex items-center gap-1 text-purple-950">
-                                                <span>⚙️</span> Custom Management Plan Active
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-2 mt-1 text-[11px]">
-                                                <div>
-                                                    <span className="text-purple-600 block">Total Payback Months:</span>
-                                                    <span className="font-bold text-sm text-purple-950">{months} Months (~{years} Years)</span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-purple-600 block">Monthly Deduction:</span>
-                                                    <span className="font-bold text-sm text-purple-950">{fmtPKR(inst)}/mo</span>
-                                                </div>
-                                            </div>
-                                            <p className="text-[10px] text-purple-700 mt-1">
-                                                This custom installment will be linked and synchronized across payroll runs without being forced to 12 months.
-                                            </p>
-                                        </div>
-                                    );
-                                }
-
-                                return (
-                                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1">
-                                        <p className="font-bold flex items-center gap-1">
-                                            <span>✓</span> Standard 1-Year (12 Months) Payback Rule
-                                        </p>
-                                        <p className="text-[11px] text-emerald-700">
-                                            Minimum installment required is <strong>Rs. {minRate.toLocaleString()}/mo</strong>. Decimals are rounded off to whole numbers.
-                                        </p>
-                                    </div>
-                                );
-                            })()}
                         </div>
                         <div className="flex gap-2 pt-2">
                             <button
@@ -1238,7 +1271,7 @@ export default function LoanManagement() {
                             </button>
                             <button
                                 type="button"
-                                onClick={saveEdit}
+                                onClick={handleSaveClick}
                                 disabled={saving}
                                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
                             >
@@ -1246,6 +1279,121 @@ export default function LoanManagement() {
                                 Save Changes
                             </button>
                         </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Rule Breach Alert Modal */}
+            {overrideAlertModal && editing && createPortal(
+                <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 sm:p-6 bg-slate-950/75 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md my-auto p-6 space-y-4 border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-start gap-3.5">
+                            <div className="w-11 h-11 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
+                                <AlertTriangle size={22} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-base font-extrabold text-slate-900 leading-snug">Rule Breach: Term Exceeds 1 Year</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    {formatEmployeeFullName(editing, editing.employeeId)} · #{editing.employeeId}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setOverrideAlertModal(false)}
+                                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {(() => {
+                            const bal = Math.max(0, Math.ceil(Number(editBalance) || 0));
+                            const inst = Math.max(0, Math.ceil(Number(editInstallment) || 0));
+                            const minRate = Math.ceil(bal / 12);
+                            const months = inst > 0 ? Math.ceil(bal / inst) : 0;
+                            const years = months > 0 ? (months / 12).toFixed(1) : '0';
+
+                            return (
+                                <div className="space-y-3.5">
+                                    <div className="p-3 bg-amber-50/80 border border-amber-200/90 rounded-2xl text-xs text-amber-950 leading-relaxed">
+                                        The entered installment of <strong className="text-amber-900 font-bold">{fmtPKR(inst)}/mo</strong> will break the standard company rule of recovering loans within <strong>1 year (12 months)</strong>.
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Standard 1-Year Policy</span>
+                                            <span className="text-sm font-extrabold text-slate-800 block mt-0.5">12 Months Max</span>
+                                            <span className="text-[11px] text-slate-500 mt-1 block">Min: {fmtPKR(minRate)}/mo</span>
+                                        </div>
+                                        <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl">
+                                            <span className="text-[10px] uppercase font-bold text-purple-700 block">Your Custom Term</span>
+                                            <span className="text-sm font-extrabold text-purple-950 block mt-0.5">{months} Months (~{years} Yrs)</span>
+                                            <span className="text-[11px] text-purple-700 mt-1 block">Deduction: {fmtPKR(inst)}/mo</span>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-semibold text-slate-600 uppercase block mb-1">
+                                            Management Override Reason / Note (Optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editCustomReason}
+                                            onChange={(e) => setEditCustomReason(e.target.value)}
+                                            placeholder="e.g. Special management approval for extended repayment"
+                                            className="w-full border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-purple-200 outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => {
+                                                performSave({
+                                                    balance: bal,
+                                                    installment: inst,
+                                                    isCustomPlan: true,
+                                                    customPlanReason: editCustomReason.trim() || 'Admin override: extended repayment term beyond 1 year',
+                                                });
+                                            }}
+                                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+                                        >
+                                            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                                            Override & Save ({months} Months Term)
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => {
+                                                setEditInstallment(String(minRate));
+                                                setEditIsCustomPlan(false);
+                                                performSave({
+                                                    balance: bal,
+                                                    installment: minRate,
+                                                    isCustomPlan: false,
+                                                    customPlanReason: '',
+                                                });
+                                            }}
+                                            className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60"
+                                        >
+                                            Revert to 1-Year Rule ({fmtPKR(minRate)}/mo)
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => setOverrideAlertModal(false)}
+                                            className="w-full py-1 text-slate-400 hover:text-slate-600 text-xs font-medium cursor-pointer"
+                                        >
+                                            Cancel & Keep Editing
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>,
                 document.body

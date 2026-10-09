@@ -964,7 +964,7 @@ router.put('/types/:id', authenticate, async (req: Request, res: Response, next:
     }
 });
 
-// DELETE /api/leaves/types/:id - Soft-delete/deactivate leave type (Admin only)
+// DELETE /api/leaves/types/:id - Delete leave type (Admin only)
 router.delete('/types/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
@@ -977,9 +977,32 @@ router.delete('/types/:id', authenticate, async (req: Request, res: Response, ne
             return res.status(404).json({ success: false, message: 'Leave type not found' });
         }
 
-        leaveType.isActive = false;
-        await leaveType.save();
-        res.json({ success: true, message: 'Leave type deactivated successfully' });
+        // Prevent deletion if there are pending leave requests under this category
+        const pendingCount = await LeaveRequest.countDocuments({
+            $or: [
+                { type: leaveType.name },
+                { type: { $regex: new RegExp(`^${leaveType.name}$`, 'i') } }
+            ],
+            status: 'Pending'
+        });
+
+        if (pendingCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete '${leaveType.name}' because there are ${pendingCount} pending leave request(s) under this category. Please resolve them first.`
+            });
+        }
+
+        // Clean up category from employee balances
+        await LeaveBalance.updateMany(
+            {},
+            { $pull: { balances: { leaveTypeCode: leaveType.code } } }
+        );
+
+        // Delete from LeaveType
+        await LeaveType.findByIdAndDelete(req.params.id);
+
+        res.json({ success: true, message: `Leave category '${leaveType.name}' deleted successfully` });
     } catch (error) {
         next(error);
     }

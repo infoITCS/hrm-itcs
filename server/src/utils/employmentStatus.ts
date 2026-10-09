@@ -29,3 +29,12 @@ export function isPayrollEligibleStatus(status: string): boolean {
     if (!normalized) return true;
     return !PAYROLL_EXCLUDED_STATUSES.includes(normalized as (typeof PAYROLL_EXCLUDED_STATUSES)[number]);
 }
+
+/** Excluded from receiving any system notifications / automated emails */
+export const EMAIL_EXCLUDED_STATUSES = ['Terminated', 'Resigned', 'On Hold', 'Hold'] as const;
+
+export function isEmailEligibleStatus(status?: string | null): boolean {
+    const s = (status || '').trim().toLowerCase();
+    if (!s) return true;
+    return !['terminated', 'resigned', 'on hold', 'hold'].includes(s);
+}

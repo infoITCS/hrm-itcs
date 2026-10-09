@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck, Sliders } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck, Sliders, UserPlus, Link2 } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
@@ -28,6 +29,7 @@ interface UserData {
 }
 
 const UserManagement = () => {
+    const navigate = useNavigate();
     const { role: currentUserRole } = usePermissions();
     const { impersonate } = useAuth();
     const [subTab, setSubTab] = useState<'users' | 'permissions'>('users');
@@ -37,6 +39,10 @@ const UserManagement = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState('all');
     const [error, setError] = useState<string | null>(null);
+
+    // Smart Prompt Modal after user creation without profile
+    const [showSmartPromptModal, setShowSmartPromptModal] = useState(false);
+    const [newlyCreatedUser, setNewlyCreatedUser] = useState<any>(null);
 
     // Modal state
     const [showInviteModal, setShowInviteModal] = useState(false);
@@ -214,13 +220,18 @@ const UserManagement = () => {
                 body: JSON.stringify(inviteData)
             });
 
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.message || 'Failed to create user');
-            }
+            const createdUser = await res.json();
 
             await fetchUsers();
+            await fetchEmployees();
             setShowInviteModal(false);
+
+            // Smart Prompt: If no profile was linked during creation, prompt to create or link one!
+            if (!inviteData.employeeId) {
+                setNewlyCreatedUser(createdUser);
+                setShowSmartPromptModal(true);
+            }
+
             setInviteData({ email: '', firstName: '', lastName: '', role: 'employee', employeeId: '' });
         } catch (err: any) {
             setAlertConfig({
@@ -356,18 +367,18 @@ const UserManagement = () => {
                 )}
             </div>
 
-            {/* Sub-Tabs: Role Permissions is strictly restricted to Super Admin */}
-            {currentUserRole === 'super-admin' && (
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-fit">
-                    <button
-                        onClick={() => setSubTab('users')}
-                        className={`flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-                            subTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                        <Users size={16} />
-                        <span>Users Directory</span>
-                    </button>
+            {/* Sub-Tabs: Users Directory | Workflow Tasks | Role Permissions */}
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-fit flex-wrap gap-1">
+                <button
+                    onClick={() => setSubTab('users')}
+                    className={`flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                        subTab === 'users' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <Users size={16} />
+                    <span>Users Directory</span>
+                </button>
+                {currentUserRole === 'super-admin' && (
                     <button
                         onClick={() => setSubTab('permissions')}
                         className={`flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
@@ -377,8 +388,8 @@ const UserManagement = () => {
                         <ShieldCheck size={16} />
                         <span>Role Permissions</span>
                     </button>
-                </div>
-            )}
+                )}
+            </div>
 
             {error && (
                 <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 flex items-center gap-3">
@@ -850,6 +861,119 @@ const UserManagement = () => {
                     }}
                     onSaved={() => fetchUsers()}
                 />
+            )}
+
+            {/* Smart Prompt Modal: Prompt Admin after creating a user with no linked profile */}
+            {showSmartPromptModal && newlyCreatedUser && createPortal(
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-6 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white relative">
+                            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mb-3">
+                                <UserPlus size={26} className="text-white" />
+                            </div>
+                            <h3 className="text-xl font-bold">New User Created!</h3>
+                            <p className="text-indigo-100 text-xs mt-1">
+                                An email account provisioning task has been scheduled for Tech.
+                            </p>
+                            <button
+                                onClick={() => {
+                                    setShowSmartPromptModal(false);
+                                    setNewlyCreatedUser(null);
+                                }}
+                                className="absolute top-5 right-5 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            {/* User badge */}
+                            <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+                                    {newlyCreatedUser.firstName ? newlyCreatedUser.firstName[0] : 'U'}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-bold text-slate-800 truncate">
+                                        {[newlyCreatedUser.firstName, newlyCreatedUser.lastName].filter(Boolean).join(' ') || newlyCreatedUser.email}
+                                    </p>
+                                    <p className="text-xs text-slate-500 truncate">{newlyCreatedUser.email}</p>
+                                </div>
+                                <span className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 shrink-0">
+                                    No Profile Linked
+                                </span>
+                            </div>
+
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                This user does not have a linked Personnel (PIM) employee profile yet. How would you like to proceed?
+                            </p>
+
+                            {/* Option 1: Create New Profile (Recommended) */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const u = newlyCreatedUser;
+                                    setShowSmartPromptModal(false);
+                                    setNewlyCreatedUser(null);
+                                    navigate(`/pim/add?userId=${u._id}&firstName=${encodeURIComponent(u.firstName || '')}&lastName=${encodeURIComponent(u.lastName || '')}&email=${encodeURIComponent(u.email || '')}`);
+                                }}
+                                className="w-full text-left p-4 rounded-2xl border-2 border-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 hover:border-indigo-700 transition-all flex items-start gap-4 group"
+                            >
+                                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform shadow-md shadow-indigo-200">
+                                    <UserPlus size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-sm font-bold text-indigo-950">Create New Employee Profile</h4>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-full">Recommended</span>
+                                    </div>
+                                    <p className="text-xs text-indigo-800/80 mt-1">
+                                        Open the Add Employee wizard with name & email pre-filled to set up their salary, job details, and benefits.
+                                    </p>
+                                </div>
+                            </button>
+
+                            {/* Option 2: Link to Existing Unlinked Profile */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const u = newlyCreatedUser;
+                                    setShowSmartPromptModal(false);
+                                    setNewlyCreatedUser(null);
+                                    setLinkingUser(u);
+                                    setShowLinkModal(true);
+                                }}
+                                className="w-full text-left p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-all flex items-start gap-4 group"
+                            >
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                                    <Link2 size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="text-sm font-bold text-slate-800">Link to Existing Profile</h4>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Connect this login to an employee profile already created in the PIM directory.
+                                    </p>
+                                </div>
+                            </button>
+
+                            {/* Option 3: Skip */}
+                            <div className="pt-2 text-center">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowSmartPromptModal(false);
+                                        setNewlyCreatedUser(null);
+                                    }}
+                                    className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    Skip for now (you can link or create profile later)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
         </div>
     );

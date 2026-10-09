@@ -42,6 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                             : '',
                         firstName: userData.firstName,
                         lastName: userData.lastName,
+                        department: userData.department,
                         hasProfile: userData.hasProfile,
                         needsPasswordSetup: userData.needsPasswordSetup,
                         microsoftId: userData.microsoftId,

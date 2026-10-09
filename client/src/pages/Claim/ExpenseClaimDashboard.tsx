@@ -752,7 +752,36 @@ const ExpenseClaimDashboard = () => {
         return list.filter(c => {
             const matchesClaimNo = !filterClaimNo || (c.claimNo || '').toLowerCase().includes(filterClaimNo.toLowerCase());
             const matchesCategory = !filterCategory || c.category === filterCategory;
-            const matchesStatus = !filterStatus || c.status === filterStatus;
+            let matchesStatus = true;
+            if (filterStatus) {
+                const now = new Date();
+                const curMonth = now.getMonth() + 1;
+                const curYear = now.getFullYear();
+
+                if (filterStatus === 'Approved:CurrentMonthPayroll') {
+                    const isApproved = c.status === 'Approved';
+                    const inPayroll = c.payoutStatus === 'Included in Payroll' || c.payoutStatus === 'Paid' || Boolean(c.payrollRunId);
+
+                    const runMonth = typeof c.payrollRunId === 'object' ? c.payrollRunId?.periodMonth : null;
+                    const runYear = typeof c.payrollRunId === 'object' ? c.payrollRunId?.periodYear : null;
+
+                    const isThisMonth = (runMonth === curMonth && runYear === curYear) ||
+                                        (c.payoutStatus === 'Included in Payroll') ||
+                                        (c.paidAt && new Date(c.paidAt).getMonth() + 1 === curMonth && new Date(c.paidAt).getFullYear() === curYear);
+
+                    matchesStatus = isApproved && inPayroll && Boolean(isThisMonth);
+                } else if (filterStatus === 'Approved:InPayroll') {
+                    const isApproved = c.status === 'Approved';
+                    const inPayroll = c.payoutStatus === 'Included in Payroll' || c.payoutStatus === 'Paid' || Boolean(c.payrollRunId);
+                    matchesStatus = isApproved && inPayroll;
+                } else if (filterStatus === 'Approved:PendingPayroll') {
+                    const isApproved = c.status === 'Approved';
+                    const notInPayroll = c.payoutStatus !== 'Included in Payroll' && c.payoutStatus !== 'Paid' && !c.payrollRunId;
+                    matchesStatus = isApproved && notInPayroll;
+                } else {
+                    matchesStatus = c.status === filterStatus;
+                }
+            }
             
             let matchesEmployee = true;
             if (filterEmployeeName) {
@@ -1807,9 +1836,22 @@ const ExpenseClaimDashboard = () => {
                                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                             >
                                 <option value="">All Statuses</option>
-                                {['Draft', 'Submitted', 'Pending Line Manager', 'Pending HR', 'Pending Finance', 'Action Required', 'Approved', 'Declined', 'Cancelled'].map(s => (
-                                    <option key={s} value={s}>{s}</option>
-                                ))}
+                                <optgroup label="Payroll & Payout">
+                                    <option value="Approved:CurrentMonthPayroll">Approved (In Current Month Payroll)</option>
+                                    <option value="Approved:InPayroll">Approved (In Payroll - Any Month)</option>
+                                    <option value="Approved:PendingPayroll">Approved (Pending Payroll / Unpaid)</option>
+                                </optgroup>
+                                <optgroup label="Standard Statuses">
+                                    <option value="Approved">Approved (All)</option>
+                                    <option value="Submitted">Submitted</option>
+                                    <option value="Pending Line Manager">Pending Line Manager</option>
+                                    <option value="Pending HR">Pending HR</option>
+                                    <option value="Pending Finance">Pending Finance</option>
+                                    <option value="Action Required">Action Required</option>
+                                    <option value="Draft">Draft</option>
+                                    <option value="Declined">Declined</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </optgroup>
                             </select>
 
                             <input
@@ -2836,6 +2878,15 @@ const ExpenseClaimDashboard = () => {
                                 <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                     <span className="font-bold text-slate-700 mr-1">
                                         Summary ({filteredHistoryTotals.activeCount} active {filteredHistoryTotals.activeCount === 1 ? 'claim' : 'claims'}
+                                        {filterStatus === 'Approved:CurrentMonthPayroll' && (
+                                            <span className="text-indigo-600 font-extrabold"> · Included in Current Month Payroll</span>
+                                        )}
+                                        {filterStatus === 'Approved:InPayroll' && (
+                                            <span className="text-purple-600 font-extrabold"> · Included in Payroll</span>
+                                        )}
+                                        {filterStatus === 'Approved:PendingPayroll' && (
+                                            <span className="text-amber-600 font-extrabold"> · Approved, Pending Payroll Inclusion</span>
+                                        )}
                                         {filteredHistory.length > filteredHistoryTotals.activeCount && (
                                             <span className="text-slate-400 font-normal"> · {filteredHistory.length - filteredHistoryTotals.activeCount} declined/cancelled excluded</span>
                                         )}):
@@ -2943,6 +2994,14 @@ const ExpenseClaimDashboard = () => {
                                                                     {c.payoutStatus || 'Unpaid'}
                                                                 </span>
                                                             )
+                                                        )}
+                                                        {c.payrollRunId && typeof c.payrollRunId === 'object' && c.payrollRunId.title && (
+                                                            <span
+                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200"
+                                                                title={`Included in ${c.payrollRunId.title}`}
+                                                            >
+                                                                📄 {c.payrollRunId.title}
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </td>

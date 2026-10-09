@@ -389,6 +389,18 @@ function NotificationBell() {
                             ))
                         )}
                     </div>
+
+                    <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-center">
+                        <button
+                            onClick={() => {
+                                setShowDropdown(false);
+                                navigate('/notifications');
+                            }}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors block w-full py-1 cursor-pointer"
+                        >
+                            View All Notifications & Tasks →
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

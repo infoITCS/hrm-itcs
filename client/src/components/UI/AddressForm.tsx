@@ -408,10 +408,14 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass, headerActio
     };
 
     return (
-        <div className={disabled ? 'opacity-75 pointer-events-none' : ''}>
+        <div>
             <div className="flex items-center justify-between mb-1">
                 <h3 className="text-lg font-medium text-gray-700">{title}</h3>
-                {headerAction}
+                {headerAction && (
+                    <div className="pointer-events-auto">
+                        {headerAction}
+                    </div>
+                )}
             </div>
             {subtitle && <p className="text-xs text-gray-400 mb-4">{subtitle}</p>}
             
@@ -427,7 +431,7 @@ const AddressForm = ({ title, subtitle, value, onChange, inputClass, headerActio
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-5 bg-slate-50 rounded-2xl border border-slate-100 transition-opacity ${disabled ? 'opacity-60 pointer-events-none select-none' : ''}`}>
 
                 {/* Street — free text */}
                 <div className="space-y-1">

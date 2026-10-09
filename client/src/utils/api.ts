@@ -62,8 +62,11 @@ export const api = {
     payrollBankAdvicePdf: (id: string) => `${API_BASE_URL}/api/payroll/${id}/bank-advice-pdf`,
     payrollExportBankExcel: (id: string) => `${API_BASE_URL}/api/payroll/${id}/export-bank-excel`,
     payrollErpTask: (id: string) => `${API_BASE_URL}/api/payroll/${id}/erp-task`,
+    pfErpRef: (id: string) => `${API_BASE_URL}/api/employees/${id}/pf-erp-ref`,
+    notifications: `${API_BASE_URL}/api/my-requests/notifications`,
     payrollMyPayslips: `${API_BASE_URL}/api/payroll/my-payslips`,
     payslip: (id: string) => `${API_BASE_URL}/api/payroll/payslips/${id}`,
+    payslipLoanErp: (id: string) => `${API_BASE_URL}/api/payroll/payslips/${id}/loan-erp`,
 
     // ZKTeco Cloud API proxy endpoints (server proxies to 192.168.0.74:8081)
     zktStatus:       `${API_BASE_URL}/api/attendance/zkt/status`,
@@ -101,6 +104,8 @@ export const api = {
         if (employeeId) params.append('employeeId', employeeId);
         return `${API_BASE_URL}/api/employees/check-duplicate?${params.toString()}`;
     },
+    workflowTasks: `${API_BASE_URL}/api/workflow-tasks`,
+    workflowTask: (id: string) => `${API_BASE_URL}/api/workflow-tasks/${id}`,
 };
 
 export default api;

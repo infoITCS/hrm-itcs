@@ -1521,8 +1521,9 @@ router.get('/:id/pf-statement-pdf', authenticateFile, async (req: Request, res: 
                 const periodStr = entry.periodMonth && entry.periodYear 
                     ? `${MONTH_SHORT_local[entry.periodMonth]} ${entry.periodYear}` 
                     : '-';
-                doc.text(periodStr, cols.period.x, rowY + 6);
-                doc.text(entry.description || (entry.source === 'manual' ? 'Previous PF Balance' : 'PF Contribution'), cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
+                const baseDesc = entry.description || (entry.source === 'manual' ? 'Previous PF Balance' : 'PF Contribution');
+                const erpTag = entry.erpReferenceId ? ` [ERP: ${entry.erpReferenceId}]` : '';
+                doc.text(baseDesc + erpTag, cols.desc.x, rowY + 6, { width: cols.desc.w, lineBreak: false });
 
                 const srcLabel = entry.source === 'manual' ? 'manual' : 'payroll';
                 doc.fillColor(entry.source === 'manual' ? '#92400e' : '#1e40af')
@@ -2521,7 +2522,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         const newStatus = updatedEmployee.employmentStatus?.status || (typeof updatedEmployee.employmentStatus === 'string' ? updatedEmployee.employmentStatus : '');
         const offboardingStatuses = ['Terminated', 'Resigned', 'Offboarded'];
         if (offboardingStatuses.includes(newStatus) && oldStatus !== newStatus) {
-            triggerOffboardingTasks(updatedEmployee, null, newStatus, req.headers.origin as string).catch(err => {
+            triggerOffboardingTasks(updatedEmployee, null, newStatus, req.headers.origin as string).catch((err: any) => {
                 logger.error(`[EmployeeUpdate] Failed triggering offboarding workflow:`, err);
             });
         }
@@ -2565,7 +2566,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Fu
         }
 
         // Trigger offboarding tasks
-        triggerOffboardingTasks(employee, null, 'Deleted', req.headers.origin as string).catch(err => {
+        triggerOffboardingTasks(employee, null, 'Deleted', req.headers.origin as string).catch((err: any) => {
             logger.error(`[EmployeeDelete] Failed triggering offboarding workflow:`, err);
         });
 

@@ -18,6 +18,7 @@ import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 // import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminSettings from './pages/Admin/AdminSettings';
+import WorkflowTasksPage from './pages/Admin/WorkflowTasksPage';
 import Directory from './pages/Directory/Directory';
 
 ///test stash
@@ -44,10 +45,12 @@ import ProvidentFundReport from './pages/Payroll/ProvidentFundReport';
 import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
 import MyLoans from './pages/Payroll/MyLoans';
+import NotificationsPage from './pages/Notifications/NotificationsPage';
 
 // Dynamic Page Titles Mapping
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/notifications': 'Pending Tasks & Notifications',
   '/my-info': 'My Profile',
   '/pim': 'Personnel Information (PIM)',
   '/pim/add': 'Add Employee',
@@ -71,6 +74,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/reset-password': 'Reset Password',
   '/onboarding': 'Welcome Onboarding',
   '/zkt-monitor': 'Biometric Device Monitor',
+  '/workflow-tasks': 'Workflow Tasks',
 };
 
 const PageTitleHandler = () => {
@@ -230,9 +234,12 @@ function AppRoutes() {
         {/* Restricted to Super Admins & Admins */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="admin" element={<UserManagement />} />
+          <Route path="admin/users" element={<UserManagement />} />
         </Route>
 
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="my-requests" element={<MyRequests />} />
+        <Route path="workflow-tasks" element={<WorkflowTasksPage />} />
         
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
           <Route path="my-requests/manage" element={<SubModuleProtectedRoute moduleName="requests" subTabKey="manage-requests"><AdminRequests /></SubModuleProtectedRoute>} />
