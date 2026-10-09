@@ -118,7 +118,7 @@ export const usePermissions = () => {
         // Manage requests is restricted to reviewers/approvers by default
         if (moduleName === 'requests') {
             if (subTabKey === 'manage-requests') {
-                return ['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(normalizedRole);
+                return ['super-admin', 'admin', 'hr', 'manager'].includes(normalizedRole);
             }
         }
 

@@ -241,7 +241,7 @@ function AppRoutes() {
         <Route path="my-requests" element={<MyRequests />} />
         <Route path="workflow-tasks" element={<WorkflowTasksPage />} />
         
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr']} />}>
           <Route path="my-requests/manage" element={<SubModuleProtectedRoute moduleName="requests" subTabKey="manage-requests"><AdminRequests /></SubModuleProtectedRoute>} />
         </Route>
         

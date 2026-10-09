@@ -55,8 +55,8 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'My Payslips', icon: FileText, path: '/my-payslips', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
         { name: 'My Loans', icon: HandCoins, path: '/my-loans', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'], end: true },
         { name: 'Payroll Management', icon: Banknote, path: '/payroll', roles: ['super-admin', 'admin', 'hr', 'finance'], module: 'payroll', subTab: 'payroll-runs' },
-        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, module: 'requests', subTab: 'my-requests', end: true },
-        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'manager', 'hr', 'finance'], module: 'requests', subTab: 'manage-requests' },
+        { name: 'My Requests', icon: Inbox, path: '/my-requests', roles: null, end: true },
+        { name: 'Manage Requests', icon: ClipboardList, path: '/my-requests/manage', roles: ['super-admin', 'admin', 'manager', 'hr'], module: 'requests', subTab: 'manage-requests' },
         { name: 'Provident Fund', icon: PiggyBank, path: '/provident-fund', roles: null, module: 'provident-fund' },
         { name: 'Loan Management', icon: Banknote, path: '/admin/loans', roles: ['super-admin', 'admin', 'hr'], module: 'loans', end: true },
     ];

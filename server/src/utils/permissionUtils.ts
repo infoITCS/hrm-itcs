@@ -90,7 +90,7 @@ export const SYSTEM_MODULES: SystemModuleDefinition[] = [
         name: 'Custom Requests & Approvals',
         subTabs: [
             { key: 'my-requests', name: 'My Submitted Requests', defaultRoles: ['all'] },
-            { key: 'manage-requests', name: 'Manage & Approve Requests', defaultRoles: ['super-admin', 'admin', 'hr', 'finance', 'manager'] },
+            { key: 'manage-requests', name: 'Manage & Approve Requests', defaultRoles: ['super-admin', 'admin', 'hr', 'manager'] },
             { key: 'request-categories', name: 'Request Form Templates', defaultRoles: ['super-admin', 'admin', 'hr'] },
         ]
     },
