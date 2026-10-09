@@ -118,12 +118,37 @@ router.delete('/departments/:id', authenticate, requireAdmin, async (req: Reques
 
 // --- Designations ---
 
+const DEFAULT_INTERN_DESIGNATIONS = [
+    { name: 'Sales Intern', description: 'Internship role in Sales & Business Development', isActive: true },
+    { name: 'Pre-Sales Intern', description: 'Internship role in Pre-Sales & Technical Solutions', isActive: true },
+    { name: 'Business Development Intern', description: 'Internship role in Corporate Sales & Partnerships', isActive: true },
+    { name: 'Marketing Intern', description: 'Internship role in Marketing & Brand Outreach', isActive: true },
+    { name: 'Digital Marketing Intern', description: 'Internship role in Social Media & Digital Ads', isActive: true },
+    { name: 'Graphic Design Intern', description: 'Internship role in Creative Design & Visual Assets', isActive: true },
+    { name: 'Finance Intern', description: 'Internship role in Financial Planning & Analysis', isActive: true },
+    { name: 'Accounts Intern', description: 'Internship role in Accounting & Bookkeeping', isActive: true },
+    { name: 'Admin Intern', description: 'Internship role in Office Administration & Operations', isActive: true },
+    { name: 'HR Intern', description: 'Internship role in Human Resources & Talent Acquisition', isActive: true },
+    { name: 'Technical Intern', description: 'Internship role in Systems, Networking & Technical Support', isActive: true },
+    { name: 'Network & Cloud Intern', description: 'Internship role in Cloud Infrastructure & Systems', isActive: true },
+    { name: 'IT Support Intern', description: 'Internship role in IT Helpdesk & Hardware Support', isActive: true },
+    { name: 'Development Intern', description: 'Internship role in Software Engineering & Programming', isActive: true },
+    { name: 'Software Development Intern', description: 'Internship role in Application & Web Development', isActive: true },
+    { name: 'QA / Testing Intern', description: 'Internship role in Quality Assurance & Software Testing', isActive: true },
+    { name: 'AI / ML Intern', description: 'Internship role in Artificial Intelligence & Machine Learning', isActive: true },
+    { name: 'Operations Intern', description: 'Internship role in Operations & Process Management', isActive: true }
+];
+
 /**
  * @route   GET /api/config/designations
  * @desc    Get all designations
  */
 router.get('/designations', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const count = await Designation.countDocuments();
+        if (count === 0) {
+            await Designation.insertMany(DEFAULT_INTERN_DESIGNATIONS);
+        }
         const designations = await Designation.find().sort({ name: 1 });
         res.json(designations);
     } catch (error) {
