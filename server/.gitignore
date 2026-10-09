@@ -17,13 +17,9 @@ dist
 .env.production.local
 .env.development.local
 
-# Uploads (keep structure but ignore files)
+# Uploads (keep structure but ignore all upload files)
 uploads/*
 !uploads/.gitkeep
-!uploads/afreen_signature.*
-!uploads/appointment_signature.*
-!uploads/itcs_stamp.*
-!uploads/logo.png
 
 # Editor directories and files
 .vscode/*

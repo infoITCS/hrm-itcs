@@ -4,6 +4,20 @@ export interface ICompany extends Document {
     name: string;
     subdomain?: string;
     logoUrl?: string;
+    // CEO / Executive Signatory (Appointment Letters & Contracts)
+    ceoSignatureUrl?: string;
+    ceoSignatoryName?: string;
+    ceoSignatoryTitle?: string;
+
+    // HR Signatory (Offer Letters, Experience Letters, Payslips)
+    hrSignatureUrl?: string;
+    hrSignatoryName?: string;
+    hrSignatoryTitle?: string;
+
+    signatureUrl?: string;
+    stampUrl?: string;
+    signatoryName?: string;
+    signatoryTitle?: string;
     branding: {
         primaryColor: string;
         secondaryColor: string;
@@ -31,6 +45,16 @@ const CompanySchema: Schema = new Schema({
     name: { type: String, required: true },
     subdomain: { type: String, unique: true, sparse: true },
     logoUrl: { type: String },
+    ceoSignatureUrl: { type: String },
+    ceoSignatoryName: { type: String, default: 'Founder & CEO' },
+    ceoSignatoryTitle: { type: String, default: 'Chief Executive Officer' },
+    hrSignatureUrl: { type: String },
+    hrSignatoryName: { type: String, default: 'Manager HR' },
+    hrSignatoryTitle: { type: String, default: 'Human Resources' },
+    signatureUrl: { type: String },
+    stampUrl: { type: String },
+    signatoryName: { type: String, default: 'Authorized Signatory' },
+    signatoryTitle: { type: String, default: 'Human Resources' },
     branding: {
         primaryColor: { type: String, default: '#4A1248' },
         secondaryColor: { type: String, default: '#731868' }

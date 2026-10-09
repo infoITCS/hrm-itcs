@@ -57,9 +57,8 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
         'working hours': vars.workingHours || '09:00 AM - 06:00 PM',
         'start time': vars.startTime || '09:00 AM',
         'end time': vars.endTime || '06:00 PM',
-        'notice period': vars.noticePeriod || '30 Days',
-        'authorized signatory name': (vars.signatoryName && vars.signatoryName !== 'Authorized Signatory') ? vars.signatoryName : 'Afreen Saeed',
-        'designation': (vars.signatoryDesignation && vars.signatoryDesignation !== 'Manager Human Resources') ? vars.signatoryDesignation : 'Manager HR, IT Consulting and Services (ITCS)',
+        'authorized signatory name': vars.signatoryName || 'Authorized Signatory',
+        'designation': vars.signatoryDesignation || 'Authorized Signatory',
         'reporting manager': vars.reportingManager || '',
         'employee name': vars.employeeName || '',
         'gross salary': vars.grossSalary || '',
@@ -107,28 +106,24 @@ const numberToWords = (num: number): string => {
     return inWords(Math.round(num)).trim() + ' only';
 };
 
-// Signature candidates for HR documents
-const signatureCandidates = [
-    path.join(__dirname, '../../uploads/afreen_signature.jpg'),
-    path.join(__dirname, '../../../client/public/afreen_signature.jpg'),
-    path.join(__dirname, '../../uploads/afreen_signature.png'),
-    path.join(__dirname, '../../../client/public/afreen_signature.png')
-];
-
-// Specific signature candidates for Appointment Letter
-const appointmentSignatureCandidates = [
-    path.join(__dirname, '../../uploads/appointment_signature.png'),
-    path.join(__dirname, '../../../client/public/appointment_signature.png'),
-    path.join(__dirname, '../../uploads/appointment_signature.jpg'),
-    path.join(__dirname, '../../../client/public/appointment_signature.jpg')
-];
-
-const stampCandidates = [
-    path.join(__dirname, '../../uploads/itcs_stamp.jpg'),
-    path.join(__dirname, '../../../client/public/itcs_stamp.jpg'),
-    path.join(__dirname, '../../uploads/itcs_stamp.png'),
-    path.join(__dirname, '../../../client/public/itcs_stamp.png')
-];
+// Helper to safely render image from base64 data URI or file path in PDFKit
+function drawImageBufferOrPath(doc: any, imgSource: string | undefined | null, x: number, y: number, options: any): boolean {
+    if (!imgSource) return false;
+    try {
+        if (imgSource.startsWith('data:image/')) {
+            const base64Data = imgSource.replace(/^data:image\/\w+;base64,/, '');
+            const buffer = Buffer.from(base64Data, 'base64');
+            doc.image(buffer, x, y, options);
+            return true;
+        } else if (fs.existsSync(imgSource)) {
+            doc.image(imgSource, x, y, options);
+            return true;
+        }
+    } catch (e) {
+        console.warn('[PDF Document] Could not render image:', e);
+    }
+    return false;
+}
 
 // Helper to draw letterhead (branded design matching ITCS official template)
 const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
@@ -209,19 +204,20 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .fill(magentaAccent);
 
     // 3. Spaced Subtext above Banner
+    const compName = company?.name || 'Organization';
     doc.fillColor('#475569')
        .fontSize(7.5)
        .font('Helvetica-Bold')
-       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 40, doc.page.height - 47, { align: 'center', width: doc.page.width - 80, lineBreak: false });
+       .text(compName.toUpperCase(), 40, doc.page.height - 47, { align: 'center', width: doc.page.width - 80, lineBreak: false });
 
-    // 4. Bottom Purple Ribbon Banner
+    // 4. Bottom Ribbon Banner
     const bannerHeight = 36;
     const bannerY = doc.page.height - bannerHeight;
 
     // Background bar
-    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill('#3B0A42');
+    doc.rect(0, bannerY, doc.page.width, bannerHeight).fill(darkPurple);
 
-    // Left and Right Magenta Accent Chevrons
+    // Left and Right Accent Chevrons
     doc.save()
        .moveTo(0, bannerY)
        .lineTo(95, bannerY)
@@ -239,6 +235,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .fill(magentaAccent);
 
     // Left Email Icon (Envelope vector) + address
+    const compEmail = (company?.contact?.email || 'info@company.com').toUpperCase();
     const envX = 42;
     const envY = bannerY + 6;
     doc.save()
@@ -246,9 +243,10 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .moveTo(envX, envY).lineTo(envX + 5.5, envY + 3.5).lineTo(envX + 11, envY).stroke()
        .restore();
     doc.fillColor('#FFFFFF').fontSize(6).font('Helvetica-Bold')
-       .text('INFO@ITCS.COM.PK', 5, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
+       .text(compEmail, 5, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
 
     // Right Phone Icon (Phone vector) + number
+    const compPhone = company?.contact?.phone || '';
     const phX = doc.page.width - 50;
     const phY = bannerY + 5;
     doc.save()
@@ -256,28 +254,35 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .circle(phX + 3.5, phY + 7.5, 0.5).fillColor('#FFFFFF').fill()
        .restore();
     doc.fillColor('#FFFFFF').fontSize(6).font('Helvetica-Bold')
-       .text('+92 21 111-482-711', doc.page.width - 90, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
+       .text(compPhone, doc.page.width - 90, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
 
-    // Middle 3 Office Addresses with bold cities
+    // Middle Office Addresses
     const addrY = bannerY + 5;
     const addrWidth = doc.page.width - 220;
     const addrX = 110;
 
     const renderAddrLine = (city: string, text: string, yPos: number) => {
         doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#FFFFFF');
-        const cityPrefix = city + ': ';
-        const cityWidth = doc.widthOfString(cityPrefix);
+        const cityPrefix = city ? city + ': ' : '';
+        const cityWidth = cityPrefix ? doc.widthOfString(cityPrefix) : 0;
         const textWidth = doc.font('Helvetica').widthOfString(text);
         const totalW = cityWidth + textWidth;
         const startX = addrX + Math.max(0, (addrWidth - totalW) / 2);
 
-        doc.font('Helvetica-Bold').text(cityPrefix, startX, yPos, { continued: true });
-        doc.font('Helvetica').text(text, { continued: false });
+        if (cityPrefix) {
+            doc.font('Helvetica-Bold').text(cityPrefix, startX, yPos, { continued: true });
+        }
+        doc.font('Helvetica').text(text, cityPrefix ? undefined : startX, yPos, { continued: false });
     };
 
-    renderAddrLine('Karachi', '6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', addrY);
-    renderAddrLine('Lahore', 'Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', addrY + 9.5);
-    renderAddrLine('Islamabad', 'Office # 14, Ground Floor, Malik Plaza F-8 Markaz', addrY + 19);
+    const addr1 = company?.contact?.addressLine1 || '';
+    const addr2 = company?.contact?.addressLine2 || '';
+    if (addr1 && addr2) {
+        renderAddrLine('', addr1, addrY + 4);
+        renderAddrLine('', addr2, addrY + 14);
+    } else if (addr1) {
+        renderAddrLine('', addr1, addrY + 9);
+    }
 
     // Restore text defaults and saved layout position
     doc.page.margins.bottom = oldBottomMargin;
@@ -595,85 +600,53 @@ const renderCompleteDocument = (
             hasRenderedSignatory = true;
             doc.moveDown(0.5);
 
-            doc.fontSize(9.5).font('Helvetica').fillColor('#1E293B').text('Sincerely,', 48, doc.y);
-            doc.moveDown(0.15);
-
             const isAppointment = documentType.toLowerCase().includes('appointment') || docTitle.toLowerCase().includes('appointment');
 
-            if (isAppointment) {
-                doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text('ITCS (IT Consulting and Services)', 48, doc.y);
-                doc.moveDown(0.2);
+            // Select corresponding signatory:
+            // - Appointment Letters -> CEO / Executive Signatory
+            // - Offer Letters, Experience Letters, Payslips, etc. -> HR Signatory
+            const targetSigUrl = isAppointment
+                ? (company?.ceoSignatureUrl || company?.signatureUrl)
+                : (company?.hrSignatureUrl || company?.signatureUrl);
 
-                const sigImgY = doc.y + 2;
-                let sigDrawn = false;
-                for (const p of appointmentSignatureCandidates) {
-                    if (fs.existsSync(p)) {
-                        try {
-                            doc.image(p, 48, sigImgY, { height: 42 });
-                            sigDrawn = true;
-                            break;
-                        } catch (e) {}
-                    }
-                }
+            const resolvedSignatoryName = isAppointment
+                ? (company?.ceoSignatoryName || vars.signatoryName || 'Founder & CEO')
+                : (company?.hrSignatoryName || vars.signatoryName || 'Manager HR');
 
-                let stampDrawn = false;
-                for (const p of stampCandidates) {
-                    if (fs.existsSync(p)) {
-                        try {
-                            doc.image(p, 130, sigImgY + 2, { height: 38 });
-                            stampDrawn = true;
-                            break;
-                        } catch (e) {}
-                    }
-                }
+            const resolvedSignatoryTitle = isAppointment
+                ? (company?.ceoSignatoryTitle || vars.signatoryDesignation || 'Chief Executive Officer')
+                : (company?.hrSignatoryTitle || vars.signatoryDesignation || 'Human Resources');
 
-                doc.y = sigImgY + 46;
-                const ceoName = (vars.signatoryName && vars.signatoryName !== 'Afreen Saeed' && vars.signatoryName !== 'Authorized Signatory')
-                    ? vars.signatoryName
-                    : 'Faraz Anwer';
-                const ceoTitle = (vars.signatoryDesignation && !vars.signatoryDesignation.includes('Manager HR') && !vars.signatoryDesignation.includes('Authorized Signatory'))
-                    ? vars.signatoryDesignation
-                    : 'Founder & CEO';
+            const compName = company?.name || vars.companyName || 'Organization';
+            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text(compName, 48, doc.y);
+            doc.moveDown(0.2);
 
-                doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(ceoName, 48, doc.y);
-                doc.fontSize(9.5).font('Helvetica').fillColor('#1E293B').text(ceoTitle, 48, doc.y);
-                doc.moveDown(0.3);
-                continue;
-            }
-
-            // Standard HR signatory for other letters
-            const defaultName = 'Afreen Saeed';
-            const sigName = vars.signatoryName || defaultName;
-            const sigNameFormatted = sigName.endsWith(',') ? sigName : sigName + ',';
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(sigNameFormatted, 48, doc.y);
-
-            // Draw signature image and stamp image side-by-side
+            // Dynamic Company Signature & Stamp
             const sigImgY = doc.y + 2;
             let sigDrawn = false;
-            for (const p of signatureCandidates) {
-                if (fs.existsSync(p)) {
-                    try {
-                        doc.image(p, 48, sigImgY, { height: 35 });
-                        sigDrawn = true;
-                        break;
-                    } catch (e) {}
-                }
-            }
-
             let stampDrawn = false;
-            for (const p of stampCandidates) {
-                if (fs.existsSync(p)) {
-                    try {
-                        doc.image(p, 130, sigImgY, { height: 35 });
-                        stampDrawn = true;
-                        break;
-                    } catch (e) {}
-                }
+
+            // 1. Draw target signature (CEO or HR) if uploaded for this company
+            if (targetSigUrl) {
+                sigDrawn = drawImageBufferOrPath(doc, targetSigUrl, 48, sigImgY, { height: 38 });
             }
 
-            doc.y = sigImgY + 39;
-            const sigTitle = vars.signatoryDesignation || 'Manager HR, IT Consulting and Services (ITCS)';
-            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text(sigTitle, 48, doc.y);
+            // 2. Draw official company stamp if uploaded for this company
+            if (company?.stampUrl) {
+                stampDrawn = drawImageBufferOrPath(doc, company.stampUrl, sigDrawn ? 130 : 48, sigImgY, { height: 38 });
+            }
+
+            // If neither signature image nor stamp is uploaded, draw a clean signature line
+            if (!sigDrawn && !stampDrawn) {
+                doc.fontSize(9).font('Helvetica').fillColor('#94A3B8').text('_________________________________', 48, sigImgY + 8);
+                doc.y = sigImgY + 24;
+            } else {
+                doc.y = sigImgY + 42;
+            }
+
+            // Render dynamic signatory name and title
+            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(resolvedSignatoryName, 48, doc.y);
+            doc.fontSize(9.5).font('Helvetica').fillColor('#475569').text(resolvedSignatoryTitle, 48, doc.y);
 
             const isPayslipDoc = documentType.toLowerCase().includes('pay slip') || documentType.toLowerCase().includes('salary') || docTitle.toLowerCase().includes('pay slip') || docTitle.toLowerCase().includes('salary statement');
             if (isPayslipDoc) {
@@ -1180,8 +1153,8 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             totalNetPay3Months: req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
             totalNetPay: req.body.customVars?.totalNetPay || req.body.customVars?.totalNetPay3Months || String(totalNetPay3Num),
             grossSalaryWords: numberToWords(Number(String(req.body.customVars?.grossSalary || singleGrossSal || totalGrossSalary || 0).replace(/[^0-9]/g, ''))),
-            signatoryName: req.body.customVars?.signatoryName || ((rawDocType || '').toLowerCase().includes('appointment') ? 'Faraz Anwer' : 'Afreen Saeed'),
-            signatoryDesignation: req.body.customVars?.signatoryDesignation || ((rawDocType || '').toLowerCase().includes('appointment') ? 'Founder & CEO' : 'Manager HR, IT Consulting and Services (ITCS)'),
+            signatoryName: req.body.customVars?.signatoryName || ((rawDocType || '').toLowerCase().includes('appointment') ? (company?.ceoSignatoryName || 'Founder & CEO') : (company?.hrSignatoryName || 'Manager HR')),
+            signatoryDesignation: req.body.customVars?.signatoryDesignation || ((rawDocType || '').toLowerCase().includes('appointment') ? (company?.ceoSignatoryTitle || 'Chief Executive Officer') : (company?.hrSignatoryTitle || 'Human Resources')),
             hrEmail: company?.contact?.email || 'info@itcs.com.pk',
             hrPhone: company?.contact?.phone || '+92 21 111-482-711',
             ...(req.body.customVars || {}),
@@ -1453,8 +1426,8 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             totalNetPay3Months: '564,150',
             totalNetPay: '564,150',
             grossSalaryWords: 'Three Hundred Thousand only',
-            signatoryName: (templateData?.documentType || '').toLowerCase().includes('appointment') ? 'Faraz Anwer' : 'Afreen Saeed',
-            signatoryDesignation: (templateData?.documentType || '').toLowerCase().includes('appointment') ? 'Founder & CEO' : 'Manager HR, IT Consulting and Services (ITCS)',
+            signatoryName: (templateData?.documentType || '').toLowerCase().includes('appointment') ? (companyData?.ceoSignatoryName || 'Founder & CEO') : (companyData?.hrSignatoryName || 'Manager HR'),
+            signatoryDesignation: (templateData?.documentType || '').toLowerCase().includes('appointment') ? (companyData?.ceoSignatoryTitle || 'Chief Executive Officer') : (companyData?.hrSignatoryTitle || 'Human Resources'),
             hrEmail: companyData?.contact?.email || 'info@itcs.com.pk',
             hrPhone: companyData?.contact?.phone || '+92 21 111-482-711',
             city: 'Karachi',

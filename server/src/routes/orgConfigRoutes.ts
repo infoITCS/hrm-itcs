@@ -440,9 +440,21 @@ router.get('/company', authenticate, async (req: Request, res: Response, next: N
  */
 router.put('/company', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { name, logoUrl, branding, contact, payrollSettings, workflowSettings } = req.body;
+        const {
+            name, logoUrl,
+            ceoSignatureUrl, ceoSignatoryName, ceoSignatoryTitle,
+            hrSignatureUrl, hrSignatoryName, hrSignatoryTitle,
+            signatureUrl, stampUrl, signatoryName, signatoryTitle,
+            branding, contact, payrollSettings, workflowSettings
+        } = req.body;
 
-        const updateFields: any = { name, logoUrl, branding, contact };
+        const updateFields: any = {
+            name, logoUrl,
+            ceoSignatureUrl, ceoSignatoryName, ceoSignatoryTitle,
+            hrSignatureUrl, hrSignatoryName, hrSignatoryTitle,
+            signatureUrl, stampUrl, signatoryName, signatoryTitle,
+            branding, contact
+        };
         if (payrollSettings) updateFields.payrollSettings = payrollSettings;
         if (workflowSettings) updateFields.workflowSettings = workflowSettings;
 
