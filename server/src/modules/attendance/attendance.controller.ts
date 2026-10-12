@@ -337,9 +337,9 @@ export async function updateRecord(req: AuthRequest, res: Response) {
         const record = await repo.findRecordById(req.params.id);
         if (!record) return res.status(404).json({ success: false, message: 'Record not found' });
 
-        // Authorization: only super-admin/admin/manager/hr can modify records
-        if (!['super-admin', 'admin', 'manager', 'hr'].includes(req.user?.role || '')) {
-            return res.status(403).json({ success: false, message: 'Access denied: only Admin, HR, Super Admin, or Manager can update records.' });
+        // Authorization: only super-admin/admin/hr can modify records
+        if (!['super-admin', 'admin', 'hr'].includes(req.user?.role || '')) {
+            return res.status(403).json({ success: false, message: 'Access denied: only Admin or HR can update records.' });
         }
 
         if (status && !VALID_STATUSES.includes(status)) {

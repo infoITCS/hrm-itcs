@@ -196,8 +196,8 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
         const link = document.createElement('a');
         link.setAttribute('href', url);
         const filename = isMonthly 
-            ? `Leave_Balances_${selectedYear}_${currentMonthLabel}.csv`
-            : `Leave_Balances_${selectedYear}.csv`;
+            ? `${role === 'manager' ? 'Team_' : ''}Leave_Balances_${selectedYear}_${currentMonthLabel}.csv`
+            : `${role === 'manager' ? 'Team_' : ''}Leave_Balances_${selectedYear}.csv`;
         link.setAttribute('download', filename);
         document.body.appendChild(link);
         link.click();
@@ -245,9 +245,11 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
                         </div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                <h2 className="text-sm sm:text-base font-bold text-slate-800 whitespace-nowrap">Employee Leave Balances</h2>
+                                <h2 className="text-sm sm:text-base font-bold text-slate-800 whitespace-nowrap">
+                                    {role === 'manager' ? 'Team Leave Balances' : 'Employee Leave Balances'}
+                                </h2>
                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100/80 whitespace-nowrap">
-                                    {filteredBalances.length} {filteredBalances.length === 1 ? 'Employee' : 'Employees'}
+                                    {filteredBalances.length} {filteredBalances.length === 1 ? (role === 'manager' ? 'Team Member' : 'Employee') : (role === 'manager' ? 'Team Members' : 'Employees')}
                                 </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-0.5 truncate sm:whitespace-normal">
@@ -537,7 +539,7 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
                                 {filteredBalances.length === 0 && (
                                     <tr>
                                         <td colSpan={3 + leaveTypesHeader.length} className="py-12 text-center text-slate-400 font-bold">
-                                            No employee leave balances matching your query found.
+                                            No {role === 'manager' ? 'team member' : 'employee'} leave balances matching your query found.
                                         </td>
                                     </tr>
                                 )}

@@ -77,13 +77,16 @@ const LeaveDashboard = () => {
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
     const [editingLeave, setEditingLeave] = useState<any>(null);
     const [searchParams] = useSearchParams();
-    type LeaveTab = 'my-leaves' | 'team-requests' | 'settings' | 'holiday-settings';
+    type LeaveTab = 'my-leaves' | 'team-requests' | 'team-balances' | 'settings' | 'holiday-settings';
     const [activeTab, setActiveTab] = useState<LeaveTab>(() => {
         const tabParam = searchParams.get('tab');
         if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
             return 'team-requests';
         }
-        if (tabParam === 'settings' || tabParam === 'balances' || tabParam === 'all-balances' || tabParam === 'reports') return 'settings';
+        if (tabParam === 'team-balances') return 'team-balances';
+        if (tabParam === 'settings' || tabParam === 'balances' || tabParam === 'all-balances' || tabParam === 'reports') {
+            return role === 'manager' ? 'team-balances' : 'settings';
+        }
         if (tabParam === 'holiday-settings') return 'holiday-settings';
         return 'my-leaves';
     });
@@ -92,6 +95,7 @@ const LeaveDashboard = () => {
     const { role, hasSubAccess } = usePermissions();
     const canMyLeaves = hasSubAccess('leave', 'my-leaves');
     const canTeamRequests = ['super-admin', 'admin', 'manager', 'hr'].includes(role) && hasSubAccess('leave', 'team-requests');
+    const canTeamBalances = role === 'manager' && canTeamRequests;
     const canSettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'all-leaves');
     const canHolidaySettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'holidays');
     const isManagement = canTeamRequests;
@@ -246,23 +250,29 @@ const LeaveDashboard = () => {
         const tabParam = searchParams.get('tab');
         if (tabParam === 'team-requests' || tabParam === 'team' || tabParam === 'requests' || tabParam === 'approvals') {
             if (isManagement) setActiveTab('team-requests');
+        } else if (tabParam === 'team-balances') {
+            if (canTeamBalances) setActiveTab('team-balances');
         } else if (tabParam === 'settings' || tabParam === 'balances' || tabParam === 'all-balances' || tabParam === 'reports') {
             if (isAdmin) setActiveTab('settings');
+            else if (canTeamBalances) setActiveTab('team-balances');
         } else if (tabParam === 'holiday-settings') {
             if (isAdmin) setActiveTab('holiday-settings');
         } else if (tabParam === 'my-leaves') {
             setActiveTab('my-leaves');
         }
-    }, [searchParams, isManagement, isAdmin]);
+    }, [searchParams, isManagement, isAdmin, canTeamBalances]);
 
     useEffect(() => {
         if (!isManagement && activeTab === 'team-requests') {
             setActiveTab('my-leaves');
         }
+        if (!canTeamBalances && activeTab === 'team-balances') {
+            setActiveTab('my-leaves');
+        }
         if (!isAdmin && (activeTab === 'settings' || activeTab === 'holiday-settings')) {
             setActiveTab('my-leaves');
         }
-    }, [isManagement, isAdmin, activeTab]);
+    }, [isManagement, isAdmin, canTeamBalances, activeTab]);
 
     const getCardStyling = (code: string, index: number) => {
         const colorPalette = ['indigo', 'rose', 'emerald', 'amber'];
@@ -434,6 +444,16 @@ const STATUS_COLORS: any = {
                                 {activeTab === 'team-requests' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
                             </button>
                         )}
+
+                        {canTeamBalances && (
+                            <button 
+                                onClick={() => setActiveTab('team-balances')}
+                                className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'team-balances' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Team Leave Balances
+                                {activeTab === 'team-balances' && <div className="absolute -bottom-1 left-0 right-0 h-1 bg-indigo-600 rounded-full shadow-lg shadow-indigo-100" />}
+                            </button>
+                        )}
                     </div>
 
                     {activeTab === 'my-leaves' && (
@@ -462,6 +482,12 @@ const STATUS_COLORS: any = {
                                 setRefreshCounter(prev => prev + 1);
                             }}
                         />
+                    ) : activeTab === 'team-balances' ? (
+                        <div className="p-6 bg-slate-50/50">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                                <AllLeaveBalances refreshTrigger={refreshCounter} />
+                            </div>
+                        </div>
                     ) : activeTab === 'settings' ? (
                         <div className="flex flex-col gap-6 p-6 bg-slate-50/50">
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">

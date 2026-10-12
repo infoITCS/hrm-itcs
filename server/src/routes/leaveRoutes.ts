@@ -629,12 +629,12 @@ router.get('/mine', authenticate, async (req: Request, res: Response, next: Next
     }
 });
 
-// GET /api/leaves/balances/all - Get leave balances of all employees (Admin/HR only, with optional month filter)
+// GET /api/leaves/balances/all - Get leave balances (Admin/HR/Finance for all, Managers for their own team only)
 router.get('/balances/all', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const user = authReq.user as any;
-        if (!['super-admin', 'admin', 'hr', 'finance'].includes(user?.role || '')) {
+        if (!['super-admin', 'admin', 'hr', 'finance', 'manager'].includes(user?.role || '')) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
@@ -646,8 +646,35 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
         // Fetch all active leave types
         const activeTypes = await LeaveType.find({ isActive: true }).sort({ name: 1 });
 
-        // Fetch all employees
-        const employees = await Employee.find().select('userId firstName middleName lastName employeeId workEmail email jobInfo employmentStatus gender maritalStatus dependents maternityBaselineChildCount');
+        // Scoping for manager role: strictly restrict to their own team members
+        let employeeQuery: any = {};
+        if (user?.role === 'manager') {
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId: user.userId },
+                    { _id: mongoose.isValidObjectId(user.userId) ? user.userId : undefined },
+                    { employeeId: user.userId }
+                ]
+            }).select('employeeId _id userId jobInfo').lean() as any;
+
+            if (managerEmployee) {
+                const managerIdentifiers = [
+                    managerEmployee.employeeId,
+                    managerEmployee._id ? String(managerEmployee._id) : '',
+                    managerEmployee.userId ? String(managerEmployee.userId) : '',
+                    String(user.userId)
+                ].filter(Boolean);
+
+                employeeQuery = {
+                    'jobInfo.reportingManager': { $in: managerIdentifiers }
+                };
+            } else {
+                employeeQuery = { _id: null };
+            }
+        }
+
+        // Fetch employees (all for Admin/HR/Finance, team-scoped for Managers)
+        const employees = await Employee.find(employeeQuery).select('userId firstName middleName lastName employeeId workEmail email jobInfo employmentStatus gender maritalStatus dependents maternityBaselineChildCount');
 
         // Fetch all leave balances for the given year
         const balances = await LeaveBalance.find({ year });
@@ -801,9 +828,39 @@ router.get('/balance', authenticate, async (req: Request, res: Response, next: N
             return res.status(400).json({ success: false, message: 'No Employee profile linked to this user' });
         }
 
-        // Only admins can query other users' balances
+        // Restrict querying other users' balances
         if (authReq.user?.role === 'employee' && targetId !== authReq.user?.userId) {
             return res.status(403).json({ success: false, message: 'Forbidden' });
+        }
+
+        if (authReq.user?.role === 'manager' && targetId !== authReq.user?.userId) {
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId: authReq.user.userId },
+                    { _id: mongoose.isValidObjectId(authReq.user.userId) ? authReq.user.userId : undefined },
+                    { employeeId: authReq.user.userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            const managerIdentifiers = managerEmployee ? [
+                managerEmployee.employeeId,
+                managerEmployee._id ? String(managerEmployee._id) : '',
+                managerEmployee.userId ? String(managerEmployee.userId) : '',
+                String(authReq.user.userId)
+            ].filter(Boolean) : [String(authReq.user.userId)];
+
+            const isReport = await Employee.exists({
+                $or: [
+                    { employeeId: targetId },
+                    { userId: targetId },
+                    ...(mongoose.isValidObjectId(targetId) ? [{ _id: targetId }] : [])
+                ],
+                'jobInfo.reportingManager': { $in: managerIdentifiers }
+            });
+
+            if (!isReport && targetId !== managerEmployee?.employeeId) {
+                return res.status(403).json({ success: false, message: 'Forbidden: You can only view leave balances for your own team members.' });
+            }
         }
 
         const { lookupIds, canonicalEmployeeId, employee: targetEmp } = await resolveEmployeeLookupIds(targetId);

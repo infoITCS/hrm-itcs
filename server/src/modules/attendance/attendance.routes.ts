@@ -14,7 +14,7 @@ import * as ctrl from './attendance.controller';
 const router = Router();
 
 const ADMIN_ROLES   = ['super-admin', 'admin', 'hr'];
-const EDIT_ROLES    = ['super-admin', 'admin', 'manager', 'hr'];
+const EDIT_ROLES    = ['super-admin', 'admin', 'hr'];
 const MANAGER_ROLES = ['super-admin', 'admin', 'manager', 'hr'];
 const ALL_ROLES     = ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'];
 

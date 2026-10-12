@@ -14,6 +14,7 @@ import LeaveType from '../models/LeaveType';
 import LeaveBalance from '../models/LeaveBalance';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { formatEmployeeFullName } from '../utils/nameHelper';
+import { decryptEmployeeFields } from '../utils/encryption';
 
 const router = express.Router();
 
@@ -523,13 +524,22 @@ const renderCompleteDocument = (
        .text('Date: ', textMargin, dateY, { continued: true, characterSpacing: 0.1 });
     doc.font(fonts.regular).fillColor('#000000').text(vars.date || formatOrdinalDate(new Date()), { continued: false, characterSpacing: 0.1 });
 
+    const isToWhomItMayConcern = 
+        (template.content || '').toUpperCase().includes('TO WHOM IT MAY CONCERN') ||
+        (documentType || '').toLowerCase().includes('experience') ||
+        docTitle.includes('EXPERIENCE') ||
+        docTitle.includes('CERTIFICATE') ||
+        docTitle.includes('NOC') ||
+        docTitle.includes('NO OBJECTION');
+
     // Right: Recipient block (starts at y = 175, below origami decoration, right-aligned to inside text margin)
+    // Only rendered for specific addressee letters (Offer/Appointment/Contract), NOT for To Whom It May Concern / Experience Letters
     const recipientName = vars.employeeName || vars.internName || '';
     const recipientCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
     const recipientEmail = vars.personalEmail || vars.workEmail || '';
 
     let headerBottomY = dateY + 20;
-    if (recipientName && recipientName !== '—') {
+    if (!isToWhomItMayConcern && recipientName && recipientName !== '—') {
         const rightBoxWidth = 240;
         const rightBoxX = doc.page.width - textMargin - rightBoxWidth;
         const recipientY = 175;
@@ -635,7 +645,15 @@ const renderCompleteDocument = (
         }
 
         // Salutation (Dear ... / To Whom It May Concern)
-        if (trimmedUpper.startsWith('DEAR ') || trimmedUpper.startsWith('TO WHOM IT MAY CONCERN')) {
+        if (trimmedUpper.startsWith('TO WHOM IT MAY CONCERN')) {
+            doc.moveDown(0.25);
+            doc.fontSize(11).font(fonts.bold).fillColor('#000000')
+               .text('To Whom It May Concern,', textMargin, doc.y, { align: 'left', characterSpacing: 0.1 });
+            doc.moveDown(0.35);
+            continue;
+        }
+
+        if (trimmedUpper.startsWith('DEAR ')) {
             doc.moveDown(0.1);
             doc.fontSize(10).font(fonts.regular).fillColor('#000000')
                .text(trimmed, textMargin, doc.y, { align: 'left', characterSpacing: 0.1 });
@@ -857,6 +875,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         if (!employee) {
             return res.status(404).json({ message: 'Employee profile not found' });
         }
+        decryptEmployeeFields(employee);
 
         // Fetch Company configs for single-tenant deployment
         const company = await Company.findOne().lean() as any;
@@ -873,11 +892,11 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         }).lean() as any;
 
         // Auto-seed or update default template if missing/outdated
-        const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as an {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
+        const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department from {{joiningDate}} to {{lastWorkingDay}}. {{pronounCapitalizedPossessive}} last drawn permanent monthly gross salary was PKR {{confirmedSalary}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
 
         const defaultAppointmentText = `With reference to your application for employment with ITCS (IT Consulting and Services), we are pleased to offer you the position of {{designation}}. You will be based in {{workLocation}} with effect from {{joiningDate}} on the terms and conditions given below.\n\nYour terms of appointment will be governed by the rules and regulations applicable to the above-mentioned designation as per the Human Resources Policy Manual of the Company. The Company, however, reserves the right to change the applicable rules and regulations at its entire discretion, without advance notice, in which case your employment shall be governed by such revised rules and regulations.\n\nSalary and Benefits:\nYour monthly gross salary will be Rs. {{grossSalary}} ({{grossSalaryWords}}) during the probationary period and will remain Rs. {{grossSalary}} ({{grossSalaryWords}}) upon successful completion of probation and confirmation.\n\nYour benefit entitlement will be in accordance with the policies approved by the Company and shall be subject to the applicable Company policies from time to time.\n\nUpon successful completion of the probationary period, you will be entitled to the following benefits, subject to Company policy:\n• Meal allowance/benefit\n• Fuel allowance/benefit\n• Company-provided SIM card and applicable mobile package\n• Provident Fund / Company Share Plan, as applicable under Company policy\n• Medical allowance\n• Any other benefits applicable to employees in your cadre under Company policy\n\nThe above benefits shall become applicable after successful completion of the probationary period and confirmation. The Company reserves the right to modify its benefit policies from time to time, and you shall be bound by such modifications.\n\nProbationary Period:\nYour confirmation is subject to a satisfactory probationary period of three (3) months. The Company reserves the right to extend the probationary period at its discretion. Unless your employment is confirmed in writing, you shall continue to be employed on probation.\n\nOn satisfactory completion of your probation period, your employment with the Company may be confirmed in writing, whereupon you will be entitled to the Company benefits applicable to permanent staff in your cadre from the date of confirmation.\n\nAnnual Incentive Plan:\nYou will be entitled to the Annual Incentive Plan of the Company, if applicable, as per Company Policy.\n\nMedical Policy:\nUpon confirmation, you will be entitled to the applicable medical allowance/benefit in accordance with the Company’s prevailing Medical Policy.\n\nMobile Connection:\nUpon confirmation, you will be entitled to a Company-provided SIM card and mobile package, subject to the applicable Company policy and usage limits.\n\nReporting Hierarchy:\nYour reporting line will be to {{reportingManager}}, who will assign you duties and responsibilities in carrying out your day-to-day activities. The Company may, at its discretion, change the reporting line and/or the requirements of the position assigned.\n\nReferences / Academic Verification:\nThe Company reserves the right to solicit information regarding yourself from any of your previous employers. Upon your representation, we understand that your educational degree(s) are from accredited institution(s); however, the Company further reserves the right to seek verification regarding your educational qualifications and respective academic institutions from relevant authorities. Your appointment and confirmation are subject to receiving satisfactory references/authentication when such reference/verification checks are conducted.\n\nTermination of Service:\nDuring the probationary period, either the Company or you may terminate the employment without cause and at any time by giving 24 hours’ notice in writing to the other party.\n\nAfter confirmation, either party may terminate this Agreement without cause by giving 30 days’ notice in writing to the other party, or by making payment equivalent to 30 days’ salary in lieu of notice.\n\nNotwithstanding anything herein contained, the Company shall be entitled to terminate your employment with immediate effect and without advance notice (or any payment in lieu of notice) in case of misconduct, which shall include but shall not be limited to willful insubordination.\n\nThe Company reserves the right to terminate the services at any time without prior notice if the employee’s continued association/employment with the Company is prejudicial to the image and/or interests of the Company.\n\nIn case of termination of service due to misconduct or disciplinary action, the Company will reserve the right to withhold compensation to the extent permitted under applicable law and Company policy.\n\nEmployee Provident Fund / Company Share Plan:\nUpon confirmation, you will be entitled to participate in the Provident Fund and/or Company Share Plan, as applicable, subject to the eligibility criteria, terms and conditions, and policies of the Company.\n\nLeave Entitlement:\nYou will be allowed twenty (20) working days of Annual Leave for each completed year of service. Earned Leave can be availed after confirmation only as detailed in policy. You are also entitled to ten (10) paid sick leaves.\n\nLeave cannot be encashed or accumulated. Any leave balance at the end of the calendar year will automatically lapse. The Company may frame and modify Leave rules from time to time, which shall be binding upon you.\n\nTraining and Development:\nThe Company offers training and development opportunities for all employees. All local and foreign training will be governed by the prevailing Training Policy.\n\nRetirement:\nYou will be retired from the service of the Company on attaining the age of 60 years. You may be retired earlier on the grounds of ill health or physical or mental incapacity to work, subject to applicable Company policy and law.\n\nFalse Information:\nIf the Company determines at any time that your recruitment was made as a result of the submission of false information and/or forged documents, the employment contract will be automatically cancelled without prior notice, reward, or compensation, subject to applicable law.\n\nExclusive Service and Confidentiality Agreement:\nDuring the period of your employment with the Company, you will perform all such duties anywhere in Pakistan as are assigned to you from time to time by the Company or its associates depending upon the exigencies of business. The Company also reserves the right to transfer you to any location within Pakistan.\n\nSince in the course of your employment you would be disclosed information which is confidential and proprietary to the Company, and which it would be a breach of trust to disclose or make available, particularly to a competitor of the Company, you undertake to maintain complete confidentiality in regard to the Company’s information, processes, operations, and business activities at all times, whether during or after your employment with the Company.\n\nWhile in the Company’s service, you will not be employed at any time directly or indirectly with any other employer or any other business, subject to applicable law and Company policy.\n\nService Rules and Regulations:\nYour appointment is subject to the rules and regulations in force in the Company or any amendments, alterations, or modifications that may be made therein from time to time.\n\nWe welcome you to ITCS (IT Consulting and Services) and wish you a successful career with the Company.\n\nValidity:\nPlease provide the Company with your acceptance of the offer and joining date by returning a signed copy of this letter within 7 working days. This offer will expire if:\na) You do not provide your acceptance within 7 days; and/or\nb) You do not join, at the latest, within 10 working days after your proposed and mutually agreed joining date.\n\nSincerely,\nITCS (IT Consulting and Services)\n\nFaraz Anwer\nFounder & CEO\n\nEmployee Acceptance\nI, {{employeeName}}, accept the appointment offer and its terms.\nSignature: ____________________\nDate: ________________________`;
 
-        if (template && (rawDocType === 'Experience Letter' || template.documentType === 'Experience Letter') && !template.content.includes('Afreen Saeed')) {
+        if (template && (rawDocType === 'Experience Letter' || template.documentType === 'Experience Letter') && (!template.content.includes('confirmedSalary') || !template.content.includes('Afreen Saeed'))) {
             await DocumentTemplate.updateOne(
                 { _id: template._id },
                 { $set: { subject: 'EXPERIENCE LETTER', content: defaultExperienceText } }
@@ -951,7 +970,7 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
                 },
                 'Experience Letter': {
                     subject: 'EXPERIENCE LETTER',
-                    content: `Date: {{date}}\n\nTo Whom It May Concern,\n\nSubject: Experience Certificate – ITCS\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as {{designation}} from {{joiningDate}} to {{lastWorkingDay}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in future endeavors. We wish {{pronounObject}} every success in professional career.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`
+                    content: defaultExperienceText
                 },
                 'Employment Certificate': {
                     subject: 'EMPLOYMENT VERIFICATION CERTIFICATE',
@@ -1044,6 +1063,30 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             ? String(employee.financeInfo.confirmedSalary) 
             : (req.body.customVars?.confirmedSalary || (totalGrossSalary !== undefined ? String(totalGrossSalary) : ''));
 
+        // 1. Fetch latest payslip for single Pay Slip & fallback gross pay
+        const latestPayslip = await Payslip.findOne({
+            employeeId: employee.employeeId
+        }).sort({ periodYear: -1, periodMonth: -1 }).lean() as any;
+
+        // Format permanent latest salary with standard comma separation
+        let permanentSalaryNum = 0;
+        if (employee.financeInfo?.confirmedSalary) {
+            permanentSalaryNum = Number(String(employee.financeInfo.confirmedSalary).replace(/[^0-9.]/g, '')) || 0;
+        }
+        if (!permanentSalaryNum && totalGrossSalary) {
+            permanentSalaryNum = totalGrossSalary;
+        }
+        if (!permanentSalaryNum && latestPayslip?.grossPay) {
+            permanentSalaryNum = latestPayslip.grossPay;
+        }
+        if (!permanentSalaryNum && basicSalaryAmount) {
+            permanentSalaryNum = basicSalaryAmount;
+        }
+
+        const formattedConfirmedSalary = req.body.customVars?.confirmedSalary
+            ? (/^\d+$/.test(req.body.customVars.confirmedSalary) ? Number(req.body.customVars.confirmedSalary).toLocaleString('en-US') : req.body.customVars.confirmedSalary)
+            : (permanentSalaryNum > 0 ? permanentSalaryNum.toLocaleString('en-US') : (confSal && confSal !== '0' ? confSal : '—'));
+
         const isHrOrAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(authReq.user?.role || '');
 
         const pr = getPronouns(employee.gender);
@@ -1114,11 +1157,6 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
         const defaultGrossNum = totalGrossSalary || 0;
         const defaultBasicNum = basicSalaryAmount || 0;
         const defaultAllowancesNum = Math.max(0, defaultGrossNum - defaultBasicNum);
-
-        // 1. Fetch latest payslip for single Pay Slip
-        const latestPayslip = await Payslip.findOne({
-            employeeId: employee.employeeId
-        }).sort({ periodYear: -1, periodMonth: -1 }).lean() as any;
 
         let singlePayPeriod = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
         let singleBasicSal = defaultBasicNum ? String(defaultBasicNum) : '';
@@ -1263,7 +1301,9 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             resignationDate: req.body.customVars?.resignationDate || lastWorkingDayStr,
             settlementDays: req.body.customVars?.settlementDays || '30',
             companyResources: 'Official Laptop, Email Account, and ID Card',
-            confirmedSalary: confSal,
+            confirmedSalary: formattedConfirmedSalary,
+            permanentSalary: formattedConfirmedSalary,
+            latestSalary: formattedConfirmedSalary,
             commissionStructure: 'Performance-based quarterly bonuses as per company policy',
             benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
             taxCondition: 'Subject to applicable income tax laws and company policy',
@@ -1343,7 +1383,9 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             purpose: purposeText || 'Official Verification',
             purposeDetail: purposeText || 'Official Verification',
             probationSalary: '0',
-            confirmedSalary: '0'
+            confirmedSalary: '0',
+            permanentSalary: '0',
+            latestSalary: '0'
         };
 
         // Scan template.content to find ALL tags used in this template
@@ -1551,6 +1593,8 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             probationSalary: '150,000',
             companyResources: 'Official Laptop, Email Account, and ID Card',
             confirmedSalary: '200,050',
+            permanentSalary: '200,050',
+            latestSalary: '200,050',
             commissionStructure: 'Performance-based quarterly bonuses as per company policy',
             benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
             taxCondition: 'Subject to applicable income tax laws and company policy',

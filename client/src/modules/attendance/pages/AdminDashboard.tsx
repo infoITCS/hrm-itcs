@@ -30,6 +30,7 @@ import SheetPreviewModal from '../components/SheetPreviewModal';
 import AttendanceCalendarView from '../components/AttendanceCalendarView';
 import AlertModal from '../../../components/UI/AlertModal';
 import EmployeeDashboard from './EmployeeDashboard';
+import { usePermissions } from '../../../hooks/usePermissions';
 
 type Tab = 'overview' | 'calendar' | 'personal';
 
@@ -77,9 +78,9 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // ─── Roster Row ───────────────────────────────────────────────────────────────
 // ─── Roster Row ───────────────────────────────────────────────────────────────
 function RosterRow({ 
-    entry, isNew, isPast, onClick, onEdit 
+    entry, isNew, isPast, onClick, onEdit, canEdit = true 
 }: { 
-    entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void 
+    entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void; canEdit?: boolean 
 }) {
     const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(entry.status);
     const isMissing = !isNonWorking && entry.status === 'Incomplete' && isPast;
@@ -196,17 +197,19 @@ function RosterRow({
             {/* Method */}
             <td className="py-3 px-4 text-xs text-slate-400">{entry.verifyType || '—'}</td>
             {/* Actions */}
-            <td className="py-3 px-4 text-right">
-                {onEdit && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                        title="Edit Record"
-                    >
-                        <Edit2 size={14} />
-                    </button>
-                )}
-            </td>
+            {canEdit && (
+                <td className="py-3 px-4 text-right">
+                    {onEdit && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Edit Record"
+                        >
+                            <Edit2 size={14} />
+                        </button>
+                    )}
+                </td>
+            )}
         </tr>
     );
 }
@@ -233,6 +236,8 @@ function ZktStatusBadge() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
+    const { role } = usePermissions();
+    const canEditAttendance = ['super-admin', 'admin', 'hr'].includes(role);
     const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<Tab>('overview');
     const [date, setDate] = useState(todayStr());
@@ -604,7 +609,7 @@ export default function AdminDashboard() {
                             )}
                         </div>
 
-                        {date !== todayStr() && (
+                        {canEditAttendance && date !== todayStr() && (
                             <button 
                                 onClick={() => setIsAutoCloseModalOpen(true)}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors shrink-0"
@@ -663,7 +668,9 @@ export default function AdminDashboard() {
                                     {renderSortableRosterHeader('late', 'Late')}
                                     {renderSortableRosterHeader('status', 'Status')}
                                     {renderSortableRosterHeader('method', 'Method')}
-                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                                    {canEditAttendance && (
+                                        <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody>
@@ -673,7 +680,8 @@ export default function AdminDashboard() {
                                         entry={entry} 
                                         isPast={date !== todayStr()} 
                                         onClick={() => setSelectedEmp({ id: entry.employeeId, name: entry.employeeName })}
-                                        onEdit={() => setEditingEmp(entry)}
+                                        onEdit={canEditAttendance ? () => setEditingEmp(entry) : undefined}
+                                        canEdit={canEditAttendance}
                                     />
                                 ))}
                             </tbody>
@@ -837,8 +845,8 @@ export default function AdminDashboard() {
                                 days={calendarData.days}
                                 month={calendarMonth}
                                 employeeName={calendarEmployeeName || calendarData.employeeName}
-                                canEdit={true}
-                                onDayClick={(day) => setCalendarEditingDay(day)}
+                                canEdit={canEditAttendance}
+                                onDayClick={canEditAttendance ? (day) => setCalendarEditingDay(day) : undefined}
                             />
                         </div>
                     ) : (

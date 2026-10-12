@@ -501,6 +501,14 @@ router.put('/company', authenticate, requireAdmin, async (req: Request, res: Res
  */
 router.get('/templates', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const expTpl = await DocumentTemplate.findOne({ documentType: 'Experience Letter' });
+        if (expTpl && (!expTpl.content.includes('confirmedSalary') || !expTpl.content.includes('Afreen Saeed'))) {
+            const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department from {{joiningDate}} to {{lastWorkingDay}}. {{pronounCapitalizedPossessive}} last drawn permanent monthly gross salary was PKR {{confirmedSalary}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
+            await DocumentTemplate.updateOne(
+                { _id: expTpl._id },
+                { $set: { subject: 'EXPERIENCE LETTER', content: defaultExperienceText } }
+            );
+        }
         const templates = await DocumentTemplate.find();
         res.json(templates);
     } catch (error) {
