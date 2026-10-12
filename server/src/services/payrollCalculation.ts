@@ -222,7 +222,7 @@ export function computePayrollAmountTotals(payslips: any[]) {
         totalExpenseClaimsAmount,
         totalLoanDeductionsAmount,
         totalPfWithdrawalsAmount,
-        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount - totalPfWithdrawalsAmount + totalLoanDeductionsAmount,
+        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount - totalPfWithdrawalsAmount,
     };
 }
 

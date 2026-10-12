@@ -77,6 +77,11 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
     output = output.replace(/\s*\(["“']?the Company["”']?\)/gi, '');
     output = output.replace(/\s*\(["“']?the Employee["”']?\)/gi, '');
 
+    // Clean up any stray spaces or newlines right before punctuation marks
+    output = output.replace(/\s+([,.;:!?])/g, '$1');
+    output = output.replace(/\*\*\s+([,.;:!?])/g, '**$1');
+    output = output.replace(/\s+\*\*(?=[,.;:!?])/g, '**');
+
     return output;
 }
 
@@ -125,23 +130,94 @@ function drawImageBufferOrPath(doc: any, imgSource: string | undefined | null, x
     return false;
 }
 
+// Helper to register and use clean modern sans-serif fonts (Inter / Roboto)
+function ensureModernFonts(doc: any): { regular: string; bold: string } {
+    try {
+        const candidateDirs = [
+            path.join(__dirname, '../assets/fonts'),
+            path.join(__dirname, '../../assets/fonts'),
+            path.join(__dirname, 'assets/fonts')
+        ];
+        for (const dir of candidateDirs) {
+            const interReg = path.join(dir, 'Inter-Regular.ttf');
+            const interBold = path.join(dir, 'Inter-Bold.ttf');
+            if (fs.existsSync(interReg) && fs.existsSync(interBold)) {
+                try {
+                    doc.registerFont('Inter', interReg);
+                    doc.registerFont('Inter-Bold', interBold);
+                    return { regular: 'Inter', bold: 'Inter-Bold' };
+                } catch {
+                    return { regular: 'Inter', bold: 'Inter-Bold' };
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[PDF Document] Could not load Inter font:', e);
+    }
+    return { regular: 'Helvetica', bold: 'Helvetica-Bold' };
+}
+
 // Helper to draw letterhead (branded design matching ITCS official template)
 const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
     const savedY = doc.y;
     const oldBottomMargin = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
+    // 0. High-Fidelity Background Template Underlay (No-Code Background Letterhead)
+    const letterheadCandidates = [
+        company?.letterheadUrl && company.letterheadUrl.startsWith('data:image/') ? company.letterheadUrl : null,
+        company?.letterheadUrl ? path.join(__dirname, '../../', company.letterheadUrl) : null,
+        company?.letterheadUrl ? path.join(__dirname, '../', company.letterheadUrl) : null,
+        company?.letterheadUrl || null,
+        path.join(__dirname, '../../uploads/itcs_official_letterhead.png'),
+        path.join(__dirname, '../../../uploads/itcs_official_letterhead.png'),
+        path.join(__dirname, '../uploads/itcs_official_letterhead.png'),
+        path.join(__dirname, 'uploads/itcs_official_letterhead.png'),
+        path.join(__dirname, '../../uploads/letterhead.png')
+    ].filter(Boolean) as string[];
+
+    let letterheadDrawn = false;
+    for (const p of letterheadCandidates) {
+        if (p.startsWith('data:image/')) {
+            try {
+                const base64Data = p.replace(/^data:image\/\w+;base64,/, '');
+                const buffer = Buffer.from(base64Data, 'base64');
+                doc.image(buffer, 0, 0, { width: doc.page.width, height: doc.page.height });
+                letterheadDrawn = true;
+                break;
+            } catch (err) {
+                console.error('Error drawing base64 background letterhead:', err);
+            }
+        } else if (fs.existsSync(p)) {
+            try {
+                doc.image(p, 0, 0, { width: doc.page.width, height: doc.page.height });
+                letterheadDrawn = true;
+                break;
+            } catch (err) {
+                console.error('Error drawing image background letterhead:', err);
+            }
+        }
+    }
+
+    if (letterheadDrawn) {
+        // Official background underlay drawn: already contains logo, top-right origami graphics, and footer banner!
+        doc.page.margins.bottom = oldBottomMargin;
+        doc.y = savedY;
+        return;
+    }
+
     const darkPurple = company?.branding?.primaryColor || '#2B0938';
-    const plumMid = '#451052';
+    const plumMid = '#3B1047';
     const magentaAccent = company?.branding?.secondaryColor || '#5E1568';
 
-    // 1. Logo (Top-Left)
+    // 1. Logo (Top-Left) with Outer Margin (x = 40)
     let logoDrawn = false;
+    const outerMargin = 40;
     if (company?.logoUrl && company.logoUrl.startsWith('data:image/')) {
         try {
             const base64Data = company.logoUrl.replace(/^data:image\/\w+;base64,/, '');
             const buffer = Buffer.from(base64Data, 'base64');
-            doc.image(buffer, 48, 20, { width: 140, height: 60, fit: [140, 60] });
+            doc.image(buffer, outerMargin, 20, { width: 140, height: 60, fit: [140, 60] });
             logoDrawn = true;
         } catch (err) {
             console.error('Error rendering base64 company logo in letterhead:', err);
@@ -152,15 +228,15 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
         const candidatePaths = [
             company?.logoUrl ? path.join(__dirname, '../../', company.logoUrl) : null,
             company?.logoUrl ? company.logoUrl : null,
-            path.join(__dirname, '../../../client/src/assets/logo.png'),
             path.join(__dirname, '../../uploads/logo.png'),
+            path.join(__dirname, '../../../client/src/assets/logo.png'),
             path.join(__dirname, '../../../client/public/logo.png')
         ].filter(Boolean) as string[];
 
         for (const p of candidatePaths) {
             if (fs.existsSync(p)) {
                 try {
-                    doc.image(p, 48, 20, { width: 140, height: 60, fit: [140, 60] });
+                    doc.image(p, outerMargin, 20, { width: 140, height: 60, fit: [140, 60] });
                     logoDrawn = true;
                     break;
                 } catch (err) {
@@ -172,43 +248,52 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
 
     if (!logoDrawn) {
         const companyName = company?.name || 'IT CONSULTING & SERVICES';
-        doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text(companyName.toUpperCase(), 48, 35);
+        doc.fontSize(18).font('Helvetica-Bold').fillColor(darkPurple).text(companyName.toUpperCase(), outerMargin, 35);
     }
 
-    // 2. Top-Right Geometric Purple Decoration (ITCS Official Origami Ribbon)
-    // Upper Dark Purple Polygon
-    doc.save()
-       .moveTo(doc.page.width - 150, 0)
-       .lineTo(doc.page.width, 0)
-       .lineTo(doc.page.width, 115)
-       .lineTo(doc.page.width - 50, 95)
-       .closePath()
-       .fill(darkPurple);
+    // 2. Top-Right Geometric Purple Decoration (ITCS Official Origami Ribbon - Exact Match)
+    const cDark = company?.branding?.primaryColor || '#1D1139';    // Main upper midnight plum
+    const cStripe = '#60195B';                                    // Upper diagonal bevel stripe & crease shadow
+    const cMagenta = company?.branding?.secondaryColor || '#761F6E'; // Lower folded wing
 
-    // Mid plum facet
-    doc.save()
-       .moveTo(doc.page.width - 150, 0)
-       .lineTo(doc.page.width - 50, 95)
-       .lineTo(doc.page.width - 50, 115)
-       .lineTo(doc.page.width - 110, 0)
-       .closePath()
-       .fill(plumMid);
+    const W = doc.page.width;
 
-    // Lower Magenta Accent Flap Polygon
+    // Facet 1: Upper Main Dark Body (#1D1139) with downward-pointing 'V' angle
     doc.save()
-       .moveTo(doc.page.width - 50, 95)
-       .lineTo(doc.page.width - 50, 115)
-       .lineTo(doc.page.width, 175)
-       .lineTo(doc.page.width, 115)
+       .moveTo(W - 90, 0)
+       .lineTo(W, 0)
+       .lineTo(W, 48)
+       .lineTo(W - 14, 60)
        .closePath()
-       .fill(magentaAccent);
+       .fill(cDark)
+       .restore();
+
+    // Facet 2: Upper Diagonal Stripe & Crease Shadow (#60195B)
+    doc.save()
+       .moveTo(W - 105, 0)
+       .lineTo(W - 90, 0)
+       .lineTo(W - 14, 60)
+       .lineTo(W - 42, 95)
+       .lineTo(W - 42, 50)
+       .closePath()
+       .fill(cStripe)
+       .restore();
+
+    // Facet 3: Lower Folded Magenta Wing (#761F6E)
+    doc.save()
+       .moveTo(W - 42, 95)
+       .lineTo(W - 14, 60)
+       .lineTo(W, 48)
+       .lineTo(W, 142)
+       .closePath()
+       .fill(cMagenta)
+       .restore();
 
     // 3. Spaced Subtext above Banner
-    const compName = company?.name || 'Organization';
     doc.fillColor('#475569')
        .fontSize(7.5)
        .font('Helvetica-Bold')
-       .text(compName.toUpperCase(), 40, doc.page.height - 47, { align: 'center', width: doc.page.width - 80, lineBreak: false });
+       .text('I T C S   ( I T   C O N S U L T I N G   &   S E R V I C E S )', 40, doc.page.height - 47, { align: 'center', width: doc.page.width - 80, lineBreak: false });
 
     // 4. Bottom Ribbon Banner
     const bannerHeight = 36;
@@ -235,7 +320,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .fill(magentaAccent);
 
     // Left Email Icon (Envelope vector) + address
-    const compEmail = (company?.contact?.email || 'info@company.com').toUpperCase();
+    const compEmail = (company?.contact?.email || 'INFO@ITCS.COM.PK').toUpperCase();
     const envX = 42;
     const envY = bannerY + 6;
     doc.save()
@@ -246,7 +331,7 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
        .text(compEmail, 5, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
 
     // Right Phone Icon (Phone vector) + number
-    const compPhone = company?.contact?.phone || '';
+    const compPhone = company?.contact?.phone || '+92 21 111-482-711';
     const phX = doc.page.width - 50;
     const phY = bannerY + 5;
     doc.save()
@@ -256,13 +341,13 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
     doc.fillColor('#FFFFFF').fontSize(6).font('Helvetica-Bold')
        .text(compPhone, doc.page.width - 90, bannerY + 16, { width: 85, align: 'center', lineBreak: false });
 
-    // Middle Office Addresses
-    const addrY = bannerY + 5;
+    // Middle Office Addresses (3 exact lines matching Image 1)
+    const addrY = bannerY + 4;
     const addrWidth = doc.page.width - 220;
     const addrX = 110;
 
     const renderAddrLine = (city: string, text: string, yPos: number) => {
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#FFFFFF');
+        doc.font('Helvetica-Bold').fontSize(5.8).fillColor('#FFFFFF');
         const cityPrefix = city ? city + ': ' : '';
         const cityWidth = cityPrefix ? doc.widthOfString(cityPrefix) : 0;
         const textWidth = doc.font('Helvetica').widthOfString(text);
@@ -275,14 +360,9 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
         doc.font('Helvetica').text(text, cityPrefix ? undefined : startX, yPos, { continued: false });
     };
 
-    const addr1 = company?.contact?.addressLine1 || '';
-    const addr2 = company?.contact?.addressLine2 || '';
-    if (addr1 && addr2) {
-        renderAddrLine('', addr1, addrY + 4);
-        renderAddrLine('', addr2, addrY + 14);
-    } else if (addr1) {
-        renderAddrLine('', addr1, addrY + 9);
-    }
+    renderAddrLine('', 'Karachi: 6/K Block 2, P.E.C.H.S, Near Model School Karachi Pakistan', addrY + 1.5);
+    renderAddrLine('', 'Lahore: Office 32, 1st Floor, I.T Tower 73-E/1, Hali Rd, Block A Gulberg III', addrY + 9.5);
+    renderAddrLine('', 'Islamabad: Office # 14, Ground Floor, Malik Plaza F-8 Markaz', addrY + 17.5);
 
     // Restore text defaults and saved layout position
     doc.page.margins.bottom = oldBottomMargin;
@@ -294,20 +374,28 @@ const drawLetterhead = (doc: any, verifyUrl: string, company?: any) => {
 function renderRichText(
     doc: any,
     text: string,
-    options: { x?: number; width?: number; fontSize?: number; fontColor?: string; lineGap?: number; align?: string } = {}
+    options: { x?: number; width?: number; fontSize?: number; fontColor?: string; lineGap?: number; align?: string; characterSpacing?: number } = {}
 ) {
-    const x = options.x !== undefined ? options.x : 48;
-    const width = options.width || (doc.page.width - 96);
+    const fonts = ensureModernFonts(doc);
+    const defaultMargin = 64;
+    const x = options.x !== undefined ? options.x : defaultMargin;
+    const width = options.width || (doc.page.width - defaultMargin * 2);
     const fontSize = options.fontSize || 9.5;
-    const fontColor = options.fontColor || '#1E293B';
-    const lineGap = options.lineGap !== undefined ? options.lineGap : 2.5;
+    const fontColor = options.fontColor || '#000000';
+    const lineGap = options.lineGap !== undefined ? options.lineGap : 1.0; // compact 1.2 line-height
     const align = options.align || 'left';
+    const characterSpacing = options.characterSpacing !== undefined ? options.characterSpacing : 0.1; // 0.01em normal letter spacing
 
-    if (!text.includes('**')) {
-        doc.fontSize(fontSize).font('Helvetica').fillColor(fontColor).text(text, x, doc.y, {
+    let cleanText = text.replace(/\s+([,.;:!?])/g, '$1')
+                        .replace(/\*\*\s+([,.;:!?])/g, '**$1')
+                        .replace(/\s+\*\*(?=[,.;:!?])/g, '**');
+
+    if (!cleanText.includes('**')) {
+        doc.fontSize(fontSize).font(fonts.regular).fillColor(fontColor).text(cleanText, x, doc.y, {
             width,
             align,
-            lineGap
+            lineGap,
+            characterSpacing
         });
         return;
     }
@@ -317,34 +405,50 @@ function renderRichText(
     let lastIndex = 0;
     let match: RegExpExecArray | null;
 
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = regex.exec(cleanText)) !== null) {
         if (match.index > lastIndex) {
-            parts.push({ text: text.substring(lastIndex, match.index), bold: false });
+            parts.push({ text: cleanText.substring(lastIndex, match.index), bold: false });
         }
         parts.push({ text: match[1], bold: true });
         lastIndex = regex.lastIndex;
     }
-    if (lastIndex < text.length) {
-        parts.push({ text: text.substring(lastIndex), bold: false });
+    if (lastIndex < cleanText.length) {
+        parts.push({ text: cleanText.substring(lastIndex), bold: false });
+    }
+
+    // Fix punctuation spacing: attach any immediately following punctuation mark to the preceding token
+    // so PDFKit wraps the word and punctuation together as an atomic unit and never leaves the comma alone on the next line.
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (parts[i].bold && parts[i + 1] && !parts[i + 1].bold) {
+            const punctMatch = parts[i + 1].text.match(/^([,.;:!?]+)/);
+            if (punctMatch) {
+                const punct = punctMatch[1];
+                parts[i].text += punct;
+                parts[i + 1].text = parts[i + 1].text.substring(punct.length);
+            }
+        }
     }
 
     doc.fontSize(fontSize).fillColor(fontColor);
     for (let i = 0; i < parts.length; i++) {
         const isLast = i === parts.length - 1;
-        doc.font(parts[i].bold ? 'Helvetica-Bold' : 'Helvetica')
+        doc.font(parts[i].bold ? fonts.bold : fonts.regular)
            .text(parts[i].text, i === 0 ? x : undefined, i === 0 ? doc.y : undefined, {
                continued: !isLast,
                width,
                align,
-               lineGap
+               lineGap,
+               characterSpacing
            });
     }
 }
 
 // Helper to render bullet points or key-value lines
 function renderBulletOrKeyValue(doc: any, line: string, options: { x?: number; width?: number; fontSize?: number } = {}) {
-    const startX = options.x || 68;
-    const width = options.width || (doc.page.width - startX - 48);
+    const fonts = ensureModernFonts(doc);
+    const defaultMargin = 64;
+    const startX = options.x || (defaultMargin + 16);
+    const width = options.width || (doc.page.width - startX - defaultMargin);
     const fontSize = options.fontSize || 9.5;
 
     let cleanLine = line.trim();
@@ -358,26 +462,26 @@ function renderBulletOrKeyValue(doc: any, line: string, options: { x?: number; w
         const val = cleanLine.substring(colonIdx + 1).replace(/\*\*/g, '').trim();
 
         if (val.length === 0) {
-            doc.moveDown(0.25);
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C')
-               .text(key + ':', 48, doc.y, { align: 'left' });
             doc.moveDown(0.2);
+            doc.fontSize(10).font(fonts.bold).fillColor('#000000')
+               .text(key + ':', defaultMargin, doc.y, { align: 'left', characterSpacing: 0.1 });
+            doc.moveDown(0.15);
             return;
         }
 
-        doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#0B4F6C')
-           .text('• ', startX, doc.y, { continued: true });
-        doc.font('Helvetica-Bold').fillColor('#1E293B')
-           .text(key + ': ', { continued: true });
-        doc.font('Helvetica').fillColor('#1E293B')
-           .text(val, { width, continued: false, lineGap: 1.5 });
+        doc.fontSize(fontSize).font(fonts.bold).fillColor('#000000')
+           .text('• ', startX, doc.y, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.bold).fillColor('#000000')
+           .text(key + ': ', { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.regular).fillColor('#000000')
+           .text(val, { width, continued: false, lineGap: 1.0, characterSpacing: 0.1 });
     } else {
-        doc.fontSize(fontSize).font('Helvetica-Bold').fillColor('#0B4F6C')
-           .text('• ', startX, doc.y, { continued: true });
-        doc.font('Helvetica').fillColor('#1E293B')
-           .text(cleanLine.replace(/\*\*/g, ''), { width, continued: false, lineGap: 1.5 });
+        doc.fontSize(fontSize).font(fonts.bold).fillColor('#000000')
+           .text('• ', startX, doc.y, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.regular).fillColor('#000000')
+           .text(cleanLine.replace(/\*\*/g, ''), { width, continued: false, lineGap: 1.0, characterSpacing: 0.1 });
     }
-    doc.moveDown(0.2);
+    doc.moveDown(0.12);
 }
 
 // Master complete document renderer
@@ -398,50 +502,53 @@ const renderCompleteDocument = (
         drawLetterhead(doc, verifyUrl, company);
     });
 
+    const fonts = ensureModernFonts(doc);
+    const textMargin = 64;
+    const textWidth = doc.page.width - (textMargin * 2);
+
     const docTitle = (template.subject || documentType).toUpperCase();
     const isInternship = docTitle.includes('INTERNSHIP') || documentType.toLowerCase().includes('internship');
 
-    // Title: Left-aligned, Dark Ocean Teal (#0B4F6C), bold uppercase
-    doc.y = 112;
-    doc.fontSize(15.5)
-       .font('Helvetica-Bold')
-       .fillColor('#0B4F6C')
-       .text(docTitle, 48, 112, { align: 'left', lineBreak: true });
-    doc.moveDown(0.5);
+    // Title: Left-aligned at inside text margin, Deep Ocean Teal (#136384), bold uppercase
+    doc.y = 115;
+    doc.fontSize(16)
+       .font(fonts.bold)
+       .fillColor('#136384')
+       .text(docTitle, textMargin, 115, { align: 'left', lineBreak: false, characterSpacing: 0.1 });
 
     // Two-Column Header Block (Date on left, Recipient on right)
-    const headerY = doc.y;
+    // Left: Date at y = 145 (closer to Title matching Image 1)
+    const dateY = 145;
+    doc.fontSize(10).font(fonts.bold).fillColor('#000000')
+       .text('Date: ', textMargin, dateY, { continued: true, characterSpacing: 0.1 });
+    doc.font(fonts.regular).fillColor('#000000').text(vars.date || formatOrdinalDate(new Date()), { continued: false, characterSpacing: 0.1 });
 
-    // Left: Date
-    doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
-       .text('Date: ', 48, headerY, { continued: true });
-    doc.font('Helvetica').text(vars.date || formatOrdinalDate(new Date()), { continued: false });
-
-    // Right: Recipient block (if employee is specified)
+    // Right: Recipient block (starts at y = 175, below origami decoration, right-aligned to inside text margin)
     const recipientName = vars.employeeName || vars.internName || '';
     const recipientCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
     const recipientEmail = vars.personalEmail || vars.workEmail || '';
 
-    let recipientBottomY = headerY + 14;
+    let headerBottomY = dateY + 20;
     if (recipientName && recipientName !== '—') {
-        const rightBoxWidth = 220;
-        const rightBoxX = doc.page.width - 48 - rightBoxWidth;
+        const rightBoxWidth = 240;
+        const rightBoxX = doc.page.width - textMargin - rightBoxWidth;
+        const recipientY = 175;
 
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
-           .text(`To: ${recipientName}`, rightBoxX, headerY, { width: rightBoxWidth, align: 'right' });
+        doc.fontSize(10.5).font(fonts.bold).fillColor('#000000')
+           .text(`To: ${recipientName}`, rightBoxX, recipientY, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
 
-        doc.fontSize(9).font('Helvetica').fillColor('#334155')
-           .text(`${recipientCity}, Pakistan`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right' });
+        doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
+           .text(`${recipientCity}, Pakistan`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
 
         if (recipientEmail && recipientEmail !== '—') {
-            doc.fontSize(8.5).font('Helvetica').fillColor('#334155')
-               .text(`Email: ${recipientEmail}`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right' });
+            doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
+               .text(`Email:${recipientEmail}`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
         }
-        recipientBottomY = doc.y;
+        headerBottomY = Math.max(headerBottomY, doc.y);
     }
 
-    // Set Y below whichever column is taller
-    doc.y = Math.max(headerY + 28, recipientBottomY) + 8;
+    // Set Y below header block
+    doc.y = headerBottomY + 10;
 
     // Format & Parse Content
     const parsedBody = parseTemplate(template.content || '', vars);
@@ -498,7 +605,6 @@ const renderCompleteDocument = (
                 continue;
             } else if (trimmedUpper.includes('ACCEPTANCE') || trimmedUpper.startsWith('EMPLOYEE SIGNATURE') || trimmedUpper.startsWith('SIGNATURE:')) {
                 inSignatory = false;
-                // fall through to acceptance handling
             } else {
                 inSignatory = false;
             }
@@ -521,20 +627,19 @@ const renderCompleteDocument = (
         // Subject Line
         if (trimmedUpper.startsWith('SUBJECT:')) {
             const subjText = trimmed.replace(/^subject:\s*/i, '').trim();
-            doc.moveDown(0.3);
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B')
-               .text('Subject: ', 48, doc.y, { continued: true });
-            doc.text(subjText, { continued: false });
-            doc.moveDown(0.35);
+            doc.fontSize(10.5).font(fonts.bold).fillColor('#000000')
+               .text('Subject: ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+            doc.text(subjText, { continued: false, characterSpacing: 0.1 });
+            doc.moveDown(0.2);
             continue;
         }
 
         // Salutation (Dear ... / To Whom It May Concern)
         if (trimmedUpper.startsWith('DEAR ') || trimmedUpper.startsWith('TO WHOM IT MAY CONCERN')) {
+            doc.moveDown(0.1);
+            doc.fontSize(10).font(fonts.regular).fillColor('#000000')
+               .text(trimmed, textMargin, doc.y, { align: 'left', characterSpacing: 0.1 });
             doc.moveDown(0.2);
-            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B')
-               .text(trimmed, 48, doc.y, { align: 'left' });
-            doc.moveDown(0.35);
             continue;
         }
 
@@ -549,56 +654,55 @@ const renderCompleteDocument = (
         if (isAcceptanceLine && !hasRenderedAcceptance) {
             inAcceptance = true;
             hasRenderedAcceptance = true;
-            doc.moveDown(0.35);
+            doc.moveDown(0.2);
 
-            // Divider line
+            // Divider line across inside text margin
             const dividerY = doc.y;
-            doc.moveTo(48, dividerY)
-               .lineTo(doc.page.width - 48, dividerY)
-               .strokeColor('#CBD5E1')
+            doc.moveTo(textMargin, dividerY)
+               .lineTo(doc.page.width - textMargin, dividerY)
+               .strokeColor('#94A3B8')
                .lineWidth(0.8)
                .stroke();
 
             doc.y = dividerY + 6;
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C').text('Employee Acceptance', 48, doc.y);
-            doc.moveDown(0.25);
+            doc.fontSize(10.5).font(fonts.bold).fillColor('#000000').text(isInternship ? 'Acceptance' : 'Employee Acceptance', textMargin, doc.y, { characterSpacing: 0.1 });
+            doc.moveDown(0.15);
 
             const empName = vars.employeeName || 'Employee';
-            const offerTerm = isInternship ? 'internship offer' : (documentType.toLowerCase().includes('contract') ? 'employment contract' : (documentType.toLowerCase().includes('offer') ? 'employment offer' : 'offer'));
 
-            doc.fontSize(9).font('Helvetica').fillColor('#1E293B')
-               .text('I, ', 48, doc.y, { continued: true });
-            doc.font('Helvetica-Bold').text(empName, { continued: true });
-            doc.font('Helvetica').text(`, accept the ${offerTerm} and agree to abide by all its terms and conditions.`, { continued: false });
+            doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
+               .text('I, ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+            doc.font(fonts.bold).text(empName, { continued: true, characterSpacing: 0.1 });
+            doc.font(fonts.regular).text(`, accept the ${isInternship ? 'internship offer' : (documentType.toLowerCase().includes('contract') ? 'employment contract' : 'offer')} and its terms and conditions.`, { continued: false, characterSpacing: 0.1 });
 
-            doc.moveDown(0.3);
+            doc.moveDown(0.2);
 
             const signLineY = doc.y;
-            doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B')
-               .text('Signature: ', 48, signLineY, { continued: true });
-            doc.font('Helvetica').fillColor('#94A3B8').text('____________________', { continued: false });
+            doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+               .text('Signature: ', textMargin, signLineY, { continued: true, characterSpacing: 0.1 });
+            doc.font(fonts.regular).fillColor('#94A3B8').text('____________________', { continued: false });
 
-            doc.moveDown(0.25);
-            doc.fontSize(9).font('Helvetica-Bold').fillColor('#1E293B')
-               .text('Date: ', 48, doc.y, { continued: true });
-            doc.font('Helvetica').fillColor('#94A3B8').text('________________________', { continued: false });
+            doc.moveDown(0.15);
+            doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+               .text('Date: ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+            doc.font(fonts.regular).fillColor('#94A3B8').text('________________________', { continued: false });
 
-            // Place Dynamic Verification QR Code beside signature lines (on the right)
+            // Place Dynamic Verification QR Code beside signature lines (on the right inside margin)
             if (qrCodeDataUri) {
                 try {
                     const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
                     const imageBuffer = Buffer.from(base64Data, 'base64');
-                    doc.image(imageBuffer, doc.page.width - 110, signLineY - 12, { width: 46, height: 46 });
+                    doc.image(imageBuffer, doc.page.width - textMargin - 46, signLineY - 4, { width: 44, height: 44 });
                 } catch (e) {}
             }
             continue;
         }
 
-        // Signatory Section
+        // Signatory Section - Space before "Sincerely,"
         if (trimmedUpper.startsWith('SINCERELY') || trimmedUpper.startsWith('WITH WARM REGARDS') || trimmedUpper.startsWith('YOURS FAITHFULLY')) {
             inSignatory = true;
             hasRenderedSignatory = true;
-            doc.moveDown(0.5);
+            doc.moveDown(0.35); // Clean space before sincerely
 
             const isAppointment = documentType.toLowerCase().includes('appointment') || docTitle.toLowerCase().includes('appointment');
 
@@ -606,20 +710,23 @@ const renderCompleteDocument = (
             // - Appointment Letters -> CEO / Executive Signatory
             // - Offer Letters, Experience Letters, Payslips, etc. -> HR Signatory
             const targetSigUrl = isAppointment
-                ? (company?.ceoSignatureUrl || company?.signatureUrl)
-                : (company?.hrSignatureUrl || company?.signatureUrl);
+                ? (company?.ceoSignatureUrl || company?.signatureUrl || path.join(__dirname, '../../uploads/appointment_signature.png'))
+                : (company?.hrSignatureUrl || company?.signatureUrl || path.join(__dirname, '../../uploads/afreen_signature.jpg'));
+
+            const targetStampUrl = company?.stampUrl || path.join(__dirname, '../../uploads/itcs_stamp.jpg');
 
             const resolvedSignatoryName = isAppointment
                 ? (company?.ceoSignatoryName || vars.signatoryName || 'Founder & CEO')
-                : (company?.hrSignatoryName || vars.signatoryName || 'Manager HR');
+                : 'Afreen Saeed';
 
             const resolvedSignatoryTitle = isAppointment
                 ? (company?.ceoSignatoryTitle || vars.signatoryDesignation || 'Chief Executive Officer')
-                : (company?.hrSignatoryTitle || vars.signatoryDesignation || 'Human Resources');
+                : 'Manager HR, IT Consulting and Services (ITCS)';
 
-            const compName = company?.name || vars.companyName || 'Organization';
-            doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#1E293B').text(compName, 48, doc.y);
-            doc.moveDown(0.2);
+            doc.fontSize(10).font(fonts.regular).fillColor('#000000').text('Sincerely,', textMargin, doc.y, { characterSpacing: 0.1 });
+            doc.moveDown(0.12);
+            doc.fontSize(10.5).font(fonts.bold).fillColor('#000000').text(resolvedSignatoryName + ',', textMargin, doc.y, { characterSpacing: 0.1 });
+            doc.moveDown(0.12);
 
             // Dynamic Company Signature & Stamp
             const sigImgY = doc.y + 2;
@@ -628,33 +735,32 @@ const renderCompleteDocument = (
 
             // 1. Draw target signature (CEO or HR) if uploaded for this company
             if (targetSigUrl) {
-                sigDrawn = drawImageBufferOrPath(doc, targetSigUrl, 48, sigImgY, { height: 38 });
+                sigDrawn = drawImageBufferOrPath(doc, targetSigUrl, textMargin, sigImgY, { height: 32 });
             }
 
             // 2. Draw official company stamp if uploaded for this company
-            if (company?.stampUrl) {
-                stampDrawn = drawImageBufferOrPath(doc, company.stampUrl, sigDrawn ? 130 : 48, sigImgY, { height: 38 });
+            if (targetStampUrl) {
+                stampDrawn = drawImageBufferOrPath(doc, targetStampUrl, sigDrawn ? (textMargin + 80) : textMargin, sigImgY, { height: 32 });
             }
 
             // If neither signature image nor stamp is uploaded, draw a clean signature line
             if (!sigDrawn && !stampDrawn) {
-                doc.fontSize(9).font('Helvetica').fillColor('#94A3B8').text('_________________________________', 48, sigImgY + 8);
-                doc.y = sigImgY + 24;
+                doc.fontSize(9.5).font(fonts.regular).fillColor('#94A3B8').text('_________________________________', textMargin, sigImgY + 8);
+                doc.y = sigImgY + 20;
             } else {
-                doc.y = sigImgY + 42;
+                doc.y = sigImgY + 36;
             }
 
-            // Render dynamic signatory name and title
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#1E293B').text(resolvedSignatoryName, 48, doc.y);
-            doc.fontSize(9.5).font('Helvetica').fillColor('#475569').text(resolvedSignatoryTitle, 48, doc.y);
+            // Render dynamic signatory title below stamp
+            doc.fontSize(10).font(fonts.bold).fillColor('#000000').text(resolvedSignatoryTitle, textMargin, doc.y, { characterSpacing: 0.1 });
 
             const isPayslipDoc = documentType.toLowerCase().includes('pay slip') || documentType.toLowerCase().includes('salary') || docTitle.toLowerCase().includes('pay slip') || docTitle.toLowerCase().includes('salary statement');
             if (isPayslipDoc) {
-                doc.moveDown(0.15);
-                doc.fontSize(9).font('Helvetica').fillColor('#1E293B').text('HR & Payroll Department', 48, doc.y);
+                doc.moveDown(0.12);
+                doc.fontSize(9.5).font(fonts.regular).fillColor('#000000').text('HR & Payroll Department', textMargin, doc.y, { characterSpacing: 0.1 });
             }
 
-            doc.moveDown(0.3);
+            doc.moveDown(0.2);
             continue;
         }
 
@@ -665,10 +771,10 @@ const renderCompleteDocument = (
             /^\d+\.\s+[A-Za-z\s]+$/.test(trimmed);
 
         if (isHeading) {
-            doc.moveDown(0.35);
-            doc.fontSize(10).font('Helvetica-Bold').fillColor('#0B4F6C')
-               .text(trimmed, 48, doc.y, { align: 'left' });
-            doc.moveDown(0.2);
+            doc.moveDown(0.25);
+            doc.fontSize(10.5).font(fonts.bold).fillColor('#000000')
+               .text(trimmed, textMargin, doc.y, { align: 'left', characterSpacing: 0.1 });
+            doc.moveDown(0.15);
             continue;
         }
 
@@ -679,20 +785,50 @@ const renderCompleteDocument = (
         const isKeyValue = colonIdx > 0 && colonIdx < 30 && hasValue && !trimmedUpper.startsWith('HTTP') && !trimmedUpper.startsWith('NOTE:');
 
         if (isBullet || isKeyValue) {
-            renderBulletOrKeyValue(doc, trimmed);
+            renderBulletOrKeyValue(doc, trimmed, { x: textMargin + 16, width: textWidth - 16, fontSize: 9.5 });
+
+            // Check if next non-empty line is NOT a bullet, add extra space after bullet points!
+            let nextNonEmpty = '';
+            for (let j = i + 1; j < rawLines.length; j++) {
+                if (rawLines[j].trim()) {
+                    nextNonEmpty = rawLines[j].trim();
+                    break;
+                }
+            }
+            const nextIsBullet = nextNonEmpty.startsWith('•') || nextNonEmpty.startsWith('-') || nextNonEmpty.startsWith('*') ||
+                (nextNonEmpty.indexOf(':') > 0 && nextNonEmpty.indexOf(':') < 30 && !nextNonEmpty.toUpperCase().startsWith('HTTP') && !nextNonEmpty.toUpperCase().startsWith('SINCERELY'));
+            if (!nextIsBullet && nextNonEmpty) {
+                doc.moveDown(0.2); // Space after the bullet point detail
+            }
             continue;
         }
 
         // Standard Body Paragraph with rich inline bolding
         renderRichText(doc, trimmed, {
-            x: 48,
-            width: doc.page.width - 96,
+            x: textMargin,
+            width: textWidth,
             fontSize: 9.5,
-            fontColor: '#1E293B',
-            lineGap: 2.5,
+            fontColor: '#000000',
+            lineGap: 1.0, // 1.2 compact line-height
+            characterSpacing: 0.1, // normal / 0.01em
             align: 'left'
         });
-        doc.moveDown(0.25);
+
+        // Check if next non-empty line is a bullet (e.g. after "The details of your internship are as follows:")
+        let nextNonEmpty = '';
+        for (let j = i + 1; j < rawLines.length; j++) {
+            if (rawLines[j].trim()) {
+                nextNonEmpty = rawLines[j].trim();
+                break;
+            }
+        }
+        const nextIsBullet = nextNonEmpty.startsWith('•') || nextNonEmpty.startsWith('-') || nextNonEmpty.startsWith('*') ||
+            (nextNonEmpty.indexOf(':') > 0 && nextNonEmpty.indexOf(':') < 30 && !nextNonEmpty.toUpperCase().startsWith('HTTP') && !nextNonEmpty.toUpperCase().startsWith('SINCERELY'));
+        if (nextIsBullet || trimmed.toLowerCase().includes('as follows')) {
+            doc.moveDown(0.2); // Space after the line before bullet points
+        } else {
+            doc.moveDown(0.15);
+        }
     }
 
     // Fallback: If document had no acceptance block, place QR code beside signatory or bottom-right
@@ -701,7 +837,7 @@ const renderCompleteDocument = (
             const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
             const imageBuffer = Buffer.from(base64Data, 'base64');
             const targetQrY = Math.min(doc.page.height - 100, Math.max(doc.y - 45, doc.page.height - 110));
-            doc.image(imageBuffer, doc.page.width - 96, targetQrY, { width: 44, height: 44 });
+            doc.image(imageBuffer, doc.page.width - textMargin - 50, targetQrY, { width: 44, height: 44 });
         } catch (e) {}
     }
 };
@@ -759,12 +895,23 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             template.content = defaultAppointmentText;
         }
 
+        const defaultInternshipText = `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Internship Offer – ITCS\n\nDear {{salutation}} {{employeeName}},\nWe are pleased to offer you an Internship position with our ITCS office in {{workLocation}}.\nThe details of your internship are as follows:\n\n• Position: {{designation}}\n• Location: {{workLocation}}\n• Stipend: PKR {{stipend}}\n• Joining date: {{joiningDate}}\n• Working Days: {{workingDays}}\n• Working Hours: {{workingHours}}\n\nDuring your internship, you will work with our **{{department}} team in {{workLocation}}**, adhere to company policies, and maintain confidentiality. This internship does not guarantee permanent employment and may be ended by either party with reasonable notice. Please confirm your acceptance of this offer by signing below and returning a copy of this letter. We look forward to having you on board and wish you a rewarding learning experience.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nAcceptance\nI, {{employeeName}}, accept the internship offer and its terms and conditions.\nSignature: ____________________\nDate: ________________________`;
+
+        if (template && (rawDocType === 'Internship Offer Letter' || template.documentType === 'Internship Offer Letter')) {
+            await DocumentTemplate.updateOne(
+                { _id: template._id },
+                { $set: { subject: 'INTERNSHIP OFFER LETTER', content: defaultInternshipText } }
+            );
+            template.subject = 'INTERNSHIP OFFER LETTER';
+            template.content = defaultInternshipText;
+        }
+
         // Auto-seed default template if not found in database
         if (!template) {
             const defaultTemplates: Record<string, { subject: string; content: string }> = {
                 'Internship Offer Letter': {
                     subject: 'INTERNSHIP OFFER LETTER',
-                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Internship Offer – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nWe are pleased to offer you an Internship position with our ITCS office in {{workLocation}}. The details of your internship are as follows:\n\n• Position: {{designation}}\n• Location: {{workLocation}}\n• Stipend: PKR {{stipend}}\n• Joining date: {{joiningDate}}\n• Working Days: {{workingDays}}\n• Working Hours: {{workingHours}}\n\nDuring your internship, you will work with our {{department}} team in {{workLocation}}, adhere to company policies, and maintain confidentiality. This internship does not guarantee permanent employment and may be ended by either party with reasonable notice. Please confirm your acceptance of this offer by signing below and returning a copy of this letter. We look forward to having you on board and wish you a rewarding learning experience.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nAcceptance\nI, {{employeeName}}, accept the internship offer and its terms and conditions.\nSignature: ____________________\nDate: ________________________`
+                    content: defaultInternshipText
                 },
                 'Job Offer Letter': {
                     subject: 'OFFER OF EMPLOYMENT',
@@ -866,9 +1013,9 @@ router.post('/generate', authenticate, async (req: Request, res: Response, next:
             size: 'A4',
             margins: {
                 top: 105,
-                bottom: 55,
-                left: 48,
-                right: 48
+                bottom: 40,
+                left: 64,
+                right: 64
             }
         });
 
@@ -1361,20 +1508,25 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
     try {
         const { companyData, templateData } = req.body;
         
+        const isInternshipPreview = (templateData?.documentType || '').toLowerCase().includes('internship') || (templateData?.subject || '').toLowerCase().includes('internship');
+
         // Use dummy variables for parsing
         const dummyVars = {
-            employeeId: 'EMP-9872',
-            employeeName: 'John Doe',
-            firstName: 'John',
-            lastName: 'Doe',
-            designation: 'Senior Software Engineer',
-            department: 'Technology Department',
+            employeeId: isInternshipPreview ? 'INT-2026' : 'EMP-9872',
+            employeeName: isInternshipPreview ? 'Daniyal Imran' : 'John Doe',
+            internName: isInternshipPreview ? 'Daniyal Imran' : 'John Doe',
+            firstName: isInternshipPreview ? 'Daniyal' : 'John',
+            lastName: isInternshipPreview ? 'Imran' : 'Doe',
+            salutation: 'Mr.',
+            designation: isInternshipPreview ? 'Business Development Intern' : 'Senior Software Engineer',
+            department: isInternshipPreview ? 'Sales' : 'Technology Department',
             reportingManager: 'Jane Smith',
-            joiningDate: 'January 15, 2024',
-            basicSalary: '150,000',
-            grossSalary: '200,050',
-            purpose: 'visa processing application',
-            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            joiningDate: isInternshipPreview ? '24th September 2026' : 'January 15, 2024',
+            basicSalary: isInternshipPreview ? '20,000' : '150,000',
+            grossSalary: isInternshipPreview ? '20,000' : '200,050',
+            stipend: '20,000',
+            purpose: isInternshipPreview ? 'internship offer' : 'visa processing application',
+            date: isInternshipPreview ? '24th September 2026' : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
             pronounSubject: 'he',
             pronounObject: 'him',
             pronounPossessive: 'his',
@@ -1436,8 +1588,7 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             paymentDate: '5th',
             startTime: '09:00 AM',
             endTime: '06:00 PM',
-            noticePeriod: '30 Days',
-            stipend: 'PKR 20,000'
+            noticePeriod: '30 Days'
         };
 
         const clientHost = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -1448,9 +1599,9 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
             size: 'A4',
             margins: {
                 top: 105,
-                bottom: 55,
-                left: 48,
-                right: 48
+                bottom: 40,
+                left: 64,
+                right: 64
             }
         });
 
@@ -1479,4 +1630,5 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
     }
 });
 
+export { renderCompleteDocument, drawLetterhead, renderBulletOrKeyValue, renderRichText };
 export default router;

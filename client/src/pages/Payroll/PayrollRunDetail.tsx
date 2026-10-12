@@ -1286,7 +1286,7 @@ const PayrollRunDetail = () => {
                 totalExpenseClaimsAmount: claims,
                 totalLoanDeductionsAmount: totalLoanDeductions,
                 totalPfWithdrawalsAmount: totalPfWithdrawals,
-                erpPayableAmount: totalPayable - claims - totalPfWithdrawals + totalLoanDeductions,
+                erpPayableAmount: totalPayable - claims - totalPfWithdrawals,
                 claimCount: 0,
             };
         }
@@ -1522,7 +1522,7 @@ const PayrollRunDetail = () => {
                                     <CreditCard size={11} /> Loan Deductions
                                 </p>
                                 <p className="text-xl font-black text-purple-900">{fmt(displayAmounts.totalLoanDeductionsAmount ?? 0)}</p>
-                                <p className="text-[10px] text-purple-700/80 mt-1">Separate Loan ERP ID — added back</p>
+                                <p className="text-[10px] text-purple-700/80 mt-1">Separate Loan ERP ID</p>
                             </div>
                             <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 ring-1 ring-emerald-100">
                                 <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Payroll ERP Amount</p>
@@ -1577,7 +1577,7 @@ const PayrollRunDetail = () => {
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                         <p className="text-xs text-indigo-600 mb-1 flex items-center gap-1"><CreditCard size={12} /> Total Net Pay</p>
                         <p className="text-xl font-bold text-indigo-700">{fmt(totalNet)}</p>
-                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims - totalPfWithdrawals + totalLoanDeductions))}</p>
+                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims - totalPfWithdrawals))}</p>
                     </div>
                 </div>
             )}
@@ -1861,7 +1861,7 @@ const PayrollRunDetail = () => {
                                 className="w-full bg-slate-50 border border-slate-200 text-slate-800 px-3.5 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono font-semibold text-sm"
                             />
                             <p className="text-[10px] text-slate-400 mt-1.5">
-                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims & PF withdrawals; loan deductions posted separately).
+                                Use this ID for {fmt(displayAmounts.erpPayableAmount)} in ERP (excludes claims & PF withdrawals).
                             </p>
                         </div>
 

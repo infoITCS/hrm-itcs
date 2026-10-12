@@ -16,6 +16,7 @@ const CompanyManagement = () => {
     const [formData, setFormData] = useState({
         name: '',
         logoUrl: '',
+        letterheadUrl: '',
         // CEO / Executive Signatory (Appointment Letters & Executive Contracts)
         ceoSignatureUrl: '',
         ceoSignatoryName: '',
@@ -61,6 +62,7 @@ const CompanyManagement = () => {
                     setFormData({
                         name: data.name || '',
                         logoUrl: data.logoUrl || '',
+                        letterheadUrl: data.letterheadUrl || '',
                         ceoSignatureUrl: data.ceoSignatureUrl || '',
                         ceoSignatoryName: data.ceoSignatoryName || '',
                         ceoSignatoryTitle: data.ceoSignatoryTitle || '',
@@ -113,6 +115,7 @@ const CompanyManagement = () => {
                     companyData: {
                         name: formData.name,
                         logoUrl: formData.logoUrl,
+                        letterheadUrl: formData.letterheadUrl,
                         ceoSignatureUrl: formData.ceoSignatureUrl,
                         ceoSignatoryName: formData.ceoSignatoryName,
                         ceoSignatoryTitle: formData.ceoSignatoryTitle,
@@ -276,6 +279,79 @@ const CompanyManagement = () => {
                                 </label>
                             </div>
                             <p className="text-[10px] text-slate-400 mt-1.5">Supported formats: PNG, JPG, SVG, WebP. Recommended max height: 100px.</p>
+                        </div>
+                    </div>
+
+                    {/* Background Letterhead Template Settings */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
+                            <Building2 className="text-indigo-600" size={20} />
+                            Official Background Letterhead Template
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                            Upload full-page stationery (PNG or JPG). When uploaded, all generated letters, contracts, and documents will automatically print directly on top of this background with pixel-perfect stationery.
+                        </p>
+
+                        <div className="space-y-3">
+                            {formData.letterheadUrl ? (
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-12 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                            <img src={formData.letterheadUrl} alt="Letterhead Preview" className="w-full h-full object-contain" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-semibold text-slate-800 truncate">Custom Uploaded Letterhead</p>
+                                            <p className="text-[10px] text-emerald-600 font-medium">Active Background Stationery</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, letterheadUrl: '' }))}
+                                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors shrink-0"
+                                        title="Remove Custom Letterhead"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-12 h-16 bg-white border border-slate-200 rounded-lg flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                            <img src="/itcs_official_letterhead.png" alt="Default ITCS Template" className="w-full h-full object-contain" onError={(e)=>{(e.target as HTMLElement).style.display='none'}} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-semibold text-slate-800 truncate">Default ITCS Stationery</p>
+                                            <p className="text-[10px] text-indigo-600 font-medium">Using Built-in Official Letterhead</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-3">
+                                <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm">
+                                    <Upload size={16} />
+                                    <span>Upload Letterhead Template Image</span>
+                                    <input
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/webp"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (event) => {
+                                                    const base64 = event.target?.result as string;
+                                                    if (base64) {
+                                                        setFormData(prev => ({ ...prev, letterheadUrl: base64 }));
+                                                    }
+                                                };
+                                                reader.readAsDataURL(file);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">A4 full-page resolution (e.g. 1240 × 1754 px or 2480 × 3508 px PNG / JPG recommended).</p>
                         </div>
                     </div>
 

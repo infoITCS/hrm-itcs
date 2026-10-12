@@ -4,6 +4,7 @@ export interface ICompany extends Document {
     name: string;
     subdomain?: string;
     logoUrl?: string;
+    letterheadUrl?: string;
     // CEO / Executive Signatory (Appointment Letters & Contracts)
     ceoSignatureUrl?: string;
     ceoSignatoryName?: string;
@@ -45,6 +46,7 @@ const CompanySchema: Schema = new Schema({
     name: { type: String, required: true },
     subdomain: { type: String, unique: true, sparse: true },
     logoUrl: { type: String },
+    letterheadUrl: { type: String },
     ceoSignatureUrl: { type: String },
     ceoSignatoryName: { type: String, default: 'Founder & CEO' },
     ceoSignatoryTitle: { type: String, default: 'Chief Executive Officer' },
