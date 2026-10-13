@@ -221,6 +221,9 @@ const UserManagement = () => {
             });
 
             const createdUser = await res.json();
+            if (!res.ok) {
+                throw new Error(createdUser.message || 'Failed to create user');
+            }
 
             await fetchUsers();
             await fetchEmployees();

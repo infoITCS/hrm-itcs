@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, checkProfileLock } from '../middleware/auth';
 import LeaveRequest from '../models/LeaveRequest';
 import LeaveBalance from '../models/LeaveBalance';
 import LeaveType from '../models/LeaveType';
@@ -612,7 +612,7 @@ router.get('/today', authenticate, async (req: Request, res: Response, next: Nex
 });
 
 // GET /api/leaves/mine - Get personal leave history
-router.get('/mine', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/mine', authenticate, checkProfileLock, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const userId = authReq.user?.userId;
@@ -1223,7 +1223,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
 });
 
 // POST /api/leaves - Apply for leave
-router.post('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', authenticate, checkProfileLock, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const { startDate, endDate, type, reason, duration = 'Full Day', startTime, endTime } = req.body;

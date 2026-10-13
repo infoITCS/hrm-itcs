@@ -223,6 +223,7 @@ function AppRoutes() {
             <Route path="add" element={<AddEmployeeWizard />} />
             <Route path="edit/:id" element={<AddEmployeeWizard />} />
             <Route path="view/:id" element={<EmployeeProfile />} />
+            <Route path="employees/:id" element={<EmployeeProfile />} />
           </Route>
         </Route>
 

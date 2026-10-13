@@ -29,6 +29,7 @@ import { DEFAULT_EMPLOYEE_SALARY_COMPONENTS, ensureFuelAllowance } from '../util
 import { ensureProbationUpgraded, upgradeCompletedProbations, isProbationPeriodEnded } from '../services/probationUpgradeService';
 import { decryptEmployeeFields } from '../utils/encryption';
 import { triggerOffboardingTasks } from '../services/workflowService';
+import WorkflowTask from '../models/WorkflowTask';
 
 
 
@@ -315,7 +316,7 @@ router.get('/profile-progress', authenticate, async (req: Request, res: Response
         const role = authReq.user?.role || 'employee';
         const userId = authReq.user?.userId;
         if (!['super-admin', 'admin', 'hr', 'manager'].includes(role)) {
-            return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: false } });
+            return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: false, incompleteEmployees: [] } });
         }
 
         const query: any = {
@@ -343,26 +344,141 @@ router.get('/profile-progress', authenticate, async (req: Request, res: Response
 
                 query['jobInfo.reportingManager'] = { $in: managerIdentifiers };
             } else {
-                return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: true } });
+                return res.json({ success: true, data: { totalEmployees: 0, completed: 0, pct: 0, isTeamScope: true, incompleteEmployees: [] } });
             }
         }
 
         const employees = await Employee.find(query)
-            .select('phone address cnic jobInfo.designation jobInfo.department userId')
+            .select('employeeId firstName lastName middleName avatar phone address cnic jobInfo.designation jobInfo.department userId profileReminderCount lastProfileReminderAt')
+            .sort({ lastName: 1, firstName: 1 })
             .lean() as any[];
 
         const totalEmployees = employees.length;
-        const completed = employees.filter(e =>
-            !!e.userId &&
-            !!e.phone &&
-            !!e.cnic &&
-            !!(e.address?.street || e.address?.city || e.address?.state || e.address?.country) &&
-            !!e.jobInfo?.department &&
-            !!e.jobInfo?.designation
-        ).length;
+        const incompleteEmployees: any[] = [];
+        let completed = 0;
+
+        for (const e of employees) {
+            const missingFields: string[] = [];
+            if (!e.cnic) missingFields.push('CNIC');
+            if (!e.phone) missingFields.push('Phone Number');
+            if (!(e.address?.street || e.address?.city || e.address?.state || e.address?.country)) missingFields.push('Address');
+            if (!e.jobInfo?.department) missingFields.push('Department');
+            if (!e.jobInfo?.designation) missingFields.push('Designation');
+            if (!e.userId) missingFields.push('User Account');
+
+            if (missingFields.length === 0) {
+                completed++;
+            } else {
+                const count = e.profileReminderCount || 0;
+                incompleteEmployees.push({
+                    _id: e._id,
+                    employeeId: e.employeeId,
+                    firstName: e.firstName,
+                    lastName: e.lastName,
+                    fullName: [e.firstName, e.middleName, e.lastName].filter(Boolean).join(' ') || 'Employee',
+                    avatar: e.avatar,
+                    department: e.jobInfo?.department || 'Unassigned',
+                    designation: e.jobInfo?.designation || 'Staff',
+                    missingFields,
+                    profileReminderCount: count,
+                    lastProfileReminderAt: e.lastProfileReminderAt,
+                    isLocked: count >= 2
+                });
+            }
+        }
 
         const pct = totalEmployees > 0 ? Math.round((completed / totalEmployees) * 100) : 0;
-        res.json({ success: true, data: { totalEmployees, completed, pct, isTeamScope: isManager } });
+        res.json({
+            success: true,
+            data: {
+                totalEmployees,
+                completed,
+                pct,
+                isTeamScope: isManager,
+                incompleteEmployees
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+/**
+ * @route   POST /api/employees/send-profile-reminders
+ * @desc    Send persistent reminders to employees who have not completed their profile.
+ *          If an employee receives 2+ notifications and remains incomplete, their HRMS features are locked.
+ */
+router.post('/send-profile-reminders', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const role = authReq.user?.role || 'employee';
+        const userId = authReq.user?.userId;
+        if (!['super-admin', 'admin', 'hr', 'manager'].includes(role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin or Manager access required.' });
+        }
+
+        const { employeeIds } = req.body;
+
+        const query: any = {
+            isDeleted: { $ne: true },
+            'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+        };
+
+        if (Array.isArray(employeeIds) && employeeIds.length > 0) {
+            const validObjectIds = employeeIds.filter(id => typeof id === 'string' && mongoose.isValidObjectId(id));
+            query.$or = [
+                { employeeId: { $in: employeeIds } },
+                ...(validObjectIds.length > 0 ? [{ _id: { $in: validObjectIds } }] : [])
+            ];
+        }
+
+        if (role === 'manager') {
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            if (!managerEmployee) {
+                return res.status(403).json({ message: 'Manager employee profile not found.' });
+            }
+
+            const managerIdentifiers = [
+                managerEmployee.employeeId,
+                managerEmployee._id ? String(managerEmployee._id) : '',
+                managerEmployee.userId ? String(managerEmployee.userId) : '',
+                String(userId)
+            ].filter(Boolean);
+
+            query['jobInfo.reportingManager'] = { $in: managerIdentifiers };
+        }
+
+        const employees = await Employee.find(query);
+        let remindedCount = 0;
+        let newlyLockedCount = 0;
+
+        for (const emp of employees) {
+            const isIncomplete = !emp.phone || !emp.cnic || !(emp.address?.street || emp.address?.city || emp.address?.state || emp.address?.country) || !emp.jobInfo?.department || !emp.jobInfo?.designation || !emp.userId;
+            if (isIncomplete) {
+                const currentCount = emp.profileReminderCount || 0;
+                emp.profileReminderCount = currentCount + 1;
+                emp.lastProfileReminderAt = new Date();
+                await emp.save();
+                remindedCount++;
+                if (emp.profileReminderCount >= 2) {
+                    newlyLockedCount++;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Profile reminders successfully sent to ${remindedCount} employee(s). ${newlyLockedCount} employee(s) have feature access restricted pending profile completion.`,
+            remindedCount,
+            lockedCount: newlyLockedCount
+        });
     } catch (err) {
         next(err);
     }
@@ -625,6 +741,14 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
                 ...(newEmployee.firstName && { firstName: newEmployee.firstName }),
                 ...(newEmployee.lastName && { lastName: newEmployee.lastName })
             });
+        }
+
+        // Sync any onboarding workflow tasks to include this employee ID and name
+        if (newEmployee.userId) {
+            await WorkflowTask.updateMany(
+                { targetUserId: newEmployee.userId.toString() },
+                { $set: { targetEmployeeId: newEmployee.employeeId, targetName: [newEmployee.firstName, newEmployee.lastName].filter(Boolean).join(' ') || newEmployee.employeeId } }
+            );
         }
 
         // Log action
@@ -2458,6 +2582,13 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         ).select('-attachments.fileData');
 
         if (!updatedEmployee) return res.status(404).json({ message: 'Employee not found during update' });
+
+        // Auto-unlock: If employee has completed mandatory fields, clear reminder count and lift lock
+        const isNowComplete = !!updatedEmployee.phone && !!updatedEmployee.cnic && !!(updatedEmployee.address?.street || updatedEmployee.address?.city || updatedEmployee.address?.state || updatedEmployee.address?.country) && !!updatedEmployee.jobInfo?.department && !!updatedEmployee.jobInfo?.designation;
+        if (isNowComplete && (updatedEmployee.profileReminderCount || 0) > 0) {
+            await Employee.updateOne({ _id: updatedEmployee._id }, { $set: { profileReminderCount: 0 } });
+            (updatedEmployee as any).profileReminderCount = 0;
+        }
 
         // Check if reportingManager was changed, and automatically transfer in-flight pending claims
         const oldManager = originalEmployeeObj.jobInfo?.reportingManager;

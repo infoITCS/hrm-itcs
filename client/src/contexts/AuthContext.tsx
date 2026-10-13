@@ -16,6 +16,34 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const buildUserFromApiData = (userData: any): User => ({
+    id: userData.id || userData._id || '',
+    name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || (userData.email ? userData.email.split('@')[0] : ''),
+    email: userData.email,
+    role: userData.role,
+    avatar: (userData.avatar && 
+             userData.avatar.trim() !== '' && 
+             userData.avatar !== 'null' && 
+             userData.avatar !== 'undefined')
+        ? userData.avatar
+        : '',
+    firstName: userData.firstName,
+    lastName: userData.lastName,
+    department: userData.department,
+    hasProfile: userData.hasProfile,
+    needsPasswordSetup: userData.needsPasswordSetup,
+    microsoftId: userData.microsoftId,
+    permissions: userData.permissions || {},
+    scopes: userData.scopes || {},
+    subPermissions: userData.subPermissions || {},
+    customPermissions: userData.customPermissions || {},
+    customScopes: userData.customScopes || {},
+    customSubPermissions: userData.customSubPermissions || {},
+    isProfileIncomplete: !!userData.isProfileIncomplete,
+    isProfileLocked: !!userData.isProfileLocked,
+    profileReminderCount: userData.profileReminderCount || 0
+});
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -29,30 +57,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (token) {
                 try {
                     const userData = await APIService.getMe();
-                    const user: User = {
-                        id: userData.id || userData._id,
-                        name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
-                        email: userData.email,
-                        role: userData.role,
-                        avatar: (userData.avatar && 
-                                 userData.avatar.trim() !== '' && 
-                                 userData.avatar !== 'null' && 
-                                 userData.avatar !== 'undefined')
-                            ? userData.avatar
-                            : '',
-                        firstName: userData.firstName,
-                        lastName: userData.lastName,
-                        department: userData.department,
-                        hasProfile: userData.hasProfile,
-                        needsPasswordSetup: userData.needsPasswordSetup,
-                        microsoftId: userData.microsoftId,
-                        permissions: userData.permissions || {},
-                        scopes: userData.scopes || {},
-                        subPermissions: userData.subPermissions || {},
-                        customPermissions: userData.customPermissions || {},
-                        customScopes: userData.customScopes || {},
-                        customSubPermissions: userData.customSubPermissions || {}
-                    };
+                    const user: User = buildUserFromApiData(userData);
                     setUser(user);
                     setIsImpersonated(!!localStorage.getItem('original_token'));
                 } catch (error) {
@@ -112,30 +117,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         navigate('/login');
     };
 
-    const buildUserFromApiData = (userData: any): User => ({
-        id: userData.id || userData._id || '',
-        name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
-        email: userData.email,
-        role: userData.role,
-        avatar: (userData.avatar &&
-                 userData.avatar.trim() !== '' &&
-                 userData.avatar !== 'null' &&
-                 userData.avatar !== 'undefined')
-            ? userData.avatar
-            : '',
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        hasProfile: userData.hasProfile,
-        needsPasswordSetup: userData.needsPasswordSetup,
-        microsoftId: userData.microsoftId,
-        permissions: userData.permissions || {},
-        scopes: userData.scopes || {},
-        subPermissions: userData.subPermissions || {},
-        customPermissions: userData.customPermissions || {},
-        customScopes: userData.customScopes || {},
-        customSubPermissions: userData.customSubPermissions || {}
-    });
-
     const impersonate = async (token: string, userData?: User) => {
         const currentToken = localStorage.getItem('token');
         if (currentToken) {
@@ -174,29 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(true);
         try {
             const userData = await APIService.getMe();
-            const userObj: User = {
-                id: userData.id || userData._id,
-                name: [userData.firstName, userData.lastName].filter(Boolean).join(' ') || userData.email.split('@')[0],
-                email: userData.email,
-                role: userData.role,
-                avatar: (userData.avatar && 
-                         userData.avatar.trim() !== '' && 
-                         userData.avatar !== 'null' && 
-                         userData.avatar !== 'undefined')
-                    ? userData.avatar
-                    : '',
-                firstName: userData.firstName,
-                lastName: userData.lastName,
-                hasProfile: userData.hasProfile,
-                needsPasswordSetup: userData.needsPasswordSetup,
-                microsoftId: userData.microsoftId,
-                permissions: userData.permissions || {},
-                scopes: userData.scopes || {},
-                subPermissions: userData.subPermissions || {},
-                customPermissions: userData.customPermissions || {},
-                customScopes: userData.customScopes || {},
-                customSubPermissions: userData.customSubPermissions || {}
-            };
+            const userObj: User = buildUserFromApiData(userData);
             setUser(userObj);
             sessionStorage.setItem('itcs_user', JSON.stringify(userObj));
             sessionStorage.setItem('itcs_auth', 'true');

@@ -311,3 +311,146 @@ export async function triggerOffboardingTasks(employee: any, user?: any, reason?
         logger.error(`[Workflow] Failed to trigger offboarding tasks: ${err?.message || err}`);
     }
 }
+
+/**
+ * Checks if all tasks for a given target & type are completed.
+ * If all tasks are completed, sends a final clearance/completion confirmation email to HR & Admin.
+ */
+export async function triggerWorkflowCompletionCheck(task: any, originUrl?: string) {
+    try {
+        const targetQuery: any = { type: task.type };
+        if (task.targetEmployeeId && task.targetEmployeeId !== 'Pending Profile' && task.targetEmployeeId !== 'No Profile') {
+            targetQuery.targetEmployeeId = task.targetEmployeeId;
+        } else if (task.targetUserId) {
+            targetQuery.targetUserId = task.targetUserId;
+        } else {
+            return;
+        }
+
+        const allTasks = await WorkflowTask.find(targetQuery).lean();
+        if (allTasks.length === 0) return;
+
+        const hasPending = allTasks.some(t => t.status !== 'Completed');
+        if (hasPending) {
+            // Not all tasks are completed yet
+            return;
+        }
+
+        // All tasks are completed! Send notification email
+        const company = await Company.findOne().lean() as any;
+        const workflowSettings = company?.workflowSettings || {};
+        const hrEmail = workflowSettings.hrEmail || process.env.HR_TEAM_EMAIL || '';
+        const adminEmail = workflowSettings.adminEmail || process.env.ADMIN_TEAM_EMAIL || '';
+        const recipients = [hrEmail, adminEmail].filter(Boolean);
+
+        if (recipients.length === 0) {
+            logger.warn(`[Workflow] No HR or Admin email configured to receive completion notice for ${task.targetName}`);
+            return;
+        }
+
+        const baseUrl = getBaseUrl(originUrl);
+        const targetName = task.targetName || 'Staff Member';
+        const empId = task.targetEmployeeId || 'N/A';
+
+        const taskRows = allTasks.map(t => `
+            <tr>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-weight: bold; color: #334155;">${t.department}</td>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a;">${t.title}</td>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #f1f5f9; color: #059669; font-weight: bold;">Completed</td>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-size: 12px;">${t.completedByName || 'Staff'}${t.notes ? ` <br/><i style="color:#475569">"${t.notes}"</i>` : ''}</td>
+            </tr>
+        `).join('');
+
+        if (task.type === 'Offboarding') {
+            const html = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
+                    <div style="margin-bottom: 20px; border-bottom: 2px solid #10b981; padding-bottom: 12px;">
+                        <h2 style="margin: 0; color: #059669; font-size: 20px;">✅ Offboarding Clearance Complete</h2>
+                        <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">All department checklist items have been fulfilled</p>
+                    </div>
+
+                    <p style="font-size: 14px; line-height: 1.6;">
+                        All offboarding workflow tasks for <strong>${targetName}</strong> (${empId}) have been marked as <strong>Completed</strong>. Tech access has been revoked, company assets retrieved, and HR exit clearance recorded.
+                    </p>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin: 20px 0; overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase;">
+                                    <th style="padding: 8px 12px; border-radius: 6px 0 0 6px;">Dept</th>
+                                    <th style="padding: 8px 12px;">Task</th>
+                                    <th style="padding: 8px 12px;">Status</th>
+                                    <th style="padding: 8px 12px; border-radius: 0 6px 6px 0;">Completed By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${taskRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0;">
+                        <a href="${baseUrl}/workflow-tasks?empId=${encodeURIComponent(empId !== 'N/A' ? empId : '')}" style="display: inline-block; background: #059669; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: bold; font-size: 14px;">
+                            View Clearance Record in HRM
+                        </a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 12px;">
+                        This employee is now cleared for final settlement and payroll closure.
+                    </p>
+                </div>
+            `;
+
+            await dispatchEmail({
+                to: recipients,
+                subject: `✅ [Clearance Complete] All Offboarding Tasks Finished: ${targetName} (${empId})`,
+                html,
+            }, `Offboarding Clearance Complete - ${targetName}`);
+            logger.info(`[Workflow] Dispatched clearance complete email for ${targetName}`);
+        } else if (task.type === 'Onboarding') {
+            const html = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
+                    <div style="margin-bottom: 20px; border-bottom: 2px solid #4f46e5; padding-bottom: 12px;">
+                        <h2 style="margin: 0; color: #4338ca; font-size: 20px;">✅ Onboarding IT Provisioning Complete</h2>
+                        <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">User accounts & credentials have been set up</p>
+                    </div>
+
+                    <p style="font-size: 14px; line-height: 1.6;">
+                        All onboarding setup tasks for <strong>${targetName}</strong> have been marked as <strong>Completed</strong>.
+                    </p>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin: 20px 0; overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                            <thead>
+                                <tr style="background: #f1f5f9; color: #475569; font-size: 11px; text-transform: uppercase;">
+                                    <th style="padding: 8px 12px; border-radius: 6px 0 0 6px;">Dept</th>
+                                    <th style="padding: 8px 12px;">Task</th>
+                                    <th style="padding: 8px 12px;">Status</th>
+                                    <th style="padding: 8px 12px; border-radius: 0 6px 6px 0;">Completed By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${taskRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="text-align: center; margin: 24px 0;">
+                        <a href="${baseUrl}/workflow-tasks?empId=${encodeURIComponent(empId !== 'N/A' ? empId : '')}" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: bold; font-size: 14px;">
+                            View Onboarding Status in HRM
+                        </a>
+                    </div>
+                </div>
+            `;
+
+            await dispatchEmail({
+                to: recipients,
+                subject: `✅ [Onboarding Complete] IT Setup Finished: ${targetName}`,
+                html,
+            }, `Onboarding Complete - ${targetName}`);
+            logger.info(`[Workflow] Dispatched onboarding complete email for ${targetName}`);
+        }
+    } catch (err: any) {
+        logger.error(`[Workflow] Failed checking workflow completion: ${err?.message || err}`);
+    }
+}

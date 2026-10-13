@@ -1,5 +1,6 @@
 
 import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import { AuthUtils } from './auth.utils';
 
 export interface AuthRequest extends Request {
@@ -99,4 +100,39 @@ export const authorize = (roles: string[]) => {
 
         next();
     };
+};
+
+/**
+ * Middleware: Checks if an employee has had their features locked due to failing to complete
+ * their mandatory profile after receiving 2+ notifications.
+ * If locked, blocks access to payroll, payslips, leaves, attendance, documents.
+ */
+export const checkProfileLock = async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    if (!authReq.user || authReq.user.role !== 'employee') {
+        return next();
+    }
+    try {
+        const Employee = mongoose.models.Employee || mongoose.model('Employee');
+        const employee = await Employee.findOne({ userId: authReq.user.userId })
+            .select('phone cnic address jobInfo profileReminderCount isDeleted')
+            .lean() as any;
+
+        if (employee && !employee.isDeleted && (employee.profileReminderCount || 0) >= 2) {
+            const hasCnic = !!employee.cnic;
+            const hasPhone = !!employee.phone;
+            const hasAddress = !!(employee.address?.street || employee.address?.city || employee.address?.state || employee.address?.country);
+            const hasJob = !!employee.jobInfo?.department && !!employee.jobInfo?.designation;
+
+            if (!hasCnic || !hasPhone || !hasAddress || !hasJob) {
+                return res.status(403).json({
+                    message: 'Your access to HRMS features is restricted because your profile is incomplete. Please complete your profile records (CNIC, Contact, Address) to restore access.',
+                    code: 'PROFILE_INCOMPLETE_LOCKED'
+                });
+            }
+        }
+    } catch (err) {
+        // fail-open on unexpected query error
+    }
+    next();
 };

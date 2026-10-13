@@ -12,7 +12,7 @@ import Company from '../models/Company';
 import DocumentTemplate from '../models/DocumentTemplate';
 import LeaveType from '../models/LeaveType';
 import LeaveBalance from '../models/LeaveBalance';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, checkProfileLock } from '../middleware/auth';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { decryptEmployeeFields } from '../utils/encryption';
 
@@ -827,7 +827,7 @@ const renderCompleteDocument = (
             width: textWidth,
             fontSize: 9.5,
             fontColor: '#000000',
-            lineGap: 1.0, // 1.2 compact line-height
+            lineGap: 1.2, // 1.2 compact line-height
             characterSpacing: 0.1, // normal / 0.01em
             align: 'left'
         });
@@ -843,7 +843,7 @@ const renderCompleteDocument = (
         const nextIsBullet = nextNonEmpty.startsWith('•') || nextNonEmpty.startsWith('-') || nextNonEmpty.startsWith('*') ||
             (nextNonEmpty.indexOf(':') > 0 && nextNonEmpty.indexOf(':') < 30 && !nextNonEmpty.toUpperCase().startsWith('HTTP') && !nextNonEmpty.toUpperCase().startsWith('SINCERELY'));
         if (nextIsBullet || trimmed.toLowerCase().includes('as follows')) {
-            doc.moveDown(0.2); // Space after the line before bullet points
+            doc.moveDown(0.25); // Space after the line before bullet points
         } else {
             doc.moveDown(0.15);
         }
@@ -861,7 +861,7 @@ const renderCompleteDocument = (
 };
 
 // Generate a document
-router.post('/generate', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/generate', authenticate, checkProfileLock, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;
     try {
         const { documentType, reason } = req.body;

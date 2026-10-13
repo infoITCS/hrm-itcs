@@ -7,7 +7,7 @@
  * automatically restricts managers to their direct reports.
  */
 import { Router, RequestHandler } from 'express';
-import { authenticate, authorize } from '../../middleware/auth';
+import { authenticate, authorize, checkProfileLock } from '../../middleware/auth';
 import { scopeToTeam } from '../../shared/middleware/scopeToTeam';
 import * as ctrl from './attendance.controller';
 
@@ -25,6 +25,7 @@ const ALL_ROLES     = ['super-admin', 'admin', 'manager', 'employee', 'hr', 'fin
  */
 const auth = (...roles: string[]): RequestHandler[] => [
     authenticate as RequestHandler,
+    checkProfileLock as RequestHandler,
     authorize(roles) as RequestHandler,
     scopeToTeam as RequestHandler,
 ];

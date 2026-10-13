@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle } from 'lucide-react';
+import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle, AlertTriangle, Bell, Lock, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
@@ -10,6 +10,29 @@ import Avatar from '../../components/UI/Avatar';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 const ITEMS_PER_PAGE = 12;
+
+interface IncompleteEmployeeInfo {
+    _id: string;
+    employeeId: string;
+    firstName?: string;
+    lastName?: string;
+    fullName: string;
+    avatar?: string;
+    department: string;
+    designation: string;
+    missingFields: string[];
+    profileReminderCount: number;
+    lastProfileReminderAt?: string | null;
+    isLocked: boolean;
+}
+
+interface ProfileProgressData {
+    totalEmployees: number;
+    completed: number;
+    pct: number;
+    isTeamScope?: boolean;
+    incompleteEmployees?: IncompleteEmployeeInfo[];
+}
 
 const EmployeeList = () => {
     const navigate = useNavigate();
@@ -34,7 +57,14 @@ const EmployeeList = () => {
     const [isInviting, setIsInviting] = React.useState(false);
     const [inviteSuccess, setInviteSuccess] = React.useState<string | null>(null);
     const [inviteError, setInviteError] = React.useState<string | null>(null);
-    const [profileProgress, setProfileProgress] = React.useState<{ totalEmployees: number; completed: number; pct: number; isTeamScope?: boolean } | null>(null);
+    const [profileProgress, setProfileProgress] = React.useState<ProfileProgressData | null>(null);
+    const [showIncompleteModal, setShowIncompleteModal] = React.useState(false);
+    const [isSendingReminders, setIsSendingReminders] = React.useState(false);
+    const [sendingEmpId, setSendingEmpId] = React.useState<string | null>(null);
+    const [reminderAlert, setReminderAlert] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [modalSearch, setModalSearch] = React.useState('');
+    const [modalFilter, setModalFilter] = React.useState<'all' | 'unreminded' | 'warned' | 'locked'>('all');
+    const [expandedEmpId, setExpandedEmpId] = React.useState<string | null>(null);
 
     const handleQuickInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -72,31 +102,98 @@ const EmployeeList = () => {
         }
     };
 
+    const fetchProfileProgress = React.useCallback(async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(api.employeeProfileProgress, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const json = await res.json();
+                if (json?.success) {
+                    setProfileProgress(json.data);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to fetch profile progress:', err);
+        }
+    }, []);
+
+    const handleSendReminders = async (employeeIds?: string[]) => {
+        setIsSendingReminders(true);
+        if (employeeIds && employeeIds.length === 1) {
+            setSendingEmpId(employeeIds[0]);
+        }
+        setReminderAlert(null);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(api.sendProfileReminders, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(employeeIds ? { employeeIds } : {})
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to send profile reminders');
+            }
+            setReminderAlert({
+                type: 'success',
+                message: data.message || `Reminders successfully sent!`
+            });
+            await fetchProfileProgress();
+        } catch (err: any) {
+            setReminderAlert({
+                type: 'error',
+                message: err.message || 'Failed to send reminders.'
+            });
+        } finally {
+            setIsSendingReminders(false);
+            setSendingEmpId(null);
+        }
+    };
+
     React.useEffect(() => {
         const fetchConfigAndProgress = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const [deptRes, progressRes] = await Promise.all([
+                const [deptRes] = await Promise.all([
                     fetch(`${api.baseURL}/api/config/departments`, { headers: { 'Authorization': `Bearer ${token}` } }),
-                    fetch(api.employeeProfileProgress, { headers: { 'Authorization': `Bearer ${token}` } }).catch(() => null)
+                    fetchProfileProgress()
                 ]);
 
                 if (deptRes.ok) {
                     const data = await deptRes.json();
                     setDepartments(data.filter((d: any) => d.isActive).map((d: any) => d.name));
                 }
-                if (progressRes && progressRes.ok) {
-                    const progressData = await progressRes.json();
-                    if (progressData?.success) {
-                        setProfileProgress(progressData.data);
-                    }
-                }
             } catch (err) {
                 console.error('Failed to fetch config or progress', err);
             }
         };
         fetchConfigAndProgress();
-    }, []);
+    }, [fetchProfileProgress]);
+
+    const filteredIncompleteEmployees = React.useMemo(() => {
+        if (!profileProgress?.incompleteEmployees) return [];
+        return profileProgress.incompleteEmployees.filter(emp => {
+            if (modalFilter === 'unreminded' && (emp.profileReminderCount || 0) > 0) return false;
+            if (modalFilter === 'warned' && emp.profileReminderCount !== 1) return false;
+            if (modalFilter === 'locked' && !emp.isLocked) return false;
+
+            if (modalSearch.trim()) {
+                const s = modalSearch.toLowerCase();
+                const matchesName = emp.fullName?.toLowerCase().includes(s);
+                const matchesId = emp.employeeId?.toLowerCase().includes(s);
+                const matchesDept = emp.department?.toLowerCase().includes(s);
+                const matchesDesig = emp.designation?.toLowerCase().includes(s);
+                const matchesField = emp.missingFields?.some(f => f.toLowerCase().includes(s));
+                if (!matchesName && !matchesId && !matchesDept && !matchesDesig && !matchesField) return false;
+            }
+            return true;
+        });
+    }, [profileProgress?.incompleteEmployees, modalFilter, modalSearch]);
 
     const handleDeleteClick = (id: string) => {
         setEmployeeToDelete(id);
@@ -283,19 +380,25 @@ const EmployeeList = () => {
             {/* Data Collection Progress Banner */}
             {profileProgress && profileProgress.totalEmployees > 0 && (
                 <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/60">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         <div className="flex items-center gap-3.5 min-w-0">
                             <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
                                 <ShieldCheck size={20} />
                             </div>
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-sm font-bold text-slate-800">
                                         {profileProgress.isTeamScope || role === 'manager' ? 'Team Data Collection Progress' : 'Data Collection Progress'}
                                     </h3>
                                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
                                         {profileProgress.isTeamScope || role === 'manager' ? 'Team Completeness' : 'PIM Completeness'}
                                     </span>
+                                    {(profileProgress.incompleteEmployees?.filter(e => e.isLocked).length || 0) > 0 && (
+                                        <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                            <Lock size={10} />
+                                            {profileProgress.incompleteEmployees?.filter(e => e.isLocked).length} Locked
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="text-xs text-slate-500 mt-0.5">
                                     <span className="font-semibold text-slate-700">{profileProgress.completed}</span> of{' '}
@@ -304,11 +407,41 @@ const EmployeeList = () => {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                            <span className="text-xl font-bold text-slate-800">{profileProgress.pct}%</span>
-                            <span className="text-xs text-slate-400 font-medium">Complete</span>
+
+                        <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap justify-between lg:justify-end">
+                            <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-xl font-bold text-slate-800">{profileProgress.pct}%</span>
+                                <span className="text-xs text-slate-400 font-medium">Complete</span>
+                            </div>
+
+                            {(profileProgress.incompleteEmployees && profileProgress.incompleteEmployees.length > 0) && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowIncompleteModal(true);
+                                            setReminderAlert(null);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                                    >
+                                        <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                                        <span>Review Incomplete ({profileProgress.incompleteEmployees.length})</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSendReminders()}
+                                        disabled={isSendingReminders}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs shadow-indigo-200 active:scale-95 cursor-pointer"
+                                        title="Send persistent reminder to all incomplete employees"
+                                    >
+                                        <Bell size={13} className="shrink-0" />
+                                        <span>{isSendingReminders ? 'Sending...' : 'Remind All'}</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
+
                     <div className="mt-3.5 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                         <div
                             className="h-full bg-indigo-600 rounded-full transition-all duration-500 ease-out"
@@ -812,6 +945,302 @@ const EmployeeList = () => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            , document.body)}
+
+            {/* Incomplete Profiles & Reminder Modal */}
+            {showIncompleteModal && profileProgress?.incompleteEmployees && createPortal(
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                    <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 border border-amber-200/60 shadow-xs">
+                                    <AlertTriangle size={20} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-base font-bold text-slate-800">Incomplete Employee Profiles</h3>
+                                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                            {profileProgress.incompleteEmployees.length} Pending
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Click any employee to see what is missing. 2 reminders lock HRMS features until completed.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowIncompleteModal(false);
+                                    setExpandedEmpId(null);
+                                }}
+                                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Top Stats & Remind All Action */}
+                        <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                            <div className="flex items-center gap-2 sm:gap-4 flex-wrap text-xs">
+                                <span className="font-semibold text-slate-600">
+                                    Total Incomplete: <strong className="text-slate-900">{profileProgress.incompleteEmployees.length}</strong>
+                                </span>
+                                <span className="text-slate-300">|</span>
+                                <span className="text-slate-600">
+                                    0 Reminders: <strong className="text-slate-800">{profileProgress.incompleteEmployees.filter(e => (e.profileReminderCount || 0) === 0).length}</strong>
+                                </span>
+                                <span className="text-slate-300">|</span>
+                                <span className="text-amber-700">
+                                    1st Warning: <strong className="text-amber-900">{profileProgress.incompleteEmployees.filter(e => e.profileReminderCount === 1).length}</strong>
+                                </span>
+                                <span className="text-slate-300">|</span>
+                                <span className="text-rose-700 flex items-center gap-1 font-bold">
+                                    <Lock size={12} />
+                                    Locked (2+): <strong>{profileProgress.incompleteEmployees.filter(e => e.isLocked).length}</strong>
+                                </span>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => handleSendReminders()}
+                                disabled={isSendingReminders}
+                                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ml-auto"
+                            >
+                                <Bell size={13} />
+                                <span>{isSendingReminders ? 'Sending Reminders...' : `Send Reminder to All (${profileProgress.incompleteEmployees.length})`}</span>
+                            </button>
+                        </div>
+
+                        {/* Alert feedback */}
+                        {reminderAlert && (
+                            <div className={`mx-6 mt-3 p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 ${
+                                reminderAlert.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+                            }`}>
+                                <div className="flex items-center gap-2">
+                                    {reminderAlert.type === 'success' ? <CheckCircle size={15} className="text-emerald-600 shrink-0" /> : <AlertCircle size={15} className="text-rose-600 shrink-0" />}
+                                    <span>{reminderAlert.message}</span>
+                                </div>
+                                <button onClick={() => setReminderAlert(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Search and Filter Tabs */}
+                        <div className="px-6 py-3 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+                            <div className="relative flex-1">
+                                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, ID, department, or missing field..."
+                                    value={modalSearch}
+                                    onChange={(e) => setModalSearch(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-100 font-medium"
+                                />
+                            </div>
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                                {(
+                                    [
+                                        { key: 'all', label: `All (${profileProgress.incompleteEmployees.length})` },
+                                        { key: 'unreminded', label: '0 Reminders' },
+                                        { key: 'warned', label: '1 Warning' },
+                                        { key: 'locked', label: 'Locked' }
+                                    ] as const
+                                ).map((tab) => (
+                                    <button
+                                        key={tab.key}
+                                        type="button"
+                                        onClick={() => setModalFilter(tab.key)}
+                                        className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                                            modalFilter === tab.key
+                                                ? 'bg-slate-900 text-white'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Incomplete Employees List */}
+                        <div className="p-6 overflow-y-auto flex-1 space-y-3">
+                            {filteredIncompleteEmployees.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400">
+                                    <CheckCircle size={36} className="mx-auto text-emerald-400 mb-2" />
+                                    <p className="text-sm font-semibold text-slate-700">No matching employees</p>
+                                    <p className="text-xs text-slate-400 mt-1">All employees in this filter have complete profile records.</p>
+                                </div>
+                            ) : (
+                                filteredIncompleteEmployees.map((emp) => {
+                                    const isExpanded = expandedEmpId === emp.employeeId;
+                                    const isSendingThis = isSendingReminders && sendingEmpId === emp.employeeId;
+
+                                    return (
+                                        <div
+                                            key={emp.employeeId}
+                                            className={`border rounded-2xl p-4 transition-all duration-200 cursor-pointer ${
+                                                emp.isLocked
+                                                    ? 'border-rose-200/90 bg-rose-50/20 hover:border-rose-300'
+                                                    : emp.profileReminderCount === 1
+                                                    ? 'border-amber-200/90 bg-amber-50/20 hover:border-amber-300'
+                                                    : 'border-slate-200 bg-white hover:border-indigo-200'
+                                            }`}
+                                            onClick={() => setExpandedEmpId(isExpanded ? null : emp.employeeId)}
+                                        >
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                {/* Left: Avatar & Info */}
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <Avatar
+                                                        src={getAvatarUrl(emp.avatar)}
+                                                        name={emp.fullName}
+                                                        size="w-10 h-10"
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="text-sm font-bold text-slate-800 hover:text-indigo-600 transition-colors">
+                                                                {emp.fullName}
+                                                            </h4>
+                                                            <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                                                {emp.employeeId}
+                                                            </span>
+                                                            {emp.isLocked ? (
+                                                                <span className="text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                                    <Lock size={10} />
+                                                                    Features Locked (2+ Warnings)
+                                                                </span>
+                                                            ) : emp.profileReminderCount === 1 ? (
+                                                                <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                                    <AlertTriangle size={10} />
+                                                                    1st Warning Sent
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                                                                    0 Reminders
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-0.5 truncate">
+                                                            {emp.designation} • {emp.department}
+                                                            {emp.lastProfileReminderAt && (
+                                                                <span className="text-[11px] text-slate-400 ml-2">
+                                                                    (Last reminded: {new Date(emp.lastProfileReminderAt).toLocaleDateString()})
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Right: Actions */}
+                                                <div className="flex items-center gap-2 self-end sm:self-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSendReminders([emp.employeeId])}
+                                                        disabled={isSendingThis || isSendingReminders}
+                                                        className="px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                                                        title="Send persistent reminder to this employee"
+                                                    >
+                                                        <Bell size={12} />
+                                                        <span>{isSendingThis ? 'Sending...' : 'Remind'}</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate(`/pim/view/${emp.employeeId}`)}
+                                                        className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                        title="Open Employee Profile"
+                                                    >
+                                                        <Eye size={12} />
+                                                        <span>Profile</span>
+                                                    </button>
+                                                    <span className="text-slate-400 hover:text-slate-600 p-1">
+                                                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Missing Fields Preview */}
+                                            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                                                <span className="text-[11px] font-bold text-slate-500 mr-1">Missing ({emp.missingFields.length}):</span>
+                                                {emp.missingFields.map((field) => (
+                                                    <span
+                                                        key={field}
+                                                        className="text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200/60 px-2 py-0.5 rounded-md flex items-center gap-1"
+                                                    >
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                                        {field}
+                                                    </span>
+                                                ))}
+                                            </div>
+
+                                            {/* Expanded Detailed Checklist */}
+                                            {isExpanded && (
+                                                <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50/50 rounded-xl p-3 text-xs">
+                                                    <h5 className="font-bold text-slate-800 mb-2">Detailed Profile Checklist:</h5>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('CNIC') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('CNIC') ? '❌ Missing' : '✅ Completed'}
+                                                            </span>
+                                                            <span className="text-slate-700">CNIC / Identity Number</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('Phone Number') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('Phone Number') ? '❌ Missing' : '✅ Completed'}
+                                                            </span>
+                                                            <span className="text-slate-700">Primary Phone Number</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('Address') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('Address') ? '❌ Missing' : '✅ Completed'}
+                                                            </span>
+                                                            <span className="text-slate-700">Residential Address</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('Department') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('Department') ? '❌ Missing' : '✅ Completed'}
+                                                            </span>
+                                                            <span className="text-slate-700">Assigned Department</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('Designation') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('Designation') ? '❌ Missing' : '✅ Completed'}
+                                                            </span>
+                                                            <span className="text-slate-700">Designation / Role Title</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={emp.missingFields.includes('User Account') ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                                                {emp.missingFields.includes('User Account') ? '❌ Missing' : '✅ Linked'}
+                                                            </span>
+                                                            <span className="text-slate-700">System User Account</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between shrink-0 text-xs text-slate-500">
+                            <span>
+                                💡 Profiles are automatically unlocked as soon as the employee completes and saves their profile details.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowIncompleteModal(false);
+                                    setExpandedEmpId(null);
+                                }}
+                                className="px-4 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             , document.body)}

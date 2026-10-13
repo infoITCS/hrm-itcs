@@ -19,4 +19,7 @@ export interface User {
     customPermissions?: Record<string, boolean>;
     customScopes?: Record<string, string>;
     customSubPermissions?: Record<string, boolean>;
+    isProfileIncomplete?: boolean;
+    isProfileLocked?: boolean;
+    profileReminderCount?: number;
 }

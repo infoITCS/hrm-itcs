@@ -3,6 +3,8 @@ import WorkflowTask from '../models/WorkflowTask';
 import Company from '../models/Company';
 import Employee from '../models/Employee';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { triggerWorkflowCompletionCheck } from '../services/workflowService';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -181,6 +183,13 @@ router.patch('/:id', authenticate, async (req: Request, res: Response, next: Nex
         }
 
         await task.save();
+
+        if (status === 'Completed') {
+            triggerWorkflowCompletionCheck(task, req.headers.origin as string).catch((err: any) => {
+                logger.error(`[Workflow] Error checking workflow completion:`, err);
+            });
+        }
+
         res.json(task);
     } catch (error) {
         next(error);

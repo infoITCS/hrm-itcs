@@ -114,8 +114,27 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
         const role = authReq.user?.role || '';
         const userId = authReq.user?.userId;
 
-        const employee = await Employee.findOne({ userId }).select('employeeId phone');
+        const employee = await Employee.findOne({ userId }).select('employeeId phone cnic address jobInfo profileReminderCount lastProfileReminderAt').lean() as any;
         const notifications: any[] = [];
+
+        // Check for persistent Profile Completion Reminder for this employee
+        if (employee && (employee.profileReminderCount || 0) > 0) {
+            const isIncomplete = !employee.phone || !employee.cnic || !(employee.address?.street || employee.address?.city || employee.address?.state || employee.address?.country) || !employee.jobInfo?.department || !employee.jobInfo?.designation;
+            if (isIncomplete) {
+                const isLocked = (employee.profileReminderCount || 0) >= 2;
+                notifications.push({
+                    id: 'persistent-profile-reminder',
+                    title: isLocked ? '🔒 Feature Access Restricted: Complete Profile' : '⚠️ Action Required: Complete Your Profile',
+                    message: isLocked
+                        ? `You have received ${employee.profileReminderCount} profile completion reminders. Your HRMS features (Leaves, Attendance, Payslips, Documents) are locked until your profile details are completed.`
+                        : `Please complete your mandatory profile details (CNIC, Contact, Address). Reminder ${employee.profileReminderCount} of 2.`,
+                    time: employee.lastProfileReminderAt || new Date(),
+                    type: 'task',
+                    category: 'profile',
+                    link: '/my-info'
+                });
+            }
+        }
 
         const isHrOrAdmin = ['admin', 'super-admin', 'hr'].includes(role);
         const isFinanceOnly = role === 'finance';

@@ -7,7 +7,9 @@ import { AuthRequest } from '../middleware/auth';
 import { AuthUtils } from '../middleware/auth.utils';
 import crypto from 'crypto';
 import { sendWelcomeEmail, sendTestEmail } from '../utils/email';
-import { triggerOnboardingTasks } from '../services/workflowService';
+import { triggerOnboardingTasks, triggerOffboardingTasks } from '../services/workflowService';
+import WorkflowTask from '../models/WorkflowTask';
+import logger from '../utils/logger';
 import RolePermission from '../models/RolePermission';
 import { SYSTEM_MODULES, computeEffectivePermissionsAndScopes, getDefaultScopeForRole, getDefaultSubTabAccess } from '../utils/permissionUtils';
 
@@ -216,6 +218,21 @@ router.patch('/users/:id/status', authenticate, requireAdmin, async (req: Reques
             details: { diff: { isActive: { old: oldStatus, new: isActive } } }
         });
 
+        // Trigger offboarding tasks if user account is deactivated/suspended
+        if (oldStatus !== false && isActive === false) {
+            const linkedEmployee = await Employee.findOne({ userId: user._id });
+            const empTarget = linkedEmployee || {
+                employeeId: 'No Profile',
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                userId: user._id
+            };
+            triggerOffboardingTasks(empTarget, user, 'Account Suspended', req.headers.origin as string).catch((err: any) => {
+                logger.error(`[UserStatusUpdate] Failed triggering offboarding workflow:`, err);
+            });
+        }
+
         res.json({ message: `User account ${isActive ? 'activated' : 'suspended'}`, user });
     } catch (error) {
         next(error);
@@ -364,6 +381,12 @@ router.post('/users/:id/link', authenticate, requireAdmin, async (req: Request, 
                 performedBy: authReq.user?.userId || 'System',
                 details: { action: 'LINK_USER', userId, employeeId: employee.employeeId }
             });
+
+            // Sync any existing onboarding workflow tasks to point to this employee ID and name
+            await WorkflowTask.updateMany(
+                { targetUserId: userId },
+                { $set: { targetEmployeeId: employee.employeeId, targetName: [employee.firstName, employee.lastName].filter(Boolean).join(' ') || employee.employeeId } }
+            );
         }
 
         res.json({ success: true, message: 'User linked to employee successfully' });

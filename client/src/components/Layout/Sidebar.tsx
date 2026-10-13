@@ -22,10 +22,22 @@ import {
     Headphones,
     Mail,
     CheckSquare,
+    Lock,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuth } from '../../contexts/AuthContext';
+
+export const LOCKED_HRMS_ROUTES = [
+    '/leave',
+    '/attendance',
+    '/claim',
+    '/my-payslips',
+    '/my-loans',
+    '/my-requests',
+    '/provident-fund',
+    '/performance'
+];
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -35,7 +47,7 @@ interface SidebarProps {
 const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
     const location = useLocation();
     const { role, hasAccess, hasSubAccess } = usePermissions();
-    const { isImpersonated } = useAuth();
+    const { isImpersonated, user } = useAuth();
 
     const allMenuItems = [
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: null, module: 'dashboard', end: true },
@@ -115,25 +127,48 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
                 <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
                     {menuItems.map((item) => {
                         const IconComponent = item.icon;
+                        const isItemLocked = user?.role === 'employee' && !!user?.isProfileLocked && LOCKED_HRMS_ROUTES.includes(item.path);
+                        const isMyInfo = item.path === '/my-info';
+                        const showActionRequired = isMyInfo && user?.role === 'employee' && !!user?.isProfileLocked;
+
                         return (
                             <NavLink
                                 key={item.name}
                                 to={item.path}
                                 end={item.end}
-                                onClick={onClose}
-                                className={({ isActive, isPending }) =>
-                                    `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
+                                onClick={(e) => {
+                                    if (isItemLocked) {
+                                        e.preventDefault();
+                                        alert("Feature Restricted: Your HRMS features are locked because your employee profile is incomplete after 2 reminders. Please complete your profile details (CNIC, Contact, Address, Job Info) in 'My Info' to restore access.");
+                                        return;
+                                    }
+                                    onClose?.();
+                                }}
+                                className={({ isActive, isPending }) => {
+                                    if (isItemLocked) {
+                                        return 'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative opacity-45 cursor-not-allowed bg-slate-50 text-slate-400 select-none';
+                                    }
+                                    return `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative ${
                                         isActive || isPending
                                             ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
                                             : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-600'
-                                    }`
-                                }
+                                    }`;
+                                }}
                             >
                                 {({ isActive }) => (
                                     <>
-                                        <IconComponent size={20} className="shrink-0" />
+                                        <IconComponent size={20} className={`shrink-0 ${isItemLocked ? 'text-slate-400' : ''}`} />
                                         <span className="truncate">{item.name}</span>
-                                        {isActive ? (
+                                        {isItemLocked ? (
+                                            <span className="ml-auto text-rose-500 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shrink-0" title="Locked: Complete profile in My Info">
+                                                <Lock size={10} />
+                                                Locked
+                                            </span>
+                                        ) : showActionRequired ? (
+                                            <span className="ml-auto text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 animate-pulse" title="Profile completion required">
+                                                Fix Profile
+                                            </span>
+                                        ) : isActive ? (
                                             <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                                         ) : null}
                                     </>

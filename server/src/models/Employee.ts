@@ -46,6 +46,8 @@ export interface IEmployee extends Document {
         probationEndDate?: Date; // [NEW] For auto-update
         autoUpdated?: boolean;
     };
+    profileReminderCount?: number;
+    lastProfileReminderAt?: Date;
     jobInfo: {
         designation: string;
         department: string;
@@ -243,6 +245,8 @@ const EmployeeSchema: Schema = new Schema({
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
     deletedBy: { type: String }, // userId of admin who performed the delete
+    profileReminderCount: { type: Number, default: 0 },
+    lastProfileReminderAt: { type: Date },
     jobInfo: {
         designation: { type: String },
         department: { type: String },

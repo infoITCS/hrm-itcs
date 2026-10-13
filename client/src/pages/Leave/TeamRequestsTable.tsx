@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
-import { Check, X, Eye, MessageSquare, Search, Edit3 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Check, X, Eye, MessageSquare, Search, Edit3, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
 import LeaveDetailsModal from './LeaveDetailsModal';
 import Avatar from '../../components/UI/Avatar';
 import { usePermissions } from '../../hooks/usePermissions';
+
+type SortField = 'employee' | 'type' | 'date';
+type SortOrder = 'asc' | 'desc';
+type ActionFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
 const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) => {
     const { showToast } = useToast();
@@ -16,6 +20,11 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
     const [searchQuery, setSearchQuery] = useState('');
     const { role } = usePermissions();
     const isAdmin = ['super-admin', 'admin'].includes(role);
+
+    // Sorting & Action Filter State
+    const [statusFilter, setStatusFilter] = useState<ActionFilter>('all');
+    const [sortField, setSortField] = useState<SortField>('date');
+    const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     
     // Rejection State
     const [showRejectModal, setShowRejectModal] = useState(false);
@@ -131,21 +140,86 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
         }
     };
 
-    const filteredRequests = requests
-        .filter(req => {
-            if (!searchQuery) return true;
-            const s = searchQuery.toLowerCase();
-            return (
-                (req.employeeName && req.employeeName.toLowerCase().includes(s)) ||
-                (req.readableId && req.readableId.toLowerCase().includes(s)) ||
-                (req.type && req.type.toLowerCase().includes(s))
-            );
-        })
-        .sort((a: any, b: any) => {
-            const timeA = new Date(a.startDate || a.createdAt).getTime();
-            const timeB = new Date(b.startDate || b.createdAt).getTime();
-            return timeB - timeA;
-        });
+    const actionCounts = useMemo(() => ({
+        all: requests.length,
+        pending: requests.filter(r => (r.status || '').toLowerCase() === 'pending').length,
+        approved: requests.filter(r => (r.status || '').toLowerCase() === 'approved').length,
+        rejected: requests.filter(r => (r.status || '').toLowerCase() === 'rejected').length,
+    }), [requests]);
+
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortOrder(field === 'date' ? 'desc' : 'asc');
+        }
+    };
+
+    const filteredRequests = useMemo(() => {
+        return requests
+            .filter(req => {
+                if (searchQuery) {
+                    const s = searchQuery.toLowerCase();
+                    const matches = (
+                        (req.employeeName && req.employeeName.toLowerCase().includes(s)) ||
+                        (req.readableId && req.readableId.toLowerCase().includes(s)) ||
+                        (req.type && req.type.toLowerCase().includes(s))
+                    );
+                    if (!matches) return false;
+                }
+
+                const st = (req.status || '').toLowerCase();
+                if (statusFilter === 'pending' && st !== 'pending') return false;
+                if (statusFilter === 'approved' && st !== 'approved') return false;
+                if (statusFilter === 'rejected' && st !== 'rejected') return false;
+
+                return true;
+            })
+            .sort((a: any, b: any) => {
+                let comparison = 0;
+                if (sortField === 'employee') {
+                    const nameA = (a.employeeName || a.employee?.firstName || '').toLowerCase();
+                    const nameB = (b.employeeName || b.employee?.firstName || '').toLowerCase();
+                    comparison = nameA.localeCompare(nameB);
+                } else if (sortField === 'type') {
+                    const typeA = (a.type || '').toLowerCase();
+                    const typeB = (b.type || '').toLowerCase();
+                    comparison = typeA.localeCompare(typeB);
+                } else if (sortField === 'date') {
+                    const dateA = new Date(a.startDate || a.createdAt || 0).getTime();
+                    const dateB = new Date(b.startDate || b.createdAt || 0).getTime();
+                    comparison = dateA - dateB;
+                }
+                return sortOrder === 'asc' ? comparison : -comparison;
+            });
+    }, [requests, searchQuery, statusFilter, sortField, sortOrder]);
+
+    const renderSortableHeader = (field: SortField, label: string) => {
+        const isActive = sortField === field;
+        return (
+            <th 
+                onClick={() => handleSort(field)}
+                className={`px-6 py-4 text-xs font-black uppercase tracking-wider cursor-pointer select-none transition-colors group ${
+                    isActive ? 'text-indigo-600 bg-indigo-50/50' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100/60'
+                }`}
+                title={`Sort by ${label} (${isActive && sortOrder === 'asc' ? 'Descending' : 'Ascending'})`}
+            >
+                <div className="flex items-center gap-1.5">
+                    <span>{label}</span>
+                    {isActive ? (
+                        sortOrder === 'asc' ? (
+                            <ArrowUp size={13} className="text-indigo-600 shrink-0 stroke-[2.5]" />
+                        ) : (
+                            <ArrowDown size={13} className="text-indigo-600 shrink-0 stroke-[2.5]" />
+                        )
+                    ) : (
+                        <ArrowUpDown size={13} className="text-slate-300 group-hover:text-slate-500 shrink-0 transition-colors" />
+                    )}
+                </div>
+            </th>
+        );
+    };
 
     if (loading) {
         return (
@@ -158,28 +232,104 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
 
     return (
         <div className="flex flex-col">
-            <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-white rounded-t-3xl">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input 
-                        type="text" 
-                        placeholder="Search employee or ID..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all min-w-[250px]"
-                    />
+            <div className="p-4 border-b border-slate-100 flex flex-wrap gap-3 justify-between items-center bg-white rounded-t-3xl">
+                <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+                    <div className="relative shrink-0">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input 
+                            type="text" 
+                            placeholder="Search employee or ID..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all w-[240px]"
+                        />
+                    </div>
+
+                    {/* Action / Status Filter Tabs */}
+                    <div className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-xl border border-slate-200/50">
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('all')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                statusFilter === 'all'
+                                    ? 'bg-white text-slate-800 shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
+                            }`}
+                        >
+                            All
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                statusFilter === 'all' ? 'bg-slate-100 text-slate-700' : 'bg-slate-200/70 text-slate-500'
+                            }`}>
+                                {actionCounts.all}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('pending')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                statusFilter === 'pending'
+                                    ? 'bg-amber-500 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50/60'
+                            }`}
+                        >
+                            <span>No Action</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                statusFilter === 'pending' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                                {actionCounts.pending}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('approved')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                statusFilter === 'approved'
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50/60'
+                            }`}
+                        >
+                            <span>Approved</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                statusFilter === 'approved' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                                {actionCounts.approved}
+                            </span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setStatusFilter('rejected')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                statusFilter === 'rejected'
+                                    ? 'bg-rose-600 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-rose-700 hover:bg-rose-50/60'
+                            }`}
+                        >
+                            <span>Rejected</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                statusFilter === 'rejected' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                                {actionCounts.rejected}
+                            </span>
+                        </button>
+                    </div>
                 </div>
-                <div className="text-xs font-semibold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
-                    Total: <span className="text-indigo-600 font-bold">{filteredRequests.length}</span> requests
+
+                <div className="flex items-center gap-2">
+                    <div className="text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 shrink-0">
+                        Showing: <span className="text-indigo-600 font-bold">{filteredRequests.length}</span> of {requests.length}
+                    </div>
                 </div>
             </div>
             <div className="overflow-x-auto max-h-[750px] overflow-y-auto">
                 <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10 shadow-2xs">
                     <tr className="bg-slate-50/50">
-                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Employee</th>
-                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Type</th>
-                        <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Dates</th>
+                        {renderSortableHeader('employee', 'Employee')}
+                        {renderSortableHeader('type', 'Type')}
+                        {renderSortableHeader('date', 'Dates')}
                         <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider">Reason</th>
                         <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-wider text-center">Actions</th>
                     </tr>
@@ -193,7 +343,16 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                         <MessageSquare size={32} />
                                     </div>
                                     <h3 className="font-bold text-slate-700">No Requests Found</h3>
-                                    <p className="text-sm text-slate-400 mt-1">There are no leave requests matching your search.</p>
+                                    <p className="text-sm text-slate-400 mt-1">There are no leave requests matching your search or filters.</p>
+                                    {(searchQuery || statusFilter !== 'all') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+                                            className="mt-3 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/70 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors"
+                                        >
+                                            Reset Filters
+                                        </button>
+                                    )}
                                 </div>
                             </td>
                         </tr>

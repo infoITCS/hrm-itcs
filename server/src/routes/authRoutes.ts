@@ -93,6 +93,16 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
     const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
     const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
 
+    const isProfileIncomplete = employee ? (
+      !employee.phone ||
+      !employee.cnic ||
+      !(employee.address?.street || employee.address?.city || employee.address?.state || employee.address?.country) ||
+      !employee.jobInfo?.department ||
+      !employee.jobInfo?.designation
+    ) : true;
+    const reminderCount = employee?.profileReminderCount || 0;
+    const isProfileLocked = user.role === 'employee' && isProfileIncomplete && reminderCount >= 2;
+
     res.json({
       token,
       user: {
@@ -105,6 +115,9 @@ router.post("/login", loginLimiter, async (req: Request, res: Response, next: Ne
         avatar: avatarUrl,
         department: employee?.jobInfo?.department,
         hasProfile: !!employee,
+        isProfileIncomplete,
+        profileReminderCount: reminderCount,
+        isProfileLocked,
         permissions: computed.permissions,
         scopes: computed.scopes,
         subPermissions: computed.subPermissions,
@@ -472,11 +485,25 @@ router.get("/me", authenticate, async (req: Request, res: Response, next: NextFu
     const rolePerm = (await RolePermission.findOne({ role: user.role }).lean()) as any;
     const computed = computeEffectivePermissionsAndScopes(user, rolePerm);
     const userObj = user.toObject();
+
+    const isProfileIncomplete = employee ? (
+      !employee.phone ||
+      !employee.cnic ||
+      !(employee.address?.street || employee.address?.city || employee.address?.state || employee.address?.country) ||
+      !employee.jobInfo?.department ||
+      !employee.jobInfo?.designation
+    ) : true;
+    const reminderCount = employee?.profileReminderCount || 0;
+    const isProfileLocked = user.role === 'employee' && isProfileIncomplete && reminderCount >= 2;
+
     res.json({
       ...userObj,
       id: userObj._id,
       department: employee?.jobInfo?.department,
       hasProfile: !!employee,
+      isProfileIncomplete,
+      profileReminderCount: reminderCount,
+      isProfileLocked,
       permissions: computed.permissions,
       scopes: computed.scopes,
       subPermissions: computed.subPermissions,
