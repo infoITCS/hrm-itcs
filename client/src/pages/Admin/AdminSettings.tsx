@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
     Building2, Briefcase, Plus, Pencil, Trash2, Check, X, 
     AlertCircle, Search, ChevronRight, Settings2, ShieldCheck,
-    Info, Clock, MapPin, FileText, Banknote, TrendingUp, TrendingDown
+    Info, Clock, MapPin, FileText, Banknote, TrendingUp, TrendingDown,
+    Network
 } from 'lucide-react';
 import api from '../../utils/api'; // Fix import to use default or named correctly
 import { usePermissions } from '../../hooks/usePermissions';
@@ -12,6 +14,7 @@ import ShiftManagement from './ShiftManagement';
 import LocationManagement from './LocationManagement';
 import CompanyManagement from './CompanyManagement';
 import TemplateManagement from './TemplateManagement';
+import OrgHierarchySettingsTab from './OrgHierarchySettingsTab';
 
 type ConfigItem = {
     _id: string;
@@ -22,13 +25,18 @@ type ConfigItem = {
 };
 
 const AdminSettings = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
     const { role, hasSubAccess } = usePermissions();
     const isAdmin = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
     const canShifts = hasSubAccess('settings', 'work-shifts');
     const canCompany = hasSubAccess('settings', 'organization');
     const canTemplates = hasSubAccess('settings', 'holidays-config');
     
-    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'salary-components' | 'shifts' | 'locations' | 'company' | 'templates'>('departments');
+    const initialTabParam = searchParams.get('tab');
+    const validTabs = ['departments', 'designations', 'salary-components', 'shifts', 'locations', 'company', 'templates', 'org-hierarchy'];
+    const initialTab = (initialTabParam && validTabs.includes(initialTabParam)) ? (initialTabParam as any) : 'departments';
+
+    const [activeTab, setActiveTab] = useState<'departments' | 'designations' | 'salary-components' | 'shifts' | 'locations' | 'company' | 'templates' | 'org-hierarchy'>(initialTab);
     const [componentTypeFilter, setComponentTypeFilter] = useState<'all' | 'earning' | 'deduction'>('all');
     const [items, setItems] = useState<ConfigItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -277,16 +285,23 @@ const AdminSettings = () => {
                     )}
                     {canTemplates && (
                         <button 
-                            onClick={() => setActiveTab('templates')}
+                            onClick={() => { setActiveTab('templates'); setSearchParams({ tab: 'templates' }); }}
                             className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'templates' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
                             <FileText size={16} />
                             <span>Document Templates</span>
                         </button>
                     )}
+                    <button 
+                        onClick={() => { setActiveTab('org-hierarchy'); setSearchParams({ tab: 'org-hierarchy' }); }}
+                        className={`flex items-center gap-1.5 sm:gap-2 flex-1 lg:flex-none py-2.5 px-3 sm:px-6 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'org-hierarchy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Network size={16} />
+                        <span>Org Hierarchy</span>
+                    </button>
                 </div>
 
-                {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && (
+                {activeTab !== 'shifts' && activeTab !== 'locations' && activeTab !== 'company' && activeTab !== 'templates' && activeTab !== 'org-hierarchy' && (
                     <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
                         {activeTab === 'salary-components' && (
                             <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 w-full sm:w-auto">
@@ -337,6 +352,8 @@ const AdminSettings = () => {
                 <CompanyManagement />
             ) : activeTab === 'templates' ? (
                 <TemplateManagement />
+            ) : activeTab === 'org-hierarchy' ? (
+                <OrgHierarchySettingsTab />
             ) : (
                 <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/60 shadow-xl shadow-slate-100/50">
                     <div className="overflow-x-auto">

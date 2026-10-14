@@ -11,6 +11,7 @@ export interface ShiftConfig {
     enableLunchDeduction?: boolean;
     lunchDeductionMinutes?: number;
     lunchThresholdHours?: number;
+    isOvernight?: boolean;        // true if shift crosses midnight (e.g. 17:00 to 02:00)
 }
 
 export interface DashboardSummary {

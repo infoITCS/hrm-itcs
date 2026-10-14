@@ -107,9 +107,14 @@ export async function processEmployeePunches(
         const graceMins        = empShift?.graceMinutes     ?? deviceConfig?.graceMinutes     ?? DEFAULT_GRACE_MINS;
         const halfDayHrs       = empShift?.halfDayThreshold ?? deviceConfig?.halfDayThresholdHours ?? DEFAULT_HALF_DAY_HRS;
         const locationName     = deviceConfig?.locationName     ?? 'ISB-Office';
+        const isOvernight      = shiftStart > shiftEnd;
 
-        const dayStart = startOfDay(dateStr);
-        const dayEnd   = endOfDay(dateStr);
+        let dayStart = startOfDay(dateStr);
+        let dayEnd   = endOfDay(dateStr);
+        if (isOvernight) {
+            dayStart = new Date(startOfDay(dateStr).getTime() + 12 * 60 * 60 * 1000);
+            dayEnd   = new Date(startOfDay(dateStr).getTime() + 34 * 60 * 60 * 1000);
+        }
 
         const punches = await AttendancePunch
             .find({ employeeId: resolvedEmployeeId, punchTime: { $gte: dayStart, $lte: dayEnd } })
@@ -177,7 +182,10 @@ export async function processEmployeePunches(
 
         // Suggestion 3: Check-out grace period (10 minutes)
         const CHECK_OUT_GRACE_MINS = 10;
-        const shiftEndTime = buildShiftTime(dateStr, shiftEnd);
+        let shiftEndTime = buildShiftTime(dateStr, shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
         let isEarlyLeave = false;
         if (checkOut) {
             const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOut.getTime()) / 60000);
@@ -634,8 +642,18 @@ export async function autoCloseIncompleteRecords(dateStr?: string): Promise<{
         const halfDayHrs   = empShift?.halfDayThreshold ?? deviceConfig?.halfDayThresholdHours  ?? DEFAULT_HALF_DAY_HRS;
         const shiftStart   = empShift?.startTime        ?? deviceConfig?.shiftStart             ?? DEFAULT_SHIFT_START;
         const graceMins    = empShift?.graceMinutes     ?? deviceConfig?.graceMinutes           ?? DEFAULT_GRACE_MINS;
+        const isOvernight  = shiftStart > shiftEnd;
 
-        const autoCheckOut = buildShiftTime(recDateStr, shiftEnd);
+        // Skip auto-closing an overnight shift if it's currently today (shift ends tomorrow morning)
+        if (isOvernight && recDateStr === todayStr) {
+            skipped++;
+            continue;
+        }
+
+        let autoCheckOut = buildShiftTime(recDateStr, shiftEnd);
+        if (isOvernight) {
+            autoCheckOut = new Date(autoCheckOut.getTime() + 24 * 60 * 60 * 1000);
+        }
         const effectiveCheckOut = autoCheckOut > checkInTime ? autoCheckOut : new Date(checkInTime.getTime() + 30 * 60 * 1000);
 
         let rawMins = Math.floor((effectiveCheckOut.getTime() - checkInTime.getTime()) / 60000);
@@ -647,7 +665,10 @@ export async function autoCloseIncompleteRecords(dateStr?: string): Promise<{
         });
 
         const shiftStartTime = buildShiftTime(recDateStr, shiftStart);
-        const shiftEndTime = buildShiftTime(recDateStr, shiftEnd);
+        let shiftEndTime = buildShiftTime(recDateStr, shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
         const diffMins = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
         const lateMinutes = diffMins > graceMins ? (diffMins - graceMins) : 0;
 

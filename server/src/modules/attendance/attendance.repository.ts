@@ -95,7 +95,20 @@ export async function findIncompleteRecords(date: string) {
 
 // ─── Attendance Punches ────────────────────────────────────────────────────────
 
-export async function findPunchesForDay(employeeId: string, dateStr: string) {
+export async function findPunchesForDay(employeeId: string, dateStr: string, isOvernight = false) {
+    if (isOvernight) {
+        // Overnight shift for dateStr (e.g. starts 17:00 dateStr, ends 02:00 dateStr+1):
+        // Query from dateStr 12:00 PM PKT to (dateStr + 1) 10:00 AM PKT
+        const start = new Date(startOfDay(dateStr).getTime() + 12 * 60 * 60 * 1000);
+        const end = new Date(startOfDay(dateStr).getTime() + 34 * 60 * 60 * 1000);
+        return AttendancePunch.find({
+            employeeId,
+            punchTime: { $gte: start, $lte: end },
+        })
+            .sort({ punchTime: 1 })
+            .lean();
+    }
+
     return AttendancePunch.find({
         employeeId,
         punchTime: { $gte: startOfDay(dateStr), $lte: endOfDay(dateStr) },
@@ -117,14 +130,16 @@ export async function upsertPunch(
     );
 }
 
-export async function markPunchesProcessed(employeeId: string, dateStr: string) {
-    return AttendancePunch.updateMany(
-        {
-            employeeId,
-            punchTime: { $gte: startOfDay(dateStr), $lte: endOfDay(dateStr) },
-        },
-        { $set: { processed: true } }
-    );
+export async function markPunchesProcessed(employeeId: string, dateStr: string, isOvernight = false) {
+    const filter: Record<string, any> = { employeeId };
+    if (isOvernight) {
+        const start = new Date(startOfDay(dateStr).getTime() + 12 * 60 * 60 * 1000);
+        const end = new Date(startOfDay(dateStr).getTime() + 34 * 60 * 60 * 1000);
+        filter.punchTime = { $gte: start, $lte: end };
+    } else {
+        filter.punchTime = { $gte: startOfDay(dateStr), $lte: endOfDay(dateStr) };
+    }
+    return AttendancePunch.updateMany(filter, { $set: { processed: true } });
 }
 
 export async function distinctPunchedIds(dateStr: string, extraFilter: Record<string, any> = {}): Promise<string[]> {
@@ -318,9 +333,13 @@ export async function upsertDevice(deviceSN: string, data: Record<string, any>) 
 /** Returns the shift config with fallback chain: WorkShift → DeviceLocation → defaults */
 export function resolveShiftConfig(employee: any, deviceConfig: any): ShiftConfig {
     const shift = employee?.jobInfo?.shift;
+    const shiftStart = shift?.startTime ?? deviceConfig?.shiftStart ?? '09:00';
+    const shiftEnd = shift?.endTime ?? deviceConfig?.shiftEnd ?? '18:00';
+    const isOvernight = shiftStart > shiftEnd;
     return {
-        shiftStart: shift?.startTime ?? deviceConfig?.shiftStart ?? '09:00',
-        shiftEnd: shift?.endTime ?? deviceConfig?.shiftEnd ?? '18:00',
+        shiftStart,
+        shiftEnd,
+        isOvernight,
         graceMinutes: shift?.graceMinutes ?? deviceConfig?.graceMinutes ?? 30,
         halfDayThresholdHours: shift?.halfDayThreshold ?? deviceConfig?.halfDayThresholdHours ?? 4,
         locationName: deviceConfig?.locationName ?? 'ISB-Office',

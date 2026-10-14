@@ -23,6 +23,7 @@ import {
     Mail,
     CheckSquare,
     Lock,
+    FileSpreadsheet,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -53,6 +54,7 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: null, module: 'dashboard', end: true },
         { name: 'Pending Tasks', icon: CheckSquare, path: '/notifications', roles: null, end: true },
         { name: 'Users & Roles', icon: UserCog, path: '/admin', roles: ['super-admin', 'admin'], module: 'settings', end: true },
+        { name: 'Export Employee Data', icon: FileSpreadsheet, path: '/admin/export', roles: ['super-admin', 'admin'], end: true },
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'hr'], module: 'pim', subTab: 'employee-list' },

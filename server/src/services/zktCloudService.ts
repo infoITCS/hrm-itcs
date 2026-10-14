@@ -305,12 +305,21 @@ export async function runZktSync(): Promise<ZktSyncResult> {
 
     const matchedEmployees = await Employee.find(
         { biometricPin: { $in: uniquePins } },
-        { employeeId: 1, biometricPin: 1, firstName: 1, lastName: 1 }
-    ).lean();
+        { employeeId: 1, biometricPin: 1, firstName: 1, lastName: 1, 'jobInfo.shift': 1 }
+    ).populate('jobInfo.shift').lean() as any[];
 
     // e.g. "1" → "ITCS-0042"
     const pinToHrmId = new Map<string, string>(
         matchedEmployees.map(e => [e.biometricPin as string, e.employeeId])
+    );
+
+    // Map pin to isOvernight boolean
+    const pinToIsOvernight = new Map<string, boolean>(
+        matchedEmployees.map(e => {
+            const shift = (e.jobInfo as any)?.shift;
+            const isOvernight = !!(shift?.startTime && shift?.endTime && shift.startTime > shift.endTime);
+            return [e.biometricPin as string, isOvernight];
+        })
     );
 
     // Warn about machine PINs with no matching HRM employee profile
@@ -344,8 +353,18 @@ export async function runZktSync(): Promise<ZktSyncResult> {
         }
 
         try {
-            const dateStr = txn.punch_time.trim().slice(0, 10);
+            let dateStr = txn.punch_time.trim().slice(0, 10);
             const sn = txn.terminal_sn ?? 'ZKT_CLOUD';
+
+            const isOvernight = pinToIsOvernight.get(txn.emp_code) || false;
+            if (isOvernight) {
+                const hour = parseInt(txn.punch_time.slice(11, 13), 10);
+                if (Number.isFinite(hour) && hour < 10) {
+                    const d = new Date(`${dateStr}T12:00:00.000Z`);
+                    d.setUTCDate(d.getUTCDate() - 1);
+                    dateStr = d.toISOString().slice(0, 10);
+                }
+            }
 
             const existing = await AttendancePunch.findOneAndUpdate(
                 { deviceSN: sn, machineUserId: txn.emp_code, punchTime },

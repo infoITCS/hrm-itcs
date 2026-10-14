@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck, Sliders, UserPlus, Link2 } from 'lucide-react';
+import { UserCog, Search, User, X, Briefcase, Plus, ShieldAlert, Key, Eye, Users, ShieldCheck, Sliders, UserPlus, Link2, FileSpreadsheet } from 'lucide-react';
 import api from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import AlertModal from '../../components/UI/AlertModal';
@@ -360,17 +360,27 @@ const UserManagement = () => {
                     <p className="text-gray-500 mt-1">Control access, assign roles, and manage authentication and permissions across the system.</p>
                 </div>
                 
-                {subTab === 'users' && (
+                <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
+                    <button
+                        onClick={() => navigate('/admin/export')}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl transition-all font-bold shadow-sm hover:shadow-md active:scale-95 shrink-0 cursor-pointer"
+                        title="Extract & Export Custom Filtered Employee Data to Excel"
+                    >
+                        <FileSpreadsheet size={18} className="text-emerald-400" /> Export Employee Data
+                    </button>
                     <button 
-                        onClick={() => setShowInviteModal(true)}
-                        className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95 shrink-0 self-start md:self-auto"
+                        onClick={() => {
+                            setSubTab('users');
+                            setShowInviteModal(true);
+                        }}
+                        className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all font-bold shadow-sm hover:shadow-indigo-200 hover:shadow-lg active:scale-95 shrink-0"
                     >
                         <Plus size={18} /> Add New User
                     </button>
-                )}
+                </div>
             </div>
 
-            {/* Sub-Tabs: Users Directory | Workflow Tasks | Role Permissions */}
+            {/* Sub-Tabs: Users Directory | Export Employee Data | Role Permissions */}
             <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 w-fit flex-wrap gap-1">
                 <button
                     onClick={() => setSubTab('users')}
@@ -380,6 +390,13 @@ const UserManagement = () => {
                 >
                     <Users size={16} />
                     <span>Users Directory</span>
+                </button>
+                <button
+                    onClick={() => navigate('/admin/export')}
+                    className="flex items-center gap-2 py-2.5 px-6 rounded-xl text-sm font-bold transition-all whitespace-nowrap text-slate-500 hover:text-slate-700 hover:bg-white/60 cursor-pointer"
+                >
+                    <FileSpreadsheet size={16} className="text-emerald-600" />
+                    <span>Export Employee Data</span>
                 </button>
                 {currentUserRole === 'super-admin' && (
                     <button

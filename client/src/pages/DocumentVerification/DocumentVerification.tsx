@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../../utils/api';
-import { CheckCircle, XCircle, ShieldCheck, Building, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
+import defaultLogo from '../../assets/logo.png';
 
 const DocumentVerification = () => {
     const { documentId } = useParams();
@@ -31,6 +32,14 @@ const DocumentVerification = () => {
         if (documentId) verifyDocument();
     }, [documentId]);
 
+    const logoSrc = docData?.companyLogo
+        ? (docData.companyLogo.startsWith('data:') || docData.companyLogo.startsWith('http')
+            ? docData.companyLogo
+            : `${api.baseURL.replace(/\/$/, '')}/${docData.companyLogo.replace(/^\//, '')}`)
+        : defaultLogo;
+
+    const companyName = docData?.companyName || 'ITCS';
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -44,7 +53,11 @@ const DocumentVerification = () => {
 
     if (error || !docData) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+            <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+                <div className="mb-6 flex items-center justify-center gap-3">
+                    <img src={defaultLogo} alt="ITCS" className="h-10 w-auto object-contain max-h-12" />
+                    <span className="text-2xl font-black tracking-tight text-gray-900">ITCS</span>
+                </div>
                 <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center border-t-4 border-rose-500">
                     <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <XCircle size={32} className="text-rose-500" />
@@ -62,9 +75,18 @@ const DocumentVerification = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-            <div className="mb-6 flex items-center gap-2 text-indigo-600">
-                <Building size={32} />
-                <span className="text-2xl font-black tracking-tight">COMPANY NAME</span>
+            <div className="mb-6 flex items-center justify-center gap-3">
+                <img
+                    src={logoSrc}
+                    alt={companyName}
+                    className="h-10 w-auto object-contain max-h-12"
+                    onError={(e) => {
+                        if ((e.currentTarget as HTMLImageElement).src !== defaultLogo) {
+                            (e.currentTarget as HTMLImageElement).src = defaultLogo;
+                        }
+                    }}
+                />
+                <span className="text-2xl font-black tracking-tight text-gray-900">{companyName}</span>
             </div>
             
             <div className={`bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border-t-4 ${docData.isValid ? 'border-emerald-500' : 'border-rose-500'}`}>

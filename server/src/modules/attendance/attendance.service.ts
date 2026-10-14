@@ -50,7 +50,8 @@ export async function processEmployeePunches(
         ]);
 
         const cfg: ShiftConfig = repo.resolveShiftConfig(employee, deviceConfig);
-        const punches = await repo.findPunchesForDay(resolvedEmployeeId, dateStr);
+        const isOvernight = !!cfg.isOvernight;
+        const punches = await repo.findPunchesForDay(resolvedEmployeeId, dateStr, isOvernight);
 
         // ── No punches: classify as Absent / On Leave / Holiday / Weekend ──
         if (punches.length === 0) {
@@ -106,7 +107,10 @@ export async function processEmployeePunches(
         }
 
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
-        const shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
 
         const diffMins = Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000);
         const lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
@@ -151,7 +155,7 @@ export async function processEmployeePunches(
             allPunches: allPunchTimes,
         });
 
-        await repo.markPunchesProcessed(resolvedEmployeeId, dateStr);
+        await repo.markPunchesProcessed(resolvedEmployeeId, dateStr, isOvernight);
     } catch (err) {
         logger.error(`[AttendanceService] Error processing ${employeeId} on ${dateStr}:`, err);
         throw err; // Re-throw to allow caller to handle failure
@@ -243,19 +247,12 @@ export async function getTodayRoster(
         // Sort punches chronologically
         punches.sort((a: any, b: any) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
 
-        const firstPunch = punches[0];
-        const lastPunch = punches[punches.length - 1];
-        
         const isUnlinked = key.startsWith('unlinked_');
         const empId = isUnlinked ? null : key;
-        if (empId) processedEmpIds.add(empId);
 
+        const firstPunch = punches[0];
         const punchLoc = snToLoc.get(firstPunch.deviceSN) || firstPunch.location || location || 'ISB-Office';
         const deviceConfig = locationCfgMap.get(punchLoc);
-
-        // Use existing processed record if available
-        const rec = empId ? recMap.get(empId) as any : null;
-        const checkInTime = rec?.checkIn ? new Date(rec.checkIn) : new Date(firstPunch.punchTime);
 
         // Use location-aware pin resolution
         const emp = empId 
@@ -263,13 +260,38 @@ export async function getTodayRoster(
             : pinToEmp.get(`${punchLoc}_${firstPunch.machineUserId}`);
 
         const cfg = repo.resolveShiftConfig(emp, deviceConfig);
+        const isOvernight = !!cfg.isOvernight;
+
+        let effectivePunches = punches;
+        if (isOvernight) {
+            // Early morning punches (< 10:00 AM PKT) belong to yesterday's overnight shift
+            effectivePunches = punches.filter((p: any) => {
+                const pktHour = (new Date(p.punchTime).getUTCHours() + 5) % 24;
+                return pktHour >= 10;
+            });
+            if (effectivePunches.length === 0 && !recMap.get(empId)?.checkIn) {
+                continue;
+            }
+        }
+
+        if (empId) processedEmpIds.add(empId);
+
+        // Use existing processed record if available
+        const rec = empId ? recMap.get(empId) as any : null;
+        const activeFirstPunch = effectivePunches[0] || punches[0];
+        const activeLastPunch = effectivePunches[effectivePunches.length - 1] || punches[punches.length - 1];
+        const checkInTime = rec?.checkIn ? new Date(rec.checkIn) : new Date(activeFirstPunch.punchTime);
+
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
-        const shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
 
         // Determine if last punch qualifies as a valid checkout
         let checkOutTime: Date | null = rec?.checkOut ? new Date(rec.checkOut) : null;
-        if (!checkOutTime && punches.length > 1) {
-            const lastTime = new Date(lastPunch.punchTime);
+        if (!checkOutTime && effectivePunches.length > 1) {
+            const lastTime = new Date(activeLastPunch.punchTime);
             if (isValidCheckout(checkInTime, lastTime)) {
                 checkOutTime = lastTime;
             }
@@ -543,13 +565,26 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
     let processed = 0, skipped = 0;
     const details: AutoCloseResult['details'] = [];
 
+    const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+
     for (const entry of incomplete) {
         const checkInTime = new Date(entry.checkIn!);
         const deviceConfig = configMap.get(entry.location);
         const employee = empMap.get(entry.employeeId);
         const cfg = repo.resolveShiftConfig(employee, deviceConfig);
+        const isOvernight = !!cfg.isOvernight;
 
-        const autoCheckOut = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        // If employee is on an overnight shift and dateStr is today, their shift ends tomorrow morning (e.g. 02:00 AM).
+        // Do not auto-close them while they are still in the middle of their shift!
+        if (isOvernight && dateStr === todayStr) {
+            skipped++;
+            continue;
+        }
+
+        let autoCheckOut = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        if (isOvernight) {
+            autoCheckOut = new Date(autoCheckOut.getTime() + 24 * 60 * 60 * 1000);
+        }
         // If they checked in AFTER the shift end, give them 30 mins, otherwise use shift end
         const effectiveCheckOut = autoCheckOut > checkInTime
             ? autoCheckOut
@@ -559,7 +594,10 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
         const workDurationMinutes = applyLunchDeduction(rawMins, cfg);
 
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
-        const shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
         const diffMins = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
         const lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
         

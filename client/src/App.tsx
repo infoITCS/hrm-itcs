@@ -18,6 +18,7 @@ import OnboardingWelcome from './pages/Onboarding/OnboardingWelcome';
 // import AuditLogs from './pages/Admin/AuditLogs';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminSettings from './pages/Admin/AdminSettings';
+import EmployeeExportPage from './pages/Admin/EmployeeExportPage';
 import WorkflowTasksPage from './pages/Admin/WorkflowTasksPage';
 import Directory from './pages/Directory/Directory';
 
@@ -70,6 +71,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/terms': 'Terms of Service',
   '/admin/loans': 'Loan Management',
   '/admin/settings': 'System Settings',
+  '/admin/export': 'Custom Employee Data Export',
   '/login': 'Sign In',
   '/reset-password': 'Reset Password',
   '/onboarding': 'Welcome Onboarding',
@@ -236,6 +238,7 @@ function AppRoutes() {
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin']} />}>
           <Route path="admin" element={<UserManagement />} />
           <Route path="admin/users" element={<UserManagement />} />
+          <Route path="admin/export" element={<EmployeeExportPage />} />
         </Route>
 
         <Route path="notifications" element={<NotificationsPage />} />

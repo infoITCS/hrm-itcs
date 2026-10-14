@@ -241,3 +241,14 @@
     width: 100% !important;
   }
 }
+
+/* ── Print Styles for Organization Hierarchy ─────────────── */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .no-print, nav, aside, header {
+    display: none !important;
+  }
+}

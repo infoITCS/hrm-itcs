@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle, AlertTriangle, Bell, Lock, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle, AlertTriangle, Bell, Lock, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
@@ -542,22 +542,34 @@ const EmployeeList = () => {
 
                         <div className="h-8 w-[1px] bg-slate-200 hidden xl:block" />
 
-                        {canAddEmployee && (
-                            <div className="flex items-center gap-2.5 w-full xl:w-auto">
+                        <div className="flex items-center gap-2.5 w-full xl:w-auto">
+                            {['super-admin', 'admin'].includes(role) && (
                                 <button
-                                    onClick={() => setShowQuickInviteModal(true)}
-                                    className="flex-1 xl:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-emerald-200 shadow-md hover:shadow-emerald-300 active:scale-95 cursor-pointer"
+                                    onClick={() => navigate('/admin/export')}
+                                    className="flex-1 xl:flex-none bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95 cursor-pointer"
+                                    title="Custom Filter-based Excel Export"
                                 >
-                                    <Mail size={16} /> Quick Invite via Email
+                                    <FileSpreadsheet size={16} className="text-emerald-400" /> Export Data
                                 </button>
-                                <button
-                                    onClick={() => navigate('/pim/add')}
-                                    className="flex-1 xl:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-indigo-200 shadow-md hover:shadow-indigo-300 active:scale-95 cursor-pointer"
-                                >
-                                    <Plus size={18} /> Add Full Profile
-                                </button>
-                            </div>
-                        )}
+                            )}
+
+                            {canAddEmployee && (
+                                <>
+                                    <button
+                                        onClick={() => setShowQuickInviteModal(true)}
+                                        className="flex-1 xl:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-emerald-200 shadow-md hover:shadow-emerald-300 active:scale-95 cursor-pointer"
+                                    >
+                                        <Mail size={16} /> Quick Invite via Email
+                                    </button>
+                                    <button
+                                        onClick={() => navigate('/pim/add')}
+                                        className="flex-1 xl:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-indigo-200 shadow-md hover:shadow-indigo-300 active:scale-95 cursor-pointer"
+                                    >
+                                        <Plus size={18} /> Add Full Profile
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1244,6 +1256,7 @@ const EmployeeList = () => {
                     </div>
                 </div>
             , document.body)}
+
         </div>
     );
 };

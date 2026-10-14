@@ -1495,6 +1495,10 @@ router.get('/public/verify/:documentId', async (req: Request, res: Response, nex
         const { documentId } = req.params;
         const isValidObjId = mongoose.Types.ObjectId.isValid(documentId);
 
+        const company = await Company.findOne().select('name logoUrl').lean() as any;
+        const companyName = company?.name || 'ITCS';
+        const companyLogo = company?.logoUrl || null;
+
         let doc = await OfficialDocument.findOne({ 
             $or: [
                 { documentId },
@@ -1510,7 +1514,9 @@ router.get('/public/verify/:documentId', async (req: Request, res: Response, nex
                 employeeName: `${doc.details?.firstName || ''} ${doc.details?.lastName || ''}`.trim(),
                 designation: doc.details?.designation || 'Employee',
                 department: doc.details?.department || 'Staff',
-                status: doc.status
+                status: doc.status,
+                companyName,
+                companyLogo
             });
         }
 
@@ -1532,11 +1538,13 @@ router.get('/public/verify/:documentId', async (req: Request, res: Response, nex
                 employeeName: formatEmployeeFullName(emp, payslip.employeeId),
                 designation: emp?.jobInfo?.designation || 'Employee',
                 department: emp?.jobInfo?.department || 'Staff',
-                status: payslip.status || 'Valid'
+                status: payslip.status || 'Valid',
+                companyName,
+                companyLogo
             });
         }
 
-        res.status(404).json({ message: 'Document or payslip not found or invalid' });
+        res.status(404).json({ message: 'Document or payslip not found or invalid', companyName, companyLogo });
     } catch (err: any) {
         next(err);
     }

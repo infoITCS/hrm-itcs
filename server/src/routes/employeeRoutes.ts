@@ -30,6 +30,12 @@ import { ensureProbationUpgraded, upgradeCompletedProbations, isProbationPeriodE
 import { decryptEmployeeFields } from '../utils/encryption';
 import { triggerOffboardingTasks } from '../services/workflowService';
 import WorkflowTask from '../models/WorkflowTask';
+import {
+    ALL_EXPORT_FIELDS,
+    filterEmployeeDataset,
+    buildExportRows,
+    generateExcelBuffer
+} from '../services/employeeExportService';
 
 
 
@@ -274,18 +280,251 @@ const createAuditLog = async (action: string, targetId: string, performedBy: str
     }
 };
 
+const requireUserAndRoleAccess = (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = (authReq.user?.role || '').toLowerCase();
+    if (!['super-admin', 'admin'].includes(role)) {
+        return res.status(403).json({
+            message: 'Forbidden. Only users with User & Role Management access can extract and export employee data.'
+        });
+    }
+    next();
+};
+
+/**
+ * @route   GET /api/employees/export-fields
+ * @desc    Returns all available export fields grouped by category with labels
+ * @access  Restricted to User & Role Management (Super-Admin, Admin)
+ */
+router.get('/export-fields', authenticate, requireUserAndRoleAccess, (req: Request, res: Response) => {
+    const fields = ALL_EXPORT_FIELDS.map(f => ({
+        key: f.key,
+        label: f.label,
+        category: f.category,
+        isSensitive: !!f.isSensitive,
+        disabled: false,
+    }));
+
+    res.json({ success: true, fields });
+});
+
+/**
+ * @route   POST /api/employees/export-custom
+ * @desc    Extracts filtered employee data with user-selected fields, previewing or exporting to Excel (.xlsx)
+ * @access  Restricted to User & Role Management (Super-Admin, Admin)
+ */
+router.post('/export-custom', authenticate, requireUserAndRoleAccess, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const { filters = {}, selectedFields = [], format = 'preview' } = req.body;
+
+        if (!Array.isArray(selectedFields) || selectedFields.length === 0) {
+            return res.status(400).json({ message: 'At least one field must be selected for export.' });
+        }
+
+        // Fetch all active/relevant employees (excluding hard-deleted) with shift details
+        const employees = await Employee.find({ isDeleted: { $ne: true } })
+            .populate('jobInfo.shift', 'name startTime endTime')
+            .select('-attachments.fileData')
+            .sort({ employeeId: 1 })
+            .lean() as any[];
+
+        await populateReportingManagerNames(employees);
+
+        // Apply filters
+        const filtered = filterEmployeeDataset(employees, filters);
+
+        // Build data rows - fully accessible for all selected fields
+        const { headers, rows } = buildExportRows(filtered, selectedFields, true);
+
+        if (format === 'preview') {
+            return res.json({
+                success: true,
+                totalCount: filtered.length,
+                headers,
+                sampleRows: rows.slice(0, 50),
+            });
+        }
+
+        // Generate .xlsx Excel workbook
+        const excelBuffer = generateExcelBuffer(headers, rows);
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const filename = `Employee_Report_${timestamp}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', excelBuffer.length);
+        return res.send(excelBuffer);
+    } catch (err) {
+        next(err);
+    }
+});
+
 // Get simplified directory (All active employees, limited info)
 // Open to all authenticated users for internal phonebook purposes
 router.get('/directory', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const directory = await Employee.find({
+            isDeleted: { $ne: true },
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
         })
-        .select('firstName lastName middleName avatar workEmail phone simNumber jobInfo.designation jobInfo.department employeeId userId attachments._id attachments.fileType')
+        .select('firstName lastName middleName avatar workEmail phone simNumber jobInfo.designation jobInfo.department jobInfo.reportingManager jobInfo.workLocation employmentStatus.status employeeId userId attachments._id attachments.fileType')
         .sort({ firstName: 1 })
         .lean();
 
         res.json(directory);
+    } catch (err: any) {
+        next(err);
+    }
+});
+
+// Update employee organization hierarchy placement (Department & Reporting Manager)
+// Restricted strictly to Super-Admin, Admin, and HR
+router.patch('/:id/org-placement', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    const role = authReq.user?.role || '';
+    if (!['super-admin', 'admin', 'hr'].includes(role)) {
+        return res.status(403).json({ message: 'Only Super-Admin, Admin, and HR can change organization hierarchy.' });
+    }
+
+    try {
+        const employeeId = req.params.id;
+        const { department, reportingManager } = req.body;
+
+        const employee = await Employee.findOne({
+            $or: [
+                { employeeId },
+                ...(mongoose.isValidObjectId(employeeId) ? [{ _id: employeeId }] : [])
+            ],
+            isDeleted: { $ne: true }
+        });
+
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found.' });
+        }
+
+        const canonicalEmpId = employee.employeeId;
+        const oldDept = employee.jobInfo?.department || '';
+        const oldManager = employee.jobInfo?.reportingManager || '';
+
+        // Validate reportingManager if provided
+        let newManagerEmpId = reportingManager !== undefined ? (reportingManager ? String(reportingManager).trim() : '') : oldManager;
+
+        if (newManagerEmpId) {
+            // Cannot report to self
+            if (newManagerEmpId.toLowerCase() === canonicalEmpId.toLowerCase()) {
+                return res.status(400).json({ message: 'An employee cannot report to themselves.' });
+            }
+
+            // Verify manager exists
+            const manager = await Employee.findOne({
+                $or: [
+                    { employeeId: newManagerEmpId },
+                    ...(mongoose.isValidObjectId(newManagerEmpId) ? [{ _id: newManagerEmpId }] : []),
+                    { userId: newManagerEmpId }
+                ],
+                isDeleted: { $ne: true },
+                'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] }
+            }).select('employeeId firstName lastName jobInfo').lean() as any;
+
+            if (!manager) {
+                return res.status(400).json({ message: 'Selected reporting manager was not found or is inactive.' });
+            }
+
+            // Detect cycles: A cycle is created IF AND ONLY IF the manager's reporting line
+            // leads back to this employee.
+            let currentMgrId: string | null = manager.jobInfo?.reportingManager
+                ? String(manager.jobInfo.reportingManager).trim()
+                : null;
+            const visited = new Set<string>([manager.employeeId.toLowerCase()]);
+
+            while (currentMgrId) {
+                const curLower = currentMgrId.toLowerCase();
+
+                // If the manager's reporting line leads back to this employee -> CYCLE!
+                if (curLower === canonicalEmpId.toLowerCase()) {
+                    return res.status(400).json({
+                        message: 'Circular reporting line detected: this employee is already a manager above the selected reporting manager.'
+                    });
+                }
+
+                // If we encounter a manager already visited higher up (e.g. CEO reporting to themselves
+                // or a pre-existing loop), break gracefully without falsely blocking this employee.
+                if (visited.has(curLower)) {
+                    break;
+                }
+                visited.add(curLower);
+
+                const nextMgr = await Employee.findOne({
+                    $or: [
+                        { employeeId: currentMgrId },
+                        ...(mongoose.isValidObjectId(currentMgrId) ? [{ _id: currentMgrId }] : []),
+                        { userId: currentMgrId }
+                    ],
+                    isDeleted: { $ne: true }
+                }).select('employeeId jobInfo.reportingManager').lean() as any;
+
+                currentMgrId = nextMgr?.jobInfo?.reportingManager
+                    ? String(nextMgr.jobInfo.reportingManager).trim()
+                    : null;
+            }
+        }
+
+        // Apply changes
+        if (!employee.jobInfo) {
+            employee.jobInfo = {} as any;
+        }
+
+        if (department !== undefined) {
+            employee.jobInfo.department = department ? String(department).trim() : 'Unassigned';
+        }
+        if (reportingManager !== undefined) {
+            employee.jobInfo.reportingManager = newManagerEmpId;
+        }
+
+        await employee.save();
+
+        // If reportingManager changed, automatically transfer in-flight pending expense claims
+        if (newManagerEmpId !== oldManager) {
+            try {
+                const ExpenseClaimModel = mongoose.models.ExpenseClaim || mongoose.model('ExpenseClaim');
+                await ExpenseClaimModel.updateMany(
+                    {
+                        $or: [
+                            { employeeId: employee.employeeId },
+                            ...(employee.userId ? [{ employeeUserId: employee.userId }] : [])
+                        ],
+                        status: 'Pending Line Manager',
+                        'approvals.stage': 'lineManager',
+                        'approvals.status': 'Pending'
+                    },
+                    {
+                        $set: {
+                            'approvals.$.assignedToEmployeeId': newManagerEmpId,
+                            'approvals.$.comments': 'Automatically transferred via Org Hierarchy adjustment'
+                        }
+                    }
+                );
+            } catch (claimErr) {
+                logger.warn('Failed to transfer pending claims on org placement change:', claimErr);
+            }
+        }
+
+        await createAuditLog('UPDATE_ORG_PLACEMENT', employee.employeeId, authReq.user?.userId || 'unknown', {
+            department: { old: oldDept, new: employee.jobInfo.department },
+            reportingManager: { old: oldManager, new: employee.jobInfo.reportingManager }
+        });
+
+        res.json({
+            success: true,
+            message: 'Organization placement updated successfully.',
+            employee: {
+                employeeId: employee.employeeId,
+                jobInfo: employee.jobInfo,
+                firstName: employee.firstName,
+                lastName: employee.lastName
+            }
+        });
     } catch (err: any) {
         next(err);
     }

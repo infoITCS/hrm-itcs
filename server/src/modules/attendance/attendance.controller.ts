@@ -430,7 +430,10 @@ export async function updateRecord(req: AuthRequest, res: Response) {
                 const cfg = repo.resolveShiftConfig(employee, deviceConfig);
                 
                 const shiftStartTime = pktHHMMtoUtc((record as any).date, cfg.shiftStart);
-                const shiftEndTime = pktHHMMtoUtc((record as any).date, cfg.shiftEnd);
+                let shiftEndTime = pktHHMMtoUtc((record as any).date, cfg.shiftEnd);
+                if (cfg.isOvernight) {
+                    shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+                }
 
                 const diffMins = Math.floor((finalIn.getTime() - shiftStartTime.getTime()) / 60000);
                 (record as any).lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
@@ -534,7 +537,10 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
                 const cfg = repo.resolveShiftConfig(employee, deviceConfig);
                 
                 const shiftStartTime = pktHHMMtoUtc(date, cfg.shiftStart);
-                const shiftEndTime = pktHHMMtoUtc(date, cfg.shiftEnd);
+                let shiftEndTime = pktHHMMtoUtc(date, cfg.shiftEnd);
+                if (cfg.isOvernight) {
+                    shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+                }
 
                 const diffMins = Math.floor((dIn.getTime() - shiftStartTime.getTime()) / 60000);
                 lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
