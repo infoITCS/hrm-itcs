@@ -271,6 +271,21 @@ export async function enrichTransactionsWithNames(txns: ZktTransaction[]): Promi
 }
 
 
+export async function fetchTransactionsForRange(startTime: string, endTime: string): Promise<ZktTransaction[]> {
+    return withRetry(async () => {
+        const all: ZktTransaction[] = [];
+        let nextPath: string | null = `/iclock/api/transactions/?start_time=${encodeURIComponent(startTime)}&end_time=${encodeURIComponent(endTime)}&page_size=100`;
+
+        while (nextPath) {
+            const data: unknown = await zktGet<unknown>(nextPath);
+            assertPagedResponse<ZktTransaction>(data, nextPath);
+            all.push(...getPageItems(data));
+            nextPath = data.next ?? null;
+        }
+        return all.sort((a, b) => a.id - b.id);
+    });
+}
+
 export async function fetchReport(startDate: string, endDate: string): Promise<ZktReportEntry[]> {
     return withRetry(async () => {
         const all: ZktReportEntry[] = [];
@@ -300,37 +315,21 @@ export async function runZktSync(): Promise<ZktSyncResult> {
         return { newRecords: 0, lastTransactionId: lastId, syncedAt: new Date().toISOString() };
     }
 
-    // ── Build biometricPin → HRM employeeId map (single DB query for entire batch) ──
-    const uniquePins = [...new Set(txns.map(t => t.emp_code))];
-
-    const matchedEmployees = await Employee.find(
-        { biometricPin: { $in: uniquePins } },
+    // ── Build biometricPin → HRM employee map with normalization ──
+    const allEmployees = await Employee.find(
+        { 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } },
         { employeeId: 1, biometricPin: 1, firstName: 1, lastName: 1, 'jobInfo.shift': 1 }
     ).populate('jobInfo.shift').lean() as any[];
 
-    // e.g. "1" → "ITCS-0042"
-    const pinToHrmId = new Map<string, string>(
-        matchedEmployees.map(e => [e.biometricPin as string, e.employeeId])
-    );
-
-    // Map pin to isOvernight boolean
-    const pinToIsOvernight = new Map<string, boolean>(
-        matchedEmployees.map(e => {
-            const shift = (e.jobInfo as any)?.shift;
-            const isOvernight = !!(shift?.startTime && shift?.endTime && shift.startTime > shift.endTime);
-            return [e.biometricPin as string, isOvernight];
-        })
-    );
-
-    // Warn about machine PINs with no matching HRM employee profile
-    const unmappedPins = uniquePins.filter(p => !pinToHrmId.has(p));
-    if (unmappedPins.length > 0) {
-        logger.warn(
-            `[ZKT Sync] ⚠️  ${unmappedPins.length} machine PIN(s) not linked to any HRM employee: [${unmappedPins.join(', ')}]`,
-            '\n  → Open the employee profile → set "Biometric PIN" to match the machine PIN.'
-        );
+    const pinToEmp = new Map<string, any>();
+    for (const e of allEmployees) {
+        if (e.biometricPin) {
+            const raw = String(e.biometricPin).trim();
+            const norm = raw.replace(/^0+/, '') || raw;
+            pinToEmp.set(raw, e);
+            pinToEmp.set(norm, e);
+        }
     }
-    // ────────────────────────────────────────────────────────────────────────────
 
     let savedCount = 0;
     let maxId      = lastId ?? 0;
@@ -340,23 +339,29 @@ export async function runZktSync(): Promise<ZktSyncResult> {
         if (txn.id > maxId) maxId = txn.id;
 
         let punchStatus = parseInt(txn.punch_state ?? '0', 10);
-        if (punchStatus === 255) punchStatus = 0; // 255 is generic biometric punch
+        if (punchStatus === 255) punchStatus = 0;
 
         const punchTime = pktDateTimeToUtc(txn.punch_time);
         if (isNaN(punchTime.getTime())) continue;
 
-        // Resolve machine PIN → HRM employeeId
-        const hrmEmployeeId = pinToHrmId.get(txn.emp_code);
-        if (!hrmEmployeeId) continue;
+        const rawCode = String(txn.emp_code).trim();
+        const normCode = rawCode.replace(/^0+/, '') || rawCode;
+        const matchedEmp = pinToEmp.get(rawCode) || pinToEmp.get(normCode);
+
+        const hrmEmployeeId = matchedEmp ? matchedEmp.employeeId : `unlinked_${rawCode}`;
+        const employeeName = matchedEmp
+            ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim()
+            : (txn.first_name || `PIN ${rawCode}`);
 
         try {
             let dateStr = txn.punch_time.trim().slice(0, 10);
             const sn = txn.terminal_sn ?? 'ZKT_CLOUD';
 
-            const isOvernight = pinToIsOvernight.get(txn.emp_code) || false;
+            const shift = (matchedEmp?.jobInfo as any)?.shift;
+            const isOvernight = !!(shift?.startTime && shift?.endTime && shift.startTime > shift.endTime);
             if (isOvernight) {
                 const hour = parseInt(txn.punch_time.slice(11, 13), 10);
-                if (Number.isFinite(hour) && hour < 10) {
+                if (Number.isFinite(hour) && hour < 12) {
                     const d = new Date(`${dateStr}T12:00:00.000Z`);
                     d.setUTCDate(d.getUTCDate() - 1);
                     dateStr = d.toISOString().slice(0, 10);
@@ -369,6 +374,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
                     $setOnInsert: {
                         machineUserId: txn.emp_code,
                         employeeId:    hrmEmployeeId,
+                        employeeName,
                         punchTime,
                         punchStatus,
                         verifyType:    txn.verify_type ?? 15,
@@ -381,7 +387,9 @@ export async function runZktSync(): Promise<ZktSyncResult> {
             );
             if (!existing) {
                 savedCount++;
-                toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
+                if (matchedEmp) {
+                    toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
+                }
             }
         } catch (err: any) {
             if (err.code !== 11000) {

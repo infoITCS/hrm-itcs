@@ -1,16 +1,21 @@
 import * as repo from './attendance.repository';
-import { fetchReport } from '../../services/zktCloudService';
+import { fetchReport, fetchTransactionsForRange } from '../../services/zktCloudService';
 import logger from '../../utils/logger';
 import { sendAutoCloseAlertEmail } from '../../utils/email';
 import {
     pktHHMMtoUtc, isWeekend, applyLunchDeduction,
-    isValidCheckout, toPKTTimeString, startOfDay, endOfDay
+    isValidCheckout, toPKTTimeString, startOfDay, endOfDay,
+    deduplicatePunches, normalizeBiometricPin, matchShiftPunches,
+    pktDateTimeToUtc
 } from '../../shared/utils/dateUtils';
 import type {
     ShiftConfig, DashboardSummary, RecordsPage,
     RecordFilter, AttendanceRecordDTO, WeeklyDay, AutoCloseResult
 } from './attendance.types';
 import AttendanceRecord, { AttendanceStatus } from '../../models/AttendanceRecord';
+import AttendancePunch from '../../models/AttendancePunch';
+import Employee from '../../models/Employee';
+import '../../models/WorkShift';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 // ─── Shift Logic ──────────────────────────────────────────────────────────────
@@ -96,39 +101,16 @@ export async function processEmployeePunches(
             return;
         }
 
-        // ── Has punches: compute check-in, check-out, durations ──
-        const allPunchTimes = (punches as any[]).map((p) => p.punchTime as Date);
-        const checkIn = allPunchTimes[0];
+        // ── Has punches: compute check-in, check-out, durations using matchShiftPunches ──
+        const rawPunchTimes = (punches as any[]).map((p) => new Date(p.punchTime));
+        const matched = matchShiftPunches(rawPunchTimes, dateStr, cfg);
 
-        let checkOut: Date | undefined;
-        if (allPunchTimes.length > 1) {
-            const last = allPunchTimes[allPunchTimes.length - 1];
-            if (isValidCheckout(checkIn, last)) checkOut = last;
-        }
-
-        const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
-        let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
-        if (isOvernight) {
-            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
-        }
-
-        const diffMins = Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000);
-        const lateMinutes = diffMins > cfg.graceMinutes ? diffMins - cfg.graceMinutes : 0;
-
-        let workDurationMinutes = 0;
-        let overtimeMinutes = 0;
-        let isEarlyLeave = false;
-
-        if (checkOut) {
-            const rawMins = Math.floor((checkOut.getTime() - checkIn.getTime()) / 60000);
-            workDurationMinutes = applyLunchDeduction(rawMins, cfg);
-
-            const otDiff = Math.floor((checkOut.getTime() - shiftEndTime.getTime()) / 60000);
-            if (otDiff > 0) overtimeMinutes = otDiff;
-
-            const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOut.getTime()) / 60000);
-            if (earlyDiff > 10) isEarlyLeave = true;
-        }
+        const checkIn = matched.checkIn;
+        const checkOut = matched.checkOut;
+        const lateMinutes = matched.lateMinutes;
+        const workDurationMinutes = matched.workDurationMinutes;
+        const overtimeMinutes = matched.overtimeMinutes;
+        const isEarlyLeave = matched.isEarlyLeave;
 
         const leaveMap = await repo.findApprovedLeavesForDate(dateStr, [resolvedEmployeeId]);
         const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
@@ -140,7 +122,13 @@ export async function processEmployeePunches(
         if (leaveType) {
             status = 'On Leave';
             note = leaveType;
-        } else if (checkIn.getTime() >= fullDayCutoff.getTime()) {
+        } else if (!checkIn) {
+            // Employee only punched off-shift (e.g. 12 AM midnight for morning shift), absent during real shift
+            status = 'Absent';
+            note = matched.offShiftPunches.length > 0
+                ? `Off-shift punch at ${toPKTTimeString(matched.offShiftPunches[0])}, absent during shift`
+                : 'Absent';
+        } else if (!isOvernight && checkIn.getTime() >= fullDayCutoff.getTime()) {
             status = 'Absent';
             note = 'Arrived at or after 2:00 PM (Full day salary cut per HR Policy)';
         } else if (lateMinutes > 0) {
@@ -184,7 +172,7 @@ export async function processEmployeePunches(
             leaveType: leaveType ?? undefined,
             isHalfDay: status === 'Half-Day',
             note,
-            allPunches: allPunchTimes,
+            allPunches: matched.allPunches,
         });
 
         await repo.markPunchesProcessed(resolvedEmployeeId, dateStr, isOvernight);
@@ -205,9 +193,9 @@ export async function getTodayRoster(
     location?: string,
     teamScope?: string[] | null
 ): Promise<import('./attendance.types').TodayRosterEntry[]> {
-    // 1. Fetch ALL punches for the day in one query
+    // 1. Fetch ALL punches for the day in one query (extended to 36 hours to cover overnight shifts)
     const punchFilter: Record<string, any> = {
-        punchTime: { $gte: startOfDay(dateStr), $lte: endOfDay(dateStr) },
+        punchTime: { $gte: startOfDay(dateStr), $lte: new Date(startOfDay(dateStr).getTime() + 36 * 3600 * 1000) },
     };
     if (teamScope !== null && teamScope !== undefined) {
         punchFilter.employeeId = { $in: teamScope };
@@ -284,25 +272,24 @@ export async function getTodayRoster(
         const cfg = repo.resolveShiftConfig(emp, deviceConfig);
         const isOvernight = !!cfg.isOvernight;
 
-        let effectivePunches = punches;
-        if (isOvernight) {
-            // Early morning punches (< 10:00 AM PKT) belong to yesterday's overnight shift
-            effectivePunches = punches.filter((p: any) => {
-                const pktHour = (new Date(p.punchTime).getUTCHours() + 5) % 24;
-                return pktHour >= 10;
-            });
-            if (effectivePunches.length === 0 && !recMap.get(empId)?.checkIn) {
-                continue;
-            }
-        }
+        // Use matchShiftPunches to select correct shift check-in and check-out
+        const matched = matchShiftPunches(
+            punches.map((p: any) => new Date(p.punchTime)),
+            dateStr,
+            cfg
+        );
 
         if (empId) processedEmpIds.add(empId);
 
         // Use existing processed record if available
         const rec = empId ? recMap.get(empId) as any : null;
-        const activeFirstPunch = effectivePunches[0] || punches[0];
-        const activeLastPunch = effectivePunches[effectivePunches.length - 1] || punches[punches.length - 1];
-        const checkInTime = rec?.checkIn ? new Date(rec.checkIn) : new Date(activeFirstPunch.punchTime);
+        const checkInTime: Date | null = rec?.checkIn ? new Date(rec.checkIn) : (matched.checkIn || null);
+        let checkOutTime: Date | null = rec?.checkOut ? new Date(rec.checkOut) : (matched.checkOut || null);
+
+        if (!checkInTime && !rec?.checkIn) {
+            // No valid shift check-in (e.g. only off-shift midnight punch)
+            continue;
+        }
 
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
         let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
@@ -310,27 +297,15 @@ export async function getTodayRoster(
             shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
         }
 
-        // Determine if last punch qualifies as a valid checkout
-        let checkOutTime: Date | null = rec?.checkOut ? new Date(rec.checkOut) : null;
-        if (!checkOutTime && effectivePunches.length > 1) {
-            const lastTime = new Date(activeLastPunch.punchTime);
-            if (isValidCheckout(checkInTime, lastTime)) {
-                checkOutTime = lastTime;
-            }
-        }
-
         // Compute late minutes
-        const diffFromShift = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
+        const diffFromShift = checkInTime ? Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000) : 0;
         const lateMinutes = rec?.manuallyAdjusted
             ? (rec.lateMinutes ?? 0)
-            : (diffFromShift > cfg.graceMinutes ? diffFromShift - cfg.graceMinutes : 0);
+            : (rec?.lateMinutes ?? (diffFromShift > cfg.graceMinutes ? diffFromShift - cfg.graceMinutes : 0));
 
         // Compute work duration
-        let workDurationMinutes = rec?.workDurationMinutes ?? 0;
-        if (checkOutTime && (!rec || rec.workDurationMinutes === 0)) {
-            const rawMins = Math.floor((checkOutTime.getTime() - checkInTime.getTime()) / 60000);
-            workDurationMinutes = applyLunchDeduction(rawMins, cfg);
-        } else if (!rec && !checkOutTime) {
+        let workDurationMinutes = rec?.workDurationMinutes ?? matched.workDurationMinutes;
+        if (!rec && checkInTime && !checkOutTime) {
             const now = new Date();
             const rawMins = Math.floor((now.getTime() - checkInTime.getTime()) / 60000);
             workDurationMinutes = Math.max(0, rawMins);
@@ -383,7 +358,7 @@ export async function getTodayRoster(
             employeeName,
             avatar,
             location: punchLoc,
-            checkIn: isNonWorking ? undefined : checkInTime.toISOString(),
+            checkIn: isNonWorking ? undefined : checkInTime?.toISOString(),
             checkOut: isNonWorking ? undefined : checkOutTime?.toISOString(),
             totalPunches: isNonWorking ? 0 : punches.length,
             workDurationMinutes: isNonWorking ? 0 : workDurationMinutes,
@@ -696,58 +671,88 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
 
 export async function syncFromMachineReport(dateStr: string): Promise<number> {
     try {
-        const report = await fetchReport(dateStr, dateStr);
-        if (report.length === 0) return 0;
+        const nextDate = new Date(`${dateStr}T12:00:00.000Z`);
+        nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        const nextDateStr = nextDate.toISOString().slice(0, 10);
 
-        // Batch-fetch holidays and leaves ONCE before the loop
-        const uniquePins = [...new Set(report.map((r) => r.emp_code))];
-        const matchedEmployees = await repo.findEmployeesByPins(uniquePins) as any[];
-        const pinToId = new Map(matchedEmployees.map((e) => [e.biometricPin, e.employeeId]));
+        const startRange = `${dateStr} 00:00:00`;
+        const endRange = `${nextDateStr} 12:00:00`;
 
-        // Use first employee's location as a heuristic for holiday lookup if not specified
-        const primaryLocation = matchedEmployees[0]?.jobInfo?.workLocation;
-        const holiday = await repo.findHolidayForDate(dateStr, primaryLocation);
-        
-        const hrmIds = [...pinToId.values()];
-        const leaveMap = await repo.findApprovedLeavesForDate(dateStr, hrmIds);
-        const weekend = isWeekend(dateStr);
-        const manualIds = new Set(await AttendanceRecord.find({ date: dateStr, employeeId: { $in: hrmIds }, manuallyAdjusted: true }).distinct('employeeId'));
-
-        const upsertPromises = report.map(async (entry) => {
-            const hrmEmpId = pinToId.get(entry.emp_code);
-            if (!hrmEmpId || manualIds.has(hrmEmpId)) return null;
-
-            const leaveType = leaveMap.get(hrmEmpId) ?? null;
-            let status: AttendanceStatus;
-            let note = entry.status;
-
-            if (holiday) { status = 'Holiday'; note = holiday; }
-            else if (leaveType) { status = 'On Leave'; note = leaveType; }
-            else if (entry.status === 'Absent' && weekend) { status = 'Weekend'; note = 'Weekend'; }
-            else {
-                if (entry.status === 'Present') status = 'Present';
-                else if (entry.status === 'Absent') status = 'Absent';
-                else if (entry.status === 'Late') status = 'Late';
-                else if (entry.status.includes('Early')) status = 'Half-Day';
-                else status = 'Present';
-            }
-
-            let workMins = 0;
-            if (entry.work_time) {
-                const [h, m] = entry.work_time.split(':').map(Number);
-                workMins = (h || 0) * 60 + (m || 0);
-            }
-
-            return repo.upsertRecord(hrmEmpId, dateStr, {
-                status, workDurationMinutes: workMins, note: note || undefined,
-                checkIn: entry.clock_in ? pktHHMMtoUtc(dateStr, entry.clock_in) : undefined,
-                checkOut: entry.clock_out ? pktHHMMtoUtc(dateStr, entry.clock_out) : undefined,
-                manuallyAdjusted: false,
-            });
+        // 1. Pull ALL raw machine punches for this date range directly from BioTime
+        const txns = await fetchTransactionsForRange(startRange, endRange).catch((err) => {
+            logger.error('[AttendanceService] fetchTransactionsForRange error:', err);
+            return [];
         });
 
-        const results = await Promise.all(upsertPromises);
-        return results.filter(Boolean).length;
+        // 2. Fetch all active employees to map machine PINs to HRM employees
+        const allEmployees = await Employee.find(
+            { 'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] } },
+            { employeeId: 1, biometricPin: 1, firstName: 1, lastName: 1, 'jobInfo.shift': 1, 'jobInfo.workLocation': 1 }
+        ).populate('jobInfo.shift').lean() as any[];
+
+        const pinToEmp = new Map<string, any>();
+        for (const e of allEmployees) {
+            if (e.biometricPin) {
+                const raw = String(e.biometricPin).trim();
+                const norm = raw.replace(/^0+/, '') || raw;
+                pinToEmp.set(raw, e);
+                pinToEmp.set(norm, e);
+            }
+        }
+
+        const affectedEmps = new Set<string>();
+
+        // 3. Ingest raw punches into AttendancePunch
+        for (const txn of txns) {
+            const punchTime = pktDateTimeToUtc(txn.punch_time);
+            if (isNaN(punchTime.getTime())) continue;
+
+            const rawCode = String(txn.emp_code).trim();
+            const normCode = rawCode.replace(/^0+/, '') || rawCode;
+            const matchedEmp = pinToEmp.get(rawCode) || pinToEmp.get(normCode);
+
+            const hrmEmpId = matchedEmp ? matchedEmp.employeeId : `unlinked_${rawCode}`;
+            const empName = matchedEmp
+                ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim()
+                : (txn.first_name || `PIN ${rawCode}`);
+
+            let punchStatus = parseInt(txn.punch_state ?? '0', 10);
+            if (punchStatus === 255) punchStatus = 0;
+
+            const sn = txn.terminal_sn ?? 'ZKT_CLOUD';
+
+            await AttendancePunch.findOneAndUpdate(
+                { deviceSN: sn, machineUserId: txn.emp_code, punchTime },
+                {
+                    $setOnInsert: {
+                        machineUserId: txn.emp_code,
+                        employeeId: hrmEmpId,
+                        employeeName: empName,
+                        punchTime,
+                        punchStatus,
+                        verifyType: txn.verify_type ?? 15,
+                        deviceSN: sn,
+                        location: txn.area_alias ?? 'ISB-Office',
+                        processed: false,
+                    }
+                },
+                { upsert: true, new: false }
+            );
+
+            if (matchedEmp) {
+                affectedEmps.add(matchedEmp.employeeId);
+            }
+        }
+
+        // 4. Reprocess punches for all affected employees on dateStr
+        for (const empId of affectedEmps) {
+            await processEmployeePunches(empId, dateStr, 'ZKT_CLOUD').catch((err) => {
+                logger.error(`[AttendanceService] Error processing punches for ${empId}:`, err);
+            });
+        }
+
+        logger.info(`[AttendanceService] Synced ${txns.length} raw punches across ${affectedEmps.size} employees for ${dateStr}`);
+        return affectedEmps.size;
     } catch (err) {
         logger.error('[AttendanceService] Error syncing from machine report:', err);
         return 0;

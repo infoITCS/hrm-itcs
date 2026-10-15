@@ -133,4 +133,52 @@ console.log('🧪 Starting Overnight Shift Self-Check Tests...');
     console.log('✅ Test 4 Passed: Query window covers check-in and next-morning check-out');
 }
 
-console.log('\n🎉 ALL OVERNIGHT SHIFT TESTS PASSED SUCCESSFULLY!');
+// ── Test 5: Fast double-tap deduplication (< 60s) ──
+{
+    const { deduplicatePunches } = require('../shared/utils/dateUtils');
+    const p1 = new Date('2026-10-15T09:24:05.000Z');
+    const p2 = new Date('2026-10-15T09:24:20.000Z'); // 15s later (accidental double tap)
+    const p3 = new Date('2026-10-15T18:55:33.000Z');
+
+    const deduped = deduplicatePunches([p1, p2, p3], 60);
+    assert.strictEqual(deduped.length, 2, 'Accidental double tap (< 60s) must be discarded');
+    assert.strictEqual(deduped[0].getTime(), p1.getTime(), 'First punch retained');
+    assert.strictEqual(deduped[1].getTime(), p3.getTime(), 'Checkout punch retained');
+    console.log('✅ Test 5 Passed: Rapid double-taps (< 60s) are cleanly deduplicated');
+}
+
+// ── Test 6: Midnight / "fun" punch does not corrupt morning shift check-in ──
+{
+    const { matchShiftPunches } = require('../shared/utils/dateUtils');
+    const morningShift = {
+        shiftStart: '09:00',
+        shiftEnd: '18:00',
+        isOvernight: false,
+    };
+    const dateStr = '2026-10-15';
+    // Employee came at 00:05 AM (midnight for fun), then officially came at 09:05 AM and left at 18:15 PM
+    const midnightFunPunch = pktHHMMtoUtc(dateStr, '00:05');
+    const officialCheckIn = pktHHMMtoUtc(dateStr, '09:05');
+    const officialCheckOut = pktHHMMtoUtc(dateStr, '18:15');
+
+    const result = matchShiftPunches(
+        [midnightFunPunch, officialCheckIn, officialCheckOut],
+        dateStr,
+        morningShift
+    );
+
+    assert.ok(result.checkIn, 'Check-in must be present');
+    assert.strictEqual(
+        result.checkIn!.getTime(),
+        officialCheckIn.getTime(),
+        'Check-in must match official 09:05 punch, NOT the 00:05 midnight punch'
+    );
+    assert.strictEqual(
+        result.checkOut!.getTime(),
+        officialCheckOut.getTime(),
+        'Check-out must match 18:15 punch'
+    );
+    console.log('✅ Test 6 Passed: Midnight off-shift punch ignored; official 09:05 check-in correctly selected');
+}
+
+console.log('\n🎉 ALL ATTENDANCE & SHIFT TESTS PASSED SUCCESSFULLY!');

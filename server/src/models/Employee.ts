@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { encryptNumber, decryptNumber, decryptEmployeeFields } from '../utils/encryption';
+import './WorkShift';
 
 
 export interface IEmployee extends Document {

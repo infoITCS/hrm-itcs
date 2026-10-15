@@ -68,6 +68,41 @@ const EmployeeProfile = () => {
     const [adjustNotes, setAdjustNotes] = useState('');
     const [adjustingMedical, setAdjustingMedical] = useState(false);
 
+    // Biometric PIN edit state
+    const [editPinOpen, setEditPinOpen] = useState(false);
+    const [editPinValue, setEditPinValue] = useState('');
+    const [savingPin, setSavingPin] = useState(false);
+
+    const openEditPinModal = () => {
+        setEditPinValue(employee?.biometricPin || '');
+        setEditPinOpen(true);
+    };
+
+    const handleSaveBiometricPin = async () => {
+        if (!employee?._id) return;
+        setSavingPin(true);
+        const token = localStorage.getItem('token');
+        try {
+            const res = await fetch(`${api.employees}/${employee._id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ biometricPin: editPinValue.trim() })
+            });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.message || 'Failed to update biometric PIN');
+            showToast('Biometric PIN updated and punches linked successfully!', 'success');
+            setEditPinOpen(false);
+            fetchEmployee();
+        } catch (err: any) {
+            showToast(err.message || 'Failed to update biometric PIN', 'error');
+        } finally {
+            setSavingPin(false);
+        }
+    };
+
     const fetchEmployee = useCallback(async () => {
         const token = localStorage.getItem('token');
         try {
@@ -481,6 +516,24 @@ const EmployeeProfile = () => {
                     <div className="space-y-8 animate-fadeIn">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8">
                             <Field label="Employee ID" value={employee.employeeId} />
+                            <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Biometric Machine PIN</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-800 font-medium font-mono bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200">
+                                        {employee.biometricPin || 'Not Linked'}
+                                    </span>
+                                    {canEditSensitiveData() && (
+                                        <button
+                                            type="button"
+                                            onClick={openEditPinModal}
+                                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors"
+                                            title="Edit Biometric PIN"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                             <Field label="Full Name" value={formatEmployeeFullName(employee, '—')} />
                             <Field label="Date of Birth" value={formatDate(employee.dateOfBirth)} />
                             <Field label="Gender" value={employee.gender} />
@@ -699,6 +752,24 @@ const EmployeeProfile = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-8 animate-fadeIn">
                         <Field label="Designation" value={employee.jobInfo?.designation} />
                         <Field label="Department" value={employee.jobInfo?.department} />
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Biometric Machine PIN</label>
+                            <div className="flex items-center gap-2">
+                                <span className="text-gray-800 font-medium font-mono bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200">
+                                    {employee.biometricPin || 'Not Linked'}
+                                </span>
+                                {canEditSensitiveData() && (
+                                    <button
+                                        type="button"
+                                        onClick={openEditPinModal}
+                                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded transition-colors"
+                                        title="Edit Biometric PIN"
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                         {/* #2 FIX: Resolve manager name instead of showing raw ID */}
                         <Field label="Reporting Manager" value={employee.jobInfo?.reportingManagerName || resolveManagerName(employee.jobInfo?.reportingManager)} />
                         <Field label="Work Location" value={employee.jobInfo?.workLocation} />
@@ -1661,6 +1732,67 @@ const EmployeeProfile = () => {
                                 {adjustingMedical ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={16} />}
                                 Save Adjustments
                             </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Biometric PIN Edit Modal */}
+            {editPinOpen && createPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 animate-scaleUp">
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                                    <Clock size={18} />
+                                </div>
+                                <h3 className="text-base font-bold text-slate-800">Edit Biometric PIN</h3>
+                            </div>
+                            <button
+                                onClick={() => setEditPinOpen(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                                    Machine Device PIN
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editPinValue}
+                                    onChange={(e) => setEditPinValue(e.target.value)}
+                                    placeholder="e.g. 19"
+                                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                                    autoFocus
+                                />
+                                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                    Matches the PIN or User ID registered on the biometric terminal (e.g. 19 for Sunil Christopher). Saving will auto-link any existing raw punches.
+                                </p>
+                            </div>
+
+                            <div className="flex justify-end gap-2.5 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditPinOpen(false)}
+                                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveBiometricPin}
+                                    disabled={savingPin}
+                                    className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                    {savingPin ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                                    Save PIN
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>,

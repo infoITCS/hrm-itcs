@@ -7,6 +7,7 @@ import AttendancePunch from '../../models/AttendancePunch';
 import AttendanceRecord from '../../models/AttendanceRecord';
 import DeviceLocation from '../../models/DeviceLocation';
 import Employee from '../../models/Employee';
+import WorkShift from '../../models/WorkShift';
 import { findHolidayForDate as lookupHolidayForDate } from '../../utils/holidayUtils';
 import LeaveRequest, { LeaveStatus } from '../../models/LeaveRequest';
 import ZktSyncState from '../../models/ZktSyncState';
@@ -100,9 +101,9 @@ export async function findIncompleteRecords(date: string) {
 export async function findPunchesForDay(employeeId: string, dateStr: string, isOvernight = false) {
     if (isOvernight) {
         // Overnight shift for dateStr (e.g. starts 17:00 dateStr, ends 02:00 dateStr+1):
-        // Query from dateStr 12:00 PM PKT to (dateStr + 1) 10:00 AM PKT
+        // Query from dateStr 12:00 PM PKT to (dateStr + 1) 12:00 PM PKT (full 24h cycle)
         const start = new Date(startOfDay(dateStr).getTime() + 12 * 60 * 60 * 1000);
-        const end = new Date(startOfDay(dateStr).getTime() + 34 * 60 * 60 * 1000);
+        const end = new Date(startOfDay(dateStr).getTime() + 36 * 60 * 60 * 1000);
         return AttendancePunch.find({
             employeeId,
             punchTime: { $gte: start, $lte: end },
@@ -200,7 +201,17 @@ export async function findEmployeeByPin(pin: string) {
 }
 
 export async function findEmployeesByPins(pins: string[], location?: string) {
-    const filter: any = { biometricPin: { $in: pins }, isDeleted: { $ne: true } };
+    const expandedPins = new Set<any>();
+    for (const p of pins) {
+        if (!p) continue;
+        const str = String(p).trim();
+        expandedPins.add(str);
+        const norm = str.replace(/^0+/, '') || str;
+        expandedPins.add(norm);
+        const num = parseInt(str, 10);
+        if (!isNaN(num)) expandedPins.add(num);
+    }
+    const filter: any = { biometricPin: { $in: [...expandedPins] }, isDeleted: { $ne: true } };
     if (location) filter['jobInfo.workLocation'] = location;
     return Employee.find(filter).lean();
 }
