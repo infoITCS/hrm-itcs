@@ -347,10 +347,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
 
         // Resolve machine PIN → HRM employeeId
         const hrmEmployeeId = pinToHrmId.get(txn.emp_code);
-        const resolvedEmpId = hrmEmployeeId || `unlinked_${txn.emp_code}`;
-        if (!hrmEmployeeId) {
-            logger.warn(`[ZKT Sync] Machine PIN="${txn.emp_code}" not mapped to any HRM employee. Saved as unlinked punch.`);
-        }
+        if (!hrmEmployeeId) continue;
 
         try {
             let dateStr = txn.punch_time.trim().slice(0, 10);
@@ -371,7 +368,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
                 {
                     $setOnInsert: {
                         machineUserId: txn.emp_code,
-                        employeeId:    resolvedEmpId,
+                        employeeId:    hrmEmployeeId,
                         punchTime,
                         punchStatus,
                         verifyType:    txn.verify_type ?? 15,
@@ -384,9 +381,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
             );
             if (!existing) {
                 savedCount++;
-                if (hrmEmployeeId) {
-                    toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
-                }
+                toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
             }
         } catch (err: any) {
             if (err.code !== 11000) {

@@ -83,14 +83,14 @@ function RosterRow({
     entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void; canEdit?: boolean 
 }) {
     const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(entry.status);
-    const isMissing = !isNonWorking && entry.status === 'Incomplete' && isPast;
+    const isFirstLateExempt = entry.note?.includes('First Late Exemption');
     const statusLabel = entry.isWfh && entry.status === 'Present'
         ? 'Present (WFH)'
         : isMissing
             ? 'Missing Checkout'
             : (entry.status === 'Incomplete' ? 'Still In' : entry.status);
     const statusClass = STATUS_BADGE[statusLabel] || 'bg-slate-100 text-slate-500';
-    const showLateFlag = !isNonWorking && entry.status !== 'Incomplete' && entry.lateMinutes > 0;
+    const showLateFlag = !isNonWorking && entry.status !== 'Incomplete' && entry.lateMinutes > 0 && !isFirstLateExempt;
     const showEarlyFlag = !isNonWorking && entry.status === 'Early Leave';
     const [imgError, setImgError] = useState(false);
 
@@ -173,11 +173,16 @@ function RosterRow({
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${statusClass}`}>
                         {statusLabel}
                     </span>
-                    {(showLateFlag || showEarlyFlag || (entry.isWfh && entry.status !== 'Present')) && (
+                    {(showLateFlag || showEarlyFlag || isFirstLateExempt || (entry.isWfh && entry.status !== 'Present')) && (
                         <div className="flex items-center gap-1.5 flex-wrap">
                             {entry.isWfh && entry.status !== 'Present' && (
                                 <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
                                     WFH
+                                </span>
+                            )}
+                            {isFirstLateExempt && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="First late of the month exempted per HR policy">
+                                    First Late Exemption
                                 </span>
                             )}
                             {showLateFlag && (

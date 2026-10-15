@@ -443,6 +443,11 @@ const isNonWorkingStatus = (s: string) => NON_WORKING_STATUSES.has(s);
                                                                 WFH
                                                             </div>
                                                         )}
+                                                        {day.note?.includes('First Late Exemption') && (
+                                                            <div className="px-2 py-0.5 rounded-lg text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                                                First Late Exemption
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     <div className="flex items-center gap-4">

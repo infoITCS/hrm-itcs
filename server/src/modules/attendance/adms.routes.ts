@@ -135,28 +135,25 @@ router.post('/iclock/cdata', async (req: Request, res: Response) => {
 
             // Map machine PIN to HRM employee
             const employee = await repo.findEmployeeByPin(pin) as any;
-            const employeeId = employee ? employee.employeeId : `unlinked_${pin}`;
-            const employeeName = employee ? `${employee.firstName} ${employee.lastName || ''}`.trim() : undefined;
+            if (!employee) continue;
 
             // Check if employee is on an overnight shift and punch occurred in the early morning (< 10:00 AM)
             let dateStr = datePart;
-            if (employee) {
-                const empWithShift = await repo.findEmployeeWithShift(employee.employeeId);
-                const devCfg = await repo.findDeviceConfig(sn);
-                const cfg = repo.resolveShiftConfig(empWithShift, devCfg);
+            const empWithShift = await repo.findEmployeeWithShift(employee.employeeId);
+            const devCfg = await repo.findDeviceConfig(sn);
+            const cfg = repo.resolveShiftConfig(empWithShift, devCfg);
 
-                if (cfg.isOvernight && tH < 10) {
-                    const prevD = new Date(`${datePart}T12:00:00.000Z`);
-                    prevD.setUTCDate(prevD.getUTCDate() - 1);
-                    dateStr = prevD.toISOString().slice(0, 10);
-                }
+            if (cfg.isOvernight && tH < 10) {
+                const prevD = new Date(`${datePart}T12:00:00.000Z`);
+                prevD.setUTCDate(prevD.getUTCDate() - 1);
+                dateStr = prevD.toISOString().slice(0, 10);
             }
 
             // Save raw punch (idempotent)
             await repo.upsertPunch(sn, pin, punchTimeUTC, {
                 machineUserId: pin,
-                employeeId,
-                employeeName,
+                employeeId: employee.employeeId,
+                employeeName: `${employee.firstName} ${employee.lastName || ''}`.trim(),
                 punchTime: punchTimeUTC,
                 punchStatus,
                 verifyType: 1,
@@ -166,9 +163,7 @@ router.post('/iclock/cdata', async (req: Request, res: Response) => {
             });
 
             // Recompute attendance record for this employee/day
-            if (employee) {
-                await processEmployeePunches(employee.employeeId, dateStr, sn);
-            }
+            await processEmployeePunches(employee.employeeId, dateStr, sn);
         } catch (err) {
             logger.error(`[ADMS] Failed to process line: "${line}"`, err);
         }

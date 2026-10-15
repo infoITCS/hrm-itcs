@@ -246,20 +246,39 @@ export async function processEmployeePunches(
                 status = 'On Leave';
                 note = leaveInfo.type;
             }
-        } else if (!checkOut) {
-            status = 'Incomplete';
         } else if (checkIn.getTime() >= fullDayCutoff.getTime()) {
             // Arrival at or after 2:00 PM → full day salary cut
             status = 'Absent';
             note = isAutoClosed
                 ? 'Auto Clocked-Out (Arrived at or after 2:00 PM)'
                 : 'Arrived at or after 2:00 PM (Full day salary cut per HR Policy)';
-        } else if (checkIn.getTime() > lateThreshold.getTime()) {
-            // Late but before 2:00 PM → half day salary cut
-            status = 'Late';
-            note = isAutoClosed
-                ? 'Auto Clocked-Out (Arrived late before 2:00 PM)'
-                : 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+        } else if (lateMinutes > 0) {
+            // Arrived after grace period (Late) — check if first late of the month
+            const monthStart = `${dateStr.slice(0, 7)}-01`;
+            const priorLate = await AttendanceRecord.findOne({
+                employeeId: resolvedEmployeeId,
+                date: { $gte: monthStart, $lt: dateStr },
+                $or: [
+                    { status: 'Late' },
+                    { note: { $regex: /First Late Exemption/i } }
+                ]
+            }).lean();
+
+            if (!priorLate) {
+                // First late of the month is marked Present per HR policy
+                status = 'Present';
+                note = isAutoClosed
+                    ? 'Auto Clocked-Out (First Late Exemption)'
+                    : 'First Late Exemption';
+            } else {
+                // Subsequent late is marked Late immediately and stays Late even after completing hours
+                status = 'Late';
+                note = isAutoClosed
+                    ? 'Auto Clocked-Out (Arrived late before 2:00 PM)'
+                    : 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+            }
+        } else if (!checkOut) {
+            status = 'Incomplete';
         } else if (workDurationMinutes < halfDayHrs * 60 && checkOut) {
             status = 'Half-Day';
         } else if (isEarlyLeave) {
@@ -268,6 +287,9 @@ export async function processEmployeePunches(
             // On time (within grace after shift start)
             status = 'Present';
         }
+
+        const existingRecord = await AttendanceRecord.findOne({ employeeId: resolvedEmployeeId, date: dateStr }).lean() as any;
+        if (existingRecord?.manuallyAdjusted) return;
 
         await AttendanceRecord.findOneAndUpdate(
             { employeeId: resolvedEmployeeId, date: dateStr },

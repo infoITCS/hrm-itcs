@@ -133,12 +133,43 @@ export async function processEmployeePunches(
         const leaveMap = await repo.findApprovedLeavesForDate(dateStr, [resolvedEmployeeId]);
         const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
 
-        const status = computeStatus(
-            lateMinutes,
-            isEarlyLeave,
-            !!checkOut,
-            diffMins
-        );
+        const fullDayCutoff = pktHHMMtoUtc(dateStr, '14:00');
+        let status: AttendanceStatus;
+        let note: string | undefined = undefined;
+
+        if (leaveType) {
+            status = 'On Leave';
+            note = leaveType;
+        } else if (checkIn.getTime() >= fullDayCutoff.getTime()) {
+            status = 'Absent';
+            note = 'Arrived at or after 2:00 PM (Full day salary cut per HR Policy)';
+        } else if (lateMinutes > 0) {
+            const monthStart = `${dateStr.slice(0, 7)}-01`;
+            const priorLate = await AttendanceRecord.findOne({
+                employeeId: resolvedEmployeeId,
+                date: { $gte: monthStart, $lt: dateStr },
+                $or: [
+                    { status: 'Late' },
+                    { note: { $regex: /First Late Exemption/i } }
+                ]
+            }).lean();
+
+            if (!priorLate) {
+                status = 'Present';
+                note = 'First Late Exemption';
+            } else {
+                status = 'Late';
+                note = 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+            }
+        } else if (!checkOut) {
+            status = 'Incomplete';
+        } else if (workDurationMinutes < (cfg.halfDayThresholdHours || 4) * 60 && checkOut) {
+            status = 'Half-Day';
+        } else if (isEarlyLeave) {
+            status = 'Early Leave';
+        } else {
+            status = 'Present';
+        }
 
         await repo.upsertRecord(resolvedEmployeeId, dateStr, {
             location: cfg.locationName,
@@ -152,6 +183,7 @@ export async function processEmployeePunches(
             overtimeMinutes,
             leaveType: leaveType ?? undefined,
             isHalfDay: status === 'Half-Day',
+            note,
             allPunches: allPunchTimes,
         });
 
@@ -189,17 +221,11 @@ export async function getTodayRoster(
     const existingRecords = await repo.findRecordsForDate(dateStr, recFilter) as any[];
     const recMap = new Map(existingRecords.map((r: any) => [r.employeeId, r]));
 
-    // 3. Group punches by employeeId
     const punchMap = new Map<string, any[]>();
     for (const p of allPunches) {
         const empId = p.employeeId;
-        if (!empId) {
-            // Unlinked punch — group by machineUserId to show in roster as "Not Linked"
-            const unlinkedId = `unlinked_${p.machineUserId}`;
-            if (!punchMap.has(unlinkedId)) punchMap.set(unlinkedId, []);
-            punchMap.get(unlinkedId)!.push(p);
-            continue;
-        }
+        // Never group or display punches for unmapped / non-employees
+        if (!empId || empId.startsWith('unlinked_')) continue;
         if (!punchMap.has(empId)) punchMap.set(empId, []);
         punchMap.get(empId)!.push(p);
     }
@@ -243,21 +269,17 @@ export async function getTodayRoster(
     const roster: import('./attendance.types').TodayRosterEntry[] = [];
     const processedEmpIds = new Set<string>();
 
-    for (const [key, punches] of punchMap.entries()) {
+    for (const [empId, punches] of punchMap.entries()) {
         // Sort punches chronologically
         punches.sort((a: any, b: any) => new Date(a.punchTime).getTime() - new Date(b.punchTime).getTime());
-
-        const isUnlinked = key.startsWith('unlinked_');
-        const empId = isUnlinked ? null : key;
 
         const firstPunch = punches[0];
         const punchLoc = snToLoc.get(firstPunch.deviceSN) || firstPunch.location || location || 'ISB-Office';
         const deviceConfig = locationCfgMap.get(punchLoc);
 
-        // Use location-aware pin resolution
-        const emp = empId 
-            ? idToEmp.get(empId) 
-            : pinToEmp.get(`${punchLoc}_${firstPunch.machineUserId}`);
+        const emp = idToEmp.get(empId);
+        // Never show punches for non-employees / unmapped PINs on the portal
+        if (!emp) continue;
 
         const cfg = repo.resolveShiftConfig(emp, deviceConfig);
         const isOvernight = !!cfg.isOvernight;
@@ -316,13 +338,33 @@ export async function getTodayRoster(
 
         // Determine status
         let status = rec?.status || 'Incomplete';
+        let note = rec?.note;
         if (!rec || status === 'Incomplete') {
-            if (checkOutTime) {
+            if (lateMinutes > 0) {
+                const monthStart = `${dateStr.slice(0, 7)}-01`;
+                const priorLate = await AttendanceRecord.findOne({
+                    employeeId: emp.employeeId,
+                    date: { $gte: monthStart, $lt: dateStr },
+                    $or: [
+                        { status: 'Late' },
+                        { note: { $regex: /First Late Exemption/i } }
+                    ]
+                }).lean();
+
+                if (!priorLate) {
+                    status = 'Present';
+                    note = 'First Late Exemption';
+                } else {
+                    status = 'Late';
+                    note = 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+                }
+            } else if (checkOutTime) {
                 const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOutTime.getTime()) / 60000);
                 const isEarlyLeave = earlyDiff > 10;
-                status = computeStatus(lateMinutes, isEarlyLeave, true);
+                status = isEarlyLeave ? 'Early Leave' : 'Present';
+            } else {
+                status = 'Incomplete';
             }
-            else status = 'Incomplete';
         }
 
         // Resolve employee name
@@ -337,7 +379,7 @@ export async function getTodayRoster(
         const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(status);
 
         roster.push({
-            employeeId: empId || (emp as any)?.employeeId || `unlinked_${firstPunch.machineUserId}`,
+            employeeId: emp.employeeId,
             employeeName,
             avatar,
             location: punchLoc,
@@ -348,7 +390,7 @@ export async function getTodayRoster(
             lateMinutes: isNonWorking ? 0 : lateMinutes,
             status,
             verifyType: firstPunch.deviceSN === 'WEB-PORTAL' ? 'Dashboard' : (VERIFY_LABELS[firstPunch.verifyType] || 'Biometric'),
-            note: rec?.note,
+            note: note || rec?.note,
             isWfh: isNonWorking ? false : (Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || '')),
         });
     }

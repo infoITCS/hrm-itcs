@@ -59,6 +59,8 @@ export async function countRecords(filter: RecordFilter): Promise<number> {
 }
 
 export async function upsertRecord(employeeId: string, date: string, data: Record<string, any>) {
+    const existing = await AttendanceRecord.findOne({ employeeId, date }).lean() as any;
+    if (existing?.manuallyAdjusted) return existing;
     return AttendanceRecord.findOneAndUpdate(
         { employeeId, date },
         { $set: { employeeId, date, ...data } },

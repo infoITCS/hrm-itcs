@@ -701,13 +701,24 @@ export async function buildPayrollPayslips(
 
         const isExemptFromPenalties = emp.financeInfo?.exemptFromAttendancePenalties === true;
         const attInfo = attendanceDeductionsMap[emp.employeeId];
+        const hasDailyFirstLateExemption = periodRecords.some(r => r.employeeId === emp.employeeId && r.note?.includes('First Late Exemption'));
         if (!isExemptFromPenalties && attInfo?.penalties?.length) {
             const basicComp = earnings.find((c) => (c.component || '').toLowerCase().includes('basic'));
             const basicSal = basicComp ? basicComp.amount : (earnings[0]?.amount || 0);
-            const { halfDays, fullDays, exempted, billablePenalties, exemptedPenalty } = applyFirstPenaltyExemption(attInfo.penalties);
+            const { halfDays, fullDays, exempted, billablePenalties, exemptedPenalty } = hasDailyFirstLateExemption
+                ? {
+                    halfDays: attInfo.penalties.filter((p: any) => p.type === 'half').length,
+                    fullDays: attInfo.penalties.filter((p: any) => p.type === 'full').length,
+                    exempted: 1,
+                    billablePenalties: attInfo.penalties,
+                    exemptedPenalty: undefined
+                  }
+                : applyFirstPenaltyExemption(attInfo.penalties);
             if (exempted) {
                 const exDateStr = exemptedPenalty?.date ? ` (${exemptedPenalty.date})` : '';
-                attendancePenaltyNote = `First attendance penalty exempted this period${exDateStr}.`;
+                attendancePenaltyNote = hasDailyFirstLateExemption
+                    ? 'First late exempted per HR policy (First Late Exemption).'
+                    : `First attendance penalty exempted this period${exDateStr}.`;
             }
 
             let halfDayAmount = 0;
