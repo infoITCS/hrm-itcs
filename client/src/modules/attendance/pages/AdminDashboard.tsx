@@ -83,6 +83,7 @@ function RosterRow({
     entry: TodayRosterEntry; isNew?: boolean; isPast?: boolean; onClick?: () => void; onEdit?: () => void; canEdit?: boolean 
 }) {
     const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(entry.status);
+    const isMissing = !isNonWorking && entry.status === 'Incomplete' && isPast;
     const isFirstLateExempt = entry.note?.includes('First Late Exemption');
     const statusLabel = entry.isWfh && entry.status === 'Present'
         ? 'Present (WFH)'
