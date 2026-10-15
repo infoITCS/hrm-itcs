@@ -208,9 +208,8 @@ export async function processEmployeePunches(
         const lateThreshold = new Date(shiftStartTime.getTime() + graceMins * 60 * 1000);
         const fullDayCutoff = buildShiftTime(dateStr, '14:00');
 
-        let lateMinutes = 0;
         const diffMins = Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000);
-        if (diffMins > 0) lateMinutes = diffMins;
+        const lateMinutes = diffMins > graceMins ? diffMins - graceMins : 0;
 
         let overtimeMinutes = 0;
         if (checkOut) {
@@ -405,7 +404,9 @@ export async function getDashboardSummary(dateStr: string, location?: string, ma
             const checkIn = record?.checkIn ?? live?.firstPunch;
             if (!checkIn) continue;
 
-            const isLate = (record?.lateMinutes ?? 0) > 0 || (live ? live.firstPunch > lateThreshold : false);
+            const isLate = record?.manuallyAdjusted
+                ? (record.lateMinutes ?? 0) > 0
+                : (new Date(checkIn) > lateThreshold);
             
             // New logic: Check Out must be after 1 PM and >= 60 mins after Check In
             let hasCheckOut = Boolean(record?.checkOut);

@@ -13,7 +13,7 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import {
-    Activity, Calendar, MapPin, ChevronDown, RefreshCw,
+    Activity, Calendar, MapPin, ChevronDown, RefreshCw, RotateCcw,
     UserCheck, UserX, AlertTriangle, Timer, Clock,
     Fingerprint, LogIn, LogOut, Download, User, Zap, Edit2,
     Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight
@@ -256,10 +256,25 @@ export default function AdminDashboard() {
         fetchData: () => Promise<string>;
         downloadFileName: string;
     } | null>(null);
+    const [isSyncingReport, setIsSyncingReport] = useState(false);
     const weekend = isWeekendDay(date);
 
     const { data: summary, loading, refresh } = useAttendanceSummary(date, location);
     const { data: roster, loading: rosterLoading, refresh: refreshRoster } = useRoster(date, location, true);
+
+    const handleSyncReport = async () => {
+        setIsSyncingReport(true);
+        try {
+            await attendanceApi.zkt.syncReport(date);
+            await refresh(true);
+            await refreshRoster(true);
+            showToast('Attendance report synced from biometric machine!', 'success');
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to sync from machine', 'error');
+        } finally {
+            setIsSyncingReport(false);
+        }
+    };
 
     useEffect(() => {
         attendanceApi.getLocations().then(setLocations).catch(() => {});
@@ -517,6 +532,15 @@ export default function AdminDashboard() {
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-bold transition-all ${autoRefresh ? 'bg-white/25 border-white/40' : 'bg-white/10 border-white/20 text-white/60'}`}>
                             <RefreshCw size={14} className={autoRefresh ? 'animate-spin [animation-duration:3s]' : ''} />
                             <span className="hidden sm:inline">{autoRefresh ? 'Live' : 'Paused'}</span>
+                        </button>
+                        <button
+                            onClick={handleSyncReport}
+                            disabled={isSyncingReport}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-sm font-bold border border-white/30 transition-all disabled:opacity-50"
+                            title={`Sync attendance directly from biometric machine for ${date}`}
+                        >
+                            <RotateCcw size={14} className={isSyncingReport ? 'animate-spin' : ''} />
+                            <span className="hidden sm:inline">{isSyncingReport ? 'Syncing...' : 'Sync Machine'}</span>
                         </button>
                         <button
                             onClick={() => setPreviewConfig({

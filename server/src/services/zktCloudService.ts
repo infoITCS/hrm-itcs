@@ -347,9 +347,9 @@ export async function runZktSync(): Promise<ZktSyncResult> {
 
         // Resolve machine PIN → HRM employeeId
         const hrmEmployeeId = pinToHrmId.get(txn.emp_code);
+        const resolvedEmpId = hrmEmployeeId || `unlinked_${txn.emp_code}`;
         if (!hrmEmployeeId) {
-            logger.warn(`[ZKT Sync] Skipping punch: biometricPin="${txn.emp_code}" not mapped to any HRM employee. Set biometricPin in employee profile.`);
-            continue;
+            logger.warn(`[ZKT Sync] Machine PIN="${txn.emp_code}" not mapped to any HRM employee. Saved as unlinked punch.`);
         }
 
         try {
@@ -371,7 +371,7 @@ export async function runZktSync(): Promise<ZktSyncResult> {
                 {
                     $setOnInsert: {
                         machineUserId: txn.emp_code,
-                        employeeId:    hrmEmployeeId,
+                        employeeId:    resolvedEmpId,
                         punchTime,
                         punchStatus,
                         verifyType:    txn.verify_type ?? 15,
@@ -384,7 +384,9 @@ export async function runZktSync(): Promise<ZktSyncResult> {
             );
             if (!existing) {
                 savedCount++;
-                toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
+                if (hrmEmployeeId) {
+                    toProcess.add(`${hrmEmployeeId}|${dateStr}|${sn}`);
+                }
             }
         } catch (err: any) {
             if (err.code !== 11000) {

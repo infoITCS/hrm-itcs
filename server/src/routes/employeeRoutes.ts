@@ -36,9 +36,9 @@ import {
     buildExportRows,
     generateExcelBuffer
 } from '../services/employeeExportService';
-
-
-
+import AttendancePunch from '../models/AttendancePunch';
+import { processEmployeePunches } from '../services/attendanceProcessor';
+import { syncFromMachineReport } from '../modules/attendance/attendance.service';
 // Native magic-byte MIME detector — replaces the file-type package.
 // Covers exactly the MIME types allowed in the upload allowlist.
 // Using magic bytes is more reliable than file extension alone (polyglot attack defense).
@@ -992,6 +992,29 @@ router.post('/', authenticate, upload.array('attachments'), async (req: Request,
 
         // Log action
         await createAuditLog('CREATE', newEmployee.employeeId, authReq.user?.userId || 'unknown', { name: `${newEmployee.firstName} ${newEmployee.lastName}` });
+
+        // Auto-link retroactive punches if biometricPin is provided
+        if (newEmployee.biometricPin) {
+            const cleanPin = String(newEmployee.biometricPin).trim();
+            const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+            AttendancePunch.updateMany(
+                { machineUserId: cleanPin, employeeId: { $regex: /^unlinked_/ } },
+                { 
+                    $set: { 
+                        employeeId: newEmployee.employeeId, 
+                        employeeName: `${newEmployee.firstName} ${newEmployee.lastName || ''}`.trim() 
+                    } 
+                }
+            ).then(async (res: any) => {
+                if (res.modifiedCount > 0) {
+                    await processEmployeePunches(newEmployee.employeeId, todayStr, 'ZKT_CLOUD');
+                }
+            }).catch((err: any) => logger.error('[EmployeeCreate] Error linking punches:', err));
+
+            syncFromMachineReport(todayStr).catch(err => {
+                logger.error(`[EmployeeCreate] Error auto-syncing report for ${newEmployee.employeeId}:`, err);
+            });
+        }
 
         res.status(201).json(sanitizeEmployeeForRole(newEmployee.toObject(), role, userId));
     } catch (err: any) {
@@ -2821,6 +2844,30 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: Funct
         ).select('-attachments.fileData');
 
         if (!updatedEmployee) return res.status(404).json({ message: 'Employee not found during update' });
+
+        // Auto-link retroactive punches if biometricPin was added or changed
+        if (updates.biometricPin && updates.biometricPin !== originalEmployeeObj.biometricPin) {
+            const cleanPin = String(updates.biometricPin).trim();
+            const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+            
+            AttendancePunch.updateMany(
+                { machineUserId: cleanPin, employeeId: { $regex: /^unlinked_/ } },
+                { 
+                    $set: { 
+                        employeeId: updatedEmployee.employeeId, 
+                        employeeName: `${updatedEmployee.firstName} ${updatedEmployee.lastName || ''}`.trim() 
+                    } 
+                }
+            ).then(async (res: any) => {
+                if (res.modifiedCount > 0) {
+                    await processEmployeePunches(updatedEmployee.employeeId, todayStr, 'ZKT_CLOUD');
+                }
+            }).catch((err: any) => logger.error('[EmployeeUpdate] Error linking unlinked punches:', err));
+
+            syncFromMachineReport(todayStr).catch(err => {
+                logger.error(`[EmployeeUpdate] Auto sync report error for ${updatedEmployee.employeeId}:`, err);
+            });
+        }
 
         // Auto-unlock: If employee has completed mandatory fields, clear reminder count and lift lock
         const isNowComplete = !!updatedEmployee.phone && !!updatedEmployee.cnic && !!(updatedEmployee.address?.street || updatedEmployee.address?.city || updatedEmployee.address?.state || updatedEmployee.address?.country) && !!updatedEmployee.jobInfo?.department && !!updatedEmployee.jobInfo?.designation;

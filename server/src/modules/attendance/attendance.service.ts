@@ -299,7 +299,9 @@ export async function getTodayRoster(
 
         // Compute late minutes
         const diffFromShift = Math.floor((checkInTime.getTime() - shiftStartTime.getTime()) / 60000);
-        const lateMinutes = rec?.lateMinutes ?? (diffFromShift > cfg.graceMinutes ? diffFromShift - cfg.graceMinutes : 0);
+        const lateMinutes = rec?.manuallyAdjusted
+            ? (rec.lateMinutes ?? 0)
+            : (diffFromShift > cfg.graceMinutes ? diffFromShift - cfg.graceMinutes : 0);
 
         // Compute work duration
         let workDurationMinutes = rec?.workDurationMinutes ?? 0;
@@ -365,6 +367,13 @@ export async function getTodayRoster(
         const effectiveStatus = rec?.status || (isWeekend(dateStr) ? 'Weekend' : (isFuture ? 'N/A' : 'Absent'));
         const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(effectiveStatus);
 
+        let unpunchedLateMins = rec?.lateMinutes || 0;
+        if (!rec?.manuallyAdjusted && rec?.checkIn) {
+            const shiftStartTime = pktHHMMtoUtc(dateStr, rec?.shiftStart || '09:00');
+            const diffFromShift = Math.floor((new Date(rec.checkIn).getTime() - shiftStartTime.getTime()) / 60000);
+            unpunchedLateMins = diffFromShift > 30 ? diffFromShift - 30 : 0;
+        }
+
         roster.push({
             employeeId: empId,
             employeeName: name,
@@ -374,7 +383,7 @@ export async function getTodayRoster(
             checkOut: isNonWorking ? undefined : (rec?.checkOut?.toISOString?.() || rec?.checkOut),
             totalPunches: isNonWorking ? 0 : (rec?.allPunches?.length || 0),
             workDurationMinutes: isNonWorking ? 0 : (rec?.workDurationMinutes || 0),
-            lateMinutes: isNonWorking ? 0 : (rec?.lateMinutes || 0),
+            lateMinutes: isNonWorking ? 0 : unpunchedLateMins,
             status: effectiveStatus,
             note: rec?.note,
             isWfh: isNonWorking ? false : (Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || '')),
@@ -660,10 +669,11 @@ export async function syncFromMachineReport(dateStr: string): Promise<number> {
         const hrmIds = [...pinToId.values()];
         const leaveMap = await repo.findApprovedLeavesForDate(dateStr, hrmIds);
         const weekend = isWeekend(dateStr);
+        const manualIds = new Set(await AttendanceRecord.find({ date: dateStr, employeeId: { $in: hrmIds }, manuallyAdjusted: true }).distinct('employeeId'));
 
         const upsertPromises = report.map(async (entry) => {
             const hrmEmpId = pinToId.get(entry.emp_code);
-            if (!hrmEmpId) return null;
+            if (!hrmEmpId || manualIds.has(hrmEmpId)) return null;
 
             const leaveType = leaveMap.get(hrmEmpId) ?? null;
             let status: AttendanceStatus;
