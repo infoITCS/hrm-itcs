@@ -6,15 +6,20 @@ import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import OfficialDocument from '../models/OfficialDocument';
+import DocumentDispatchLog from '../models/DocumentDispatchLog';
 import Employee from '../models/Employee';
 import Payslip from '../models/Payslip';
 import Company from '../models/Company';
 import DocumentTemplate from '../models/DocumentTemplate';
 import LeaveType from '../models/LeaveType';
 import LeaveBalance from '../models/LeaveBalance';
+import WorkflowTask from '../models/WorkflowTask';
+import User from '../models/User.model';
 import { authenticate, AuthRequest, checkProfileLock } from '../middleware/auth';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { decryptEmployeeFields } from '../utils/encryption';
+import { dispatchEmail } from '../utils/email';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -48,24 +53,43 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
         output = output.replace(regex, val || '');
     }
 
-    // Bracketed placeholders fallback (e.g. [Location], [Payment Date], [Probation Days], etc.)
+    // Bracketed placeholders fallback (e.g. [Location], [Payment Date], [Probation Days], [Notice Period], etc.)
     const bracketReplacements: Record<string, string> = {
         'location': vars.workLocation || vars.location || vars.city || 'Karachi',
         'work location': vars.workLocation || vars.location || vars.city || 'Karachi',
         'payment date': vars.paymentDate || '5th',
         'probation days': vars.probationDays || '90',
+        'probation period': vars.probationDays ? `${vars.probationDays} days` : '90 days',
+        'notice period': vars.noticePeriod || vars.confirmedNoticePeriod || '30 Days',
         'working days': vars.workingDays || 'Monday to Friday',
         'working hours': vars.workingHours || '09:00 AM - 06:00 PM',
         'start time': vars.startTime || '09:00 AM',
         'end time': vars.endTime || '06:00 PM',
         'authorized signatory name': vars.signatoryName || 'Authorized Signatory',
-        'designation': vars.signatoryDesignation || 'Authorized Signatory',
+        'designation': vars.designation || vars.signatoryDesignation || 'Authorized Signatory',
+        'signatory designation': vars.signatoryDesignation || 'Authorized Signatory',
         'reporting manager': vars.reportingManager || '',
         'employee name': vars.employeeName || '',
+        'basic salary': vars.basicSalary || '',
         'gross salary': vars.grossSalary || '',
+        'salary': vars.basicSalary || vars.grossSalary || '',
         'joining date': vars.joiningDate || '',
+        'stipend': vars.stipend || vars.grossSalary || '20,000',
+        'cnic': vars.cnic || '',
+        'department': vars.department || '',
         'date': vars.date || ''
     };
+
+    // Also map any key from vars directly to bracket replacement
+    for (const [key, val] of Object.entries(vars)) {
+        const spaced = key.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+        if (!bracketReplacements[spaced]) {
+            bracketReplacements[spaced] = val;
+        }
+        if (!bracketReplacements[key.toLowerCase()]) {
+            bracketReplacements[key.toLowerCase()] = val;
+        }
+    }
 
     for (const [bKey, bVal] of Object.entries(bracketReplacements)) {
         const escaped = bKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -85,6 +109,17 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
 
     return output;
 }
+
+// Helper to format currency number cleanly with commas (e.g. 68115.4 -> 68,115)
+const formatSalaryNum = (val: any): string => {
+    if (!val && val !== 0) return '';
+    const clean = String(val).replace(/,/g, '').trim();
+    const num = Number(clean);
+    if (!isNaN(num) && num > 0) {
+        return Math.round(num).toLocaleString('en-US');
+    }
+    return String(val);
+};
 
 // Helper to format date with ordinal (e.g. 24th September 2026)
 const formatOrdinalDate = (d: Date): string => {
@@ -564,10 +599,12 @@ const renderCompleteDocument = (
     const parsedBody = parseTemplate(template.content || '', vars);
     const rawLines = parsedBody.replace(/\r\n/g, '\n').split('\n');
 
+    const isOfferLetter = documentType.toLowerCase().includes('offer') || docTitle.toLowerCase().includes('offer');
     let inSignatory = false;
     let inAcceptance = false;
     let hasRenderedSignatory = false;
     let hasRenderedAcceptance = false;
+    let hasRenderedQrCode = false;
 
     for (let i = 0; i < rawLines.length; i++) {
         const line = rawLines[i];
@@ -661,7 +698,7 @@ const renderCompleteDocument = (
             continue;
         }
 
-        // Acceptance Section
+        // Acceptance Section (Only for Offer Letters)
         const isAcceptanceLine = 
             trimmedUpper === 'ACCEPTANCE' || 
             trimmedUpper === 'EMPLOYEE ACCEPTANCE' || 
@@ -669,51 +706,59 @@ const renderCompleteDocument = (
             trimmedUpper.startsWith('EMPLOYEE SIGNATURE') ||
             (trimmedUpper.startsWith('SIGNATURE:') && !hasRenderedAcceptance);
 
-        if (isAcceptanceLine && !hasRenderedAcceptance) {
-            inAcceptance = true;
-            hasRenderedAcceptance = true;
-            doc.moveDown(0.2);
-
-            // Divider line across inside text margin
-            const dividerY = doc.y;
-            doc.moveTo(textMargin, dividerY)
-               .lineTo(doc.page.width - textMargin, dividerY)
-               .strokeColor('#94A3B8')
-               .lineWidth(0.8)
-               .stroke();
-
-            doc.y = dividerY + 6;
-            doc.fontSize(10.5).font(fonts.bold).fillColor('#000000').text(isInternship ? 'Acceptance' : 'Employee Acceptance', textMargin, doc.y, { characterSpacing: 0.1 });
-            doc.moveDown(0.15);
-
-            const empName = vars.employeeName || 'Employee';
-
-            doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
-               .text('I, ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
-            doc.font(fonts.bold).text(empName, { continued: true, characterSpacing: 0.1 });
-            doc.font(fonts.regular).text(`, accept the ${isInternship ? 'internship offer' : (documentType.toLowerCase().includes('contract') ? 'employment contract' : 'offer')} and its terms and conditions.`, { continued: false, characterSpacing: 0.1 });
-
-            doc.moveDown(0.2);
-
-            const signLineY = doc.y;
-            doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
-               .text('Signature: ', textMargin, signLineY, { continued: true, characterSpacing: 0.1 });
-            doc.font(fonts.regular).fillColor('#94A3B8').text('____________________', { continued: false });
-
-            doc.moveDown(0.15);
-            doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
-               .text('Date: ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
-            doc.font(fonts.regular).fillColor('#94A3B8').text('________________________', { continued: false });
-
-            // Place Dynamic Verification QR Code beside signature lines (on the right inside margin)
-            if (qrCodeDataUri) {
-                try {
-                    const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
-                    const imageBuffer = Buffer.from(base64Data, 'base64');
-                    doc.image(imageBuffer, doc.page.width - textMargin - 46, signLineY - 4, { width: 44, height: 44 });
-                } catch (e) {}
+        if (isAcceptanceLine) {
+            if (!isOfferLetter) {
+                // Non-offer documents (Employment Contract, Appointment Letter, Experience Letter, etc.) do NOT have an Employee Acceptance candidate slip!
+                inAcceptance = true;
+                continue;
             }
-            continue;
+            if (!hasRenderedAcceptance) {
+                inAcceptance = true;
+                hasRenderedAcceptance = true;
+                doc.moveDown(0.2);
+
+                // Divider line across inside text margin
+                const dividerY = doc.y;
+                doc.moveTo(textMargin, dividerY)
+                   .lineTo(doc.page.width - textMargin, dividerY)
+                   .strokeColor('#94A3B8')
+                   .lineWidth(0.8)
+                   .stroke();
+
+                doc.y = dividerY + 6;
+                doc.fontSize(10.5).font(fonts.bold).fillColor('#000000').text(isInternship ? 'Acceptance' : 'Employee Acceptance', textMargin, doc.y, { characterSpacing: 0.1 });
+                doc.moveDown(0.15);
+
+                const empName = vars.employeeName || 'Employee';
+
+                doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
+                   .text('I, ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+                doc.font(fonts.bold).text(empName, { continued: true, characterSpacing: 0.1 });
+                doc.font(fonts.regular).text(`, accept the ${isInternship ? 'internship offer' : 'offer'} and its terms and conditions.`, { continued: false, characterSpacing: 0.1 });
+
+                doc.moveDown(0.2);
+
+                const signLineY = doc.y;
+                doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+                   .text('Signature: ', textMargin, signLineY, { continued: true, characterSpacing: 0.1 });
+                doc.font(fonts.regular).fillColor('#94A3B8').text('____________________', { continued: false });
+
+                doc.moveDown(0.15);
+                doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+                   .text('Date: ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+                doc.font(fonts.regular).fillColor('#94A3B8').text('________________________', { continued: false });
+
+                // Place Dynamic Verification QR Code beside signature lines (on the right inside margin)
+                if (qrCodeDataUri) {
+                    try {
+                        const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                        const imageBuffer = Buffer.from(base64Data, 'base64');
+                        doc.image(imageBuffer, doc.page.width - textMargin - 46, signLineY - 4, { width: 44, height: 44 });
+                        hasRenderedQrCode = true;
+                    } catch (e) {}
+                }
+                continue;
+            }
         }
 
         // Signatory Section - Space before "Sincerely,"
@@ -759,6 +804,17 @@ const renderCompleteDocument = (
             // 2. Draw official company stamp if uploaded for this company
             if (targetStampUrl) {
                 stampDrawn = drawImageBufferOrPath(doc, targetStampUrl, sigDrawn ? (textMargin + 80) : textMargin, sigImgY, { height: 32 });
+            }
+
+            // For non-offer documents (Employment Contract, Appointment Letter, Experience Letter, etc.),
+            // render the cryptographic QR verification code opposite the company signatory / stamp
+            if (!isOfferLetter && !hasRenderedQrCode && qrCodeDataUri) {
+                try {
+                    const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                    const imageBuffer = Buffer.from(base64Data, 'base64');
+                    doc.image(imageBuffer, doc.page.width - textMargin - 46, sigImgY - 2, { width: 44, height: 44 });
+                    hasRenderedQrCode = true;
+                } catch (e) {}
             }
 
             // If neither signature image nor stamp is uploaded, draw a clean signature line
@@ -849,13 +905,14 @@ const renderCompleteDocument = (
         }
     }
 
-    // Fallback: If document had no acceptance block, place QR code beside signatory or bottom-right
-    if (!hasRenderedAcceptance && qrCodeDataUri) {
+    // Fallback: If document had no acceptance block or QR code drawn yet, place QR code bottom-right
+    if (!hasRenderedQrCode && qrCodeDataUri) {
         try {
             const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
             const imageBuffer = Buffer.from(base64Data, 'base64');
             const targetQrY = Math.min(doc.page.height - 100, Math.max(doc.y - 45, doc.page.height - 110));
             doc.image(imageBuffer, doc.page.width - textMargin - 50, targetQrY, { width: 44, height: 44 });
+            hasRenderedQrCode = true;
         } catch (e) {}
     }
 };
@@ -894,7 +951,9 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
         // Auto-seed or update default template if missing/outdated
         const defaultExperienceText = `To Whom It May Concern,\n\nI am writing to confirm that {{employeeName}} was employed with IT Consulting and Services (ITCS) as {{designation}} in the {{department}} department from {{joiningDate}} to {{lastWorkingDay}}. {{pronounCapitalizedPossessive}} last drawn permanent monthly gross salary was PKR {{confirmedSalary}}.\n\nDuring {{pronounPossessive}} tenure, {{employeeName}} consistently demonstrated {{skills}} in {{designation}} management. {{pronounCapitalizedSubject}} played a key role in overseeing {{jobResponsibilities}}.\n\n{{employeeName}}'s dedication and commitment significantly contributed to strengthening our {{department}} division and fostering a positive work environment. {{pronounCapitalizedPossessive}} ability to effectively manage {{generalJobDescription}} made {{pronounObject}} a crucial element in the success of the organization.\n\nThroughout {{pronounPossessive}} time at ITCS, {{employeeName}} proved to be a valuable member of our {{department}} team. {{pronounCapitalizedPossessive}} contributions have had a lasting positive impact on the organization, and {{pronounSubject}} has earned the respect and appreciation of {{pronounPossessive}} colleagues and peers.\n\nWe are confident that {{employeeName}}'s skills, experience, and dedication will continue to serve {{pronounObject}} well in {{pronounPossessive}} future endeavors. We wish {{pronounObject}} every success in {{pronounPossessive}} professional career and all the best for the future.\n\nSincerely,\nAfreen Saeed\nHuman Resource Department\nafreen@itcs.com.pk`;
 
-        const defaultAppointmentText = `With reference to your application for employment with ITCS (IT Consulting and Services), we are pleased to offer you the position of {{designation}}. You will be based in {{workLocation}} with effect from {{joiningDate}} on the terms and conditions given below.\n\nYour terms of appointment will be governed by the rules and regulations applicable to the above-mentioned designation as per the Human Resources Policy Manual of the Company. The Company, however, reserves the right to change the applicable rules and regulations at its entire discretion, without advance notice, in which case your employment shall be governed by such revised rules and regulations.\n\nSalary and Benefits:\nYour monthly gross salary will be Rs. {{grossSalary}} ({{grossSalaryWords}}) during the probationary period and will remain Rs. {{grossSalary}} ({{grossSalaryWords}}) upon successful completion of probation and confirmation.\n\nYour benefit entitlement will be in accordance with the policies approved by the Company and shall be subject to the applicable Company policies from time to time.\n\nUpon successful completion of the probationary period, you will be entitled to the following benefits, subject to Company policy:\n• Meal allowance/benefit\n• Fuel allowance/benefit\n• Company-provided SIM card and applicable mobile package\n• Provident Fund / Company Share Plan, as applicable under Company policy\n• Medical allowance\n• Any other benefits applicable to employees in your cadre under Company policy\n\nThe above benefits shall become applicable after successful completion of the probationary period and confirmation. The Company reserves the right to modify its benefit policies from time to time, and you shall be bound by such modifications.\n\nProbationary Period:\nYour confirmation is subject to a satisfactory probationary period of three (3) months. The Company reserves the right to extend the probationary period at its discretion. Unless your employment is confirmed in writing, you shall continue to be employed on probation.\n\nOn satisfactory completion of your probation period, your employment with the Company may be confirmed in writing, whereupon you will be entitled to the Company benefits applicable to permanent staff in your cadre from the date of confirmation.\n\nAnnual Incentive Plan:\nYou will be entitled to the Annual Incentive Plan of the Company, if applicable, as per Company Policy.\n\nMedical Policy:\nUpon confirmation, you will be entitled to the applicable medical allowance/benefit in accordance with the Company’s prevailing Medical Policy.\n\nMobile Connection:\nUpon confirmation, you will be entitled to a Company-provided SIM card and mobile package, subject to the applicable Company policy and usage limits.\n\nReporting Hierarchy:\nYour reporting line will be to {{reportingManager}}, who will assign you duties and responsibilities in carrying out your day-to-day activities. The Company may, at its discretion, change the reporting line and/or the requirements of the position assigned.\n\nReferences / Academic Verification:\nThe Company reserves the right to solicit information regarding yourself from any of your previous employers. Upon your representation, we understand that your educational degree(s) are from accredited institution(s); however, the Company further reserves the right to seek verification regarding your educational qualifications and respective academic institutions from relevant authorities. Your appointment and confirmation are subject to receiving satisfactory references/authentication when such reference/verification checks are conducted.\n\nTermination of Service:\nDuring the probationary period, either the Company or you may terminate the employment without cause and at any time by giving 24 hours’ notice in writing to the other party.\n\nAfter confirmation, either party may terminate this Agreement without cause by giving 30 days’ notice in writing to the other party, or by making payment equivalent to 30 days’ salary in lieu of notice.\n\nNotwithstanding anything herein contained, the Company shall be entitled to terminate your employment with immediate effect and without advance notice (or any payment in lieu of notice) in case of misconduct, which shall include but shall not be limited to willful insubordination.\n\nThe Company reserves the right to terminate the services at any time without prior notice if the employee’s continued association/employment with the Company is prejudicial to the image and/or interests of the Company.\n\nIn case of termination of service due to misconduct or disciplinary action, the Company will reserve the right to withhold compensation to the extent permitted under applicable law and Company policy.\n\nEmployee Provident Fund / Company Share Plan:\nUpon confirmation, you will be entitled to participate in the Provident Fund and/or Company Share Plan, as applicable, subject to the eligibility criteria, terms and conditions, and policies of the Company.\n\nLeave Entitlement:\nYou will be allowed twenty (20) working days of Annual Leave for each completed year of service. Earned Leave can be availed after confirmation only as detailed in policy. You are also entitled to ten (10) paid sick leaves.\n\nLeave cannot be encashed or accumulated. Any leave balance at the end of the calendar year will automatically lapse. The Company may frame and modify Leave rules from time to time, which shall be binding upon you.\n\nTraining and Development:\nThe Company offers training and development opportunities for all employees. All local and foreign training will be governed by the prevailing Training Policy.\n\nRetirement:\nYou will be retired from the service of the Company on attaining the age of 60 years. You may be retired earlier on the grounds of ill health or physical or mental incapacity to work, subject to applicable Company policy and law.\n\nFalse Information:\nIf the Company determines at any time that your recruitment was made as a result of the submission of false information and/or forged documents, the employment contract will be automatically cancelled without prior notice, reward, or compensation, subject to applicable law.\n\nExclusive Service and Confidentiality Agreement:\nDuring the period of your employment with the Company, you will perform all such duties anywhere in Pakistan as are assigned to you from time to time by the Company or its associates depending upon the exigencies of business. The Company also reserves the right to transfer you to any location within Pakistan.\n\nSince in the course of your employment you would be disclosed information which is confidential and proprietary to the Company, and which it would be a breach of trust to disclose or make available, particularly to a competitor of the Company, you undertake to maintain complete confidentiality in regard to the Company’s information, processes, operations, and business activities at all times, whether during or after your employment with the Company.\n\nWhile in the Company’s service, you will not be employed at any time directly or indirectly with any other employer or any other business, subject to applicable law and Company policy.\n\nService Rules and Regulations:\nYour appointment is subject to the rules and regulations in force in the Company or any amendments, alterations, or modifications that may be made therein from time to time.\n\nWe welcome you to ITCS (IT Consulting and Services) and wish you a successful career with the Company.\n\nValidity:\nPlease provide the Company with your acceptance of the offer and joining date by returning a signed copy of this letter within 7 working days. This offer will expire if:\na) You do not provide your acceptance within 7 days; and/or\nb) You do not join, at the latest, within 10 working days after your proposed and mutually agreed joining date.\n\nSincerely,\nITCS (IT Consulting and Services)\n\nFaraz Anwer\nFounder & CEO\n\nEmployee Acceptance\nI, {{employeeName}}, accept the appointment offer and its terms.\nSignature: ____________________\nDate: ________________________`;
+        const defaultAppointmentText = `With reference to your application for employment with ITCS (IT Consulting and Services), we are pleased to offer you the position of {{designation}}. You will be based in {{workLocation}} with effect from {{joiningDate}} on the terms and conditions given below.\n\nYour terms of appointment will be governed by the rules and regulations applicable to the above-mentioned designation as per the Human Resources Policy Manual of the Company. The Company, however, reserves the right to change the applicable rules and regulations at its entire discretion, without advance notice, in which case your employment shall be governed by such revised rules and regulations.\n\nSalary and Benefits:\nYour monthly gross salary will be Rs. {{grossSalary}} ({{grossSalaryWords}}) during the probationary period and will remain Rs. {{grossSalary}} ({{grossSalaryWords}}) upon successful completion of probation and confirmation.\n\nYour benefit entitlement will be in accordance with the policies approved by the Company and shall be subject to the applicable Company policies from time to time.\n\nUpon successful completion of the probationary period, you will be entitled to the following benefits, subject to Company policy:\n• Meal allowance/benefit\n• Fuel allowance/benefit\n• Company-provided SIM card and applicable mobile package\n• Provident Fund / Company Share Plan, as applicable under Company policy\n• Medical allowance\n• Any other benefits applicable to employees in your cadre under Company policy\n\nThe above benefits shall become applicable after successful completion of the probationary period and confirmation. The Company reserves the right to modify its benefit policies from time to time, and you shall be bound by such modifications.\n\nProbationary Period:\nYour confirmation is subject to a satisfactory probationary period of three (3) months. The Company reserves the right to extend the probationary period at its discretion. Unless your employment is confirmed in writing, you shall continue to be employed on probation.\n\nOn satisfactory completion of your probation period, your employment with the Company may be confirmed in writing, whereupon you will be entitled to the Company benefits applicable to permanent staff in your cadre from the date of confirmation.\n\nAnnual Incentive Plan:\nYou will be entitled to the Annual Incentive Plan of the Company, if applicable, as per Company Policy.\n\nMedical Policy:\nUpon confirmation, you will be entitled to the applicable medical allowance/benefit in accordance with the Company’s prevailing Medical Policy.\n\nMobile Connection:\nUpon confirmation, you will be entitled to a Company-provided SIM card and mobile package, subject to the applicable Company policy and usage limits.\n\nReporting Hierarchy:\nYour reporting line will be to {{reportingManager}}, who will assign you duties and responsibilities in carrying out your day-to-day activities. The Company may, at its discretion, change the reporting line and/or the requirements of the position assigned.\n\nReferences / Academic Verification:\nThe Company reserves the right to solicit information regarding yourself from any of your previous employers. Upon your representation, we understand that your educational degree(s) are from accredited institution(s); however, the Company further reserves the right to seek verification regarding your educational qualifications and respective academic institutions from relevant authorities. Your appointment and confirmation are subject to receiving satisfactory references/authentication when such reference/verification checks are conducted.\n\nTermination of Service:\nDuring the probationary period, either the Company or you may terminate the employment without cause and at any time by giving 24 hours’ notice in writing to the other party.\n\nAfter confirmation, either party may terminate this Agreement without cause by giving 30 days’ notice in writing to the other party, or by making payment equivalent to 30 days’ salary in lieu of notice.\n\nNotwithstanding anything herein contained, the Company shall be entitled to terminate your employment with immediate effect and without advance notice (or any payment in lieu of notice) in case of misconduct, which shall include but shall not be limited to willful insubordination.\n\nThe Company reserves the right to terminate the services at any time without prior notice if the employee’s continued association/employment with the Company is prejudicial to the image and/or interests of the Company.\n\nIn case of termination of service due to misconduct or disciplinary action, the Company will reserve the right to withhold compensation to the extent permitted under applicable law and Company policy.\n\nEmployee Provident Fund / Company Share Plan:\nUpon confirmation, you will be entitled to participate in the Provident Fund and/or Company Share Plan, as applicable, subject to the eligibility criteria, terms and conditions, and policies of the Company.\n\nLeave Entitlement:\nYou will be allowed twenty (20) working days of Annual Leave for each completed year of service. Earned Leave can be availed after confirmation only as detailed in policy. You are also entitled to ten (10) paid sick leaves.\n\nLeave cannot be encashed or accumulated. Any leave balance at the end of the calendar year will automatically lapse. The Company may frame and modify Leave rules from time to time, which shall be binding upon you.\n\nTraining and Development:\nThe Company offers training and development opportunities for all employees. All local and foreign training will be governed by the prevailing Training Policy.\n\nRetirement:\nYou will be retired from the service of the Company on attaining the age of 60 years. You may be retired earlier on the grounds of ill health or physical or mental incapacity to work, subject to applicable Company policy and law.\n\nFalse Information:\nIf the Company determines at any time that your recruitment was made as a result of the submission of false information and/or forged documents, the employment contract will be automatically cancelled without prior notice, reward, or compensation, subject to applicable law.\n\nExclusive Service and Confidentiality Agreement:\nDuring the period of your employment with the Company, you will perform all such duties anywhere in Pakistan as are assigned to you from time to time by the Company or its associates depending upon the exigencies of business. The Company also reserves the right to transfer you to any location within Pakistan.\n\nSince in the course of your employment you would be disclosed information which is confidential and proprietary to the Company, and which it would be a breach of trust to disclose or make available, particularly to a competitor of the Company, you undertake to maintain complete confidentiality in regard to the Company’s information, processes, operations, and business activities at all times, whether during or after your employment with the Company.\n\nWhile in the Company’s service, you will not be employed at any time directly or indirectly with any other employer or any other business, subject to applicable law and Company policy.\n\nService Rules and Regulations:\nYour appointment is subject to the rules and regulations in force in the Company or any amendments, alterations, or modifications that may be made therein from time to time.\n\nWe welcome you to ITCS (IT Consulting and Services) and wish you a successful career with the Company.\n\nValidity:\nPlease provide the Company with your acceptance of the offer and joining date by returning a signed copy of this letter within 7 working days. This offer will expire if:\na) You do not provide your acceptance within 7 days; and/or\nb) You do not join, at the latest, within 10 working days after your proposed and mutually agreed joining date.\n\nSincerely,\nITCS (IT Consulting and Services)\n\nFaraz Anwer\nFounder & CEO`;
+
+        const defaultContractText = `This Employment Contract is made between IT Consulting and Services (ITCS) and {{employeeName}}, holder of CNIC {{cnic}}.\n\n1. Position and Duties\nThe Employee is engaged as {{designation}} reporting to {{reportingManager}}, based in {{workLocation}}, effective from {{joiningDate}}.\n\n2. Compensation\nThe Employee will receive a basic monthly salary of Rs. {{basicSalary}}, payable on or before the 5th of each month, subject to applicable deductions.\n\n3. Term and Probation\nThis Contract is effective from {{joiningDate}} and shall continue subject to a probationary period of {{probationDays}} days, after which confirmation will be subject to satisfactory performance.\n\n4. Working Hours\nThe Employee's standard working hours will be {{workingDays}}, {{workingHours}}.\n\n5. Confidentiality\nThe Employee agrees to maintain confidentiality of all proprietary Company information during and after the term of employment.\n\n6. Termination\nEither party may terminate this Contract by providing {{noticePeriod}} written notice, or payment in lieu thereof, subject to the terms outlined in the Company's HR Policy Manual.\n\n7. Governing Law\nThis Contract shall be governed by the laws of Pakistan.\n\nIN WITNESS WHEREOF, the parties have executed this Contract as of the date written below.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`;
 
         if (template && (rawDocType === 'Experience Letter' || template.documentType === 'Experience Letter') && (!template.content.includes('confirmedSalary') || !template.content.includes('Afreen Saeed'))) {
             await DocumentTemplate.updateOne(
@@ -905,7 +964,16 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
             template.content = defaultExperienceText;
         }
 
-        if (template && (rawDocType === 'Appointment Letter' || template.documentType === 'Appointment Letter') && !template.content.includes('Exclusive Service')) {
+        if (template && (rawDocType === 'Employment Contract' || template.documentType === 'Employment Contract') && (template.content.includes('gross monthly salary') || template.content.includes('[Notice Period]') || template.content.includes('Employee Acceptance') || !template.content.includes('and {{employeeName}}'))) {
+            await DocumentTemplate.updateOne(
+                { _id: template._id },
+                { $set: { subject: 'EMPLOYMENT CONTRACT', content: defaultContractText } }
+            );
+            template.subject = 'EMPLOYMENT CONTRACT';
+            template.content = defaultContractText;
+        }
+
+        if (template && (rawDocType === 'Appointment Letter' || template.documentType === 'Appointment Letter') && (!template.content.includes('Exclusive Service') || template.content.includes('Employee Acceptance'))) {
             await DocumentTemplate.updateOne(
                 { _id: template._id },
                 { $set: { subject: 'APPOINTMENT LETTER', content: defaultAppointmentText } }
@@ -941,8 +1009,8 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
                     content: defaultAppointmentText
                 },
                 'Employment Contract': {
-                    subject: 'EMPLOYMENT CONTRACT & TERMS OF SERVICE',
-                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Employment Contract & Terms of Service – ITCS\n\nDear {{salutation}} {{employeeName}},\n\nThis Employment Contract is executed between IT Consulting and Services (ITCS) and {{employeeName}} (CNIC: {{cnic}}), appointed as {{designation}} in the {{department}} department.\n\nTerms and Conditions:\n• Commencement Date: {{joiningDate}}\n• Designation & Department: {{designation}}, {{department}}\n• Work Location: {{workLocation}}\n• Monthly Gross Salary: PKR {{grossSalary}}\n• Working Schedule: {{workingHours}} ({{workingDays}})\n• Probation Period: {{probationDays}} Days\n• Notice Period: {{noticePeriod}}\n\nBoth parties agree to uphold confidentiality, company policies, and professional integrity.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\n\nEmployee Acceptance\nI, {{employeeName}}, accept this Employment Contract and agree to abide by all its terms and conditions.\nSignature: ____________________\nDate: ________________________`
+                    subject: 'EMPLOYMENT CONTRACT',
+                    content: defaultContractText
                 },
                 'Consolidated Pay Slip (6 Months)': {
                     subject: 'CONSOLIDATED SALARY STATEMENT (6 MONTHS)',
@@ -1249,12 +1317,12 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
             endDate: internshipEnd,
             internshipStartDate: internshipStart,
             internshipEndDate: internshipEnd,
-            basicSalary: req.body.customVars?.basicSalary || singleBasicSal || (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : ''),
-            grossSalary: req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : ''),
+            basicSalary: formatSalaryNum(req.body.customVars?.basicSalary || singleBasicSal || (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '')),
+            grossSalary: formatSalaryNum(req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : '')),
             purpose: req.body.customVars?.purpose || purposeText,
             purposeDetail: req.body.customVars?.purposeDetail || req.body.purposeDetail || '',
             date: formatOrdinalDate(issueDate),
-            stipend: req.body.customVars?.stipend || req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '20,000')),
+            stipend: formatSalaryNum(req.body.customVars?.stipend || req.body.customVars?.grossSalary || singleGrossSal || (totalGrossSalary !== undefined ? String(totalGrossSalary) : (basicSalaryAmount !== undefined ? String(basicSalaryAmount) : '20,000'))),
             pronounSubject: pr.subject,
             pronounObject: pr.object,
             pronounPossessive: pr.possessive,
@@ -1297,19 +1365,19 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
             workingHours: '09:00 AM - 06:00 PM',
             probationDays: employee.financeInfo?.probationDays ? String(employee.financeInfo.probationDays) : '90',
             probationMonths: employee.financeInfo?.probationMonths ? String(employee.financeInfo.probationMonths) : '3',
-            probationSalary: probSal,
+            probationSalary: formatSalaryNum(probSal),
             resignationDate: req.body.customVars?.resignationDate || lastWorkingDayStr,
             settlementDays: req.body.customVars?.settlementDays || '30',
             companyResources: 'Official Laptop, Email Account, and ID Card',
-            confirmedSalary: formattedConfirmedSalary,
-            permanentSalary: formattedConfirmedSalary,
-            latestSalary: formattedConfirmedSalary,
+            confirmedSalary: formatSalaryNum(formattedConfirmedSalary),
+            permanentSalary: formatSalaryNum(formattedConfirmedSalary),
+            latestSalary: formatSalaryNum(formattedConfirmedSalary),
             commissionStructure: 'Performance-based quarterly bonuses as per company policy',
             benefitsList: 'Meal Allowance, Employee Loan Facility, Provident Fund, Performance Bonuses, Medical OPD Claim',
             taxCondition: 'Subject to applicable income tax laws and company policy',
-            noticePeriod: '30 Days',
-            probationNoticePeriod: '15 Days',
-            confirmedNoticePeriod: '30 Days',
+            noticePeriod: req.body.customVars?.noticePeriod || '30 Days',
+            probationNoticePeriod: req.body.customVars?.probationNoticePeriod || '15 Days',
+            confirmedNoticePeriod: req.body.customVars?.confirmedNoticePeriod || '30 Days',
             earnedLeaveDays: req.body.customVars?.earnedLeaveDays || earnedLeaveDaysVal,
             casualSickLeaveDays: req.body.customVars?.casualSickLeaveDays || casualSickLeaveDaysVal,
             sickLeaveDays: req.body.customVars?.sickLeaveDays || sickLeaveDaysVal,
@@ -1679,6 +1747,570 @@ router.post('/preview-pdf', authenticate, async (req: Request, res: Response, ne
         } else {
             console.error('Error during PDF preview generation:', err);
         }
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROLE DUTY PRESETS FOR DYNAMIC OFFER & CONTRACT GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+const DUTY_PRESETS = [
+    {
+        id: 'fullstack_tech',
+        category: 'Technology & Engineering',
+        title: 'Full-Stack Software Engineer',
+        duties: [
+            'Architect, develop, and maintain high-performance web applications using TypeScript, React, Node.js, and MongoDB.',
+            'Design and optimize scalable RESTful APIs, database indexes, and server-side business logic.',
+            'Collaborate closely with product and UI/UX teams to deliver responsive and intuitive user experiences.',
+            'Perform peer code reviews, enforce coding standards, and maintain unit and integration test coverage.',
+            'Diagnose production issues, optimize front-end bundle performance, and manage deployment pipelines.'
+        ]
+    },
+    {
+        id: 'frontend_tech',
+        category: 'Technology & Engineering',
+        title: 'Frontend Engineer',
+        duties: [
+            'Build modern, accessible, and responsive client-side web interfaces using React, TypeScript, and modern CSS.',
+            'Translate Figma designs into pixel-perfect, reusable component libraries.',
+            'Implement client-side state management, smooth transitions, and dynamic data visualization.',
+            'Optimize web performance, Core Web Vitals, and ensure cross-browser compatibility.'
+        ]
+    },
+    {
+        id: 'backend_tech',
+        category: 'Technology & Engineering',
+        title: 'Backend / Cloud API Engineer',
+        duties: [
+            'Design and maintain robust server architectures, RESTful endpoints, and asynchronous workers.',
+            'Implement secure authentication, authorization, rate limiting, and data encryption protocols.',
+            'Manage database schema migrations, automated backups, and caching strategies with Redis.',
+            'Monitor cloud server infrastructure, diagnostic logs, and automated incident response.'
+        ]
+    },
+    {
+        id: 'qa_engineer',
+        category: 'Technology & Engineering',
+        title: 'Software Quality Assurance (QA) Engineer',
+        duties: [
+            'Develop test scenarios, test cases, and acceptance criteria based on product requirement documents.',
+            'Conduct functional, regression, API load, and end-to-end automated testing.',
+            'Report and track software bugs through the development lifecycle in collaboration with engineers.',
+            'Validate production releases and verify hotfixes in staging environments.'
+        ]
+    },
+    {
+        id: 'bdo_sales',
+        category: 'Sales & Business Development',
+        title: 'Business Development Executive (BDO)',
+        duties: [
+            'Prospect, engage, and qualify corporate B2B clients across domestic and international markets.',
+            'Conduct discovery calls, product demonstrations, and pitch corporate solutions to prospective clients.',
+            'Manage the end-to-end sales pipeline from initial outreach to proposal generation and contract closure.',
+            'Consistently achieve and exceed monthly and quarterly revenue targets and lead conversion quotas.',
+            'Maintain accurate deal stages, call logs, and client relationship history in the company CRM.'
+        ]
+    },
+    {
+        id: 'account_executive_sales',
+        category: 'Sales & Business Development',
+        title: 'Senior Account Executive',
+        duties: [
+            'Manage enterprise sales cycles, lead negotiations with commercial stakeholders, and close major accounts.',
+            'Develop customized pricing proposals, service contracts, and service level agreements (SLAs).',
+            'Cultivate executive-level client relationships to drive account retention, renewals, and up-sell growth.'
+        ]
+    },
+    {
+        id: 'marketing_specialist',
+        category: 'Marketing & Growth',
+        title: 'Digital Marketing & Content Specialist',
+        duties: [
+            'Plan, execute, and monitor digital campaigns across Google Search, LinkedIn Ads, and social channels.',
+            'Produce compelling marketing collateral, case studies, corporate announcements, and newsletters.',
+            'Analyze traffic, conversion funnels, CAC, and ROI metrics to optimize growth campaigns.'
+        ]
+    },
+    {
+        id: 'hr_executive',
+        category: 'Human Resources & Operations',
+        title: 'HR & Talent Acquisition Executive',
+        duties: [
+            'Execute talent acquisition: job postings, resume screening, scheduling interviews, and issuing offer letters.',
+            'Coordinate employee onboarding, Day-1 orientation, documentation collection, and initial account setup.',
+            'Administer attendance, leaves, employee requests, and assist with monthly payroll preparation.',
+            'Ensure full compliance with company policies, labor standards, and employee record confidentiality.'
+        ]
+    },
+    {
+        id: 'finance_officer',
+        category: 'Finance & Accounting',
+        title: 'Finance & Accounts Officer',
+        duties: [
+            'Manage accounts payable, accounts receivable, vendor invoices, and employee expense claims.',
+            'Assist with monthly payroll reconciliation, tax calculations, and banking schedules.',
+            'Maintain general ledger entries, financial spreadsheets, and prepare monthly audit reports.'
+        ]
+    },
+    {
+        id: 'client_operations',
+        category: 'Operations & Support',
+        title: 'Customer Success & Operations Specialist',
+        duties: [
+            'Serve as the key operational point of contact for onboarded clients, ensuring smooth service delivery.',
+            'Respond promptly to client queries, troubleshoot operational issues, and maintain high CSAT scores.',
+            'Prepare monthly client health reports, satisfaction reviews, and renewal check-ins.'
+        ]
+    },
+    {
+        id: 'intern_software_eng',
+        category: 'Internship Programs',
+        title: 'Software Engineering Intern',
+        duties: [
+            'Participate in hands-on development sprints under senior engineering mentorship.',
+            'Assist in writing clean, testable code, unit tests, and bug resolution for web applications.',
+            'Learn and apply modern development workflows, Git version control, and code review practices.',
+            'Collaborate with team members during daily standups and sprint planning sessions.'
+        ]
+    },
+    {
+        id: 'intern_bdo_sales',
+        category: 'Internship Programs',
+        title: 'Business Development & Sales Intern',
+        duties: [
+            'Conduct market research, identify prospective corporate B2B clients, and build lead pipelines.',
+            'Assist senior account executives in preparing client pitch decks and product demos.',
+            'Shadow discovery calls, client follow-ups, and CRM contact data maintenance.',
+            'Learn modern enterprise sales techniques and lead qualification workflows.'
+        ]
+    },
+    {
+        id: 'intern_digital_marketing',
+        category: 'Internship Programs',
+        title: 'Digital Marketing & Content Intern',
+        duties: [
+            'Assist in creating content for social media channels, corporate blogs, and newsletters.',
+            'Monitor campaign engagement metrics, keyword trends, and web traffic analytics.',
+            'Support marketing team in organizing webinars, brand campaigns, and visual collateral.',
+            'Learn SEO best practices, copywriting, and digital advertising funnels.'
+        ]
+    },
+    {
+        id: 'intern_uiux_design',
+        category: 'Internship Programs',
+        title: 'UI/UX Design Intern',
+        duties: [
+            'Support product designers with wireframing, interactive prototyping, and design system updates in Figma.',
+            'Conduct user flow evaluations, usability testing, and competitor design benchmarking.',
+            'Prepare responsive design assets, icon sets, and micro-interaction specifications.',
+            'Participate in design critiques and cross-functional handoffs with developers.'
+        ]
+    },
+    {
+        id: 'intern_hr_talent',
+        category: 'Internship Programs',
+        title: 'Human Resources & Talent Acquisition Intern',
+        duties: [
+            'Assist HR team with resume screening, candidate coordination, and interview scheduling.',
+            'Support new hire onboarding sessions, document collation, and initial orientation.',
+            'Help coordinate internal employee engagement activities and training workshops.',
+            'Learn HR compliance, employee record management, and talent sourcing tools.'
+        ]
+    }
+];
+
+// 1. Get duty presets
+router.get('/duty-presets', authenticate, (_req: Request, res: Response) => {
+    res.json(DUTY_PRESETS);
+});
+
+// 2. Preview or Download Custom PDF with dynamic fields
+router.post('/preview-custom-pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const {
+            documentType = 'Job Offer Letter',
+            recipientName = 'Candidate Name',
+            recipientEmail = '',
+            variables = {}
+        } = req.body;
+
+        const company = await Company.findOne().lean() as any;
+
+        let template = await DocumentTemplate.findOne({
+            documentType: { $regex: new RegExp('^' + documentType.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') }
+        }).lean() as any;
+
+        if (!template) {
+            template = {
+                documentType,
+                subject: documentType.toUpperCase(),
+                content: variables.content || 'Official Document Content'
+            };
+        }
+
+        const documentId = `PREVIEW-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        const clientHost = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const verifyUrl = `${clientHost}/verify/${documentId}`;
+        const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
+
+        const mergedVars: Record<string, string> = {
+            employeeName: recipientName,
+            personalEmail: recipientEmail,
+            workEmail: recipientEmail,
+            date: formatOrdinalDate(new Date()),
+            signatoryName: company?.hrSignatoryName || 'Manager HR',
+            signatoryDesignation: company?.hrSignatoryTitle || 'Human Resources',
+            hrEmail: company?.contact?.email || 'hrms@itcs.com.pk',
+            hrPhone: company?.contact?.phone || '+92 21 111-482-711',
+            workLocation: 'Karachi, Pakistan',
+            ...variables
+        };
+
+        if (Array.isArray(variables.jobDuties)) {
+            mergedVars.jobResponsibilities = variables.jobDuties.map((d: string) => `• ${d}`).join('\n');
+        } else if (variables.jobResponsibilities) {
+            mergedVars.jobResponsibilities = variables.jobResponsibilities;
+        }
+
+        if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
+        if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
+        if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
+        if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
+        if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
+        if (!mergedVars.noticePeriod) mergedVars.noticePeriod = '30 Days';
+
+        const doc = new (PDFDocument as any)({
+            size: 'A4',
+            margins: { top: 105, bottom: 40, left: 64, right: 64 }
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${documentType.replace(/\s+/g, '_')}_${recipientName.replace(/\s+/g, '_')}.pdf"`);
+        doc.pipe(res);
+
+        renderCompleteDocument(
+            doc,
+            documentType,
+            template,
+            mergedVars,
+            company,
+            verifyUrl,
+            qrCodeDataUri
+        );
+
+        doc.end();
+    } catch (err) {
+        if (!res.headersSent) {
+            next(err);
+        } else {
+            console.error('Error in preview-custom-pdf:', err);
+        }
+    }
+});
+
+// 3. Dispatch Document via Email (with Brevo & PDF attachment)
+router.post('/dispatch-email', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        const isHrOrAdmin = ['super-admin', 'admin', 'hr'].includes(authReq.user?.role || '');
+        if (!isHrOrAdmin) {
+            return res.status(403).json({ message: 'Forbidden. HR or Admin permissions required.' });
+        }
+
+        const {
+            documentType,
+            recipientName,
+            recipientEmail,
+            emailType = 'personal',
+            subject,
+            emailMessage,
+            rolePreset,
+            variables = {}
+        } = req.body;
+
+        if (!recipientEmail || !recipientEmail.trim()) {
+            return res.status(400).json({ message: 'Recipient email address is required.' });
+        }
+        if (!recipientName || !recipientName.trim()) {
+            return res.status(400).json({ message: 'Recipient name is required.' });
+        }
+        if (!documentType || !documentType.trim()) {
+            return res.status(400).json({ message: 'Document type is required.' });
+        }
+
+        const company = await Company.findOne().lean() as any;
+
+        let template = await DocumentTemplate.findOne({
+            documentType: { $regex: new RegExp('^' + documentType.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') }
+        }).lean() as any;
+
+        if (!template) {
+            template = {
+                documentType,
+                subject: subject || documentType,
+                content: variables.content || 'Official Document Content'
+            };
+        }
+
+        const documentId = `DOC-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const clientHost = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const verifyUrl = `${clientHost}/verify/${documentId}`;
+        const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
+
+        const mergedVars: Record<string, string> = {
+            employeeName: recipientName,
+            personalEmail: recipientEmail,
+            workEmail: recipientEmail,
+            date: formatOrdinalDate(new Date()),
+            signatoryName: company?.hrSignatoryName || 'Manager HR',
+            signatoryDesignation: company?.hrSignatoryTitle || 'Human Resources',
+            hrEmail: company?.contact?.email || 'hrms@itcs.com.pk',
+            hrPhone: company?.contact?.phone || '+92 21 111-482-711',
+            workLocation: 'Karachi, Pakistan',
+            ...variables
+        };
+
+        if (Array.isArray(variables.jobDuties)) {
+            mergedVars.jobResponsibilities = variables.jobDuties.map((d: string) => `• ${d}`).join('\n');
+        } else if (variables.jobResponsibilities) {
+            mergedVars.jobResponsibilities = variables.jobResponsibilities;
+        }
+
+        if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
+        if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
+        if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
+        if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
+        if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
+        if (!mergedVars.noticePeriod) mergedVars.noticePeriod = '30 Days';
+
+        // Render PDF to memory Buffer
+        const doc = new (PDFDocument as any)({
+            size: 'A4',
+            margins: { top: 105, bottom: 40, left: 64, right: 64 }
+        });
+
+        const buffers: Buffer[] = [];
+        doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+        
+        const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+            doc.on('end', () => resolve(Buffer.concat(buffers)));
+            doc.on('error', reject);
+        });
+
+        renderCompleteDocument(
+            doc,
+            documentType,
+            template,
+            mergedVars,
+            company,
+            verifyUrl,
+            qrCodeDataUri
+        );
+
+        doc.end();
+        const pdfBuffer = await pdfPromise;
+
+        // Save official document verification record
+        await OfficialDocument.create({
+            documentId,
+            documentType,
+            issueDate: new Date(),
+            status: 'Valid',
+            generatedBy: authReq.user?.userId || 'System',
+            details: {
+                recipientName,
+                recipientEmail,
+                emailType,
+                rolePreset,
+                designation: mergedVars.designation,
+                department: mergedVars.department,
+                grossSalary: mergedVars.grossSalary,
+                joiningDate: mergedVars.joiningDate
+            }
+        });
+
+        const emailSubject = subject || `${documentType}: ${company?.name || 'ITCS'} - ${recipientName}`;
+        const customNoteHtml = emailMessage
+            ? `<div style="background-color: #f8fafc; border-left: 4px solid #4f46e5; padding: 14px 18px; margin: 20px 0; border-radius: 6px; font-size: 14px; color: #334155; line-height: 1.6;">${emailMessage.replace(/\n/g, '<br/>')}</div>`
+            : '';
+
+        const emailHtml = `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 20px;">
+                    <h2 style="color: #1e1b4b; margin: 0; font-size: 22px; font-weight: 800;">${documentType}</h2>
+                    <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">${company?.name || 'IT Consulting and Services (ITCS)'} • Human Resources</p>
+                </div>
+                <p style="color: #334155; font-size: 15px; line-height: 1.6;">Dear <strong>${recipientName}</strong>,</p>
+                <p style="color: #334155; font-size: 15px; line-height: 1.6;">
+                    Please find attached your official <strong>${documentType}</strong> issued by <strong>${company?.name || 'ITCS'}</strong>.
+                </p>
+                ${customNoteHtml}
+                <div style="background: #f1f5f9; border-radius: 8px; padding: 14px 18px; margin: 20px 0;">
+                    <p style="margin: 0; font-size: 13px; color: #475569;">
+                        <strong>Document Reference:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${documentId}</code><br/>
+                        <strong>Date of Issuance:</strong> ${formatOrdinalDate(new Date())}<br/>
+                        ${mergedVars.designation ? `<strong>Position / Role:</strong> ${mergedVars.designation}<br/>` : ''}
+                        ${mergedVars.joiningDate ? `<strong>Joining Date:</strong> ${mergedVars.joiningDate}<br/>` : ''}
+                    </p>
+                </div>
+                <p style="color: #334155; font-size: 14px; line-height: 1.6;">
+                    The attached official document includes a secure cryptographic QR verification code for authenticating this issuance.
+                </p>
+                <div style="margin: 30px 0 20px 0; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+                    <p style="margin: 0 0 4px 0; font-weight: 700; color: #1e293b;">${mergedVars.signatoryName}</p>
+                    <p style="margin: 0 0 4px 0;">${mergedVars.signatoryDesignation}</p>
+                    <p style="margin: 0; color: #94a3b8;">${company?.name || 'ITCS'} • <a href="mailto:${mergedVars.hrEmail}" style="color: #4f46e5; text-decoration: none;">${mergedVars.hrEmail}</a></p>
+                </div>
+            </div>
+        `;
+
+        const cleanDocName = documentType.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${cleanDocName}_${recipientName.replace(/\s+/g, '_')}.pdf`;
+
+        const mailResult = await dispatchEmail(
+            {
+                to: recipientEmail,
+                subject: emailSubject,
+                html: emailHtml,
+                skipStatusCheck: true,
+                attachments: [
+                    {
+                        filename,
+                        content: pdfBuffer,
+                        contentType: 'application/pdf'
+                    }
+                ]
+            },
+            `Document Dispatch: ${documentType} to ${recipientEmail}`
+        );
+
+        const dispatchLog = await DocumentDispatchLog.create({
+            documentId,
+            documentType,
+            recipientName,
+            recipientEmail,
+            emailType,
+            subject: emailSubject,
+            dispatchedBy: authReq.user?.userId || 'System',
+            dispatchedByName: authReq.user?.email || 'HR Department',
+            dispatchedAt: new Date(),
+            status: mailResult.success ? 'Sent' : 'Failed',
+            error: mailResult.error,
+            rolePreset,
+            salaryDetails: {
+                basicSalary: mergedVars.basicSalary,
+                grossSalary: mergedVars.grossSalary,
+                probationSalary: mergedVars.probationSalary,
+                confirmedSalary: mergedVars.confirmedSalary
+            },
+            metadata: {
+                designation: mergedVars.designation,
+                department: mergedVars.department,
+                joiningDate: mergedVars.joiningDate
+            }
+        });
+
+        // Trigger IT/Tech Team Work Email Provisioning Task if an Offer Letter is dispatched
+        const isOfferLetter = documentType.toLowerCase().includes('offer') || 
+                              documentType.toLowerCase().includes('contract') || 
+                              documentType.toLowerCase().includes('appointment');
+
+        let techTaskCreated = false;
+        if (isOfferLetter) {
+            try {
+                let techEmail = company?.workflowSettings?.techEmail || process.env.TECH_TEAM_EMAIL;
+                if (!techEmail) {
+                    const adminUser = await User.findOne({ role: { $in: ['admin', 'super-admin'] }, isActive: true }).select('email').lean() as any;
+                    techEmail = adminUser?.email || company?.contact?.email || 'hrms@itcs.com.pk';
+                }
+
+                const task = await WorkflowTask.create({
+                    type: 'Onboarding',
+                    targetName: recipientName,
+                    targetEmail: recipientEmail,
+                    department: 'Tech',
+                    title: `Provision Official Email (@itcs.com.pk) for ${recipientName}`,
+                    description: `Official ${documentType} (Ref: ${documentId}) generated and sent to ${recipientName}. Designation: ${mergedVars.designation || 'New Hire'}, Department: ${mergedVars.department || 'Unassigned'}, Joining Date: ${mergedVars.joiningDate || 'N/A'}, Personal Email: ${recipientEmail}. Please provision their official corporate work email ID (@itcs.com.pk) and Microsoft 365 tenant credentials.`,
+                    assignedEmail: techEmail || undefined,
+                    status: 'Pending'
+                });
+
+                if (techEmail) {
+                    const techEmailSubject = `[Action Required] Provision Work Email: ${recipientName} (${mergedVars.designation || 'New Hire'})`;
+                    const techEmailHtml = `
+                        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
+                            <div style="margin-bottom: 20px; border-bottom: 2px solid #6366f1; padding-bottom: 12px;">
+                                <span style="background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; text-transform: uppercase;">IT Provisioning Request</span>
+                                <h2 style="margin: 8px 0 0 0; color: #1e1b4b; font-size: 20px; font-weight: 800;">🚀 New Hire Email Creation Request</h2>
+                                <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">Triggered by Document Dispatcher (${documentType})</p>
+                            </div>
+
+                            <p style="font-size: 14px; line-height: 1.6; color: #334155;">
+                                An official <strong>${documentType}</strong> (Reference: <code>${documentId}</code>) has been dispatched to <strong>${recipientName}</strong>.
+                                Please create and provision their official corporate work email ID (e.g. <code>${recipientName.toLowerCase().replace(/[^a-z0-9]/g, '')}@itcs.com.pk</code>) and configure their Microsoft 365 tenant credentials.
+                            </p>
+
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600; width: 140px;">Candidate Name:</td><td style="color: #0f172a; font-weight: bold;">${recipientName}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Personal Email:</td><td style="color: #0f172a;">${recipientEmail}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Role / Designation:</td><td style="color: #4338ca; font-weight: 700;">${mergedVars.designation || 'N/A'}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Department:</td><td style="color: #0f172a;">${mergedVars.department || 'N/A'}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Joining Date:</td><td style="color: #0f172a;">${mergedVars.joiningDate || 'N/A'}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Document Ref:</td><td style="color: #64748b; font-mono;">${documentId}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Dispatched By:</td><td style="color: #0f172a;">${authReq.user?.email || 'HR Department'}</td></tr>
+                                </table>
+                            </div>
+
+                            <div style="margin: 24px 0 16px; text-align: center;">
+                                <a href="${clientHost}/workflow-tasks?dept=Tech" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: bold; font-size: 14px;">
+                                    Open Tech Workflow Tasks in HRM
+                                </a>
+                            </div>
+
+                            <p style="font-size: 12px; color: #94a3b8; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: center;">
+                                This is an automated workflow notification generated upon HR offer letter dispatch.
+                            </p>
+                        </div>
+                    `;
+
+                    await dispatchEmail({
+                        to: techEmail,
+                        subject: techEmailSubject,
+                        html: techEmailHtml
+                    }, `Tech Provisioning Request for ${recipientName}`);
+                }
+                techTaskCreated = true;
+                logger.info(`[Dispatcher] Created Tech provisioning task ${task._id} & notified ${techEmail} for ${recipientName}`);
+            } catch (workflowErr) {
+                logger.error('[Dispatcher] Failed to trigger tech provisioning task:', workflowErr);
+            }
+        }
+
+        res.json({
+            success: true,
+            message: isOfferLetter
+                ? `Document dispatched to ${recipientEmail} and email provisioning request sent to Tech team!`
+                : `Document dispatched successfully to ${recipientEmail} (${emailType} email)`,
+            documentId,
+            logId: dispatchLog._id,
+            recipientEmail,
+            techTaskCreated
+        });
+
+    } catch (err: any) {
+        logger.error('❌ Failed to dispatch document email:', err);
+        next(err);
+    }
+});
+
+// 4. Get dispatch logs
+router.get('/dispatch-logs', authenticate, async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+        const logs = await DocumentDispatchLog.find().sort({ dispatchedAt: -1 }).limit(100).lean();
+        res.json(logs);
+    } catch (err) {
+        next(err);
     }
 });
 

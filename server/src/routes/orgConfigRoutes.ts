@@ -509,6 +509,25 @@ router.get('/templates', authenticate, async (req: Request, res: Response, next:
                 { $set: { subject: 'EXPERIENCE LETTER', content: defaultExperienceText } }
             );
         }
+
+        const contractTpl = await DocumentTemplate.findOne({ documentType: 'Employment Contract' });
+        if (contractTpl && (contractTpl.content.includes('gross monthly salary') || contractTpl.content.includes('[Notice Period]') || contractTpl.content.includes('Employee Acceptance') || !contractTpl.content.includes('and {{employeeName}}'))) {
+            const defaultContractText = `This Employment Contract is made between IT Consulting and Services (ITCS) and {{employeeName}}, holder of CNIC {{cnic}}.\n\n1. Position and Duties\nThe Employee is engaged as {{designation}} reporting to {{reportingManager}}, based in {{workLocation}}, effective from {{joiningDate}}.\n\n2. Compensation\nThe Employee will receive a basic monthly salary of Rs. {{basicSalary}}, payable on or before the 5th of each month, subject to applicable deductions.\n\n3. Term and Probation\nThis Contract is effective from {{joiningDate}} and shall continue subject to a probationary period of {{probationDays}} days, after which confirmation will be subject to satisfactory performance.\n\n4. Working Hours\nThe Employee's standard working hours will be {{workingDays}}, {{workingHours}}.\n\n5. Confidentiality\nThe Employee agrees to maintain confidentiality of all proprietary Company information during and after the term of employment.\n\n6. Termination\nEither party may terminate this Contract by providing {{noticePeriod}} written notice, or payment in lieu thereof, subject to the terms outlined in the Company's HR Policy Manual.\n\n7. Governing Law\nThis Contract shall be governed by the laws of Pakistan.\n\nIN WITNESS WHEREOF, the parties have executed this Contract as of the date written below.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)`;
+            await DocumentTemplate.updateOne(
+                { _id: contractTpl._id },
+                { $set: { subject: 'EMPLOYMENT CONTRACT', content: defaultContractText } }
+            );
+        }
+
+        const apptTpl = await DocumentTemplate.findOne({ documentType: 'Appointment Letter' });
+        if (apptTpl && apptTpl.content.includes('Employee Acceptance')) {
+            const cleanedApptText = apptTpl.content.replace(/\n*Employee Acceptance[\s\S]*$/i, '').trim();
+            await DocumentTemplate.updateOne(
+                { _id: apptTpl._id },
+                { $set: { content: cleanedApptText } }
+            );
+        }
+
         const templates = await DocumentTemplate.find();
         res.json(templates);
     } catch (error) {
