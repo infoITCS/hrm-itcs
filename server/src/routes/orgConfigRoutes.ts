@@ -528,6 +528,15 @@ router.get('/templates', authenticate, async (req: Request, res: Response, next:
             );
         }
 
+        const payslipTpl = await DocumentTemplate.findOne({ documentType: 'Pay Slip' });
+        if (payslipTpl && (payslipTpl.content.includes('Authorized Signatory') || !payslipTpl.content.includes('Normal Allowances'))) {
+            const defaultPayslipText = `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Salary Pay Slip – {{payPeriod}}\n\nEmployee Details:\n• Employee Name: {{employeeName}} (ID: {{employeeId}})\n• Designation: {{designation}}\n• Department: {{department}}\n• Pay Period: {{payPeriod}}\n\nEarnings & Deductions Summary:\n• Basic Salary: PKR {{basicSalary}}\n• Normal Allowances: PKR {{allowances}}\n• Reimbursed Expense Claims: PKR {{reimbursedClaims}}\n• Total Gross Earnings: PKR {{grossSalary}}\n• Income Tax: PKR {{taxAmount}}\n• Other Deductions: PKR {{otherDeductions}}\n• Total Deductions: PKR {{totalDeductions}}\n• Net Take-Home Pay: PKR {{netPay}}\n\nThis pay slip is an official electronic record of monthly salary disbursed by IT Consulting and Services (ITCS).\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`;
+            await DocumentTemplate.updateOne(
+                { _id: payslipTpl._id },
+                { $set: { subject: 'SALARY PAY SLIP', content: defaultPayslipText } }
+            );
+        }
+
         const templates = await DocumentTemplate.find();
         res.json(templates);
     } catch (error) {

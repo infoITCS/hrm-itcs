@@ -520,6 +520,209 @@ function renderBulletOrKeyValue(doc: any, line: string, options: { x?: number; w
     doc.moveDown(0.12);
 }
 
+// Dedicated Tabular Pay Slip Document Renderer
+const renderPayslipTabularDocument = (
+    doc: any,
+    vars: Record<string, string>,
+    company: any,
+    qrCodeDataUri: string,
+    fonts: any,
+    textMargin: number,
+    textWidth: number,
+    docTitle: string
+) => {
+    // 1. Title: Left-aligned at inside text margin, Deep Ocean Teal (#136384), bold uppercase
+    doc.y = 115;
+    doc.fontSize(16)
+       .font(fonts.bold)
+       .fillColor('#136384')
+       .text(docTitle, textMargin, 115, { align: 'left', lineBreak: false, characterSpacing: 0.1 });
+
+    // 2. Date and Recipient Header
+    const dateY = 142;
+    doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+       .text('Date: ', textMargin, dateY, { continued: true, characterSpacing: 0.1 });
+    doc.font(fonts.regular).fillColor('#000000').text(vars.date || formatOrdinalDate(new Date()), { continued: false, characterSpacing: 0.1 });
+
+    const recipientName = vars.employeeName || 'Employee';
+    const recipientCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
+    const recipientEmail = vars.personalEmail || vars.workEmail || '';
+
+    const rightBoxWidth = 240;
+    const rightBoxX = doc.page.width - textMargin - rightBoxWidth;
+    doc.fontSize(10).font(fonts.bold).fillColor('#000000')
+       .text(`To: ${recipientName}`, rightBoxX, 142, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
+    doc.fontSize(9).font(fonts.regular).fillColor('#475569')
+       .text(`${recipientCity}, Pakistan`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
+    if (recipientEmail && recipientEmail !== '—') {
+        doc.fontSize(9).font(fonts.regular).fillColor('#475569')
+           .text(`Email: ${recipientEmail}`, rightBoxX, doc.y, { width: rightBoxWidth, align: 'right', characterSpacing: 0.1 });
+    }
+
+    // 3. Subtitle
+    const startY = 195;
+    doc.fontSize(11).font(fonts.bold).fillColor('#0F172A')
+       .text(`Salary Pay Slip — ${vars.payPeriod || 'Monthly Salary'}`, textMargin, startY, { characterSpacing: 0.1 });
+
+    // 4. Table 1: Employee & Payment Details Box
+    const boxY = startY + 18;
+    const boxHeight = 65;
+    doc.roundedRect(textMargin, boxY, textWidth, boxHeight, 4)
+       .fillAndStroke('#F8FAFC', '#E2E8F0');
+
+    const col1X = textMargin + 12;
+    const col2X = textMargin + 230;
+    const rowGap = 14;
+
+    // Row 1
+    doc.fontSize(8.5).font(fonts.bold).fillColor('#475569').text('Employee Name: ', col1X, boxY + 8, { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.employeeName || '—', { lineBreak: false });
+    doc.font(fonts.bold).fillColor('#475569').text('Pay Period: ', col2X, boxY + 8, { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.payPeriod || '—', { lineBreak: false });
+
+    // Row 2
+    doc.font(fonts.bold).fillColor('#475569').text('Employee ID: ', col1X, boxY + 8 + rowGap, { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.employeeId || '—', { lineBreak: false });
+    doc.font(fonts.bold).fillColor('#475569').text('Date of Issue: ', col2X, boxY + 8 + rowGap, { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.date || '—', { lineBreak: false });
+
+    // Row 3
+    doc.font(fonts.bold).fillColor('#475569').text('Designation: ', col1X, boxY + 8 + (rowGap * 2), { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.designation || '—', { lineBreak: false });
+    doc.font(fonts.bold).fillColor('#475569').text('Payment Method: ', col2X, boxY + 8 + (rowGap * 2), { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text('Bank Transfer', { lineBreak: false });
+
+    // Row 4
+    const resolvedBankAccount = vars.bankAccountNumber 
+        ? (vars.bankName ? `${vars.bankName} - ${vars.bankAccountNumber}` : vars.bankAccountNumber) 
+        : (vars.bankAccount || 'Direct Deposit');
+    doc.font(fonts.bold).fillColor('#475569').text('Department: ', col1X, boxY + 8 + (rowGap * 3), { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(vars.department || '—', { lineBreak: false });
+    doc.font(fonts.bold).fillColor('#475569').text('Bank Account: ', col2X, boxY + 8 + (rowGap * 3), { continued: true, lineBreak: false });
+    doc.font(fonts.regular).fillColor('#0F172A').text(resolvedBankAccount, { lineBreak: false });
+
+    // 5. Table 2: Earnings & Deductions Breakdown
+    const tableY = boxY + boxHeight + 14;
+    const colWidth = Math.floor((textWidth - 12) / 2);
+    const dedX = textMargin + colWidth + 12;
+
+    // Headers
+    doc.roundedRect(textMargin, tableY, colWidth, 22, 3).fill('#0F766E'); // Deep Teal
+    doc.roundedRect(dedX, tableY, colWidth, 22, 3).fill('#1E293B');      // Slate Dark
+
+    doc.fontSize(8.5).font(fonts.bold).fillColor('#FFFFFF');
+    doc.text('EARNINGS', textMargin + 10, tableY + 6);
+    doc.text('AMOUNT (PKR)', textMargin, tableY + 6, { align: 'right', width: colWidth - 10 });
+
+    doc.text('DEDUCTIONS', dedX + 10, tableY + 6);
+    doc.text('AMOUNT (PKR)', dedX, tableY + 6, { align: 'right', width: colWidth - 10 });
+
+    let rowY = tableY + 22;
+    const rowH = 19;
+
+    const cleanPkr = (val: string | undefined): string => {
+        if (!val || val === '—') return '0';
+        const stripped = String(val).replace(/^PKR\s*/i, '').trim();
+        return stripped || '0';
+    };
+
+    const earningsItems = [
+        { label: 'Basic Salary', val: `PKR ${cleanPkr(vars.basicSalary)}` },
+        { label: 'Normal Allowances', val: `PKR ${cleanPkr(vars.allowances)}` },
+        { label: 'Reimbursed Expense Claims', val: `PKR ${cleanPkr(vars.reimbursedClaims)}` }
+    ];
+
+    const deductionsItems = [
+        { label: 'Income Tax', val: `PKR ${cleanPkr(vars.taxAmount)}` },
+        { label: 'Other Deductions', val: `PKR ${cleanPkr(vars.otherDeductions)}` },
+        { label: 'Loan / Advance Deductions', val: 'PKR 0' }
+    ];
+
+    for (let i = 0; i < 3; i++) {
+        const bg = (i % 2 === 0) ? '#FFFFFF' : '#F8FAFC';
+        doc.rect(textMargin, rowY, colWidth, rowH).fillAndStroke(bg, '#E2E8F0');
+        doc.rect(dedX, rowY, colWidth, rowH).fillAndStroke(bg, '#E2E8F0');
+
+        doc.fontSize(8.5).font(fonts.regular).fillColor('#1E293B');
+        // Earnings row
+        doc.text(earningsItems[i].label, textMargin + 10, rowY + 5, { width: colWidth - 85 });
+        doc.text(earningsItems[i].val, textMargin, rowY + 5, { align: 'right', width: colWidth - 10 });
+
+        // Deductions row
+        doc.text(deductionsItems[i].label, dedX + 10, rowY + 5, { width: colWidth - 85 });
+        doc.text(deductionsItems[i].val, dedX, rowY + 5, { align: 'right', width: colWidth - 10 });
+
+        rowY += rowH;
+    }
+
+    // Totals Row
+    doc.rect(textMargin, rowY, colWidth, 22).fillAndStroke('#F1F5F9', '#CBD5E1');
+    doc.rect(dedX, rowY, colWidth, 22).fillAndStroke('#F1F5F9', '#CBD5E1');
+
+    doc.fontSize(8.5).font(fonts.bold).fillColor('#0F172A');
+    doc.text('Total Gross Earnings', textMargin + 10, rowY + 6);
+    doc.text(`PKR ${cleanPkr(vars.grossSalary)}`, textMargin, rowY + 6, { align: 'right', width: colWidth - 10 });
+
+    doc.text('Total Deductions', dedX + 10, rowY + 6);
+    doc.text(`PKR ${cleanPkr(vars.totalDeductions)}`, dedX, rowY + 6, { align: 'right', width: colWidth - 10 });
+
+    // 6. Net Take-Home Pay Callout Card
+    const netY = rowY + 30;
+    const netH = 36;
+    doc.roundedRect(textMargin, netY, textWidth, netH, 4)
+       .fillAndStroke('#F0FDFA', '#0D9488'); // Mint Teal outline
+
+    doc.fontSize(10).font(fonts.bold).fillColor('#0F766E')
+       .text('NET SALARY (CREDITED TO BANK ACCOUNT)', textMargin + 14, netY + 8);
+    doc.fontSize(8).font(fonts.regular).fillColor('#64748B')
+       .text('Official monthly salary disbursed via bank transfer', textMargin + 14, netY + 22);
+
+    doc.fontSize(13.5).font(fonts.bold).fillColor('#0F766E')
+       .text(`PKR ${cleanPkr(vars.netPay)}`, textMargin, netY + 10, { align: 'right', width: textWidth - 14 });
+
+    // 7. Official Notice
+    const remY = netY + netH + 16;
+    doc.fontSize(8).font(fonts.regular).fillColor('#64748B')
+       .text('This pay slip is an official electronic record of monthly salary disbursed by IT Consulting and Services (ITCS).', textMargin, remY, { width: textWidth });
+
+    // 8. Signatory & Stamp Block
+    const sigY = remY + 28;
+    const resolvedSignatoryName = company?.hrSignatoryName || 'Afreen Saeed';
+    const resolvedSignatoryTitle = company?.hrSignatoryTitle || 'Manager HR, IT Consulting and Services (ITCS)';
+    const targetSigUrl = company?.hrSignatureUrl || company?.signatureUrl || path.join(__dirname, '../../uploads/afreen_signature.jpg');
+    const targetStampUrl = company?.stampUrl || path.join(__dirname, '../../uploads/itcs_stamp.jpg');
+
+    doc.fontSize(9.5).font(fonts.regular).fillColor('#000000').text('Sincerely,', textMargin, sigY, { characterSpacing: 0.1 });
+    doc.fontSize(10).font(fonts.bold).fillColor('#000000').text(resolvedSignatoryName + ',', textMargin, sigY + 12, { characterSpacing: 0.1 });
+
+    const sigImgY = sigY + 26;
+    let sigDrawn = false;
+    let stampDrawn = false;
+
+    if (targetSigUrl) {
+        sigDrawn = drawImageBufferOrPath(doc, targetSigUrl, textMargin, sigImgY, { height: 32 });
+    }
+    if (targetStampUrl) {
+        stampDrawn = drawImageBufferOrPath(doc, targetStampUrl, sigDrawn ? (textMargin + 75) : textMargin, sigImgY, { height: 32 });
+    }
+
+    const titleY = sigImgY + 35;
+    doc.fontSize(9.5).font(fonts.bold).fillColor('#000000').text(resolvedSignatoryTitle, textMargin, titleY, { characterSpacing: 0.1 });
+    doc.fontSize(9).font(fonts.regular).fillColor('#475569').text('HR & Payroll Department', textMargin, titleY + 12, { characterSpacing: 0.1 });
+
+    // 9. Cryptographic Verification QR Code on right margin opposite signatory
+    if (qrCodeDataUri) {
+        try {
+            const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            const qrX = doc.page.width - textMargin - 46;
+            doc.image(imageBuffer, qrX, sigImgY - 2, { width: 44, height: 44 });
+            doc.fontSize(6.5).font(fonts.regular).fillColor('#64748B')
+               .text('Scan to Verify', qrX - 5, sigImgY + 44, { width: 54, align: 'center' });
+        } catch (e) {}
+    }
+};
+
 // Master complete document renderer
 const renderCompleteDocument = (
     doc: any,
@@ -544,6 +747,26 @@ const renderCompleteDocument = (
 
     const docTitle = (template.subject || documentType).toUpperCase();
     const isInternship = docTitle.includes('INTERNSHIP') || documentType.toLowerCase().includes('internship');
+    const isPayslip = (documentType || '').toLowerCase().includes('pay slip') || 
+                      (documentType || '').toLowerCase().includes('payslip') || 
+                      (docTitle === 'PAY SLIP') || 
+                      (docTitle === 'SALARY PAY SLIP') ||
+                      docTitle.includes('PAY SLIP') || 
+                      docTitle.includes('PAYSLIP');
+
+    if (isPayslip) {
+        renderPayslipTabularDocument(
+            doc,
+            vars,
+            company,
+            qrCodeDataUri,
+            fonts,
+            textMargin,
+            textWidth,
+            docTitle
+        );
+        return;
+    }
 
     // Title: Left-aligned at inside text margin, Deep Ocean Teal (#136384), bold uppercase
     doc.y = 115;
@@ -993,6 +1216,17 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
             template.content = defaultInternshipText;
         }
 
+        const defaultPayslipText = `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Salary Pay Slip – {{payPeriod}}\n\nEmployee Details:\n• Employee Name: {{employeeName}} (ID: {{employeeId}})\n• Designation: {{designation}}\n• Department: {{department}}\n• Pay Period: {{payPeriod}}\n\nEarnings & Deductions Summary:\n• Basic Salary: PKR {{basicSalary}}\n• Normal Allowances: PKR {{allowances}}\n• Reimbursed Expense Claims: PKR {{reimbursedClaims}}\n• Total Gross Earnings: PKR {{grossSalary}}\n• Income Tax: PKR {{taxAmount}}\n• Other Deductions: PKR {{otherDeductions}}\n• Total Deductions: PKR {{totalDeductions}}\n• Net Take-Home Pay: PKR {{netPay}}\n\nThis pay slip is an official electronic record of monthly salary disbursed by IT Consulting and Services (ITCS).\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`;
+
+        if (template && (rawDocType === 'Pay Slip' || template.documentType === 'Pay Slip') && (template.content.includes('Authorized Signatory') || !template.content.includes('Normal Allowances'))) {
+            await DocumentTemplate.updateOne(
+                { _id: template._id },
+                { $set: { subject: 'SALARY PAY SLIP', content: defaultPayslipText } }
+            );
+            template.subject = 'SALARY PAY SLIP';
+            template.content = defaultPayslipText;
+        }
+
         // Auto-seed default template if not found in database
         if (!template) {
             const defaultTemplates: Record<string, { subject: string; content: string }> = {
@@ -1022,7 +1256,7 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
                 },
                 'Pay Slip': {
                     subject: 'SALARY PAY SLIP',
-                    content: `Date: {{date}}\n\nTo: {{employeeName}}\n{{city}}, Pakistan\nEmail: {{personalEmail}}\n\nSubject: Salary Pay Slip – {{payPeriod}}\n\nEmployee Details:\n• Employee Name: {{employeeName}} (ID: {{employeeId}})\n• Designation: {{designation}}\n• Department: {{department}}\n• Pay Period: {{payPeriod}}\n\nEarnings & Deductions Summary:\n• Basic Salary: PKR {{basicSalary}}\n• Total Allowances: PKR {{allowances}}\n• Gross Salary: PKR {{grossSalary}}\n• Income Tax: PKR {{taxAmount}}\n• Other Deductions: PKR {{otherDeductions}}\n• Total Deductions: PKR {{totalDeductions}}\n• Net Take-Home Pay: PKR {{netPay}}\n\nThis pay slip is an official record of monthly salary disbursed via bank transfer.\n\nSincerely,\nAfreen Saeed,\nManager HR, IT Consulting and Services (ITCS)\nHR & Payroll Department`
+                    content: defaultPayslipText
                 },
                 'No Objection Certificate (NOC)': {
                     subject: 'NO OBJECTION CERTIFICATE',
@@ -1229,6 +1463,7 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
         let singlePayPeriod = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
         let singleBasicSal = defaultBasicNum ? String(defaultBasicNum) : '';
         let singleAllowances = defaultAllowancesNum ? String(defaultAllowancesNum) : '0';
+        let singleClaims = '0';
         let singleGrossSal = defaultGrossNum ? String(defaultGrossNum) : '';
         let singleTaxAmt = '0';
         let singleOtherDed = '0';
@@ -1241,19 +1476,37 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
 
             const basicEarning = latestPayslip.earnings?.find((e: any) => e.component === 'Basic Salary');
             const basicAmt = basicEarning ? basicEarning.amount : defaultBasicNum;
-            const allowancesAmt = Math.max(0, latestPayslip.grossPay - basicAmt);
+
+            let normalAllowancesAmt = 0;
+            let reimbursedClaimsAmt = 0;
+
+            if (Array.isArray(latestPayslip.earnings)) {
+                for (const earn of latestPayslip.earnings) {
+                    if (earn.component === 'Basic Salary') continue;
+                    const compName = (earn.component || '').toLowerCase();
+                    const isClaim = earn.expenseClaim === true || compName.includes('claim') || compName.includes('expense');
+                    if (isClaim) {
+                        reimbursedClaimsAmt += Number(earn.amount) || 0;
+                    } else {
+                        normalAllowancesAmt += Number(earn.amount) || 0;
+                    }
+                }
+            } else {
+                normalAllowancesAmt = Math.max(0, (latestPayslip.grossPay || 0) - basicAmt);
+            }
 
             const taxDeduction = latestPayslip.deductions?.find((d: any) => d.component?.toLowerCase().includes('tax'));
             const taxAmt = taxDeduction ? taxDeduction.amount : 0;
-            const otherDedAmt = Math.max(0, latestPayslip.totalDeductions - taxAmt);
+            const otherDedAmt = Math.max(0, (latestPayslip.totalDeductions || 0) - taxAmt);
 
-            singleBasicSal = String(basicAmt);
-            singleAllowances = String(allowancesAmt);
-            singleGrossSal = String(latestPayslip.grossPay);
-            singleTaxAmt = String(taxAmt);
-            singleOtherDed = String(otherDedAmt);
-            singleTotalDed = String(latestPayslip.totalDeductions);
-            singleNetPay = String(latestPayslip.netPay);
+            singleBasicSal = String(Math.round(basicAmt));
+            singleAllowances = String(Math.round(normalAllowancesAmt));
+            singleClaims = String(Math.round(reimbursedClaimsAmt));
+            singleGrossSal = String(Math.round(latestPayslip.grossPay));
+            singleTaxAmt = String(Math.round(taxAmt));
+            singleOtherDed = String(Math.round(otherDedAmt));
+            singleTotalDed = String(Math.round(latestPayslip.totalDeductions));
+            singleNetPay = String(Math.round(latestPayslip.netPay));
         }
 
         // 2. Fetch last 3 months payslips for Consolidated Pay Slip (3 Months)
@@ -1385,11 +1638,12 @@ router.post('/generate', authenticate, checkProfileLock, async (req: Request, re
             acceptanceValidityDays: '7',
             probationDaysWords: 'Ninety',
             payPeriod: req.body.customVars?.payPeriod || singlePayPeriod,
-            allowances: req.body.customVars?.allowances || singleAllowances,
-            taxAmount: req.body.customVars?.taxAmount || singleTaxAmt,
-            otherDeductions: req.body.customVars?.otherDeductions || singleOtherDed,
-            totalDeductions: req.body.customVars?.totalDeductions || singleTotalDed,
-            netPay: req.body.customVars?.netPay || singleNetPay,
+            allowances: formatSalaryNum(req.body.customVars?.allowances || singleAllowances),
+            reimbursedClaims: formatSalaryNum(req.body.customVars?.reimbursedClaims || singleClaims),
+            taxAmount: formatSalaryNum(req.body.customVars?.taxAmount || singleTaxAmt),
+            otherDeductions: formatSalaryNum(req.body.customVars?.otherDeductions || singleOtherDed),
+            totalDeductions: formatSalaryNum(req.body.customVars?.totalDeductions || singleTotalDed),
+            netPay: formatSalaryNum(req.body.customVars?.netPay || singleNetPay),
             startMonth: req.body.customVars?.startMonth || consolidated3Data[0].name,
             endMonth: req.body.customVars?.endMonth || consolidated3Data[2].name,
             year: req.body.customVars?.year || String(targetMonths3[2].year),
@@ -1974,6 +2228,12 @@ router.post('/preview-custom-pdf', authenticate, async (req: Request, res: Respo
 
         if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
         if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
+        if (mergedVars.allowances) mergedVars.allowances = formatSalaryNum(mergedVars.allowances);
+        if (mergedVars.reimbursedClaims) mergedVars.reimbursedClaims = formatSalaryNum(mergedVars.reimbursedClaims);
+        if (mergedVars.netPay) mergedVars.netPay = formatSalaryNum(mergedVars.netPay);
+        if (mergedVars.totalDeductions) mergedVars.totalDeductions = formatSalaryNum(mergedVars.totalDeductions);
+        if (mergedVars.taxAmount) mergedVars.taxAmount = formatSalaryNum(mergedVars.taxAmount);
+        if (mergedVars.otherDeductions) mergedVars.otherDeductions = formatSalaryNum(mergedVars.otherDeductions);
         if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
         if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
         if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
@@ -2078,6 +2338,12 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
 
         if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
         if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
+        if (mergedVars.allowances) mergedVars.allowances = formatSalaryNum(mergedVars.allowances);
+        if (mergedVars.reimbursedClaims) mergedVars.reimbursedClaims = formatSalaryNum(mergedVars.reimbursedClaims);
+        if (mergedVars.netPay) mergedVars.netPay = formatSalaryNum(mergedVars.netPay);
+        if (mergedVars.totalDeductions) mergedVars.totalDeductions = formatSalaryNum(mergedVars.totalDeductions);
+        if (mergedVars.taxAmount) mergedVars.taxAmount = formatSalaryNum(mergedVars.taxAmount);
+        if (mergedVars.otherDeductions) mergedVars.otherDeductions = formatSalaryNum(mergedVars.otherDeductions);
         if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
         if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
         if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
