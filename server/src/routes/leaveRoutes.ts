@@ -1429,8 +1429,29 @@ router.post('/', authenticate, checkProfileLock, async (req: Request, res: Respo
 
                     let managerEmail: string | undefined = undefined;
                     if (emp && emp.jobInfo?.reportingManager) {
-                        const manager = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager });
-                        managerEmail = manager?.workEmail || manager?.email;
+                        const rawMgrId = String(emp.jobInfo.reportingManager).trim();
+                        const escapedId = rawMgrId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const isObjId = mongoose.Types.ObjectId.isValid(rawMgrId);
+                        const manager = await Employee.findOne({
+                            $or: [
+                                { employeeId: { $regex: new RegExp(`^${escapedId}$`, 'i') } },
+                                ...(isObjId ? [{ _id: rawMgrId }] : []),
+                                { userId: rawMgrId }
+                            ]
+                        }).select('workEmail email personalEmail userId firstName lastName employeeId');
+
+                        managerEmail = manager?.workEmail || manager?.email || (manager as any)?.personalEmail;
+                        // Fallback to User collection if Employee record email is blank
+                        if (!managerEmail && manager?.userId) {
+                            const userDoc = await User.findById(manager.userId).select('email').lean() as any;
+                            managerEmail = userDoc?.email;
+                        }
+
+                        if (managerEmail) {
+                            console.log(`[Leave Email] Resolved reporting manager email: ${managerEmail} for applicant ${employeeName}`);
+                        } else {
+                            console.warn(`[Leave Email] Could not resolve reporting manager email for ID: "${rawMgrId}" (applicant: ${employeeName})`);
+                        }
                     }
 
                     const recipients = Array.from(new Set([...hrEmails, managerEmail, process.env.HR_EMAIL].filter(Boolean) as string[]));

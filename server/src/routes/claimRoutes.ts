@@ -1777,9 +1777,24 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
 
                     // 1. Manager if currently at manager review stage
                     if (claim.status === 'Pending Line Manager' && emp?.jobInfo?.reportingManager) {
-                        const mgr = await Employee.findOne({ employeeId: emp.jobInfo.reportingManager }).select('workEmail personalEmail');
-                        if (mgr?.workEmail || mgr?.personalEmail) {
-                            recipientEmails.push((mgr.workEmail || mgr.personalEmail) as string);
+                        const rawMgr = String(emp.jobInfo.reportingManager).trim();
+                        const escapedId = rawMgr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const isObjId = mongoose.Types.ObjectId.isValid(rawMgr);
+                        const mgr = await Employee.findOne({
+                            $or: [
+                                { employeeId: { $regex: new RegExp(`^${escapedId}$`, 'i') } },
+                                ...(isObjId ? [{ _id: rawMgr }] : []),
+                                { userId: rawMgr }
+                            ]
+                        }).select('workEmail personalEmail email userId');
+
+                        let mgrEmail = mgr?.workEmail || mgr?.personalEmail || (mgr as any)?.email;
+                        if (!mgrEmail && mgr?.userId) {
+                            const u = await User.findById(mgr.userId).select('email').lean() as any;
+                            mgrEmail = u?.email;
+                        }
+                        if (mgrEmail) {
+                            recipientEmails.push(mgrEmail as string);
                         }
                     }
 

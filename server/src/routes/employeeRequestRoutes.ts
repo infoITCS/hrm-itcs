@@ -913,11 +913,28 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         (async () => {
             try {
                 let managerEmail: string | undefined;
-                const isTeamRequest = category === 'Asset' || category === 'Document' || category === 'HR Document' || category === 'Work From Home (WFH)' || (category || '').includes('WFH');
-                if (isTeamRequest && employee.jobInfo?.reportingManager) {
-                    const manager = await Employee.findOne({ employeeId: employee.jobInfo.reportingManager }).select('workEmail');
-                    if (manager?.workEmail) {
-                        managerEmail = manager.workEmail;
+                const isLoanOrFinance = /loan|pf|provident|salary|advance|finance/i.test(category || '') ||
+                                        /loan|pf|provident|salary|advance|finance/i.test(requestType || '');
+                if (!isLoanOrFinance && employee.jobInfo?.reportingManager) {
+                    const rawMgrId = String(employee.jobInfo.reportingManager).trim();
+                    const escapedId = rawMgrId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const isObjId = mongoose.Types.ObjectId.isValid(rawMgrId);
+                    const manager = await Employee.findOne({
+                        $or: [
+                            { employeeId: { $regex: new RegExp(`^${escapedId}$`, 'i') } },
+                            ...(isObjId ? [{ _id: rawMgrId }] : []),
+                            { userId: rawMgrId }
+                        ]
+                    }).select('workEmail personalEmail email userId');
+
+                    managerEmail = manager?.workEmail || manager?.email || (manager as any)?.personalEmail;
+                    if (!managerEmail && manager?.userId) {
+                        const userDoc = await User.findById(manager.userId).select('email').lean() as any;
+                        managerEmail = userDoc?.email;
+                    }
+
+                    if (managerEmail) {
+                        logger.info(`[Employee Request Email] Resolved reporting manager email: ${managerEmail} for applicant ${employee.employeeId}`);
                     }
                 }
 
