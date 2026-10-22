@@ -798,7 +798,10 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                     used: effectiveUsed,
                     monthUsed: effectiveMonthUsed,
                     pending: effectivePending,
-                    available: availableDays
+                    available: availableDays,
+                    isRestricted: isRestrictedForEmp,
+                    genderRestricted: type.genderRestricted || 'all',
+                    maritalStatusRestricted: type.maritalStatusRestricted || 'all'
                 };
             });
 
@@ -809,6 +812,8 @@ router.get('/balances/all', authenticate, async (req: Request, res: Response, ne
                 email: emp.workEmail || emp.email || '—',
                 designation: emp.jobInfo?.designation || 'N/A',
                 department: emp.jobInfo?.department || 'N/A',
+                gender: empGender,
+                maritalStatus: empMarital,
                 balances: empBalances
             };
         });
@@ -1414,13 +1419,13 @@ router.post('/', authenticate, checkProfileLock, async (req: Request, res: Respo
             // Trigger manager & HR notification email asynchronously
             (async () => {
                 try {
-                    const emp = await Employee.findOne({
+                    const emp = empDoc || (await Employee.findOne({
                         $or: [
                             { userId: targetEmployeeId },
                             { employeeId: targetEmployeeId },
-                            { _id: targetEmployeeId.length === 24 ? targetEmployeeId : new mongoose.Types.ObjectId() }
+                            ...(mongoose.isValidObjectId(targetEmployeeId) ? [{ _id: targetEmployeeId }] : [])
                         ]
-                    });
+                    }));
                     const employeeName = formatEmployeeFullName(emp, 'Employee');
                     
                     // Auto-fetch active HR and Admin emails from database

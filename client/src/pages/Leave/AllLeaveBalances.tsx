@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../utils/api';
 import { Search, FileText, User, RefreshCw, AlertCircle, Edit3, Download, X, Check, Calculator, Calendar, ChevronDown, Clock } from 'lucide-react';
@@ -12,6 +12,9 @@ interface LeaveBalanceItem {
     used: number;
     pending: number;
     available: number;
+    isRestricted?: boolean;
+    genderRestricted?: string;
+    maritalStatusRestricted?: string;
 }
 
 interface EmployeeBalance {
@@ -21,6 +24,8 @@ interface EmployeeBalance {
     email: string;
     designation: string;
     department: string;
+    gender?: string;
+    maritalStatus?: string;
     balances: LeaveBalanceItem[];
 }
 
@@ -96,12 +101,14 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
     const openEditModal = (emp: EmployeeBalance) => {
         setEditingEmp(emp);
         setEditBalances(
-            emp.balances.map(b => ({
-                leaveTypeCode: b.leaveTypeCode,
-                leaveTypeName: b.leaveTypeName,
-                total: b.total ?? 0,
-                used: b.used ?? 0
-            }))
+            emp.balances
+                .filter(b => !b.isRestricted)
+                .map(b => ({
+                    leaveTypeCode: b.leaveTypeCode,
+                    leaveTypeName: b.leaveTypeName,
+                    total: b.total ?? 0,
+                    used: b.used ?? 0
+                }))
         );
     };
 
@@ -220,10 +227,32 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
                department.includes(query);
     });
 
-    // Extract all unique active leave types from the balance lists to build table headers dynamically
-    const leaveTypesHeader = balances.length > 0 
-        ? balances[0].balances.map(b => ({ code: b.leaveTypeCode, name: b.leaveTypeName }))
-        : [];
+    // Extract all unique active leave types.
+    // For managers (Team view), exclude leave columns where no one in the team is eligible
+    // (e.g. hide Maternity Leave if the team has 0 female employees).
+    const leaveTypesHeader = useMemo(() => {
+        if (!balances || balances.length === 0) return [];
+
+        const allTypes = balances[0].balances.map(b => ({
+            code: b.leaveTypeCode,
+            name: b.leaveTypeName
+        }));
+
+        if (role === 'manager') {
+            return allTypes.filter(type => {
+                // Keep the column if at least ONE team member is eligible or has quota/used > 0
+                return balances.some(emp => {
+                    const b = emp.balances.find(item => item.leaveTypeCode === type.code);
+                    if (!b) return false;
+                    const isRestricted = b.isRestricted ||
+                        (b.genderRestricted && b.genderRestricted !== 'all' && emp.gender && b.genderRestricted !== emp.gender.toLowerCase());
+                    return !isRestricted || (Number(b.total) > 0) || (Number(b.used) > 0);
+                });
+            });
+        }
+
+        return allTypes;
+    }, [balances, role]);
 
     return (
         <div className="space-y-4">
@@ -478,7 +507,37 @@ const AllLeaveBalances = ({ refreshTrigger = 0 }: { refreshTrigger?: number }) =
                                                 <span className="text-[9px] text-indigo-500 font-black tracking-wider mt-0.5">{item.employeeId || 'No ID'}</span>
                                             </div>
                                         </td>
-                                        {item.balances.map(bal => {
+                                        {leaveTypesHeader.map(type => {
+                                            const bal = item.balances.find(b => b.leaveTypeCode === type.code);
+                                            if (!bal) {
+                                                return (
+                                                    <td key={type.code} className="py-4 px-6 text-center text-slate-300">
+                                                        —
+                                                    </td>
+                                                );
+                                            }
+
+                                            // Check if this leave type is restricted / not applicable for this employee
+                                            const isEmpRestricted = bal.isRestricted ||
+                                                (bal.genderRestricted && bal.genderRestricted !== 'all' && item.gender && bal.genderRestricted !== item.gender.toLowerCase());
+
+                                            if (isEmpRestricted && Number(bal.used) === 0 && Number(bal.total) === 0) {
+                                                const restrictionTitle = bal.genderRestricted === 'female'
+                                                    ? 'Not applicable for male employees'
+                                                    : bal.genderRestricted === 'male'
+                                                        ? 'Not applicable for female employees'
+                                                        : 'Not applicable for this employee';
+
+                                                return (
+                                                    <td key={bal.leaveTypeCode} className="py-4 px-6 text-center" title={restrictionTitle}>
+                                                        <div className="inline-flex flex-col items-center justify-center py-1">
+                                                            <span className="text-slate-300 font-bold text-sm tracking-widest select-none">—</span>
+                                                            <span className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider">N/A</span>
+                                                        </div>
+                                                    </td>
+                                                );
+                                            }
+
                                             const availablePercent = bal.total > 0 ? (bal.available / bal.total) * 100 : 0;
                                             const isMonthly = selectedMonth !== 'all';
                                             const monthDays = Number((bal as any).monthUsed) || 0;
