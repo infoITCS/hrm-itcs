@@ -383,13 +383,13 @@ const Dashboard = () => {
             link: '/leave?tab=team-requests',
         },
         {
-            title: 'Manage Requests',
+            title: 'Pending Reviews',
             value: loading ? '...' : pendingApprovalsCount,
             icon: FileCheck,
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             border: 'border-rose-100',
-            link: '/my-requests/manage',
+            link: '/performance',
         },
     ];
 
@@ -423,13 +423,13 @@ const Dashboard = () => {
             link: '/leave?tab=team-requests',
         },
         {
-            title: 'Team Requests',
+            title: 'Team Performance',
             value: 'Overview',
             icon: TrendingUp,
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             border: 'border-rose-100',
-            link: '/my-requests/manage',
+            link: '/performance',
         },
     ];
 
@@ -454,13 +454,13 @@ const Dashboard = () => {
             link: '/leave',
         },
         {
-            title: 'My Requests',
-            value: 'Overview',
+            title: 'Performance Reviews',
+            value: 'Next',
             icon: Star,
             color: 'text-amber-600',
             bg: 'bg-amber-50',
             border: 'border-amber-100',
-            link: '/my-requests',
+            link: '/performance',
         },
         {
             title: 'My Claims',

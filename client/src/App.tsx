@@ -47,7 +47,7 @@ import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
 import MyLoans from './pages/Payroll/MyLoans';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
-// import PerformanceDashboard from './pages/Performance/PerformanceDashboard';
+import PerformanceDashboard from './pages/Performance/PerformanceDashboard';
 import DocumentDispatcher from './pages/Communications/DocumentDispatcher';
 
 // Dynamic Page Titles Mapping
@@ -202,8 +202,7 @@ function AppRoutes() {
         {/* Open to all authenticated users */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        {/* Performance module hidden temporarily */}
-        <Route path="performance" element={<Navigate to="/dashboard" replace />} />
+        <Route path="performance" element={<PerformanceDashboard />} />
         <Route path="directory" element={<Directory />} />
         <Route path="company-policy" element={<CompanyPolicy />} />
         <Route path="opd-policy" element={<Navigate to="/company-policy#sec-10" replace />} />

@@ -1237,6 +1237,53 @@ const renderCompleteDocument = (
         }
     }
 
+    // Guaranteed Employee Acceptance Block for all Offer Letters (even if template body in DB didn't explicitly include it)
+    if (isOfferLetter && !hasRenderedAcceptance) {
+        hasRenderedAcceptance = true;
+        doc.moveDown(0.25);
+
+        // Divider line across inside text margin
+        const dividerY = doc.y;
+        doc.moveTo(textMargin, dividerY)
+           .lineTo(doc.page.width - textMargin, dividerY)
+           .strokeColor('#94A3B8')
+           .lineWidth(0.8)
+           .stroke();
+
+        doc.y = dividerY + 6;
+        doc.fontSize(10.5).font(fonts.bold).fillColor('#000000').text(isInternship ? 'Acceptance' : 'Employee Acceptance', textMargin, doc.y, { characterSpacing: 0.1 });
+        doc.moveDown(0.15);
+
+        const empName = vars.employeeName || recipientName || 'Employee';
+
+        doc.fontSize(9.5).font(fonts.regular).fillColor('#000000')
+           .text('I, ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.bold).text(empName, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.regular).text(`, accept the ${isInternship ? 'internship offer' : 'offer'} and its terms and conditions.`, { continued: false, characterSpacing: 0.1 });
+
+        doc.moveDown(0.2);
+
+        const signLineY = doc.y;
+        doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+           .text('Signature: ', textMargin, signLineY, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.regular).fillColor('#94A3B8').text('____________________', { continued: false });
+
+        doc.moveDown(0.15);
+        doc.fontSize(9.5).font(fonts.bold).fillColor('#000000')
+           .text('Date: ', textMargin, doc.y, { continued: true, characterSpacing: 0.1 });
+        doc.font(fonts.regular).fillColor('#94A3B8').text('________________________', { continued: false });
+
+        // Place Dynamic Verification QR Code beside signature lines (on the right inside margin)
+        if (qrCodeDataUri && !hasRenderedQrCode) {
+            try {
+                const base64Data = qrCodeDataUri.replace(/^data:image\/png;base64,/, '');
+                const imageBuffer = Buffer.from(base64Data, 'base64');
+                doc.image(imageBuffer, doc.page.width - textMargin - 46, signLineY - 4, { width: 44, height: 44 });
+                hasRenderedQrCode = true;
+            } catch (e) {}
+        }
+    }
+
     // Fallback: If document had no acceptance block or QR code drawn yet, place QR code bottom-right
     if (!hasRenderedQrCode && qrCodeDataUri) {
         try {
