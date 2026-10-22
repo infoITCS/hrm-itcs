@@ -111,10 +111,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('token');
         localStorage.removeItem('original_token');
         sessionStorage.clear();
+        sessionStorage.setItem('itcs_logged_out', 'true');
         setUser(null);
         setIsImpersonated(false);
         setStorageError(false);
-        navigate('/login');
+        navigate('/login?logout=true');
     };
 
     const impersonate = async (token: string, userData?: User) => {

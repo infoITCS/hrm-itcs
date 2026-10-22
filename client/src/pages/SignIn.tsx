@@ -19,13 +19,35 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
     const [showEmailForm, setShowEmailForm] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
 
-    // Check for error in URL (from SSO redirect)
+    const searchParams = new URLSearchParams(window.location.search);
+    const errorParam = searchParams.get('error');
+    const msgParam = searchParams.get('msg');
+    const isLogoutParam = searchParams.get('logout') === 'true';
+    const isManualParam = searchParams.get('manual') === 'true';
+
+    // Auto-SSO triggers when on company laptops without error, logout flag, or manual preference
+    const shouldAutoSSO = !errorParam && !isLogoutParam && !isManualParam && 
+        sessionStorage.getItem('itcs_manual_login') !== 'true' && 
+        sessionStorage.getItem('itcs_logged_out') !== 'true';
+
+    const [isAutoAuthenticating, setIsAutoAuthenticating] = useState(shouldAutoSSO);
+
+    // Cancel auto-login and show manual login form
+    const handleCancelAutoLogin = () => {
+        sessionStorage.setItem('itcs_manual_login', 'true');
+        setIsAutoAuthenticating(false);
+    };
+
+    // Check for error in URL or manual override
     useEffect(() => {
-        const searchParams = new URLSearchParams(window.location.search);
-        const errorParam = searchParams.get('error');
-        const msgParam = searchParams.get('msg');
+        if (isManualParam) {
+            sessionStorage.setItem('itcs_manual_login', 'true');
+            setIsAutoAuthenticating(false);
+        }
 
         if (errorParam) {
+            sessionStorage.setItem('itcs_manual_login', 'true');
+            setIsAutoAuthenticating(false);
             const errorMap: Record<string, string> = {
                 'access_denied': 'Sign-in was canceled. Please try again.',
                 'microsoft_auth_failed': 'Microsoft sign-in was interrupted. Please try again.',
@@ -34,13 +56,29 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
                 'callback_failed': 'Temporary connection issue. Please try signing in again.',
                 'server_error': 'Temporary server error. Please try again in a moment.',
                 'login_failed': msgParam || 'Sign-in could not be completed. Please click "Sign in with Microsoft" to try again.',
-                'account_suspended': msgParam || 'Your account is deactivated. Please contact your system administrator.'
+                'account_suspended': msgParam || 'Your account is deactivated. Please contact your system administrator.',
+                'domain_restricted': msgParam || 'Access restricted: Only official company accounts (@itcs.com.pk) can sign in with Microsoft. Personal or external accounts are not permitted.',
+                'invalid_tenant': msgParam || 'Access restricted: Only verified members of the organization Microsoft tenant can sign in.'
             };
             setError(errorMap[errorParam] || decodeURIComponent(errorParam).replace(/_/g, ' '));
         }
-    }, []);
+    }, [errorParam, msgParam, isManualParam]);
+
+    // Zero-Click Auto-SSO probe execution
+    useEffect(() => {
+        if (isAutoAuthenticating) {
+            const timer = setTimeout(() => {
+                const url = `${api.auth}/microsoft`;
+                console.log('⚡ [Zero-Click SSO] Redirecting to Microsoft OAuth:', url);
+                window.location.href = url;
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isAutoAuthenticating]);
 
     const handleMicrosoftLogin = (forceAccountSelection: boolean = false) => {
+        sessionStorage.removeItem('itcs_manual_login');
+        sessionStorage.removeItem('itcs_logged_out');
         const url = forceAccountSelection
             ? `${api.auth}/microsoft?prompt=select_account`
             : `${api.auth}/microsoft`;
@@ -90,6 +128,47 @@ export const SignIn: React.FC<SignInProps> = ({ onLogin }) => {
             setLoading(false);
         }
     };
+
+    if (isAutoAuthenticating) {
+        return (
+            <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden font-sans">
+                {/* Dynamic Background Effects */}
+                <div className="absolute top-0 left-0 w-full h-full opacity-15 pointer-events-none">
+                    <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] bg-primary rounded-full mix-blend-multiply filter blur-[100px] animate-blob"></div>
+                    <div className="absolute top-[-20%] right-[-20%] w-[80%] h-[80%] bg-blue-600 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
+                    <div className="absolute bottom-[-20%] left-[20%] w-[80%] h-[80%] bg-indigo-600 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
+                </div>
+
+                <div className="relative z-10 max-w-md w-full bg-slate-800/80 backdrop-blur-xl border border-slate-700/60 rounded-3xl p-8 sm:p-10 shadow-2xl flex flex-col items-center text-center animate-fadeIn">
+                    <img src={itcsLogo} alt="ITCS Logo" className="h-20 w-auto object-contain mb-6 drop-shadow-xl" />
+                    
+                    <div className="relative mb-6">
+                        <div className="w-14 h-14 border-4 border-slate-700 border-t-primary rounded-full animate-spin"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-3.5 h-3.5 bg-primary rounded-full animate-ping opacity-75"></div>
+                        </div>
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Connecting to Workspace</h2>
+                    <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+                        Authenticating your ITCS official laptop session via Single Sign-On...
+                    </p>
+
+                    <button
+                        type="button"
+                        onClick={handleCancelAutoLogin}
+                        className="text-xs font-semibold text-slate-400 hover:text-white bg-slate-700/50 hover:bg-slate-700 px-4 py-2.5 rounded-xl transition-all border border-slate-600/50 shadow-sm cursor-pointer"
+                    >
+                        Sign in manually or use password
+                    </button>
+                </div>
+                
+                <p className="relative z-10 mt-8 text-xs text-slate-500 font-medium">
+                    ITCS Enterprise Security • Automated Single Sign-On
+                </p>
+            </div>
+        );
+    }
 
     return (
         <>

@@ -54,6 +54,11 @@ export const usePermissions = () => {
             return user.customPermissions[moduleName];
         }
 
+        // Core performance module is universally accessible to employees, managers, HR, and admins
+        if (moduleName === 'performance') {
+            if (['super-admin', 'admin', 'hr', 'manager', 'employee'].includes(normalizedRole)) return true;
+        }
+
         // Explicit role permission matrix from database
         if (user.permissions && typeof user.permissions[moduleName] === 'boolean') {
             return user.permissions[moduleName];
