@@ -115,7 +115,14 @@ export async function processEmployeePunches(
         const leaveMap = await repo.findApprovedLeavesForDate(dateStr, [resolvedEmployeeId]);
         const leaveType = leaveMap.get(resolvedEmployeeId) ?? null;
 
-        const fullDayCutoff = pktHHMMtoUtc(dateStr, '14:00');
+        const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
+        let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
+        if (isOvernight) {
+            shiftEndTime = new Date(shiftEndTime.getTime() + 24 * 60 * 60 * 1000);
+        }
+
+        const diffFromShift = checkIn ? Math.floor((checkIn.getTime() - shiftStartTime.getTime()) / 60000) : 0;
+
         let status: AttendanceStatus;
         let note: string | undefined = undefined;
 
@@ -128,10 +135,7 @@ export async function processEmployeePunches(
             note = matched.offShiftPunches.length > 0
                 ? `Off-shift punch at ${toPKTTimeString(matched.offShiftPunches[0])}, absent during shift`
                 : 'Absent';
-        } else if (!isOvernight && checkIn.getTime() >= fullDayCutoff.getTime()) {
-            status = 'Absent';
-            note = 'Arrived at or after 2:00 PM (Full day salary cut per HR Policy)';
-        } else if (lateMinutes > 0) {
+        } else if (diffFromShift > cfg.graceMinutes) {
             const monthStart = `${dateStr.slice(0, 7)}-01`;
             const priorLate = await AttendanceRecord.findOne({
                 employeeId: resolvedEmployeeId,
@@ -147,17 +151,23 @@ export async function processEmployeePunches(
                 note = 'First Late Exemption';
             } else {
                 status = 'Late';
-                note = 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+                note = diffFromShift > 60
+                    ? 'Arrived >1 hour late (Full day salary & leave cut per HR Policy)'
+                    : 'Arrived late (Half day salary & leave cut per HR Policy)';
             }
         } else if (!checkOut) {
             status = 'Incomplete';
         } else if (workDurationMinutes < (cfg.halfDayThresholdHours || 4) * 60 && checkOut) {
             status = 'Half-Day';
+            note = 'Worked less than half-day threshold (Half day salary & leave cut per HR Policy)';
         } else if (isEarlyLeave) {
             status = 'Early Leave';
+            note = 'Early departure (Half day salary & leave cut per HR Policy)';
         } else {
             status = 'Present';
         }
+
+        const finalLateMinutes = status === 'Present' ? 0 : lateMinutes;
 
         await repo.upsertRecord(resolvedEmployeeId, dateStr, {
             location: cfg.locationName,
@@ -167,7 +177,7 @@ export async function processEmployeePunches(
             shiftEnd: cfg.shiftEnd,
             workDurationMinutes,
             status,
-            lateMinutes,
+            lateMinutes: finalLateMinutes,
             overtimeMinutes,
             leaveType: leaveType ?? undefined,
             isHalfDay: status === 'Half-Day',
@@ -279,17 +289,23 @@ export async function getTodayRoster(
             cfg
         );
 
-        if (empId) processedEmpIds.add(empId);
-
         // Use existing processed record if available
         const rec = empId ? recMap.get(empId) as any : null;
         const checkInTime: Date | null = rec?.checkIn ? new Date(rec.checkIn) : (matched.checkIn || null);
         let checkOutTime: Date | null = rec?.checkOut ? new Date(rec.checkOut) : (matched.checkOut || null);
 
+        // A punch cannot be its own checkout; checkout must be at least 15 minutes after check-in
+        if (checkInTime && checkOutTime && Math.abs(checkOutTime.getTime() - checkInTime.getTime()) < 15 * 60 * 1000) {
+            checkOutTime = null;
+        }
+
         if (!checkInTime && !rec?.checkIn) {
-            // No valid shift check-in (e.g. only off-shift midnight punch)
+            // No valid shift check-in (e.g. only off-shift morning checkout punch for overnight worker)
+            // Do NOT mark as processed; let loop 2 add them as scheduled/unpunched
             continue;
         }
+
+        if (empId) processedEmpIds.add(empId);
 
         const shiftStartTime = pktHHMMtoUtc(dateStr, cfg.shiftStart);
         let shiftEndTime = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
@@ -315,7 +331,7 @@ export async function getTodayRoster(
         let status = rec?.status || 'Incomplete';
         let note = rec?.note;
         if (!rec || status === 'Incomplete') {
-            if (lateMinutes > 0) {
+            if (diffFromShift > cfg.graceMinutes) {
                 const monthStart = `${dateStr.slice(0, 7)}-01`;
                 const priorLate = await AttendanceRecord.findOne({
                     employeeId: emp.employeeId,
@@ -331,12 +347,17 @@ export async function getTodayRoster(
                     note = 'First Late Exemption';
                 } else {
                     status = 'Late';
-                    note = 'Arrived late before 2:00 PM (Half day salary cut per HR Policy)';
+                    note = diffFromShift > 60
+                        ? 'Arrived >1 hour late (Full day salary & leave cut per HR Policy)'
+                        : 'Arrived late (Half day salary & leave cut per HR Policy)';
                 }
             } else if (checkOutTime) {
                 const earlyDiff = Math.floor((shiftEndTime.getTime() - checkOutTime.getTime()) / 60000);
                 const isEarlyLeave = earlyDiff > 10;
                 status = isEarlyLeave ? 'Early Leave' : 'Present';
+                if (isEarlyLeave) {
+                    note = 'Early departure (Half day salary & leave cut per HR Policy)';
+                }
             } else {
                 status = 'Incomplete';
             }
@@ -370,10 +391,12 @@ export async function getTodayRoster(
         });
     }
 
-    // Add employees who have NO PUNCHES (Absent / On Leave / Records with no punches)
+    // Add employees who have NO PUNCHES (Absent / On Leave / Records with no punches / Scheduled)
     const allExpectedEmps = [...new Set([...activeEmpIds, ...recMap.keys()])];
     const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+    const isToday = dateStr === todayStr;
     const isFuture = dateStr > todayStr;
+    const now = new Date();
 
     for (const empId of allExpectedEmps) {
         if (processedEmpIds.has(empId)) continue;
@@ -381,7 +404,19 @@ export async function getTodayRoster(
         const rec = recMap.get(empId) as any;
         const emp = idToEmp.get(empId);
         const name = emp ? `${(emp as any).firstName} ${(emp as any).lastName || ''}`.trim() : 'Unknown';
-        const effectiveStatus = rec?.status || (isWeekend(dateStr) ? 'Weekend' : (isFuture ? 'N/A' : 'Absent'));
+
+        // Resolve shift config to know when shift starts
+        const shiftCfg = repo.resolveShiftConfig(emp, null);
+        const shiftStartTime = pktHHMMtoUtc(dateStr, shiftCfg.shiftStart);
+        const shiftNotStartedYet = isToday && now.getTime() < shiftStartTime.getTime();
+
+        let effectiveStatus = rec?.status;
+        if (!effectiveStatus) {
+            if (isWeekend(dateStr)) effectiveStatus = 'Weekend';
+            else if (isFuture || shiftNotStartedYet) effectiveStatus = 'N/A';
+            else effectiveStatus = 'Absent';
+        }
+
         const isNonWorking = ['Absent', 'On Leave', 'Holiday', 'Weekend', 'N/A'].includes(effectiveStatus);
 
         let unpunchedLateMins = rec?.lateMinutes || 0;
@@ -389,6 +424,11 @@ export async function getTodayRoster(
             const shiftStartTime = pktHHMMtoUtc(dateStr, rec?.shiftStart || '09:00');
             const diffFromShift = Math.floor((new Date(rec.checkIn).getTime() - shiftStartTime.getTime()) / 60000);
             unpunchedLateMins = diffFromShift > 30 ? diffFromShift - 30 : 0;
+        }
+
+        let note = rec?.note;
+        if (!note && shiftNotStartedYet) {
+            note = `Shift: ${shiftCfg.shiftStart} - ${shiftCfg.shiftEnd}`;
         }
 
         roster.push({
@@ -402,7 +442,7 @@ export async function getTodayRoster(
             workDurationMinutes: isNonWorking ? 0 : (rec?.workDurationMinutes || 0),
             lateMinutes: isNonWorking ? 0 : unpunchedLateMins,
             status: effectiveStatus,
-            note: rec?.note,
+            note,
             isWfh: isNonWorking ? false : (Boolean(rec?.isWfh) || /wfh|work from home/i.test(rec?.note || '')),
         });
     }
@@ -600,16 +640,16 @@ export async function autoCloseIncompleteRecords(dateStr: string): Promise<AutoC
         const cfg = repo.resolveShiftConfig(employee, deviceConfig);
         const isOvernight = !!cfg.isOvernight;
 
-        // If employee is on an overnight shift and dateStr is today, their shift ends tomorrow morning (e.g. 02:00 AM).
-        // Do not auto-close them while they are still in the middle of their shift!
-        if (isOvernight && dateStr === todayStr) {
-            skipped++;
-            continue;
-        }
-
         let autoCheckOut = pktHHMMtoUtc(dateStr, cfg.shiftEnd);
         if (isOvernight) {
             autoCheckOut = new Date(autoCheckOut.getTime() + 24 * 60 * 60 * 1000);
+        }
+
+        // If current time is still before the shift end time + buffer (60 mins), skip (employee may still be working or about to clock out)
+        const now = new Date();
+        if (now.getTime() < autoCheckOut.getTime() + 60 * 60 * 1000) {
+            skipped++;
+            continue;
         }
         // If they checked in AFTER the shift end, give them 30 mins, otherwise use shift end
         const effectiveCheckOut = autoCheckOut > checkInTime

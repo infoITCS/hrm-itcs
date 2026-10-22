@@ -6,10 +6,8 @@ import {
     Calendar,
     ArrowRight,
     User,
-    Star,
     Briefcase,
     FileCheck,
-    TrendingUp,
     Shield,
     Sparkles,
     Cake,
@@ -383,13 +381,13 @@ const Dashboard = () => {
             link: '/leave?tab=team-requests',
         },
         {
-            title: 'Pending Reviews',
+            title: 'Expense Approvals',
             value: loading ? '...' : pendingApprovalsCount,
             icon: FileCheck,
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             border: 'border-rose-100',
-            link: '/performance',
+            link: '/claim',
         },
     ];
 
@@ -423,13 +421,13 @@ const Dashboard = () => {
             link: '/leave?tab=team-requests',
         },
         {
-            title: 'Team Performance',
-            value: 'Overview',
-            icon: TrendingUp,
+            title: 'Expense Approvals',
+            value: loading ? '...' : pendingApprovalsCount,
+            icon: FileCheck,
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             border: 'border-rose-100',
-            link: '/performance',
+            link: '/claim',
         },
     ];
 
@@ -454,13 +452,13 @@ const Dashboard = () => {
             link: '/leave',
         },
         {
-            title: 'Performance Reviews',
-            value: 'Next',
-            icon: Star,
+            title: 'My Requests',
+            value: 'Overview',
+            icon: FileCheck,
             color: 'text-amber-600',
             bg: 'bg-amber-50',
             border: 'border-amber-100',
-            link: '/performance',
+            link: '/my-requests',
         },
         {
             title: 'My Claims',

@@ -390,7 +390,7 @@ export async function buildPayrollPayslips(
             });
             if (hasFullDayLeave) continue;
 
-            const penaltyType = statusToPenaltyType(r.status);
+            const penaltyType = statusToPenaltyType(r.status, r.lateMinutes);
             if (!penaltyType) continue;
 
             if (!gapPenaltiesMap[r.employeeId]) gapPenaltiesMap[r.employeeId] = [];
@@ -436,7 +436,7 @@ export async function buildPayrollPayslips(
         });
         if (hasFullDayLeave) continue;
 
-        const penaltyType = statusToPenaltyType(r.status);
+        const penaltyType = statusToPenaltyType(r.status, r.lateMinutes);
         if (!penaltyType) continue;
 
         if (!attendanceDeductionsMap[r.employeeId]) {

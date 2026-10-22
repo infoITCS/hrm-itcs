@@ -69,6 +69,38 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                         return done(null, false, { message: 'No email found in Microsoft profile' });
                     }
 
+                    const normalizedEmail = email.trim().toLowerCase();
+
+                    // 1. Strict Tenant ID Verification
+                    // Ensure the token was issued by our specific organization tenant (blocks personal Microsoft accounts and foreign tenants)
+                    const expectedTenantId = process.env.MICROSOFT_TENANT_ID;
+                    const tokenTenantId = profile._json?.tid || profile.tid;
+                    if (expectedTenantId && expectedTenantId !== 'organizations' && expectedTenantId !== 'common') {
+                        if (tokenTenantId && tokenTenantId.toLowerCase() !== expectedTenantId.toLowerCase()) {
+                            logger.warn(`⛔ [SSO Block] Account from non-organization tenant rejected. Token tid: ${tokenTenantId}, Expected: ${expectedTenantId}, email: ${normalizedEmail}`);
+                            return done(null, false, { 
+                                message: 'Access restricted: Sign-in is only permitted for verified members of the official organization tenant.' 
+                            });
+                        }
+                    }
+
+                    // 2. Strict Corporate Domain Verification
+                    // Only allow emails ending in authorized organization domain(s) (e.g. itcs.com.pk)
+                    const allowedDomains = (process.env.ALLOWED_SSO_DOMAINS || 'itcs.com.pk')
+                        .split(',')
+                        .map(d => d.trim().toLowerCase())
+                        .filter(Boolean);
+
+                    const emailParts = normalizedEmail.split('@');
+                    const emailDomain = emailParts[1];
+
+                    if (!emailDomain || !allowedDomains.includes(emailDomain)) {
+                        logger.warn(`⛔ [SSO Block] Non-tenant email domain rejected: ${normalizedEmail}. Allowed domains: ${allowedDomains.join(', ')}`);
+                        return done(null, false, { 
+                            message: `Access restricted: Only official company accounts (@${allowedDomains.join(', @')}) can sign in with Microsoft. Personal accounts (e.g. Gmail) are not permitted.` 
+                        });
+                    }
+
                     // Fetch Profile Photo from Microsoft Graph API
                     let profilePhotoBase64 = null;
                     try {
@@ -86,12 +118,12 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                     }
 
                     // Find existing user or create new one
-                    let user = await User.findOne({ email });
+                    let user = await User.findOne({ email: normalizedEmail });
 
                     if (!user) {
                         // Create new user with default Employee role
                         user = await User.create({
-                            email,
+                            email: normalizedEmail,
                             role: UserRole.EMPLOYEE, // Default role for new SSO users
                             isActive: true, // Default to active for SSO
                             firstName: profile.name?.givenName || 'Unknown',
@@ -140,12 +172,11 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET && pr
                         let employeeDoc = await Employee.findOne({ userId: user._id.toString() });
 
                         if (!employeeDoc) {
-                            // 2. If not linked, check if an employee record exists with this email/workEmail
+                            // 2. If not linked, check if an active employee record exists with this official workEmail
+                            // NOTE: We strictly match workEmail (NOT personal email) to ensure personal addresses are never auto-linked via SSO
                             employeeDoc = await Employee.findOne({
-                                $or: [
-                                    { email: { $regex: new RegExp('^' + email.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') } },
-                                    { workEmail: { $regex: new RegExp('^' + email.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') } }
-                                ]
+                                workEmail: { $regex: new RegExp('^' + normalizedEmail.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') },
+                                isDeleted: { $ne: true }
                             });
 
                             if (employeeDoc) {

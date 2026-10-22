@@ -239,15 +239,26 @@ const isEmployeeProfileComplete = (emp: any, user?: any): boolean => {
         }
     }, { timezone: 'Asia/Karachi' });
 
-    // ── Auto-Close Incomplete Records: Run every day at 11:05 PM PKT (18:05 UTC) ─
+    // ── Auto-Close Incomplete Records: Nightly run at 11:05 PM PKT (Day shifts) ─
     cron.schedule('5 23 * * *', async () => {
         const dateStr = new Date().toISOString().slice(0, 10);
-        logger.info(`[Scheduler] Running auto-close for ${dateStr}...`);
+        logger.info(`[Scheduler] Running nightly auto-close for ${dateStr}...`);
         try {
             const result = await autoCloseIncompleteRecords();
-            logger.info(`[Scheduler] Auto-close done. Processed: ${result.processed}, Skipped: ${result.skipped}`);
+            logger.info(`[Scheduler] Nightly auto-close done. Processed: ${result.processed}, Skipped: ${result.skipped}`);
         } catch (error) {
-            logger.error('[Scheduler] Error in auto-close task:', error);
+            logger.error('[Scheduler] Error in nightly auto-close task:', error);
+        }
+    }, { timezone: 'Asia/Karachi' });
+
+    // ── Auto-Close Incomplete Records: Morning run at 10:00 AM PKT (Overnight / Second shifts) ─
+    cron.schedule('0 10 * * *', async () => {
+        logger.info('[Scheduler] Running morning auto-close for overnight shifts...');
+        try {
+            const result = await autoCloseIncompleteRecords();
+            logger.info(`[Scheduler] Morning auto-close done. Processed: ${result.processed}, Skipped: ${result.skipped}`);
+        } catch (error) {
+            logger.error('[Scheduler] Error in morning auto-close task:', error);
         }
     }, { timezone: 'Asia/Karachi' });
 

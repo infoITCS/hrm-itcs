@@ -9,6 +9,7 @@ export interface AuthRequest extends Request {
         email?: string;
         role: string; // 'admin', 'hr', 'employee'
     };
+    teamScope?: string[] | null;
 }
 
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {

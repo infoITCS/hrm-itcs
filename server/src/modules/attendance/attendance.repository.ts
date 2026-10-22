@@ -252,7 +252,8 @@ export async function findEmployeeById(employeeId: string) {
 
 export async function findEmployeesByIds(employeeIds: string[]) {
     return Employee.find({ employeeId: { $in: employeeIds }, isDeleted: { $ne: true } })
-        .select('employeeId firstName lastName avatar')
+        .select('employeeId firstName lastName avatar jobInfo.shift jobInfo.workLocation')
+        .populate('jobInfo.shift')
         .lean();
 }
 

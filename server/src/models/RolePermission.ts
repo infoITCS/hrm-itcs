@@ -77,6 +77,13 @@ export async function bootstrapPermissions() {
                 { $setOnInsert: { permissions: d.permissions } },
                 { upsert: true }
             );
+            // Ensure performance module flag is activated for authorized roles
+            if (d.permissions.performance) {
+                await RolePermission.updateOne(
+                    { role: d.role, 'permissions.performance': { $ne: true } },
+                    { $set: { 'permissions.performance': true } }
+                );
+            }
         }
 
         // Auto-encrypt any legacy unhashed passwords or salary PINs in the database

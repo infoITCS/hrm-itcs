@@ -37,7 +37,7 @@ const RoleManagement = () => {
         { key: 'requests', name: 'Custom Requests' },
         { key: 'provident-fund', name: 'Provident Fund' },
         { key: 'recruitment', name: 'Recruitment' },
-        { key: 'performance', name: 'Performance' },
+        // { key: 'performance', name: 'Performance' },
         { key: 'settings', name: 'System Settings & Roles' }
     ];
 

@@ -23,6 +23,9 @@ export const requireModuleAccess = (module: string) =>
         try {
             const perm = await RolePermission.findOne({ role }).lean() as any;
             if (perm?.permissions?.[module]) return next();
+            if (module === 'performance' && ['super-admin', 'admin', 'hr', 'manager', 'employee'].includes(role)) {
+                return next();
+            }
             return res.status(403).json({ message: `Access to the '${module}' module is not enabled for your role.` });
         } catch (err) {
             next(err);

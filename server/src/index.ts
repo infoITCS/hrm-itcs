@@ -70,6 +70,7 @@ import documentRoutes from './routes/documentRoutes';
 import customRequestCategoryRoutes from './routes/customRequestCategoryRoutes';
 import payrollRoutes from './routes/payrollRoutes';
 import workflowTaskRoutes from './routes/workflowTaskRoutes';
+import performanceRoutes from './routes/performanceRoutes';
 import { bootstrapPermissions } from './models/RolePermission';
 import { requireModuleAccess } from './middleware/moduleAccess';
 import { authenticate } from './middleware/auth';
@@ -396,6 +397,7 @@ prefixes.forEach(p => {
     app.use(`${p}/request-categories`, customRequestCategoryRoutes);
     app.use(`${p}/payroll`, authenticate, payrollRoutes);
     app.use(`${p}/workflow-tasks`, workflowTaskRoutes);
+    app.use(`${p}/performance`, authenticate, requireModuleAccess('performance'), performanceRoutes);
 });
 
 app.get('/', (req, res) => {

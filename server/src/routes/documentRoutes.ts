@@ -2558,6 +2558,9 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
 
         // Save official document verification record
         const targetEmployeeId = variables.employeeId || req.body.employeeId || mergedVars.employeeId || 'N/A';
+        const reportingMgrId = variables.reportingManagerId || mergedVars.reportingManagerId || '';
+        const reportingMgrName = mergedVars.reportingManager || variables.reportingManager || '';
+
         await OfficialDocument.create({
             documentId,
             employeeId: targetEmployeeId,
@@ -2573,9 +2576,29 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
                 designation: mergedVars.designation,
                 department: mergedVars.department,
                 grossSalary: mergedVars.grossSalary,
-                joiningDate: mergedVars.joiningDate
+                joiningDate: mergedVars.joiningDate,
+                reportingManager: reportingMgrName,
+                reportingManagerId: reportingMgrId || undefined
             }
         });
+
+        // Auto-assign reporting manager to employee if recipient is an existing employee in the system
+        if (reportingMgrId && targetEmployeeId && targetEmployeeId !== 'N/A') {
+            try {
+                await Employee.findOneAndUpdate(
+                    {
+                        $or: [
+                            { employeeId: targetEmployeeId },
+                            ...(mongoose.Types.ObjectId.isValid(targetEmployeeId) ? [{ _id: targetEmployeeId }] : [])
+                        ]
+                    },
+                    { $set: { 'jobInfo.reportingManager': reportingMgrId } }
+                );
+                logger.info(`[Dispatcher] Auto-assigned reporting manager ${reportingMgrId} to employee ${targetEmployeeId}`);
+            } catch (mgrErr) {
+                logger.warn('[Dispatcher] Failed to auto-assign reportingManager to employee:', mgrErr);
+            }
+        }
 
         const emailSubject = subject || `${documentType}: ${company?.name || 'ITCS'} - ${recipientName}`;
         const customNoteHtml = emailMessage
@@ -2599,6 +2622,7 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
                         <strong>Date of Issuance:</strong> ${formatOrdinalDate(new Date())}<br/>
                         ${mergedVars.designation ? `<strong>Position / Role:</strong> ${mergedVars.designation}<br/>` : ''}
                         ${mergedVars.joiningDate ? `<strong>Joining Date:</strong> ${mergedVars.joiningDate}<br/>` : ''}
+                        ${reportingMgrName ? `<strong>Reporting Manager:</strong> ${reportingMgrName}<br/>` : ''}
                     </p>
                 </div>
                 <p style="color: #334155; font-size: 14px; line-height: 1.6;">
@@ -2654,7 +2678,9 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
             metadata: {
                 designation: mergedVars.designation,
                 department: mergedVars.department,
-                joiningDate: mergedVars.joiningDate
+                joiningDate: mergedVars.joiningDate,
+                reportingManager: reportingMgrName,
+                reportingManagerId: reportingMgrId || undefined
             }
         });
 
@@ -2678,7 +2704,7 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
                     targetEmail: recipientEmail,
                     department: 'Tech',
                     title: `Provision Official Email (@itcs.com.pk) for ${recipientName}`,
-                    description: `Official ${documentType} (Ref: ${documentId}) generated and sent to ${recipientName}. Designation: ${mergedVars.designation || 'New Hire'}, Department: ${mergedVars.department || 'Unassigned'}, Joining Date: ${mergedVars.joiningDate || 'N/A'}, Personal Email: ${recipientEmail}. Please provision their official corporate work email ID (@itcs.com.pk) and Microsoft 365 tenant credentials.`,
+                    description: `Official ${documentType} (Ref: ${documentId}) generated and sent to ${recipientName}. Designation: ${mergedVars.designation || 'New Hire'}, Department: ${mergedVars.department || 'Unassigned'}, Joining Date: ${mergedVars.joiningDate || 'N/A'}, Reporting Manager: ${reportingMgrName || 'N/A'}, Personal Email: ${recipientEmail}. Please provision their official corporate work email ID (@itcs.com.pk) and Microsoft 365 tenant credentials.`,
                     assignedEmail: techEmail || undefined,
                     status: 'Pending'
                 });
@@ -2705,6 +2731,7 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
                                     <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Role / Designation:</td><td style="color: #4338ca; font-weight: 700;">${mergedVars.designation || 'N/A'}</td></tr>
                                     <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Department:</td><td style="color: #0f172a;">${mergedVars.department || 'N/A'}</td></tr>
                                     <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Joining Date:</td><td style="color: #0f172a;">${mergedVars.joiningDate || 'N/A'}</td></tr>
+                                    <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Reporting Manager:</td><td style="color: #0f172a;">${reportingMgrName || 'N/A'}</td></tr>
                                     <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Document Ref:</td><td style="color: #64748b; font-mono;">${documentId}</td></tr>
                                     <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Dispatched By:</td><td style="color: #0f172a;">${authReq.user?.email || 'HR Department'}</td></tr>
                                 </table>

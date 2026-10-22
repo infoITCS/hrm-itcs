@@ -23,11 +23,17 @@ export const NON_WORKING_STATUSES: AttendanceStatus[] = ['Absent', 'On Leave', '
 export const isNonWorkingStatus = (status?: string | null): boolean =>
     Boolean(status && NON_WORKING_STATUSES.includes(status as AttendanceStatus));
 
-export function getAttendanceLeaveDeductionDays(status?: string | null): number {
+export function getAttendanceLeaveDeductionDays(status?: string | null, record?: any): number {
     if (!status) return 0;
-    if (status === 'Half-Day' || status === 'Half-Day Leave' || status === 'Late') return 0.5;
     if (status === 'On Leave') return 1.0;
-    // Absent & Early Leave do NOT deduct from leave balance
+    if (status === 'Half-Day' || status === 'Half-Day Leave' || status === 'Early Leave') return 0.5;
+    if (status === 'Late') {
+        if (record && (record.lateMinutes > 30 || (record.note && /full day/i.test(record.note)))) {
+            return 1.0;
+        }
+        return 0.5;
+    }
+    // Absent does NOT deduct from leave balance (billed as unpaid absence in payroll)
     return 0;
 }
 
@@ -81,8 +87,13 @@ export async function syncAttendanceLeaveBalance(
             return;
         }
 
-        const oldDays = getAttendanceLeaveDeductionDays(oldStatus);
-        const newDays = getAttendanceLeaveDeductionDays(newStatus);
+        const attRecord = await AttendanceRecord.findOne({
+            employeeId: { $in: lookupIds },
+            date: dateStr
+        }).lean() as any;
+
+        const oldDays = getAttendanceLeaveDeductionDays(oldStatus, attRecord);
+        const newDays = getAttendanceLeaveDeductionDays(newStatus, attRecord);
         const delta = Number((newDays - oldDays).toFixed(1));
 
         if (delta === 0) return;
@@ -149,11 +160,6 @@ export async function syncAttendanceLeaveBalance(
 
         // Synchronize LeaveRequest transaction record in Leave module
         if (newDays > 0) {
-            const attRecord = await AttendanceRecord.findOne({
-                employeeId: { $in: lookupIds },
-                date: dateStr
-            }).lean() as any;
-
             let punchDetails = '';
             if (attRecord?.checkIn && attRecord?.checkOut) {
                 punchDetails = ` (${formatPktTime(attRecord.checkIn)} – ${formatPktTime(attRecord.checkOut)})`;
@@ -163,7 +169,11 @@ export async function syncAttendanceLeaveBalance(
 
             let reasonText = `Attendance Deduction: ${newStatus}${punchDetails}`;
             if (newStatus === 'Late') {
-                reasonText = `Attendance Deduction: Late Arrival${punchDetails}`;
+                reasonText = newDays === 1.0
+                    ? `Attendance Deduction: Late Arrival (>1 hr)${punchDetails}`
+                    : `Attendance Deduction: Late Arrival${punchDetails}`;
+            } else if (newStatus === 'Early Leave') {
+                reasonText = `Attendance Deduction: Early Departure${punchDetails}`;
             } else if (newStatus === 'Half-Day') {
                 reasonText = `Attendance Deduction: Half Day Absent${punchDetails}`;
             } else if (newStatus === 'Half-Day Leave') {

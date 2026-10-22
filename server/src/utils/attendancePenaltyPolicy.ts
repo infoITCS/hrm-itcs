@@ -1,6 +1,4 @@
-/** HR policy: late arrival before 2:00 PM → half-day cut; at/after 2:00 PM → full-day cut */
-export const LATE_FULL_DAY_CUTOFF_TIME = '14:00';
-
+/** HR policy: late arrival 31-60 mins past shift start → half-day cut; > 60 mins → full-day cut */
 export type AttendancePenaltyType = 'half' | 'full';
 
 export interface AttendancePenaltyEvent {
@@ -9,9 +7,13 @@ export interface AttendancePenaltyEvent {
 }
 
 /** Map attendance record status to a payroll penalty type, if any. */
-export function statusToPenaltyType(status: string): AttendancePenaltyType | null {
-    if (status === 'Late' || status === 'Half-Day' || status === 'Early Leave') return 'half';
+export function statusToPenaltyType(status: string, lateMinutes?: number): AttendancePenaltyType | null {
     if (status === 'Absent') return 'full';
+    if (status === 'Early Leave' || status === 'Half-Day' || status === 'Half-Day Leave') return 'half';
+    if (status === 'Late') {
+        // Arrival > 60m after shift start means lateMinutes > 30 (beyond the 30m grace)
+        return (lateMinutes !== undefined && lateMinutes > 30) ? 'full' : 'half';
+    }
     return null;
 }
 

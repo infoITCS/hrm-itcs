@@ -359,16 +359,18 @@ export async function autoCloseIncompleteRecords(dateStr?: string): Promise<{
         const graceMins    = empShift?.graceMinutes     ?? deviceConfig?.graceMinutes           ?? DEFAULT_GRACE_MINS;
         const isOvernight  = shiftStart > shiftEnd;
 
-        // Skip auto-closing an overnight shift if it's currently today (shift ends tomorrow morning)
-        if (isOvernight && recDateStr === todayStr) {
-            skipped++;
-            continue;
-        }
-
         let autoCheckOut = buildShiftTime(recDateStr, shiftEnd);
         if (isOvernight) {
             autoCheckOut = new Date(autoCheckOut.getTime() + 24 * 60 * 60 * 1000);
         }
+
+        // If current time is still before the shift end time + buffer (60 mins), skip (employee may still be working)
+        const now = new Date();
+        if (now.getTime() < autoCheckOut.getTime() + 60 * 60 * 1000) {
+            skipped++;
+            continue;
+        }
+
         const effectiveCheckOut = autoCheckOut > checkInTime ? autoCheckOut : new Date(checkInTime.getTime() + 30 * 60 * 1000);
 
         let rawMins = Math.floor((effectiveCheckOut.getTime() - checkInTime.getTime()) / 60000);
@@ -391,8 +393,7 @@ export async function autoCloseIncompleteRecords(dateStr?: string): Promise<{
         const isEarlyLeave = earlyDiff > 10;
 
         let status: AttendanceStatus;
-        if (diffMins > 60) status = 'Half-Day';
-        else if (diffMins > 30) status = 'Late';
+        if (diffMins > graceMins) status = 'Late';
         else if (workDurationMinutes < halfDayHrs * 60) status = 'Half-Day';
         else if (isEarlyLeave) status = 'Early Leave';
         else status = 'Present';

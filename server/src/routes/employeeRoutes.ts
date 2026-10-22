@@ -535,13 +535,24 @@ router.patch('/:id/org-placement', authenticate, async (req: Request, res: Respo
 router.get('/dropdown', authenticate, async (req: Request, res: Response, next: Function) => {
     try {
         const employees = await Employee.find({ isDeleted: { $ne: true } })
-            .select('employeeId firstName lastName jobInfo.designation jobInfo.department')
+            .select('employeeId firstName lastName email workEmail phone jobInfo.designation jobInfo.department')
             .sort({ firstName: 1 })
             .lean();
 
         res.json(employees.map((e: any) => ({
             value: e.employeeId,
-            label: `${e.firstName} ${e.lastName} (${e.employeeId})`
+            label: `${(e.firstName || '').trim()} ${(e.lastName || '').trim()} (${e.employeeId})`.trim(),
+            employeeId: e.employeeId,
+            _id: String(e._id || ''),
+            firstName: e.firstName || '',
+            lastName: e.lastName || '',
+            email: e.email || '',
+            workEmail: e.workEmail || '',
+            phone: e.phone || '',
+            jobInfo: {
+                designation: e.jobInfo?.designation || '',
+                department: e.jobInfo?.department || ''
+            }
         })));
     } catch (err: any) {
         next(err);

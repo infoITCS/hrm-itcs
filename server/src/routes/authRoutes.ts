@@ -387,23 +387,35 @@ router.get("/microsoft", (req: Request, res: Response, next: NextFunction) => {
 router.get(
   "/microsoft/callback",
   (req: Request, res: Response, next: NextFunction) => {
+    const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
     if (
       !process.env.MICROSOFT_CLIENT_ID ||
       !process.env.MICROSOFT_CLIENT_SECRET
     ) {
-      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       return res.redirect(`${clientUrl}/login?error=microsoft_not_configured`);
     }
+
+    const oauthError = req.query.error as string;
+    if (oauthError) {
+      if (oauthError === 'interaction_required' || oauthError === 'login_required' || oauthError === 'access_denied') {
+        logger.info(`[Microsoft SSO] Expected interactive login fallback: ${oauthError}`);
+        return res.redirect(`${clientUrl}/login?manual=true`);
+      }
+      logger.warn(`[Microsoft SSO] OAuth callback error from provider: ${oauthError}`);
+      return res.redirect(`${clientUrl}/login?error=${encodeURIComponent(oauthError)}`);
+    }
+
     passport.authenticate("microsoft", { session: false }, (err: any, user: any, info: any) => {
-      const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173";
       if (err) {
         logger.error("Passport Auth Error:", err.message || String(err));
         return res.redirect(`${clientUrl}/login?error=callback_failed`);
       }
       if (!user) {
-        const isSuspended = info?.message?.toLowerCase().includes('deactivated') || info?.message?.toLowerCase().includes('suspended');
-        const errorType = isSuspended ? 'account_suspended' : 'login_failed';
-        const msg = info?.message || 'Sign-in could not be completed. Please try again.';
+        const infoMsg = info?.message || '';
+        const isSuspended = infoMsg.toLowerCase().includes('deactivated') || infoMsg.toLowerCase().includes('suspended');
+        const isDomainRestricted = infoMsg.toLowerCase().includes('official company') || infoMsg.toLowerCase().includes('tenant');
+        const errorType = isSuspended ? 'account_suspended' : (isDomainRestricted ? 'domain_restricted' : 'login_failed');
+        const msg = infoMsg || 'Sign-in could not be completed. Please try again.';
         return res.redirect(`${clientUrl}/login?error=${errorType}&msg=${encodeURIComponent(msg)}`);
       }
       req.user = user;

@@ -46,8 +46,8 @@ interface DutyPreset {
 interface EmployeeOption {
     _id?: string;
     employeeId: string;
-    firstName: string;
-    lastName: string;
+    firstName?: string;
+    lastName?: string;
     email?: string;
     workEmail?: string;
     phone?: string;
@@ -55,6 +55,8 @@ interface EmployeeOption {
         designation?: string;
         department?: string;
     };
+    value?: string;
+    label?: string;
 }
 
 interface DispatchLog {
@@ -154,14 +156,48 @@ export const DocumentDispatcher: React.FC = () => {
     ]);
     const [newDutyInput, setNewDutyInput] = useState('');
 
-    // Compensation & Terms
-    const [basicSalary, setBasicSalary] = useState('120,000');
-    const [allowances, setAllowances] = useState('30,000');
-    const [grossSalary, setGrossSalary] = useState('150,000');
+    // Helper to auto-calculate gross salary from basic + allowances
+    const calculateGross = (b: string, a: string) => {
+        const cleanB = parseFloat(String(b).replace(/[^0-9.]/g, '')) || 0;
+        const cleanA = parseFloat(String(a).replace(/[^0-9.]/g, '')) || 0;
+        const total = cleanB + cleanA;
+        return total > 0 ? total.toLocaleString('en-US') : '';
+    };
+
+    // Compensation & Terms (defaults matching reference image)
+    const [basicSalary, setBasicSalary] = useState('10,000');
+    const [allowances, setAllowances] = useState('10,000');
+    const [grossSalary, setGrossSalary] = useState('20,000');
     const [probationSalary, setProbationSalary] = useState('150,000');
     const [confirmedSalary, setConfirmedSalary] = useState('175,000');
     const [commissionStructure, setCommissionStructure] = useState('Performance-based quarterly bonuses as per company policy');
     const [benefitsList, setBenefitsList] = useState('Meal Allowance, Health Insurance / OPD Reimbursement, Provident Fund, Performance Bonuses');
+
+    const handleBasicSalaryChange = (val: string) => {
+        setBasicSalary(val);
+        const newGross = calculateGross(val, allowances);
+        setGrossSalary(newGross);
+    };
+
+    const handleAllowancesChange = (val: string) => {
+        setAllowances(val);
+        const newGross = calculateGross(basicSalary, val);
+        setGrossSalary(newGross);
+    };
+
+    const handleSelectReportingManager = (empId: string) => {
+        setReportingManagerId(empId);
+        if (!empId) {
+            setReportingManager('');
+            return;
+        }
+        const emp = employees.find(e => e.employeeId === empId || e.value === empId || e._id === empId);
+        if (emp) {
+            const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || (emp.label ? emp.label.split(' (')[0] : empId);
+            const designationText = emp.jobInfo?.designation ? ` (${emp.jobInfo.designation})` : '';
+            setReportingManager(`${fullName}${designationText}`.trim());
+        }
+    };
 
     // Terms & Schedule
     const [joiningDate, setJoiningDate] = useState(() => {
@@ -175,6 +211,8 @@ export const DocumentDispatcher: React.FC = () => {
     const [noticePeriod, setNoticePeriod] = useState('15 Days during probation / 30 Days after confirmation');
     const [workLocation, setWorkLocation] = useState('Karachi Office (On-site)');
     const [reportingManager, setReportingManager] = useState('Engineering Manager / CTO');
+    const [reportingManagerId, setReportingManagerId] = useState('');
+    const [isCustomManager, setIsCustomManager] = useState(false);
 
     // Optional email body note
     const [customEmailMessage, setCustomEmailMessage] = useState('');
@@ -263,9 +301,10 @@ export const DocumentDispatcher: React.FC = () => {
     // Handle employee selection
     const handleSelectEmployee = (empId: string) => {
         setSelectedEmployeeId(empId);
-        const emp = employees.find(e => e.employeeId === empId || e._id === empId);
+        const emp = employees.find(e => e.employeeId === empId || e.value === empId || e._id === empId);
         if (emp) {
-            setRecipientName(`${emp.firstName || ''} ${emp.lastName || ''}`.trim());
+            const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || (emp.label ? emp.label.split(' (')[0] : empId);
+            setRecipientName(fullName);
             const work = emp.workEmail || '';
             const personal = emp.email || '';
             if (emailType === 'work' && work) {
@@ -289,14 +328,17 @@ export const DocumentDispatcher: React.FC = () => {
         if (newDocType.toLowerCase().includes('internship')) {
             setDesignation('Software Engineering Intern');
             setDepartment('Engineering');
-            setGrossSalary('35,000');
-            setBasicSalary('Fixed Monthly Stipend');
-            setProbationSalary('35,000');
-            setConfirmedSalary('35,000');
+            setGrossSalary('20,000');
+            setBasicSalary('20,000');
+            setAllowances('0');
+            setProbationSalary('20,000');
+            setConfirmedSalary('20,000');
             setCommissionStructure('Fixed Monthly Stipend');
             setProbationDuration('3 Months (12 Weeks)');
             setBenefitsList('Certificate of Completion, Senior Mentorship, Meal Allowance');
             setReportingManager('Lead Software Engineer / Engineering Manager');
+            setReportingManagerId('');
+            setIsCustomManager(false);
             setJobDuties([
                 'Participate in hands-on development sprints under senior engineering mentorship.',
                 'Assist in writing clean, testable code, unit tests, and bug resolution for web applications.',
@@ -307,15 +349,17 @@ export const DocumentDispatcher: React.FC = () => {
         } else if (newDocType.toLowerCase().includes('job') || newDocType.toLowerCase().includes('contract') || newDocType.toLowerCase().includes('appointment')) {
             setDesignation('Software Engineer');
             setDepartment('Engineering');
-            setBasicSalary('120,000');
-            setAllowances('30,000');
-            setGrossSalary('150,000');
+            setBasicSalary('10,000');
+            setAllowances('10,000');
+            setGrossSalary('20,000');
             setProbationSalary('150,000');
             setConfirmedSalary('175,000');
             setCommissionStructure('Performance-based quarterly bonuses as per company policy');
             setProbationDuration('3 Months (90 Days)');
             setNoticePeriod('15 Days during probation / 30 Days after confirmation');
             setReportingManager('Engineering Manager / CTO');
+            setReportingManagerId('');
+            setIsCustomManager(false);
             setBenefitsList('Meal Allowance, Health Insurance / OPD Reimbursement, Provident Fund, Performance Bonuses');
             setJobDuties([
                 'Architect, develop, and maintain high-performance web applications using modern TypeScript and Node.js.',
@@ -396,12 +440,13 @@ export const DocumentDispatcher: React.FC = () => {
             employmentType: isInternship ? 'Internship' : 'Full-Time',
             companyResources: 'Official Laptop, Corporate Email Account, and Access Credentials',
             taxCondition: 'Subject to applicable income tax laws and statutory tax brackets',
-            stipend: grossSalary,
+            stipend: isInternship ? (grossSalary || '20,000') : grossSalary,
             startDate: joiningDate,
             internshipStartDate: joiningDate,
             noticePeriod: isInternship ? '15 Days written notice' : noticePeriod,
             workLocation,
-            reportingManager,
+            reportingManager: reportingManager.trim(),
+            reportingManagerId: reportingManagerId || undefined,
             city: cleanCity,
             personalCity: cleanCity,
             phone: recipientPhone,
@@ -550,6 +595,7 @@ export const DocumentDispatcher: React.FC = () => {
                     recipientName: recipientName.trim(),
                     recipientEmail: recipientEmail.trim().toLowerCase(),
                     emailType,
+                    employeeId: recipientMode === 'employee' ? (selectedEmployeeId || undefined) : undefined,
                     subject: `${documentType}: IT Consulting & Services - ${recipientName.trim()}`,
                     emailMessage: customEmailMessage.trim(),
                     rolePreset: selectedPresetId,
@@ -755,11 +801,16 @@ export const DocumentDispatcher: React.FC = () => {
                                         <option value="">
                                             {loadingEmployees ? '-- Loading employees... --' : '-- Choose employee from list --'}
                                         </option>
-                                        {employees.map(emp => (
-                                            <option key={emp.employeeId || emp._id} value={emp.employeeId || emp._id}>
-                                                {emp.firstName} {emp.lastName} ({emp.employeeId}) • {emp.jobInfo?.designation || 'Staff'}
-                                            </option>
-                                        ))}
+                                        {employees.map(emp => {
+                                            const empId = emp.employeeId || emp.value || emp._id || '';
+                                            const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || (emp.label ? emp.label.split(' (')[0] : empId);
+                                            const desig = emp.jobInfo?.designation || '';
+                                            return (
+                                                <option key={empId} value={empId}>
+                                                    {fullName} {empId ? `(${empId})` : ''} • {desig || 'Staff'}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                 </div>
                             )}
@@ -994,51 +1045,26 @@ export const DocumentDispatcher: React.FC = () => {
                                         <DollarSign size={18} />
                                     </div>
                                     <div>
-                                        <h3 className="text-sm font-bold text-slate-800">3. Internship Stipend & Learning Package</h3>
-                                        <p className="text-xs text-slate-400">Specify monthly stipend allowance and learning perks</p>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-semibold text-slate-600">Monthly Stipend (PKR)</label>
-                                        <input
-                                            type="text"
-                                            value={grossSalary}
-                                            onChange={(e) => {
-                                                setGrossSalary(e.target.value);
-                                                setBasicSalary(e.target.value);
-                                                setProbationSalary(e.target.value);
-                                                setConfirmedSalary(e.target.value);
-                                            }}
-                                            placeholder="e.g. 35,000 (or type Unpaid)"
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-semibold text-slate-600">Stipend Classification</label>
-                                        <select
-                                            value={commissionStructure}
-                                            onChange={(e) => setCommissionStructure(e.target.value)}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                                        >
-                                            <option value="Fixed Monthly Stipend">Fixed Monthly Stipend</option>
-                                            <option value="Performance & Milestone Based Stipend">Performance & Milestone Based Stipend</option>
-                                            <option value="Unpaid / Academic Credit Only">Unpaid / Academic Credit Only</option>
-                                        </select>
+                                        <h3 className="text-sm font-bold text-slate-800">3. Internship Stipend</h3>
+                                        <p className="text-xs text-slate-400">Monthly stipend allowance for the internship program</p>
                                     </div>
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-600">Learning Perks & Facilities</label>
+                                    <label className="text-xs font-semibold text-slate-600">Monthly Stipend (PKR)</label>
                                     <input
                                         type="text"
-                                        value={benefitsList}
-                                        onChange={(e) => setBenefitsList(e.target.value)}
-                                        placeholder="e.g. Certificate of Completion, Senior Mentorship, Meal Allowance"
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                                        value={grossSalary}
+                                        onChange={(e) => {
+                                            setGrossSalary(e.target.value);
+                                            setBasicSalary(e.target.value);
+                                            setProbationSalary(e.target.value);
+                                            setConfirmedSalary(e.target.value);
+                                        }}
+                                        placeholder="20,000"
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                                     />
+                                    <p className="text-[11px] text-slate-400 mt-1">Default stipend amount is PKR 20,000/month.</p>
                                 </div>
                             </div>
                         ) : (
@@ -1059,8 +1085,8 @@ export const DocumentDispatcher: React.FC = () => {
                                         <input
                                             type="text"
                                             value={basicSalary}
-                                            onChange={(e) => setBasicSalary(e.target.value)}
-                                            placeholder="120,000"
+                                            onChange={(e) => handleBasicSalaryChange(e.target.value)}
+                                            placeholder="10,000"
                                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                                         />
                                     </div>
@@ -1070,20 +1096,25 @@ export const DocumentDispatcher: React.FC = () => {
                                         <input
                                             type="text"
                                             value={allowances}
-                                            onChange={(e) => setAllowances(e.target.value)}
-                                            placeholder="30,000"
+                                            onChange={(e) => handleAllowancesChange(e.target.value)}
+                                            placeholder="10,000"
                                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                                         />
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-xs font-semibold text-slate-600">Total Gross Salary (PKR)</label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-semibold text-slate-600">Total Gross Salary (PKR)</label>
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+                                                Auto
+                                            </span>
+                                        </div>
                                         <input
                                             type="text"
                                             value={grossSalary}
                                             onChange={(e) => setGrossSalary(e.target.value)}
-                                            placeholder="150,000"
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                            placeholder="20,000"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-bold text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                                         />
                                     </div>
                                 </div>
@@ -1118,7 +1149,7 @@ export const DocumentDispatcher: React.FC = () => {
                                         type="text"
                                         value={commissionStructure}
                                         onChange={(e) => setCommissionStructure(e.target.value)}
-                                        placeholder="Quarterly performance bonus or sales commission"
+                                        placeholder="Performance-based quarterly bonuses as per company policy"
                                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                                     />
                                 </div>
@@ -1129,7 +1160,7 @@ export const DocumentDispatcher: React.FC = () => {
                                         type="text"
                                         value={benefitsList}
                                         onChange={(e) => setBenefitsList(e.target.value)}
-                                        placeholder="Meal Allowance, Health Insurance, Provident Fund"
+                                        placeholder="Meal Allowance, Health Insurance / OPD Reimbursement, Provident Fund, Performance Bonuses"
                                         className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                                     />
                                 </div>
@@ -1199,14 +1230,49 @@ export const DocumentDispatcher: React.FC = () => {
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1">
-                                        <label className="text-xs font-semibold text-slate-600">Assigned Mentor / Supervisor</label>
-                                        <input
-                                            type="text"
-                                            value={reportingManager}
-                                            onChange={(e) => setReportingManager(e.target.value)}
-                                            placeholder="e.g. Senior Software Engineer / Team Lead"
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                                        />
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-semibold text-slate-600">Assigned Mentor / Supervisor</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsCustomManager(!isCustomManager)}
+                                                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+                                            >
+                                                {isCustomManager ? 'Select from Staff Roster' : 'Type Custom Title'}
+                                            </button>
+                                        </div>
+                                        {isCustomManager ? (
+                                            <input
+                                                type="text"
+                                                value={reportingManager}
+                                                onChange={(e) => {
+                                                    setReportingManager(e.target.value);
+                                                    setReportingManagerId('');
+                                                }}
+                                                placeholder="e.g. Senior Software Engineer / Team Lead"
+                                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                                            />
+                                        ) : (
+                                            <select
+                                                value={reportingManagerId}
+                                                onChange={(e) => handleSelectReportingManager(e.target.value)}
+                                                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                                            >
+                                                <option value="">
+                                                    {loadingEmployees ? '-- Loading staff roster... --' : '-- Choose mentor from existing staff --'}
+                                                </option>
+                                                {employees.map(emp => {
+                                                    const empId = emp.employeeId || emp.value || emp._id || '';
+                                                    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || (emp.label ? emp.label.split(' (')[0] : empId);
+                                                    const desig = emp.jobInfo?.designation || '';
+                                                    const dept = emp.jobInfo?.department || '';
+                                                    return (
+                                                        <option key={empId} value={empId}>
+                                                            {fullName} {empId ? `(${empId})` : ''} • {desig || 'Staff'}{dept ? ` (${dept})` : ''}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        )}
                                     </div>
 
                                     <div className="space-y-1">
@@ -1306,14 +1372,49 @@ export const DocumentDispatcher: React.FC = () => {
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-600">Reporting Manager</label>
-                                    <input
-                                        type="text"
-                                        value={reportingManager}
-                                        onChange={(e) => setReportingManager(e.target.value)}
-                                        placeholder="Engineering Manager / CTO"
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                                    />
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-semibold text-slate-600">Reporting Manager</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsCustomManager(!isCustomManager)}
+                                            className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+                                        >
+                                            {isCustomManager ? 'Select from Staff Roster' : 'Type Custom Title'}
+                                        </button>
+                                    </div>
+                                    {isCustomManager ? (
+                                        <input
+                                            type="text"
+                                            value={reportingManager}
+                                            onChange={(e) => {
+                                                setReportingManager(e.target.value);
+                                                setReportingManagerId('');
+                                            }}
+                                            placeholder="Engineering Manager / CTO"
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                                        />
+                                    ) : (
+                                        <select
+                                            value={reportingManagerId}
+                                            onChange={(e) => handleSelectReportingManager(e.target.value)}
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                                        >
+                                            <option value="">
+                                                {loadingEmployees ? '-- Loading staff roster... --' : '-- Choose manager from existing staff --'}
+                                            </option>
+                                            {employees.map(emp => {
+                                                const empId = emp.employeeId || emp.value || emp._id || '';
+                                                const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || (emp.label ? emp.label.split(' (')[0] : empId);
+                                                const desig = emp.jobInfo?.designation || '';
+                                                const dept = emp.jobInfo?.department || '';
+                                                return (
+                                                    <option key={empId} value={empId}>
+                                                        {fullName} {empId ? `(${empId})` : ''} • {desig || 'Staff'}{dept ? ` (${dept})` : ''}
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                    )}
                                 </div>
                             </div>
                         )}
