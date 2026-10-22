@@ -110,6 +110,28 @@ export const api = {
     },
     workflowTasks: `${API_BASE_URL}/api/workflow-tasks`,
     workflowTask: (id: string) => `${API_BASE_URL}/api/workflow-tasks/${id}`,
+
+    // Performance Appraisal, SMART Goals & Compensation Review
+    performance: `${API_BASE_URL}/api/performance`,
+    performanceInitiate: `${API_BASE_URL}/api/performance/initiate`,
+    performanceMine: `${API_BASE_URL}/api/performance/mine`,
+    performanceStats: `${API_BASE_URL}/api/performance/stats`,
+    performanceReview: (id: string) => `${API_BASE_URL}/api/performance/${id}`,
+    performanceSelfAssess: (id: string) => `${API_BASE_URL}/api/performance/${id}/self-assess`,
+    performanceFinalize: (id: string) => `${API_BASE_URL}/api/performance/${id}/finalize`,
+    performanceCompanyTargets: `${API_BASE_URL}/api/performance/company-targets`,
+    performanceCompanyTarget: (id: string) => `${API_BASE_URL}/api/performance/company-targets/${id}`,
+    performanceGoals: `${API_BASE_URL}/api/performance/goals`,
+    performanceGoal: (id: string) => `${API_BASE_URL}/api/performance/goals/${id}`,
+    performanceGoalProgress: (id: string) => `${API_BASE_URL}/api/performance/goals/${id}/progress`,
+    performanceGoalHrDecision: (id: string) => `${API_BASE_URL}/api/performance/goals/${id}/hr-decision`,
+
+    // Document Dispatcher & Communication
+    documentDutyPresets: `${API_BASE_URL}/api/documents/duty-presets`,
+    documentPreviewCustomPdf: `${API_BASE_URL}/api/documents/preview-custom-pdf`,
+    documentDispatchEmail: `${API_BASE_URL}/api/documents/dispatch-email`,
+    documentDispatchLogs: `${API_BASE_URL}/api/documents/dispatch-logs`,
+    documentTemplates: `${API_BASE_URL}/api/documents/templates`,
 };
 
 export default api;

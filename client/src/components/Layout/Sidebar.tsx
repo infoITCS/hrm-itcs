@@ -24,6 +24,7 @@ import {
     CheckSquare,
     Lock,
     FileSpreadsheet,
+    Send,
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -58,11 +59,12 @@ const Sidebar = ({ isOpen = false, onClose }: SidebarProps) => {
         { name: 'Admin Settings', icon: Settings, path: '/admin/settings', roles: ['super-admin', 'admin'], module: 'settings' },
         // { name: 'Audit Logs', icon: Shield, path: '/admin/audit', roles: ['super-admin'] },
         { name: 'PIM', icon: Users, path: '/pim', roles: ['super-admin', 'admin', 'hr'], module: 'pim', subTab: 'employee-list' },
+        { name: 'HR Dispatcher', icon: Send, path: '/dispatcher', roles: ['super-admin', 'admin', 'hr'], module: 'pim', end: true },
         { name: 'Leave', icon: Calendar, path: '/leave', roles: null, module: 'leave' },
         { name: 'Attendance', icon: ScanFace, path: '/attendance', roles: null, module: 'attendance' },
         { name: 'Recruitment', icon: UserPlus, path: '/recruitment', roles: ['super-admin', 'admin', 'hr'], module: 'recruitment' },
         { name: 'My Info', icon: User, path: '/my-info', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
-        { name: 'Performance', icon: Star, path: '/performance', roles: null, module: 'performance' },
+        { name: 'Performance', icon: Star, path: '/performance', roles: ['super-admin', 'admin', 'hr', 'manager', 'employee'], module: 'performance' },
         { name: 'Directory', icon: BookOpen, path: '/directory', roles: ['super-admin', 'admin', 'manager', 'employee', 'hr', 'finance'] },
         { name: 'Company Policy', icon: FileText, path: '/company-policy', roles: null },
         { name: 'Expense Claim', icon: Receipt, path: '/claim', roles: null, module: 'claim' },

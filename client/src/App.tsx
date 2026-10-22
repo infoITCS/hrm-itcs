@@ -47,10 +47,13 @@ import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
 import MyLoans from './pages/Payroll/MyLoans';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
+import PerformanceDashboard from './pages/Performance/PerformanceDashboard';
+import DocumentDispatcher from './pages/Communications/DocumentDispatcher';
 
 // Dynamic Page Titles Mapping
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/dispatcher': 'HR Document & Offer Dispatcher',
   '/notifications': 'Pending Tasks & Notifications',
   '/my-info': 'My Profile',
   '/pim': 'Personnel Information (PIM)',
@@ -199,7 +202,7 @@ function AppRoutes() {
         {/* Open to all authenticated users */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        <Route path="performance" element={<div className="p-4">Performance Module Placeholder</div>} />
+        <Route path="performance" element={<PerformanceDashboard />} />
         <Route path="directory" element={<Directory />} />
         <Route path="company-policy" element={<CompanyPolicy />} />
         <Route path="opd-policy" element={<Navigate to="/company-policy#sec-10" replace />} />
@@ -219,6 +222,7 @@ function AppRoutes() {
 
         {/* Restricted to Super Admins, Admins, and HR */}
         <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'hr']} />}>
+          <Route path="dispatcher" element={<DocumentDispatcher />} />
           <Route path="search" element={<div className="p-4">Search Module Placeholder</div>} />
           <Route path="pim" element={<ModuleProtectedRoute moduleName="pim"><PIM /></ModuleProtectedRoute>}>
             <Route index element={<EmployeeList />} />

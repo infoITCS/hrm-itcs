@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IOfficialDocument extends Document {
     documentId: string; // unique hash or ID for verification
-    employeeId: string;
+    employeeId?: string;
     documentType: string; // 'Experience Letter', 'Financial Experience Letter', 'Salary Slip', etc.
     issueDate: Date;
     status: 'Valid' | 'Revoked';
@@ -12,7 +12,7 @@ export interface IOfficialDocument extends Document {
 
 const officialDocumentSchema = new Schema<IOfficialDocument>({
     documentId: { type: String, required: true, unique: true },
-    employeeId: { type: String, required: true },
+    employeeId: { type: String, default: 'N/A' },
     documentType: { type: String, required: true },
     issueDate: { type: Date, default: Date.now },
     status: { type: String, enum: ['Valid', 'Revoked'], default: 'Valid' },

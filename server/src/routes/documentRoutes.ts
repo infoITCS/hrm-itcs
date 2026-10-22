@@ -46,42 +46,132 @@ const getPronouns = (gender?: string) => {
 
 
 
+// Helper to parse probation period strings cleanly without digit concatenation bugs
+function parseProbation(val: any): { days: string; months: string; formatted: string } {
+    const str = String(val || '').trim();
+    if (!str) return { days: '90', months: '3', formatted: '3 Months (90 Days)' };
+
+    // Explicitly look for days and months labels with independent captures
+    const daysMatch = str.match(/(\d+)\s*days?/i);
+    const monthsMatch = str.match(/(\d+)\s*months?/i);
+
+    let days = '';
+    let months = '';
+
+    if (daysMatch && monthsMatch) {
+        months = monthsMatch[1];
+        days = daysMatch[1];
+    } else if (daysMatch) {
+        days = daysMatch[1];
+        months = String(Math.max(1, Math.round(Number(days) / 30)));
+    } else if (monthsMatch) {
+        months = monthsMatch[1];
+        days = String(Number(months) * 30);
+    } else {
+        const firstNumMatch = str.match(/\d+/);
+        if (firstNumMatch) {
+            const num = Number(firstNumMatch[0]);
+            if (num <= 12) {
+                months = String(num);
+                days = String(num * 30);
+            } else {
+                days = String(num);
+                months = String(Math.max(1, Math.round(num / 30)));
+            }
+        } else {
+            months = '3';
+            days = '90';
+        }
+    }
+
+    return {
+        days,
+        months,
+        formatted: `${months} Months (${days} Days)`
+    };
+}
+
 function parseTemplate(content: string, vars: Record<string, string>): string {
+    const prob = parseProbation(vars.probationPeriod || vars.probationDays || '3 Months (90 Days)');
+    const cleanProbDays = (vars.probationDays && Number(vars.probationDays) <= 365 && !String(vars.probationDays).includes('Month')) ? String(vars.probationDays) : prob.days;
+    const cleanProbMonths = (vars.probationMonths && Number(vars.probationMonths) <= 12) ? String(vars.probationMonths) : prob.months;
+
+    const defaults: Record<string, string> = {
+        employmentType: 'Full-Time',
+        workingDays: 'Monday to Friday',
+        workingHours: '09:00 AM - 06:00 PM',
+        startTime: '09:00 AM',
+        endTime: '06:00 PM',
+        workLocation: 'Karachi, Pakistan',
+        location: 'Karachi, Pakistan',
+        city: 'Karachi',
+        personalCity: 'Karachi',
+        probationDays: cleanProbDays,
+        probationMonths: cleanProbMonths,
+        probationPeriod: `${cleanProbMonths} Months (${cleanProbDays} Days)`,
+        companyResources: 'Official Laptop, Corporate Email Account, and Access Credentials',
+        taxCondition: 'Subject to applicable income tax laws and statutory tax brackets',
+        commissionStructure: 'Performance-based quarterly bonuses as per company policy',
+        benefitsList: 'Meal Allowance, Health Insurance / OPD Reimbursement, Provident Fund, Performance Bonuses',
+        noticePeriod: '30 Days',
+        probationNoticePeriod: '15 Days',
+        confirmedNoticePeriod: '30 Days',
+        acceptanceValidityDays: '7',
+        probationDaysWords: 'Ninety',
+        settlementDays: '30',
+        paymentDate: '5th',
+        salutation: '',
+        cnic: '—',
+        stipend: '20,000',
+        internshipDuration: '3 Months',
+        duration: '3 Months',
+        pronounSubject: 'he',
+        pronounObject: 'him',
+        pronounPossessive: 'his',
+        pronounCapitalizedSubject: 'He',
+        pronounCapitalizedPossessive: 'His',
+        skills: 'technical competence, leadership, and professional diligence',
+        generalJobDescription: 'core deliverables and engineering excellence',
+        purpose: 'official verification and record purposes'
+    };
+
+    const merged: Record<string, string> = { ...defaults, ...vars };
+
     let output = content;
-    for (const [key, val] of Object.entries(vars)) {
+    for (const [key, val] of Object.entries(merged)) {
         const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'gi');
-        output = output.replace(regex, val || '');
+        output = output.replace(regex, val !== undefined && val !== null ? String(val) : '');
     }
 
     // Bracketed placeholders fallback (e.g. [Location], [Payment Date], [Probation Days], [Notice Period], etc.)
     const bracketReplacements: Record<string, string> = {
-        'location': vars.workLocation || vars.location || vars.city || 'Karachi',
-        'work location': vars.workLocation || vars.location || vars.city || 'Karachi',
-        'payment date': vars.paymentDate || '5th',
-        'probation days': vars.probationDays || '90',
-        'probation period': vars.probationDays ? `${vars.probationDays} days` : '90 days',
-        'notice period': vars.noticePeriod || vars.confirmedNoticePeriod || '30 Days',
-        'working days': vars.workingDays || 'Monday to Friday',
-        'working hours': vars.workingHours || '09:00 AM - 06:00 PM',
-        'start time': vars.startTime || '09:00 AM',
-        'end time': vars.endTime || '06:00 PM',
-        'authorized signatory name': vars.signatoryName || 'Authorized Signatory',
-        'designation': vars.designation || vars.signatoryDesignation || 'Authorized Signatory',
-        'signatory designation': vars.signatoryDesignation || 'Authorized Signatory',
-        'reporting manager': vars.reportingManager || '',
-        'employee name': vars.employeeName || '',
-        'basic salary': vars.basicSalary || '',
-        'gross salary': vars.grossSalary || '',
-        'salary': vars.basicSalary || vars.grossSalary || '',
-        'joining date': vars.joiningDate || '',
-        'stipend': vars.stipend || vars.grossSalary || '20,000',
-        'cnic': vars.cnic || '',
-        'department': vars.department || '',
-        'date': vars.date || ''
+        'location': merged.workLocation || merged.city || 'Karachi',
+        'work location': merged.workLocation || merged.city || 'Karachi',
+        'payment date': merged.paymentDate || '5th',
+        'probation days': merged.probationDays || '90',
+        'probation period': `${merged.probationMonths} Months (${merged.probationDays} Days)`,
+        'notice period': merged.noticePeriod || '30 Days',
+        'working days': merged.workingDays || 'Monday to Friday',
+        'working hours': merged.workingHours || '09:00 AM - 06:00 PM',
+        'start time': merged.startTime || '09:00 AM',
+        'end time': merged.endTime || '06:00 PM',
+        'authorized signatory name': merged.signatoryName || 'Authorized Signatory',
+        'designation': merged.designation || merged.signatoryDesignation || 'Authorized Signatory',
+        'signatory designation': merged.signatoryDesignation || 'Authorized Signatory',
+        'reporting manager': merged.reportingManager || '',
+        'employee name': merged.employeeName || '',
+        'basic salary': merged.basicSalary || '',
+        'gross salary': merged.grossSalary || '',
+        'salary': merged.basicSalary || merged.grossSalary || '',
+        'joining date': merged.joiningDate || '',
+        'stipend': merged.stipend || merged.grossSalary || '20,000',
+        'cnic': merged.cnic || '',
+        'department': merged.department || '',
+        'date': merged.date || ''
     };
 
-    // Also map any key from vars directly to bracket replacement
-    for (const [key, val] of Object.entries(vars)) {
+    // Also map any key from merged directly to bracket replacement
+    for (const [key, val] of Object.entries(merged)) {
         const spaced = key.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
         if (!bracketReplacements[spaced]) {
             bracketReplacements[spaced] = val;
@@ -102,10 +192,28 @@ function parseTemplate(content: string, vars: Record<string, string>): string {
     output = output.replace(/\s*\(["“']?the Company["”']?\)/gi, '');
     output = output.replace(/\s*\(["“']?the Employee["”']?\)/gi, '');
 
+    // Normalize phrasing & grammar glitches
+    output = output.replace(/(\d+)\s*Days\s*\(\s*(\d+)\s*Months\s*\)/gi, (_match, d, m) => {
+        const p = parseProbation(`${m} Months (${d} Days)`);
+        return `${p.months} Months (${p.days} Days)`;
+    });
+    output = output.replace(/(\d+)\s*Months\s*\(\s*(\d+)\s*Days\s*\)\s*Days/gi, '$1 Months ($2 Days)');
+    output = output.replace(/\b(\d+\s*Days?)\s+Days?\b/gi, '$1');
+    output = output.replace(/\b(Days)\s+Days\b/gi, '$1');
+    output = output.replace(/(\d+\s*Months?\s*\(\d+\s*Days\))-day\b/gi, '3-month (90-day)');
+    output = output.replace(/(\d+)\s*Days-day\b/gi, '$1-day');
+    output = output.replace(/(Pakistan\s*,\s*)+Pakistan/gi, 'Pakistan');
+
     // Clean up any stray spaces or newlines right before punctuation marks
     output = output.replace(/\s+([,.;:!?])/g, '$1');
     output = output.replace(/\*\*\s+([,.;:!?])/g, '**$1');
     output = output.replace(/\s+\*\*(?=[,.;:!?])/g, '**');
+
+    // Safety sweeper: If any unknown {{placeholder}} remains, replace with fallback or clean empty text
+    output = output.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, token) => {
+        if (defaults[token]) return defaults[token];
+        return '';
+    });
 
     return output;
 }
@@ -793,7 +901,8 @@ const renderCompleteDocument = (
     // Right: Recipient block (starts at y = 175, below origami decoration, right-aligned to inside text margin)
     // Only rendered for specific addressee letters (Offer/Appointment/Contract), NOT for To Whom It May Concern / Experience Letters
     const recipientName = vars.employeeName || vars.internName || '';
-    const recipientCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
+    const rawCity = vars.city || vars.personalCity || vars.workLocation || 'Karachi';
+    const recipientCity = String(rawCity).replace(/,?\s*Pakistan\b/gi, '').trim() || 'Karachi';
     const recipientEmail = vars.personalEmail || vars.workEmail || '';
 
     let headerBottomY = dateY + 20;
@@ -2178,6 +2287,90 @@ router.get('/duty-presets', authenticate, (_req: Request, res: Response) => {
     res.json(DUTY_PRESETS);
 });
 
+// Helper to build and sanitize merged variables for HR Dispatcher
+const buildDispatcherMergedVars = (
+    documentType: string,
+    recipientName: string,
+    recipientEmail: string,
+    variables: Record<string, any> = {},
+    company: any
+): Record<string, string> => {
+    const isInternship = documentType.toLowerCase().includes('intern');
+    const prob = parseProbation(variables.probationPeriod || variables.probationDays || '3 Months (90 Days)');
+    const cleanProbDays = (variables.probationDays && Number(variables.probationDays) <= 365 && !String(variables.probationDays).includes('Month')) ? String(variables.probationDays) : prob.days;
+    const cleanProbMonths = (variables.probationMonths && Number(variables.probationMonths) <= 12) ? String(variables.probationMonths) : prob.months;
+
+    const rawCity = variables.city || variables.personalCity || variables.workLocation || 'Karachi';
+    const cleanCity = String(rawCity).replace(/,?\s*Pakistan\b/gi, '').trim() || 'Karachi';
+
+    const mergedVars: Record<string, string> = {
+        employeeName: recipientName,
+        personalEmail: recipientEmail,
+        workEmail: recipientEmail,
+        date: formatOrdinalDate(new Date()),
+        signatoryName: company?.hrSignatoryName || 'Manager HR',
+        signatoryDesignation: company?.hrSignatoryTitle || 'Human Resources',
+        hrEmail: company?.contact?.email || 'hrms@itcs.com.pk',
+        hrPhone: company?.contact?.phone || '+92 21 111-482-711',
+        workLocation: 'Karachi, Pakistan',
+        city: cleanCity,
+        personalCity: cleanCity,
+        employmentType: variables.employmentType || (isInternship ? 'Internship' : 'Full-Time'),
+        workingDays: variables.workingDays || 'Monday to Friday',
+        workingHours: variables.workingHours || '09:00 AM - 06:00 PM',
+        startTime: '09:00 AM',
+        endTime: '06:00 PM',
+        probationDays: cleanProbDays,
+        probationMonths: cleanProbMonths,
+        probationPeriod: `${cleanProbMonths} Months (${cleanProbDays} Days)`,
+        companyResources: variables.companyResources || 'Official Laptop, Corporate Email Account, and Access Credentials',
+        commissionStructure: variables.commissionStructure || 'Performance-based quarterly bonuses as per company policy',
+        benefitsList: variables.benefitsList || 'Meal Allowance, Health Insurance / OPD Reimbursement, Provident Fund, Performance Bonuses',
+        taxCondition: variables.taxCondition || 'Subject to applicable income tax laws and statutory tax brackets',
+        noticePeriod: variables.noticePeriod || (isInternship ? '15 Days' : '30 Days'),
+        probationNoticePeriod: variables.probationNoticePeriod || '15 Days',
+        confirmedNoticePeriod: variables.confirmedNoticePeriod || '30 Days',
+        acceptanceValidityDays: '7',
+        probationDaysWords: 'Ninety',
+        settlementDays: variables.settlementDays || '30',
+        lastWorkingDay: variables.lastWorkingDay || formatOrdinalDate(new Date()),
+        cnic: variables.cnic || '—',
+        salutation: variables.salutation || '',
+        pronounSubject: variables.pronounSubject || 'he',
+        pronounObject: variables.pronounObject || 'him',
+        pronounPossessive: variables.pronounPossessive || 'his',
+        pronounCapitalizedSubject: variables.pronounCapitalizedSubject || 'He',
+        pronounCapitalizedPossessive: variables.pronounCapitalizedPossessive || 'His',
+        skills: variables.skills || 'technical competence, leadership, and professional diligence',
+        generalJobDescription: variables.generalJobDescription || 'core deliverables and engineering excellence',
+        purpose: variables.purpose || 'official records and onboarding',
+        ...variables
+    };
+
+    if (Array.isArray(variables.jobDuties)) {
+        mergedVars.jobResponsibilities = variables.jobDuties.map((d: string) => `• ${d}`).join('\n');
+    } else if (variables.jobResponsibilities) {
+        mergedVars.jobResponsibilities = variables.jobResponsibilities;
+    }
+
+    if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
+    if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
+    if (mergedVars.allowances) mergedVars.allowances = formatSalaryNum(mergedVars.allowances);
+    if (mergedVars.reimbursedClaims) mergedVars.reimbursedClaims = formatSalaryNum(mergedVars.reimbursedClaims);
+    if (mergedVars.netPay) mergedVars.netPay = formatSalaryNum(mergedVars.netPay);
+    if (mergedVars.totalDeductions) mergedVars.totalDeductions = formatSalaryNum(mergedVars.totalDeductions);
+    if (mergedVars.taxAmount) mergedVars.taxAmount = formatSalaryNum(mergedVars.taxAmount);
+    if (mergedVars.otherDeductions) mergedVars.otherDeductions = formatSalaryNum(mergedVars.otherDeductions);
+    if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
+    if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
+    if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
+    if (!mergedVars.noticePeriod) mergedVars.noticePeriod = isInternship ? '15 Days' : '30 Days';
+
+    mergedVars.grossSalaryWords = numberToWords(Number(String(mergedVars.grossSalary || mergedVars.basicSalary || '0').replace(/[^0-9]/g, '')));
+
+    return mergedVars;
+};
+
 // 2. Preview or Download Custom PDF with dynamic fields
 router.post('/preview-custom-pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -2207,37 +2400,7 @@ router.post('/preview-custom-pdf', authenticate, async (req: Request, res: Respo
         const verifyUrl = `${clientHost}/verify/${documentId}`;
         const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
-        const mergedVars: Record<string, string> = {
-            employeeName: recipientName,
-            personalEmail: recipientEmail,
-            workEmail: recipientEmail,
-            date: formatOrdinalDate(new Date()),
-            signatoryName: company?.hrSignatoryName || 'Manager HR',
-            signatoryDesignation: company?.hrSignatoryTitle || 'Human Resources',
-            hrEmail: company?.contact?.email || 'hrms@itcs.com.pk',
-            hrPhone: company?.contact?.phone || '+92 21 111-482-711',
-            workLocation: 'Karachi, Pakistan',
-            ...variables
-        };
-
-        if (Array.isArray(variables.jobDuties)) {
-            mergedVars.jobResponsibilities = variables.jobDuties.map((d: string) => `• ${d}`).join('\n');
-        } else if (variables.jobResponsibilities) {
-            mergedVars.jobResponsibilities = variables.jobResponsibilities;
-        }
-
-        if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
-        if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
-        if (mergedVars.allowances) mergedVars.allowances = formatSalaryNum(mergedVars.allowances);
-        if (mergedVars.reimbursedClaims) mergedVars.reimbursedClaims = formatSalaryNum(mergedVars.reimbursedClaims);
-        if (mergedVars.netPay) mergedVars.netPay = formatSalaryNum(mergedVars.netPay);
-        if (mergedVars.totalDeductions) mergedVars.totalDeductions = formatSalaryNum(mergedVars.totalDeductions);
-        if (mergedVars.taxAmount) mergedVars.taxAmount = formatSalaryNum(mergedVars.taxAmount);
-        if (mergedVars.otherDeductions) mergedVars.otherDeductions = formatSalaryNum(mergedVars.otherDeductions);
-        if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
-        if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
-        if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
-        if (!mergedVars.noticePeriod) mergedVars.noticePeriod = '30 Days';
+        const mergedVars = buildDispatcherMergedVars(documentType, recipientName, recipientEmail, variables, company);
 
         const doc = new (PDFDocument as any)({
             size: 'A4',
@@ -2317,37 +2480,7 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
         const verifyUrl = `${clientHost}/verify/${documentId}`;
         const qrCodeDataUri = await QRCode.toDataURL(verifyUrl);
 
-        const mergedVars: Record<string, string> = {
-            employeeName: recipientName,
-            personalEmail: recipientEmail,
-            workEmail: recipientEmail,
-            date: formatOrdinalDate(new Date()),
-            signatoryName: company?.hrSignatoryName || 'Manager HR',
-            signatoryDesignation: company?.hrSignatoryTitle || 'Human Resources',
-            hrEmail: company?.contact?.email || 'hrms@itcs.com.pk',
-            hrPhone: company?.contact?.phone || '+92 21 111-482-711',
-            workLocation: 'Karachi, Pakistan',
-            ...variables
-        };
-
-        if (Array.isArray(variables.jobDuties)) {
-            mergedVars.jobResponsibilities = variables.jobDuties.map((d: string) => `• ${d}`).join('\n');
-        } else if (variables.jobResponsibilities) {
-            mergedVars.jobResponsibilities = variables.jobResponsibilities;
-        }
-
-        if (mergedVars.basicSalary) mergedVars.basicSalary = formatSalaryNum(mergedVars.basicSalary);
-        if (mergedVars.grossSalary) mergedVars.grossSalary = formatSalaryNum(mergedVars.grossSalary);
-        if (mergedVars.allowances) mergedVars.allowances = formatSalaryNum(mergedVars.allowances);
-        if (mergedVars.reimbursedClaims) mergedVars.reimbursedClaims = formatSalaryNum(mergedVars.reimbursedClaims);
-        if (mergedVars.netPay) mergedVars.netPay = formatSalaryNum(mergedVars.netPay);
-        if (mergedVars.totalDeductions) mergedVars.totalDeductions = formatSalaryNum(mergedVars.totalDeductions);
-        if (mergedVars.taxAmount) mergedVars.taxAmount = formatSalaryNum(mergedVars.taxAmount);
-        if (mergedVars.otherDeductions) mergedVars.otherDeductions = formatSalaryNum(mergedVars.otherDeductions);
-        if (mergedVars.probationSalary) mergedVars.probationSalary = formatSalaryNum(mergedVars.probationSalary);
-        if (mergedVars.confirmedSalary) mergedVars.confirmedSalary = formatSalaryNum(mergedVars.confirmedSalary);
-        if (mergedVars.stipend) mergedVars.stipend = formatSalaryNum(mergedVars.stipend);
-        if (!mergedVars.noticePeriod) mergedVars.noticePeriod = '30 Days';
+        const mergedVars = buildDispatcherMergedVars(documentType, recipientName, recipientEmail, variables, company);
 
         // Render PDF to memory Buffer
         const doc = new (PDFDocument as any)({
@@ -2377,8 +2510,10 @@ router.post('/dispatch-email', authenticate, async (req: Request, res: Response,
         const pdfBuffer = await pdfPromise;
 
         // Save official document verification record
+        const targetEmployeeId = variables.employeeId || req.body.employeeId || mergedVars.employeeId || 'N/A';
         await OfficialDocument.create({
             documentId,
+            employeeId: targetEmployeeId,
             documentType,
             issueDate: new Date(),
             status: 'Valid',
