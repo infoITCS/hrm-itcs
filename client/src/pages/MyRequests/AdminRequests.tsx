@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { getAvatarUrl } from '../../utils/avatar';
 import Avatar from '../../components/UI/Avatar';
-import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search, Home, PiggyBank } from 'lucide-react';
+import { Package, Banknote, CheckCircle, Clock, XCircle, FileText, Download, Search, Home, PiggyBank, ShieldAlert } from 'lucide-react';
 import CategoryConfig from './CategoryConfig';
 import GeneratedDocuments from './GeneratedDocuments';
 import PaymentStatusModal, { type PaymentStatusTarget } from '../../components/Common/PaymentStatusModal';
@@ -434,7 +434,13 @@ const AdminRequests = () => {
                                                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                                     }`}
                                                 >
-                                                    {((req.category === 'Loan' || req.category === 'Request Loan' || req.requestType === 'Loan') && req.status === 'Approved') ? 'Disburse' : (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') ? 'Review' : 'View'}
+                                                    {(() => {
+                                                        const isAdmAcc = (req.category || '').toLowerCase().includes('admin access') || (req.requestType || '').toLowerCase().includes('admin access');
+                                                        if (isAdmAcc && role !== 'super-admin') return 'View';
+                                                        if ((req.category === 'Loan' || req.category === 'Request Loan' || req.requestType === 'Loan') && req.status === 'Approved') return 'Disburse';
+                                                        if (req.status === 'Pending' || req.status === 'Pending HR' || req.status === 'Pending Finance') return 'Review';
+                                                        return 'View';
+                                                    })()}
                                                 </button>
                                             </td>
                                         </tr>
@@ -939,6 +945,28 @@ const AdminRequests = () => {
                             </div>
 
                             {/* Description / Details */}
+                            {actionModal.details?.deviceName && (
+                                <div className="p-3.5 bg-violet-50/80 border border-violet-100 rounded-xl space-y-2">
+                                    <div className="flex justify-between items-center text-violet-950 font-bold border-b border-violet-200/60 pb-1.5">
+                                        <span className="flex items-center gap-1.5 text-xs text-violet-900">
+                                            <ShieldAlert size={15} className="text-violet-600" /> Laptop Administrator Privilege Request
+                                        </span>
+                                        <span className="text-[11px] font-mono bg-white px-2 py-0.5 rounded border border-violet-200 text-violet-900 font-bold">
+                                            {actionModal.details.deviceName}
+                                        </span>
+                                    </div>
+                                    {actionModal.details.accessDuration && (
+                                        <div className="flex justify-between items-center text-xs text-violet-800">
+                                            <span>Requested Duration:</span>
+                                            <span className="font-bold">{actionModal.details.accessDuration}</span>
+                                        </div>
+                                    )}
+                                    <p className="text-[11px] text-violet-700 leading-relaxed bg-white/60 p-2 rounded-lg border border-violet-100">
+                                        🛡️ <strong>Endpoint Security Policy:</strong> This privilege escalation request can only be approved by <strong>Super Admin</strong>. Approving will automatically queue an IT task for Endpoint Administrators to grant local admin access in <strong>Microsoft Intune</strong>.
+                                    </p>
+                                </div>
+                            )}
+
                             {actionModal.details?.description && (
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Description</p>
@@ -1200,51 +1228,98 @@ const AdminRequests = () => {
                                         </>
                                     )}
                                 </>
-                            ) : (
-                                <>
-                                    {/* Generic Request Workflow */}
-                                    {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                            ) : (() => {
+                                const isModalAdminAccess = (actionModal.category || '').toLowerCase().includes('admin access') || (actionModal.requestType || '').toLowerCase().includes('admin access');
+                                if (isModalAdminAccess) {
+                                    if (role !== 'super-admin') {
+                                        return (
+                                            <div className="w-full flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
+                                                <ShieldAlert size={16} className="text-amber-600 shrink-0" />
+                                                <span>Privilege Escalation Request: Only <strong>Super Admin</strong> is authorized to approve or reject Laptop Admin Access.</span>
+                                            </div>
+                                        );
+                                    }
+                                    return (
                                         <>
-                                            <button 
-                                                onClick={() => handleAction('Rejected')}
-                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
-                                            >
-                                                Reject
-                                            </button>
-                                            <button 
-                                                onClick={() => handleAction('Approved')}
-                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                            >
-                                                Approve
-                                            </button>
+                                            {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                                <>
+                                                    <button 
+                                                        onClick={() => handleAction('Rejected')}
+                                                        className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                                    >
+                                                        Reject
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleAction('Approved')}
+                                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                    >
+                                                        <CheckCircle size={15} /> Approve & Create IT Task
+                                                    </button>
+                                                </>
+                                            )}
+                                            {actionModal.status === 'Approved' && (
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium">
+                                                        Super Admin Approved — Task dispatched to IT Team
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => handleAction('Completed')}
+                                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                                    >
+                                                        Mark Completed
+                                                    </button>
+                                                </div>
+                                            )}
                                         </>
-                                    )}
-                                    {actionModal.status === 'Pending Finance' && (
-                                        <>
-                                            <button 
-                                                onClick={() => handleAction('Rejected')}
-                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
-                                            >
-                                                Reject
-                                            </button>
+                                    );
+                                }
+
+                                return (
+                                    <>
+                                        {/* Generic Request Workflow */}
+                                        {(actionModal.status === 'Pending' || actionModal.status === 'Pending HR') && (
+                                            <>
+                                                <button 
+                                                    onClick={() => handleAction('Rejected')}
+                                                    className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                                >
+                                                    Reject
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleAction('Approved')}
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                                >
+                                                    Approve
+                                                </button>
+                                            </>
+                                        )}
+                                        {actionModal.status === 'Pending Finance' && (
+                                            <>
+                                                <button 
+                                                    onClick={() => handleAction('Rejected')}
+                                                    className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                                >
+                                                    Reject
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleAction('Completed')}
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                                >
+                                                    Approve & Disburse
+                                                </button>
+                                            </>
+                                        )}
+                                        {actionModal.status === 'Approved' && isAdminOrSuper && (
                                             <button 
                                                 onClick={() => handleAction('Completed')}
-                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
+                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
                                             >
-                                                Approve & Disburse
+                                                Complete Request
                                             </button>
-                                        </>
-                                    )}
-                                    {actionModal.status === 'Approved' && isAdminOrSuper && (
-                                        <button 
-                                            onClick={() => handleAction('Completed')}
-                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm"
-                                        >
-                                            Complete Request
-                                        </button>
-                                    )}
-                                </>
-                            )}
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

@@ -5,7 +5,7 @@ export interface ICustomRequestCategory extends Document {
     description: string;
     icon: string;
     options: string[];
-    systemType: 'document' | 'loan' | 'generic';
+    systemType: 'document' | 'loan' | 'generic' | 'wfh' | 'admin-access';
     isDeletable: boolean;
     isActive: boolean;
     hiddenOptions: string[];
@@ -18,7 +18,7 @@ const customRequestCategorySchema = new Schema<ICustomRequestCategory>({
     description: { type: String, required: true },
     icon: { type: String, required: true, default: 'Package' },
     options: [{ type: String }],
-    systemType: { type: String, enum: ['document', 'loan', 'generic'], default: 'generic' },
+    systemType: { type: String, enum: ['document', 'loan', 'generic', 'wfh', 'admin-access'], default: 'generic' },
     isDeletable: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
     hiddenOptions: [{ type: String }],

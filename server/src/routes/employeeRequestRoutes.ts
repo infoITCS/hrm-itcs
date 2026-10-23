@@ -18,6 +18,8 @@ import logger from '../utils/logger';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { getEmployeeLoanDetails, calculateConsolidatedMonthlyInstallment } from '../services/loanManagementService';
 import { decryptNumber } from '../utils/encryption';
+import WorkflowTask from '../models/WorkflowTask';
+import { triggerAdminAccessTask } from '../services/workflowService';
 
 const router = express.Router();
 
@@ -768,6 +770,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const isLoanPause = category === 'Loan Pause Request' || requestType === 'Loan Pause' || category?.toLowerCase().includes('loan pause') || requestType?.toLowerCase().includes('loan pause');
         const isLoan = !isLoanPause && (category === 'Loan' || category === 'Request Loan' || requestType === 'Loan' || (category?.toLowerCase().includes('loan') && !category?.toLowerCase().includes('pause')) || (requestType?.toLowerCase().includes('loan') && !requestType?.toLowerCase().includes('pause')));
         const isPfWithdrawal = category === 'PF Withdrawal' || category === 'Request Provident Fund' || requestType === 'PF Withdrawal' || category === 'Provident Fund';
+        const isAdminAccessReq = category === 'Request Laptop Admin Access' || requestType === 'Request Laptop Admin Access' || (category || '').toLowerCase().includes('admin access') || (requestType || '').toLowerCase().includes('admin access');
+
+        if (isAdminAccessReq) {
+            if (!details?.deviceName || !String(details.deviceName).trim()) {
+                return res.status(400).json({ message: 'Device name or hostname is required for Laptop Admin Access requests.' });
+            }
+        }
 
         const empStatus = typeof employee.employmentStatus === 'string'
             ? employee.employmentStatus
@@ -1096,6 +1105,13 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
                     }
                 );
             }
+        }
+
+        if (wasApproved) {
+            await WorkflowTask.updateMany(
+                { relatedRequestId: request._id, status: 'Pending' },
+                { status: 'Skipped', notes: 'Request cancelled by employee' }
+            );
         }
 
         res.json({ message: 'Request cancelled successfully', request });
@@ -1492,6 +1508,15 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
 
         const isLoan = request.category === 'Loan' || request.category === 'Request Loan' || request.requestType === 'Loan';
         const isPf = request.category === 'PF Withdrawal' || request.requestType === 'PF Withdrawal' || request.category === 'Provident Fund';
+        const isAdminAccess = request.category === 'Request Laptop Admin Access' || 
+                              request.requestType === 'Request Laptop Admin Access' || 
+                              (request.category || '').toLowerCase().includes('admin access') ||
+                              (request.requestType || '').toLowerCase().includes('admin access');
+
+        // Laptop Admin Access can strictly and exclusively be approved or rejected by super-admin
+        if (isAdminAccess && role !== 'super-admin') {
+            return res.status(403).json({ message: 'Laptop Admin Access can only be approved by Super Admin.' });
+        }
 
         // Finance cannot manage or decide on Loans or PF Withdrawals (Management / HR exclusive)
         if (role === 'finance' && (isLoan || isPf)) {
@@ -1614,6 +1639,19 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                         }
                     );
                 }
+            }
+        }
+
+        // ── Auto-Generate Workflow Task for IT Team upon Super Admin Approval of Laptop Admin Access ──
+        if (isAdminAccess) {
+            if (status === 'Approved') {
+                const targetEmp = await Employee.findOne({ employeeId: request.employeeId }).lean();
+                await triggerAdminAccessTask(request, targetEmp, req.headers.origin as string);
+            } else if (status === 'Rejected' || status === 'Cancelled') {
+                await WorkflowTask.updateMany(
+                    { relatedRequestId: request._id, status: 'Pending' },
+                    { status: 'Skipped', notes: `Request ${status} by Super Admin` }
+                );
             }
         }
 

@@ -10,7 +10,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 
 export interface WorkflowTaskItem {
     _id: string;
-    type: 'Onboarding' | 'Offboarding';
+    type: 'Onboarding' | 'Offboarding' | 'IT Access';
     targetEmployeeId?: string;
     targetUserId?: string;
     targetName: string;
@@ -56,7 +56,7 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
     const [showAddModal, setShowAddModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [newTask, setNewTask] = useState({
-        type: 'Offboarding' as 'Onboarding' | 'Offboarding',
+        type: 'Offboarding' as 'Onboarding' | 'Offboarding' | 'IT Access',
         department: 'Admin' as 'Tech' | 'Admin' | 'HR' | 'Finance',
         title: '',
         description: '',
@@ -275,6 +275,7 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
     const completedCount = tasks.filter(t => t.status === 'Completed').length;
     const onboardingCount = tasks.filter(t => t.type === 'Onboarding').length;
     const offboardingCount = tasks.filter(t => t.type === 'Offboarding').length;
+    const itAccessCount = tasks.filter(t => t.type === 'IT Access').length;
 
     const getDeptBadgeColor = (dept: string) => {
         switch (dept) {
@@ -374,6 +375,7 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
                             <option value="All">All Types</option>
                             <option value="Onboarding">Onboarding</option>
                             <option value="Offboarding">Offboarding</option>
+                            <option value="IT Access">IT Access</option>
                         </select>
 
                         {/* Dept Filter */}
@@ -468,7 +470,9 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
                                                 <span className={`inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold w-fit ${
                                                     task.type === 'Onboarding'
                                                         ? 'bg-blue-100 text-blue-700'
-                                                        : 'bg-rose-100 text-rose-700'
+                                                        : task.type === 'IT Access'
+                                                            ? 'bg-purple-100 text-purple-700'
+                                                            : 'bg-rose-100 text-rose-700'
                                                 }`}>
                                                     {task.type}
                                                 </span>
@@ -689,6 +693,7 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
                                     >
                                         <option value="Offboarding">Offboarding</option>
                                         <option value="Onboarding">Onboarding</option>
+                                        <option value="IT Access">IT Access</option>
                                     </select>
                                 </div>
                                 <div>

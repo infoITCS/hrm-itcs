@@ -2,8 +2,11 @@ import express, { Request, Response, NextFunction } from 'express';
 import WorkflowTask from '../models/WorkflowTask';
 import Company from '../models/Company';
 import Employee from '../models/Employee';
+import EmployeeRequest from '../models/EmployeeRequest';
+import User from '../models/User.model';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { triggerWorkflowCompletionCheck } from '../services/workflowService';
+import { sendEmployeeRequestStatusEmail } from '../utils/email';
 import logger from '../utils/logger';
 
 const router = express.Router();
@@ -188,6 +191,44 @@ router.patch('/:id', authenticate, async (req: Request, res: Response, next: Nex
             triggerWorkflowCompletionCheck(task, req.headers.origin as string).catch((err: any) => {
                 logger.error(`[Workflow] Error checking workflow completion:`, err);
             });
+
+            // If this task is linked to an EmployeeRequest (e.g. IT Access), mark it Completed and notify employee
+            if (task.relatedRequestId) {
+                (async () => {
+                    try {
+                        const relReq = await EmployeeRequest.findById(task.relatedRequestId);
+                        if (relReq && relReq.status !== 'Completed') {
+                            relReq.status = 'Completed';
+                            relReq.updatedAt = new Date();
+                            if (notes) {
+                                relReq.adminComments = (relReq.adminComments ? relReq.adminComments + ' | ' : '') + `IT Note: ${notes}`;
+                            }
+                            await relReq.save();
+
+                            const employee = await Employee.findOne({ employeeId: relReq.employeeId }).select('workEmail personalEmail userId firstName lastName');
+                            let targetEmail = employee?.workEmail || employee?.personalEmail;
+                            if (!targetEmail && employee?.userId) {
+                                const u = await User.findById(employee.userId).select('email').lean() as any;
+                                targetEmail = u?.email;
+                            }
+                            if (targetEmail) {
+                                const empName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : 'Employee';
+                                await sendEmployeeRequestStatusEmail(
+                                    targetEmail,
+                                    empName,
+                                    relReq.category,
+                                    'Completed',
+                                    notes || 'Local Administrator access has been configured in Microsoft Intune.',
+                                    'IT Endpoint Administrator',
+                                    req.headers.origin as string
+                                );
+                            }
+                        }
+                    } catch (err: any) {
+                        logger.error('[Workflow] Failed to complete linked EmployeeRequest:', err.message);
+                    }
+                })();
+            }
         }
 
         res.json(task);

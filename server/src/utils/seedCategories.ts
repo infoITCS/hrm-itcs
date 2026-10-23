@@ -57,6 +57,24 @@ export const seedRequestCategories = async () => {
                 options: ['Single Day WFH', 'Multiple Days WFH'],
                 systemType: 'wfh',
                 isDeletable: false
+            },
+            {
+                title: 'Request Laptop Admin Access',
+                description: 'Request local administrator privileges for your laptop or workstation.',
+                icon: 'ShieldAlert',
+                options: [
+                    'Temporary Access (2 Hours)',
+                    'Temporary Access (4 Hours)',
+                    'Temporary Access (8 Hours)',
+                    'Temporary Access (1 Day)',
+                    'Temporary Access (3 Days)',
+                    'Temporary Access (7 Days)',
+                    'Temporary Access (14 Days)',
+                    'Temporary Access (30 Days)',
+                    'Permanent Access'
+                ],
+                systemType: 'admin-access',
+                isDeletable: false
             }
         ];
 

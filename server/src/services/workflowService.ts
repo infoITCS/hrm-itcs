@@ -454,3 +454,87 @@ export async function triggerWorkflowCompletionCheck(task: any, originUrl?: stri
         logger.error(`[Workflow] Failed checking workflow completion: ${err?.message || err}`);
     }
 }
+
+/**
+ * Triggers IT workflow task & notification when a Laptop Admin Access request is approved by Super Admin.
+ */
+export async function triggerAdminAccessTask(request: any, employee: any, originUrl?: string) {
+    try {
+        const company = await Company.findOne().lean() as any;
+        const techEmail = company?.workflowSettings?.techEmail || process.env.TECH_TEAM_EMAIL || '';
+        const baseUrl = getBaseUrl(originUrl);
+
+        const targetName = [employee?.firstName, employee?.lastName].filter(Boolean).join(' ') || request.employeeId || 'Employee';
+        const deviceName = request.details?.deviceName || 'N/A';
+        const duration = request.details?.accessDuration || request.requestType || 'Permanent';
+        const justification = request.details?.reason || 'N/A';
+
+        // Check if task already exists for this request
+        const existingTask = await WorkflowTask.findOne({ relatedRequestId: request._id });
+        if (existingTask) {
+            return existingTask;
+        }
+
+        const task = await WorkflowTask.create({
+            type: 'IT Access',
+            targetEmployeeId: request.employeeId,
+            targetUserId: employee?.userId?.toString(),
+            targetName,
+            targetEmail: employee?.workEmail || employee?.personalEmail || employee?.email,
+            department: 'Tech',
+            title: `Grant Intune Local Admin Access - ${targetName}`,
+            description: `Device / Hostname: ${deviceName}\nDuration: ${duration}\nJustification: ${justification}\nApproved by Super Admin`,
+            assignedEmail: techEmail || undefined,
+            status: 'Pending',
+            relatedRequestId: request._id
+        });
+
+        logger.info(`[Workflow] Created IT Access task ${task._id} for ${targetName}`);
+
+        if (techEmail) {
+            const html = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;">
+                    <div style="margin-bottom: 20px; border-bottom: 2px solid #6366f1; padding-bottom: 12px;">
+                        <h2 style="margin: 0; color: #4338ca; font-size: 20px;">🛡️ Action Required: Grant Laptop Admin Access</h2>
+                        <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">Super Admin Approved Privileged Access</p>
+                    </div>
+
+                    <p style="font-size: 14px; line-height: 1.6;">
+                        Super Admin has approved a request for local laptop admin privileges. Please configure the required permissions manually in <strong>Microsoft Intune</strong> and mark the task as complete in HRM.
+                    </p>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600; width: 140px;">Employee Name:</td><td style="color: #0f172a; font-weight: bold;">${targetName}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Employee ID:</td><td style="color: #0f172a;">${request.employeeId}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Device / Hostname:</td><td style="color: #0f172a; font-family: monospace; font-weight: bold;">${deviceName}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Access Duration:</td><td style="color: #0f172a;">${duration}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b; font-weight: 600;">Justification:</td><td style="color: #0f172a;">${justification}</td></tr>
+                        </table>
+                    </div>
+
+                    <div style="margin: 28px 0 16px; text-align: center;">
+                        <a href="${baseUrl}/workflow-tasks?dept=Tech" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-weight: bold; font-size: 14px;">
+                            View Workflow Tasks in HRM
+                        </a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #94a3b8; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: center;">
+                        This is an automated workflow notification from ITCS HRM.
+                    </p>
+                </div>
+            `;
+
+            await dispatchEmail({
+                to: techEmail,
+                subject: `[Action Required] Grant Laptop Admin Access: ${targetName} (${deviceName})`,
+                html,
+            }, `IT Access Task - ${targetName}`);
+        }
+
+        return task;
+    } catch (err: any) {
+        logger.error(`[Workflow] Failed to trigger admin access task: ${err?.message || err}`);
+    }
+}
+

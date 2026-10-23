@@ -5,14 +5,14 @@ import {
     FileText, Package, Banknote, Download, CheckCircle, Clock, XCircle, 
     Monitor, Briefcase, Wrench, Settings, Search, Paperclip, Eye,
     ChevronDown, ChevronUp, AlertTriangle, PauseCircle, Loader2, Headphones, Home,
-    Edit2, PiggyBank
+    Edit2, PiggyBank, ShieldAlert, ShieldCheck
 } from 'lucide-react';
 import AlertModal from '../../components/UI/AlertModal';
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const ICON_MAP: Record<string, any> = {
-    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle, Home, PiggyBank
+    Package, Monitor, Briefcase, FileText, Tool: Wrench, Settings, Banknote, PauseCircle, Home, PiggyBank, ShieldAlert, ShieldCheck
 };
 
 const MyRequests = () => {
@@ -56,6 +56,7 @@ const MyRequests = () => {
     const [wfhStartDate, setWfhStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [wfhEndDate, setWfhEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [reason, setReason] = useState('');
+    const [deviceName, setDeviceName] = useState('');
     const [purposeDetail, setPurposeDetail] = useState('');
     const [internshipStartDate, setInternshipStartDate] = useState('');
     const [internshipEndDate, setInternshipEndDate] = useState('');
@@ -373,6 +374,26 @@ const MyRequests = () => {
                     daysCount: dates.length,
                     reason
                 };
+            } else if (activeCategory.systemType === 'admin-access' || activeCategory.title === 'Request Laptop Admin Access' || activeCategory.title?.toLowerCase().includes('admin access')) {
+                if (!deviceName || !deviceName.trim()) {
+                    triggerAlert('Validation Error', 'Please enter your laptop / workstation device name or hostname.', 'warning');
+                    return;
+                }
+                if (!selectedOption) {
+                    triggerAlert('Validation Error', 'Please select the requested access duration.', 'warning');
+                    return;
+                }
+                if (!reason || !reason.trim()) {
+                    triggerAlert('Validation Error', 'Please enter a justification for requiring local administrator access.', 'warning');
+                    return;
+                }
+                type = selectedOption;
+                details = {
+                    ...details,
+                    deviceName: deviceName.trim(),
+                    accessDuration: selectedOption,
+                    reason: reason.trim()
+                };
             } else if (activeCategory.systemType === 'loan') {
                 type = 'Loan';
                 const amt = Math.ceil(Number(loanAmount));
@@ -441,6 +462,7 @@ const MyRequests = () => {
         setEditingRequest(req);
         setSelectedOption(req.requestType || '');
         setReason(req.details?.reason || '');
+        setDeviceName(req.details?.deviceName || '');
         setQuantity(req.details?.quantity || 1);
         setLoanAmount(req.details?.requestedAmount?.toString() || '');
         setPaybackDuration(req.details?.paybackDuration?.toString() || '');
@@ -554,6 +576,7 @@ const MyRequests = () => {
                                 setLoanAmount('');
                                 setPaybackDuration('');
                                 setMonthlyDeduction('');
+                                setDeviceName('');
                                 const isWfhCat = cat.title === 'Work From Home (WFH)' || cat.systemType === 'wfh' || cat.title?.toLowerCase().includes('wfh');
                                 if (isWfhCat) {
                                     const todayStr = new Date().toISOString().split('T')[0];
@@ -571,6 +594,7 @@ const MyRequests = () => {
                                 cat.systemType === 'loan' ? 'from-emerald-500 to-emerald-600' :
                                 cat.title === 'Request Asset' ? 'from-purple-500 to-purple-600' :
                                 (cat.systemType === 'wfh' || cat.title?.toLowerCase().includes('wfh')) ? 'from-teal-500 to-indigo-600' :
+                                (cat.systemType === 'admin-access' || cat.title?.toLowerCase().includes('admin access')) ? 'from-violet-600 to-indigo-800' :
                                 'from-indigo-500 to-indigo-600'
                             } rounded-2xl p-6 text-white cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 relative overflow-hidden group shadow-md`}
                         >
@@ -947,6 +971,93 @@ const MyRequests = () => {
                                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-medium text-slate-800"
                                                     required
                                                 />
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (activeCategory.systemType === 'admin-access' || activeCategory.title === 'Request Laptop Admin Access' || activeCategory.title?.toLowerCase().includes('admin access')) ? (
+                                <>
+                                    <div className="bg-indigo-50 text-indigo-900 p-3.5 rounded-xl text-xs border border-indigo-200/80 space-y-1">
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                            <ShieldAlert size={15} className="text-indigo-600 shrink-0" />
+                                            <span>Request Laptop Admin Access</span>
+                                        </div>
+                                        <p className="text-indigo-800/90 text-[11px] leading-relaxed">
+                                            Submit a request for local administrator rights on your company laptop. This request will be reviewed directly by the <b>Super Admin</b>. Upon approval, IT will grant permissions manually via <b>Microsoft Intune</b>.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                            Device Name / Hostname <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={deviceName}
+                                            onChange={(e) => setDeviceName(e.target.value)}
+                                            placeholder="e.g. ITCS-LT-104 or DESKTOP-ABC123"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-mono text-slate-800"
+                                            required
+                                        />
+                                        <p className="text-[11px] text-gray-400 mt-1">
+                                            Can be found in Windows Settings &gt; System &gt; About.
+                                        </p>
+                                    </div>
+
+                                    <div className="relative" ref={dropdownRef}>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                            Access Duration <span className="text-rose-500">*</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDropdownOpen(!dropdownOpen)}
+                                            className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white border border-gray-300 rounded-xl shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-left text-sm transition-all text-gray-800 font-medium"
+                                        >
+                                            <span className="truncate">{selectedOption || "Select duration"}</span>
+                                            {dropdownOpen ? (
+                                                <ChevronUp size={16} className="text-gray-400 shrink-0 ml-2" />
+                                            ) : (
+                                                <ChevronDown size={16} className="text-gray-400 shrink-0 ml-2" />
+                                            )}
+                                        </button>
+                                        
+                                        {dropdownOpen && (
+                                            <div className="absolute z-50 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto py-1 divide-y divide-gray-50 text-sm">
+                                                {(activeCategory.options?.length ? activeCategory.options : [
+                                                    'Temporary Access (2 Hours)',
+                                                    'Temporary Access (4 Hours)',
+                                                    'Temporary Access (8 Hours)',
+                                                    'Temporary Access (1 Day)',
+                                                    'Temporary Access (3 Days)',
+                                                    'Temporary Access (7 Days)',
+                                                    'Temporary Access (14 Days)',
+                                                    'Temporary Access (30 Days)',
+                                                    'Permanent Access'
+                                                ])
+                                                    .filter((opt: string) => !(activeCategory.hiddenOptions || []).includes(opt))
+                                                    .map((opt: string, i: number) => {
+                                                        const isSelected = selectedOption === opt;
+                                                        return (
+                                                            <button
+                                                                key={i}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedOption(opt);
+                                                                    setDropdownOpen(false);
+                                                                }}
+                                                                className={`w-full text-left px-4 py-2.5 transition-colors flex items-center justify-between ${
+                                                                    isSelected 
+                                                                        ? 'bg-indigo-50 text-indigo-700 font-semibold' 
+                                                                        : 'text-gray-700 hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                <span>{opt}</span>
+                                                                {isSelected && (
+                                                                    <CheckCircle size={14} className="text-indigo-600 shrink-0 ml-2" />
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
                                             </div>
                                         )}
                                     </div>
@@ -1400,6 +1511,23 @@ const MyRequests = () => {
                                             <span>{selectedRequest.details.startDate === selectedRequest.details.endDate || !selectedRequest.details.endDate ? selectedRequest.details.startDate : `${selectedRequest.details.startDate} to ${selectedRequest.details.endDate}`}</span>
                                         </div>
                                         <p className="text-[11px] text-teal-700">Reflected in attendance automatically. Meal allowance is not calculated for remote work days.</p>
+                                    </div>
+                                )}
+                                {selectedRequest.details?.deviceName && (
+                                    <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl space-y-1.5">
+                                        <div className="flex justify-between items-center text-sm text-violet-950 font-semibold">
+                                            <span className="flex items-center gap-1.5"><ShieldAlert size={14} className="text-violet-600" /> Device / Hostname:</span>
+                                            <span className="font-mono text-xs font-bold text-violet-900 bg-white px-2 py-0.5 rounded border border-violet-200">{selectedRequest.details.deviceName}</span>
+                                        </div>
+                                        {selectedRequest.details.accessDuration && (
+                                            <div className="flex justify-between text-xs text-violet-800">
+                                                <span>Duration:</span>
+                                                <span className="font-bold">{selectedRequest.details.accessDuration}</span>
+                                            </div>
+                                        )}
+                                        <p className="text-[11px] text-violet-700 leading-relaxed">
+                                            Requires Super Admin approval. Upon approval, IT Endpoint Administrators will grant local admin rights via Microsoft Intune.
+                                        </p>
                                     </div>
                                 )}
                                 {selectedRequest.details?.quantity && (

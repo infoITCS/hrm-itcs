@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IWorkflowTask extends Document {
-    type: 'Onboarding' | 'Offboarding';
+    type: 'Onboarding' | 'Offboarding' | 'IT Access';
     targetEmployeeId?: string;
     targetUserId?: string;
     targetName: string;
@@ -15,12 +15,13 @@ export interface IWorkflowTask extends Document {
     completedByName?: string;
     completedAt?: Date;
     notes?: string;
+    relatedRequestId?: mongoose.Types.ObjectId | string;
     createdAt: Date;
     updatedAt: Date;
 }
 
 const WorkflowTaskSchema: Schema = new Schema({
-    type: { type: String, enum: ['Onboarding', 'Offboarding'], required: true, index: true },
+    type: { type: String, enum: ['Onboarding', 'Offboarding', 'IT Access'], required: true, index: true },
     targetEmployeeId: { type: String, index: true },
     targetUserId: { type: String, index: true },
     targetName: { type: String, required: true },
@@ -33,7 +34,8 @@ const WorkflowTaskSchema: Schema = new Schema({
     completedBy: { type: String },
     completedByName: { type: String },
     completedAt: { type: Date },
-    notes: { type: String }
+    notes: { type: String },
+    relatedRequestId: { type: Schema.Types.ObjectId, ref: 'EmployeeRequest', index: true }
 }, { timestamps: true });
 
 export default mongoose.models.WorkflowTask || mongoose.model<IWorkflowTask>('WorkflowTask', WorkflowTaskSchema);
