@@ -275,7 +275,6 @@ const WorkflowTasksTab: React.FC<WorkflowTasksTabProps> = ({ onPendingCountChang
     const completedCount = tasks.filter(t => t.status === 'Completed').length;
     const onboardingCount = tasks.filter(t => t.type === 'Onboarding').length;
     const offboardingCount = tasks.filter(t => t.type === 'Offboarding').length;
-    const itAccessCount = tasks.filter(t => t.type === 'IT Access').length;
 
     const getDeptBadgeColor = (dept: string) => {
         switch (dept) {
