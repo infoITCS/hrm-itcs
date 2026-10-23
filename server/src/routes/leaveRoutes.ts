@@ -1142,12 +1142,10 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
     const authReq = req as AuthRequest;
     try {
         const { role, userId } = authReq.user!;
-        if (!['super-admin', 'admin', 'manager'].includes(role)) {
-            return res.status(403).json({ success: false, message: 'Forbidden' });
-        }
+        const isPrivileged = ['super-admin', 'admin'].includes(role);
         let filter: any = {};
         
-        if (role === 'manager') {
+        if (!isPrivileged) {
             const managerEmployee = await mongoose.model('Employee').findOne({
                 $or: [
                     { userId },
@@ -1156,6 +1154,7 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
                 ]
             }).select('employeeId _id userId').lean() as any;
             
+            let directReportIds = new Set<string>();
             if (managerEmployee) {
                 const managerIdentifiers = [
                     managerEmployee.employeeId,
@@ -1168,16 +1167,18 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
                     'jobInfo.reportingManager': { $in: managerIdentifiers } 
                 }).select('employeeId _id userId').lean() as any[];
 
-                const directReportIds = new Set<string>();
                 directReports.forEach((emp: any) => {
                     if (emp.employeeId) directReportIds.add(String(emp.employeeId));
                     if (emp._id) directReportIds.add(String(emp._id));
                     if (emp.userId) directReportIds.add(String(emp.userId));
                 });
+            }
 
+            // Allow if explicit manager role or if user has direct reports
+            if (role === 'manager' || directReportIds.size > 0) {
                 filter.employeeId = { $in: Array.from(directReportIds) };
             } else {
-                filter.employeeId = { $in: [] };
+                return res.status(403).json({ success: false, message: 'Forbidden' });
             }
         }
 

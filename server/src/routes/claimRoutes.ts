@@ -932,6 +932,9 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         const claim = await ExpenseClaim.findById(req.params.id);
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
         if (isFinalStatus(claim.status)) return res.status(400).json({ message: 'Claim is already finalized' });
+        if (String(claim.employeeUserId) === String(userId) && role !== 'super-admin') {
+            return res.status(403).json({ message: 'Cannot approve/reject your own expense claim' });
+        }
 
         // Auto-bypass: If claim status is 'Pending Finance', ensure any prior pending stage is marked bypassed
         if (claim.status === 'Pending Finance' && Array.isArray(claim.approvals)) {

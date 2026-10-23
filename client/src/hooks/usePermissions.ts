@@ -54,9 +54,9 @@ export const usePermissions = () => {
             return user.customPermissions[moduleName];
         }
 
-        // Core performance module is temporarily hidden from live
+        // Core performance module is universally accessible to employees, managers, HR, and admins
         if (moduleName === 'performance') {
-            return false;
+            if (['super-admin', 'admin', 'hr', 'manager', 'employee'].includes(normalizedRole)) return true;
         }
 
         // Explicit role permission matrix from database
@@ -70,12 +70,12 @@ export const usePermissions = () => {
             return ['dashboard', 'leave', 'attendance', 'claim', 'payroll', 'loans', 'requests', 'provident-fund'].includes(moduleName);
         }
         if (normalizedRole === 'hr') {
-            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'loans', 'requests', 'provident-fund', 'recruitment'].includes(moduleName);
+            return ['dashboard', 'pim', 'leave', 'attendance', 'claim', 'loans', 'requests', 'provident-fund', 'recruitment', 'performance'].includes(moduleName);
         }
         if (normalizedRole === 'manager') {
-            return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
+            return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund', 'performance'].includes(moduleName);
         }
-        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund'].includes(moduleName);
+        return ['dashboard', 'leave', 'attendance', 'claim', 'requests', 'provident-fund', 'performance'].includes(moduleName);
     }, [user, normalizedRole]);
 
     const getModuleScope = useCallback((moduleName: string): 'none' | 'employee' | 'manager' | 'admin' => {
@@ -123,7 +123,7 @@ export const usePermissions = () => {
         // Manage requests is restricted to reviewers/approvers by default
         if (moduleName === 'requests') {
             if (subTabKey === 'manage-requests') {
-                return ['super-admin', 'admin', 'hr', 'manager'].includes(normalizedRole);
+                return ['super-admin', 'admin', 'hr', 'manager', 'finance'].includes(normalizedRole);
             }
         }
 

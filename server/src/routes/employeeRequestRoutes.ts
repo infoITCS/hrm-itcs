@@ -1146,8 +1146,32 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
                 requestType: { $not: /loan|pf|provident|salary|advance|finance/i }
             };
         } else if (role === 'finance') {
-            // Finance role ONLY sees non-loan, non-PF Financial requests (Salary, Advance, Finance). Loans and PF Withdrawals are Management/HR exclusive.
-            query = {
+            // Check if this finance user is also a reporting manager of direct reports
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            let directReportIds = new Set<string>();
+            if (managerEmployee) {
+                const managerIdentifiers = [
+                    managerEmployee.employeeId,
+                    managerEmployee._id ? String(managerEmployee._id) : '',
+                    String(userId)
+                ].filter(Boolean);
+
+                const directReports = await Employee.find({ 'jobInfo.reportingManager': { $in: managerIdentifiers } }).select('employeeId _id userId').lean() as any[];
+                directReports.forEach(e => {
+                    if (e.employeeId) directReportIds.add(String(e.employeeId));
+                    if (e._id) directReportIds.add(String(e._id));
+                    if (e.userId) directReportIds.add(String(e.userId));
+                });
+            }
+
+            const financeCondition = {
                 $and: [
                     {
                         $or: [
@@ -1159,11 +1183,30 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
                     { requestType: { $not: /loan|pf|provident/i } }
                 ]
             };
+
+            if (directReportIds.size > 0) {
+                // If finance user has direct reports, include both finance items AND direct reports' non-loan/non-pf requests
+                const teamCondition = {
+                    employeeId: { $in: Array.from(directReportIds) },
+                    category: { $not: /loan|pf|provident/i },
+                    requestType: { $not: /loan|pf|provident/i }
+                };
+                query = { $or: [financeCondition, teamCondition] };
+            } else {
+                query = financeCondition;
+            }
         }
 
         // Exclude internal payroll batch finance tasks from employee request management queue
         if ((query as any).$and) {
             (query as any).$and.push({ employeeId: { $ne: 'FINANCE-BATCH' } });
+        } else if ((query as any).$or) {
+            query = {
+                $and: [
+                    { employeeId: { $ne: 'FINANCE-BATCH' } },
+                    { $or: (query as any).$or }
+                ]
+            };
         } else {
             (query as any).employeeId = { $ne: 'FINANCE-BATCH' };
         }
@@ -1171,7 +1214,7 @@ router.get('/all', authenticate, authorize(['admin', 'super-admin', 'manager', '
         const requests = await EmployeeRequest.find(query).sort({ requestedAt: -1 }).lean();
         
         const employeeIds = [...new Set(requests.map(r => r.employeeId))];
-        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName avatar department designation providentFundBalance loans attachments._id attachments.fileType').lean();
+        const employees = await Employee.find({ employeeId: { $in: employeeIds } }).select('employeeId firstName middleName lastName avatar department designation providentFundBalance loans attachments._id attachments.fileType jobInfo.reportingManager').lean();
         
         const empMap = employees.reduce((acc: any, emp: any) => {
             acc[emp.employeeId] = emp;
@@ -1469,6 +1512,32 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
             const requestEmployee = await Employee.findOne({ employeeId: request.employeeId }).select('jobInfo.reportingManager');
             if (!requestEmployee || requestEmployee.jobInfo?.reportingManager !== managerEmployee.employeeId) {
                 return res.status(403).json({ message: 'You do not have permission to manage this request' });
+            }
+        }
+
+        const isFinancialRequest = /salary|advance|finance/i.test(request.category || '') ||
+                                   /salary|advance|finance/i.test(request.requestType || '');
+
+        // If finance role deciding on a non-financial request, verify they are the reporting manager
+        if (role === 'finance' && !isFinancialRequest) {
+            const managerEmployee = await Employee.findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            const managerIdentifiers = [
+                managerEmployee?.employeeId,
+                managerEmployee?._id ? String(managerEmployee._id) : '',
+                String(userId)
+            ].filter(Boolean);
+
+            const requestEmployee = await Employee.findOne({ employeeId: request.employeeId }).select('jobInfo.reportingManager').lean() as any;
+            const isDirectReport = requestEmployee?.jobInfo?.reportingManager && managerIdentifiers.includes(String(requestEmployee.jobInfo.reportingManager));
+            if (!isDirectReport) {
+                return res.status(403).json({ message: 'You do not have permission to manage this non-financial request' });
             }
         }
 

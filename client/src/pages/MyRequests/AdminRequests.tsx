@@ -180,7 +180,7 @@ const AdminRequests = () => {
         const isFinanceRelated = cat.includes('finance') || cat.includes('salary') || cat.includes('advance') ||
                                  reqType.includes('finance') || reqType.includes('salary') || reqType.includes('advance');
 
-        if (isFinanceRole && (isLoan || isPfWithdrawal || !isFinanceRelated)) return false;
+        if (isFinanceRole && (isLoan || isPfWithdrawal)) return false;
         if (isManagerRole && (isLoan || isPfWithdrawal || isFinanceRelated)) return false;
 
         const employeeName = formatEmployeeFullName(req.employee, '').toLowerCase();

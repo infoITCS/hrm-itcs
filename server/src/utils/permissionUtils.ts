@@ -51,7 +51,7 @@ export const SYSTEM_MODULES: SystemModuleDefinition[] = [
         subTabs: [
             { key: 'my-leaves', name: 'My Leave Balances & History', defaultRoles: ['all'] },
             { key: 'apply-leave', name: 'Apply for Leave', defaultRoles: ['all'] },
-            { key: 'team-requests', name: 'Leave Approvals Queue', defaultRoles: ['super-admin', 'admin', 'hr', 'manager'] },
+            { key: 'team-requests', name: 'Leave Approvals Queue', defaultRoles: ['super-admin', 'admin', 'hr', 'manager', 'finance'] },
             { key: 'all-leaves', name: 'Company-wide Leave History', defaultRoles: ['super-admin', 'admin', 'hr'] },
             { key: 'holidays', name: 'Holiday Calendar', defaultRoles: ['all'] },
         ]
@@ -90,7 +90,7 @@ export const SYSTEM_MODULES: SystemModuleDefinition[] = [
         name: 'Custom Requests & Approvals',
         subTabs: [
             { key: 'my-requests', name: 'My Submitted Requests', defaultRoles: ['all'] },
-            { key: 'manage-requests', name: 'Manage & Approve Requests', defaultRoles: ['super-admin', 'admin', 'hr', 'manager'] },
+            { key: 'manage-requests', name: 'Manage & Approve Requests', defaultRoles: ['super-admin', 'admin', 'hr', 'manager', 'finance'] },
             { key: 'request-categories', name: 'Request Form Templates', defaultRoles: ['super-admin', 'admin', 'hr'] },
         ]
     },

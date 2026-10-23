@@ -46,7 +46,18 @@ export async function scopeToTeam(req: AuthRequest, res: Response, next: NextFun
                 { employeeId: 1 }
             ).lean() as any;
             
-            req.teamScope = emp ? [emp.employeeId] : [];
+            if (emp) {
+                const subordinates = await Employee.find(
+                    { 'jobInfo.reportingManager': emp.employeeId, isDeleted: { $ne: true } },
+                    { employeeId: 1 }
+                ).lean() as any[];
+
+                req.teamScope = subordinates.length > 0
+                    ? [emp.employeeId, ...subordinates.map((e) => e.employeeId)]
+                    : [emp.employeeId];
+            } else {
+                req.teamScope = [];
+            }
         } else if (['admin', 'super-admin', 'hr'].includes(req.user.role)) {
             // admin, super-admin, hr → unrestricted
             req.teamScope = null;

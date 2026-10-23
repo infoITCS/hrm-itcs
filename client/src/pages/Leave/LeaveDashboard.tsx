@@ -94,8 +94,8 @@ const LeaveDashboard = () => {
     const [refreshCounter, setRefreshCounter] = useState(0);
     const { role, hasSubAccess } = usePermissions();
     const canMyLeaves = hasSubAccess('leave', 'my-leaves');
-    const canTeamRequests = ['super-admin', 'admin', 'manager', 'hr'].includes(role) && hasSubAccess('leave', 'team-requests');
-    const canTeamBalances = role === 'manager' && canTeamRequests;
+    const canTeamRequests = ['super-admin', 'admin', 'manager', 'hr', 'finance'].includes(role) && hasSubAccess('leave', 'team-requests');
+    const canTeamBalances = ['manager', 'finance'].includes(role) && canTeamRequests;
     const canSettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'all-leaves');
     const canHolidaySettings = ['super-admin', 'admin', 'hr'].includes(role) && hasSubAccess('leave', 'holidays');
     const isManagement = canTeamRequests;

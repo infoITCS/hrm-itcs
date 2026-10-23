@@ -47,7 +47,7 @@ import LoanManagement from './pages/Admin/LoanManagement';
 import MyPayslips from './pages/Payroll/MyPayslips';
 import MyLoans from './pages/Payroll/MyLoans';
 import NotificationsPage from './pages/Notifications/NotificationsPage';
-// import PerformanceDashboard from './pages/Performance/PerformanceDashboard';
+import PerformanceDashboard from './pages/Performance/PerformanceDashboard';
 import DocumentDispatcher from './pages/Communications/DocumentDispatcher';
 
 // Dynamic Page Titles Mapping
@@ -202,7 +202,7 @@ function AppRoutes() {
         {/* Open to all authenticated users */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="my-info" element={<MyInfo />} />
-        <Route path="performance" element={<Navigate to="/dashboard" replace />} />
+        <Route path="performance" element={<PerformanceDashboard />} />
         <Route path="directory" element={<Directory />} />
         <Route path="company-policy" element={<CompanyPolicy />} />
         <Route path="opd-policy" element={<Navigate to="/company-policy#sec-10" replace />} />
@@ -249,7 +249,7 @@ function AppRoutes() {
         <Route path="my-requests" element={<MyRequests />} />
         <Route path="workflow-tasks" element={<WorkflowTasksPage />} />
         
-        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr']} />}>
+        <Route element={<RoleProtectedRoute allowedRoles={['super-admin', 'admin', 'manager', 'hr', 'finance']} />}>
           <Route path="my-requests/manage" element={<SubModuleProtectedRoute moduleName="requests" subTabKey="manage-requests"><AdminRequests /></SubModuleProtectedRoute>} />
         </Route>
         
