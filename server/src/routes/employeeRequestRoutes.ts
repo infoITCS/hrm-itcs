@@ -356,7 +356,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                         message: msg,
                         time: claim.updatedAt || claim.createdAt,
                         type: 'task',
-                        path: isErpTask ? '/claim?tab=history' : '/claim?tab=approvals'
+                        path: isErpTask ? `/claim?tab=history&claimId=${claim._id}` : `/claim?tab=approvals&claimId=${claim._id}`
                     });
                 }
             }
@@ -399,7 +399,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                             message: `${latest.authorName}: "${latest.message}"`,
                             time: latest.createdAt,
                             type: 'task',
-                            path: '/claim?tab=approvals'
+                            path: `/claim?tab=approvals&claimId=${claim._id}`
                         });
                     }
                 }
@@ -618,7 +618,7 @@ router.get('/notifications', authenticate, async (req: Request, res: Response, n
                     message: `Your ${claim.category} claim of Rs. ${claim.amountRequested.toLocaleString()} is currently ${claim.status.toLowerCase()}.`,
                     time: claim.updatedAt || claim.createdAt,
                     type: 'task',
-                    path: '/claim?tab=mine'
+                    path: `/claim?tab=mine&claimId=${claim._id}`
                 });
             }
 
@@ -1369,6 +1369,7 @@ async function syncPfWithdrawalDisbursement(request: any) {
             // Already debited — update ERP reference ID if provided
             if (request.erpReferenceId && emp.providentFundHistory[existingDebitIndex].erpReferenceId !== request.erpReferenceId.trim()) {
                 emp.providentFundHistory[existingDebitIndex].erpReferenceId = request.erpReferenceId.trim();
+                emp.markModified('providentFundHistory');
                 await emp.save();
             }
             return;
@@ -1387,6 +1388,8 @@ async function syncPfWithdrawalDisbursement(request: any) {
             erpReferenceId: (request.erpReferenceId || '').trim()
         } as any);
 
+        emp.markModified('providentFundBalance');
+        emp.markModified('providentFundHistory');
         await emp.save();
     } catch (err: any) {
         logger.error('Error syncing PF withdrawal disbursement:', err.message);
@@ -1450,6 +1453,8 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
                         const debitedAmount = Number(emp.providentFundHistory[debitIdx].amount || 0);
                         emp.providentFundBalance = (emp.providentFundBalance || 0) + debitedAmount;
                         emp.providentFundHistory.splice(debitIdx, 1);
+                        emp.markModified('providentFundBalance');
+                        emp.markModified('providentFundHistory');
                         await emp.save();
                     }
                 }
@@ -1679,6 +1684,7 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
         if (isPfWithdrawalReq && (status === 'Completed' || req.body.payoutStatus === 'Paid') && !request.payrollRunId) {
             request.payoutStatus = 'Paid';
             if (!request.paidAt) request.paidAt = new Date();
+            if (req.body.erpReferenceId) request.erpReferenceId = String(req.body.erpReferenceId).trim();
             await syncPfWithdrawalDisbursement(request);
         } else if (isPfWithdrawalReq && (status === 'Rejected' || status === 'Cancelled') && !request.payrollRunId) {
             if (request.payoutStatus === 'Paid') {
@@ -1692,6 +1698,8 @@ router.patch('/:id/status', authenticate, authorize(['admin', 'super-admin', 'ma
                         const debitedAmount = Number(emp.providentFundHistory[debitIdx].amount || 0);
                         emp.providentFundBalance = (emp.providentFundBalance || 0) + debitedAmount;
                         emp.providentFundHistory.splice(debitIdx, 1);
+                        emp.markModified('providentFundBalance');
+                        emp.markModified('providentFundHistory');
                         await emp.save();
                     }
                 }

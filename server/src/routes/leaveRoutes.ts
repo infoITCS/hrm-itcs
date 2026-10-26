@@ -1228,6 +1228,75 @@ router.get('/all', authenticate, async (req: Request, res: Response, next: NextF
     }
 });
 
+// GET /api/leaves/:id - Get single leave request by ID
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ success: false, message: 'Invalid leave ID' });
+        }
+
+        const leave = await LeaveRequest.findById(req.params.id).lean() as any;
+        if (!leave) {
+            return res.status(404).json({ success: false, message: 'Leave request not found' });
+        }
+
+        const { role, userId } = authReq.user!;
+        const isPrivileged = ['super-admin', 'admin', 'hr', 'finance'].includes(role);
+
+        const employee = await mongoose.model('Employee').findOne({
+            $or: [
+                { employeeId: leave.employeeId },
+                { _id: mongoose.isValidObjectId(leave.employeeId) ? leave.employeeId : undefined },
+                { userId: mongoose.isValidObjectId(leave.employeeId) ? leave.employeeId : undefined }
+            ]
+        }).select('_id employeeId userId firstName lastName avatar jobInfo').lean() as any;
+
+        const isOwner = employee && (String(employee.userId) === String(userId) || String(employee._id) === String(userId) || String(employee.employeeId) === String(userId));
+
+        if (!isPrivileged && !isOwner) {
+            const managerEmployee = await mongoose.model('Employee').findOne({
+                $or: [
+                    { userId },
+                    { _id: mongoose.isValidObjectId(userId) ? userId : undefined },
+                    { employeeId: userId }
+                ]
+            }).select('employeeId _id userId').lean() as any;
+
+            let isManagerOfEmployee = false;
+            if (managerEmployee && employee) {
+                const managerIdentifiers = [
+                    managerEmployee.employeeId,
+                    managerEmployee._id ? String(managerEmployee._id) : '',
+                    managerEmployee.userId ? String(managerEmployee.userId) : '',
+                    String(userId)
+                ].filter(Boolean);
+
+                const repManager = employee.jobInfo?.reportingManager;
+                if (repManager && managerIdentifiers.includes(String(repManager))) {
+                    isManagerOfEmployee = true;
+                }
+            }
+
+            if (!isManagerOfEmployee) {
+                return res.status(403).json({ success: false, message: 'Forbidden' });
+            }
+        }
+
+        const enrichedLeave = {
+            ...leave,
+            employeeName: employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown Employee',
+            avatar: employee?.avatar,
+            readableId: employee?.employeeId || null
+        };
+
+        const [fullyEnriched] = await enrichApproverNames([enrichedLeave]);
+        res.json({ success: true, data: fullyEnriched });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // POST /api/leaves - Apply for leave
 router.post('/', authenticate, checkProfileLock, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;

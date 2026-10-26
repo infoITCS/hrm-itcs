@@ -76,7 +76,7 @@ const LeaveDashboard = () => {
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
     const [editingLeave, setEditingLeave] = useState<any>(null);
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     type LeaveTab = 'my-leaves' | 'team-requests' | 'team-balances' | 'settings' | 'holiday-settings';
     const [activeTab, setActiveTab] = useState<LeaveTab>(() => {
         const tabParam = searchParams.get('tab');
@@ -88,9 +88,69 @@ const LeaveDashboard = () => {
             return role === 'manager' ? 'team-balances' : 'settings';
         }
         if (tabParam === 'holiday-settings') return 'holiday-settings';
-        return 'my-leaves';
+        return (sessionStorage.getItem('leave_active_tab') as LeaveTab) || 'my-leaves';
     });
-    const [statusFilter, setStatusFilter] = useState('All');
+    const [statusFilter, setStatusFilter] = useState(() => sessionStorage.getItem('leave_status_filter') || 'All');
+
+    useEffect(() => {
+        sessionStorage.setItem('leave_active_tab', activeTab);
+        sessionStorage.setItem('leave_status_filter', statusFilter);
+    }, [activeTab, statusFilter]);
+
+    const handleLeaveClick = (e: React.MouseEvent, leave: any, tabName = activeTab) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault();
+        setSelectedLeave(leave);
+        setShowDetailsModal(true);
+        if (searchParams.get('leaveId') !== leave._id) {
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('leaveId', leave._id);
+                next.set('tab', tabName);
+                return next;
+            }, { replace: true });
+        }
+    };
+
+    const targetLeaveId = searchParams.get('leaveId');
+    useEffect(() => {
+        if (!targetLeaveId) return;
+        if (selectedLeave?._id === targetLeaveId && showDetailsModal) return;
+
+        const found = history.find(l => l._id === targetLeaveId);
+        if (found) {
+            setSelectedLeave(found);
+            setShowDetailsModal(true);
+            return;
+        }
+
+        let isCurrent = true;
+        const token = localStorage.getItem('token');
+        fetch(`${api.baseURL}/api/leaves/${targetLeaveId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (isCurrent && data?.success && data?.data) {
+                    setSelectedLeave(data.data);
+                    setShowDetailsModal(true);
+                }
+            })
+            .catch(() => {});
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [targetLeaveId, history, selectedLeave, showDetailsModal]);
+
+    const switchTab = (newTab: LeaveTab) => {
+        setActiveTab(newTab);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', newTab);
+            return next;
+        }, { replace: true });
+    };
     const [refreshCounter, setRefreshCounter] = useState(0);
     const { role, hasSubAccess } = usePermissions();
     const canMyLeaves = hasSubAccess('leave', 'my-leaves');
@@ -407,7 +467,7 @@ const STATUS_COLORS: any = {
                     <div className="flex overflow-x-auto scrollbar-none gap-2 sm:gap-6 pb-1">
                         {canMyLeaves && (
                             <button 
-                                onClick={() => setActiveTab('my-leaves')}
+                                onClick={() => switchTab('my-leaves')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'my-leaves' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 My Leave Request
@@ -417,7 +477,7 @@ const STATUS_COLORS: any = {
                         
                         {canSettings && (
                             <button 
-                                onClick={() => setActiveTab('settings')}
+                                onClick={() => switchTab('settings')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Leave Settings & Balances
@@ -427,7 +487,7 @@ const STATUS_COLORS: any = {
 
                         {canHolidaySettings && (
                             <button 
-                                onClick={() => setActiveTab('holiday-settings')}
+                                onClick={() => switchTab('holiday-settings')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'holiday-settings' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Holiday Settings
@@ -437,7 +497,7 @@ const STATUS_COLORS: any = {
 
                         {canTeamRequests && (
                             <button 
-                                onClick={() => setActiveTab('team-requests')}
+                                onClick={() => switchTab('team-requests')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'team-requests' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Leave Requests
@@ -447,7 +507,7 @@ const STATUS_COLORS: any = {
 
                         {canTeamBalances && (
                             <button 
-                                onClick={() => setActiveTab('team-balances')}
+                                onClick={() => switchTab('team-balances')}
                                 className={`pb-1 text-sm font-bold transition-all duration-300 relative whitespace-nowrap shrink-0 ${activeTab === 'team-balances' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                             >
                                 Team Leave Balances
@@ -592,17 +652,15 @@ const STATUS_COLORS: any = {
                                                         </button>
                                                     </>
                                                 )}
-                                                <button 
-                                                    onClick={() => {
-                                                        setSelectedLeave(leave);
-                                                        setShowDetailsModal(true);
-                                                    }}
+                                                <a 
+                                                    href={`/leave?leaveId=${leave._id}&tab=my-leaves`}
+                                                    onClick={(e) => handleLeaveClick(e, leave, 'my-leaves')}
                                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all cursor-pointer shadow-2xs"
-                                                    title="View leave details"
+                                                    title="View leave details (Right-click to open in new tab)"
                                                 >
                                                     <Eye size={13} />
                                                     Details
-                                                </button>
+                                                </a>
                                             </div>
                                         </td>
                                     </tr>
@@ -648,6 +706,13 @@ const STATUS_COLORS: any = {
                 onClose={() => {
                     setShowDetailsModal(false);
                     setSelectedLeave(null);
+                    if (searchParams.has('leaveId')) {
+                        setSearchParams(prev => {
+                            const next = new URLSearchParams(prev);
+                            next.delete('leaveId');
+                            return next;
+                        }, { replace: true });
+                    }
                 }}
                 leave={selectedLeave}
                 onEdit={(leaveToEdit) => {

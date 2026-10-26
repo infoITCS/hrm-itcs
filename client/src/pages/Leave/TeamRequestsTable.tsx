@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, X, Eye, MessageSquare, Search, Edit3, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
@@ -12,19 +13,69 @@ type ActionFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
 const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) => {
     const { showToast } = useToast();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [selectedLeave, setSelectedLeave] = useState<any>(null);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('leave_team_search') || '');
     const { role } = usePermissions();
     const isAdmin = ['super-admin', 'admin'].includes(role);
 
-    // Sorting & Action Filter State
-    const [statusFilter, setStatusFilter] = useState<ActionFilter>('all');
+    // Sorting & Action Filter State (persisted in sessionStorage)
+    const [statusFilter, setStatusFilter] = useState<ActionFilter>(() => (sessionStorage.getItem('leave_team_filter') as ActionFilter) || 'all');
     const [sortField, setSortField] = useState<SortField>('date');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+    useEffect(() => {
+        sessionStorage.setItem('leave_team_filter', statusFilter);
+        sessionStorage.setItem('leave_team_search', searchQuery);
+    }, [statusFilter, searchQuery]);
+
+    const handleLeaveClick = (e: React.MouseEvent, req: any) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault();
+        setSelectedLeave(req);
+        setShowDetailsModal(true);
+        if (searchParams.get('leaveId') !== req._id) {
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('leaveId', req._id);
+                next.set('tab', 'team-requests');
+                return next;
+            }, { replace: true });
+        }
+    };
+
+    const targetLeaveId = searchParams.get('leaveId');
+    useEffect(() => {
+        if (!targetLeaveId) return;
+        if (selectedLeave?._id === targetLeaveId && showDetailsModal) return;
+
+        const found = requests.find(r => r._id === targetLeaveId);
+        if (found) {
+            setSelectedLeave(found);
+            setShowDetailsModal(true);
+            return;
+        }
+
+        let isCurrent = true;
+        const token = localStorage.getItem('token');
+        fetch(`${api.baseURL}/api/leaves/${targetLeaveId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (isCurrent && data?.success && data?.data) {
+                    setSelectedLeave(data.data);
+                    setShowDetailsModal(true);
+                }
+            })
+            .catch(() => {});
+
+        return () => { isCurrent = false; };
+    }, [targetLeaveId, requests, selectedLeave, showDetailsModal]);
     
     // Rejection State
     const [showRejectModal, setShowRejectModal] = useState(false);
@@ -369,7 +420,14 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                                         initialsClassName="bg-indigo-100 text-indigo-600 font-bold"
                                     />
                                     <div className="flex flex-col">
-                                        <span className="font-bold text-slate-800 text-sm">{req.employeeName || 'Unknown'}</span>
+                                        <a
+                                            href={`/leave?leaveId=${req._id}&tab=team-requests`}
+                                            onClick={(e) => handleLeaveClick(e, req)}
+                                            className="font-bold text-slate-800 text-sm hover:text-indigo-600 hover:underline"
+                                            title="View leave details (Right-click to open in new tab)"
+                                        >
+                                            {req.employeeName || 'Unknown'}
+                                        </a>
                                         {req.readableId && <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-tighter italic">{req.readableId}</span>}
                                     </div>
                                 </div>
@@ -391,9 +449,14 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                             <td className="px-6 py-5">
                                 <div className="flex items-center gap-2">
                                     <p className="text-xs text-slate-500 max-w-[120px] truncate italic">"{req.reason || 'No reason'}"</p>
-                                    <button onClick={() => { setSelectedLeave(req); setShowDetailsModal(true); }} className="p-1 text-slate-300 hover:text-indigo-600 transition-colors">
+                                    <a
+                                        href={`/leave?leaveId=${req._id}&tab=team-requests`}
+                                        onClick={(e) => handleLeaveClick(e, req)}
+                                        className="p-1 text-slate-300 hover:text-indigo-600 transition-colors inline-block"
+                                        title="View leave details (Right-click to open in new tab)"
+                                    >
                                         <Eye size={14} />
-                                    </button>
+                                    </a>
                                 </div>
                             </td>
                             <td className="px-6 py-5">
@@ -578,6 +641,13 @@ const TeamRequestsTable = ({ onStatusChange }: { onStatusChange?: () => void }) 
                 onClose={() => {
                     setShowDetailsModal(false);
                     setSelectedLeave(null);
+                    if (searchParams.has('leaveId')) {
+                        setSearchParams(prev => {
+                            const next = new URLSearchParams(prev);
+                            next.delete('leaveId');
+                            return next;
+                        }, { replace: true });
+                    }
                 }}
                 leave={selectedLeave}
                 onSuccess={onStatusChange}

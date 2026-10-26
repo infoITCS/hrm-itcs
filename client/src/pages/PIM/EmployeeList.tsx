@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Pencil, Trash, Eye, Search, Filter, Briefcase, Users, LayoutGrid, List, UserPlus, Building2, ShieldCheck, Mail, Send, X, CheckCircle, AlertTriangle, Bell, Lock, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
 import DeleteModal from '../../components/UI/DeleteModal';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
 import { getAvatarUrl } from '../../utils/avatar';
@@ -35,22 +35,39 @@ interface ProfileProgressData {
 }
 
 const EmployeeList = () => {
-    const navigate = useNavigate();
     const { canCreateUser, canEditSensitiveData, hasSubAccess, role } = usePermissions();
     const canAddEmployee = canCreateUser() && hasSubAccess('pim', 'add-employee');
     const [employees, setEmployees] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = React.useState(false);
     const [employeeToDelete, setEmployeeToDelete] = React.useState<string | null>(null);
-    const [viewMode, setViewMode] = React.useState<'table' | 'grid'>('grid');
-    const [page, setPage] = React.useState(1);
-    const [filters, setFilters] = React.useState({
-        name: '',
-        id: '',
-        post: '',
-        dept: ''
+    const [viewMode, setViewMode] = React.useState<'table' | 'grid'>(() => {
+        return (sessionStorage.getItem('hrm_pim_view_mode') as 'table' | 'grid') || 'grid';
     });
-    const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>('active');
+    const [page, setPage] = React.useState(1);
+    const [filters, setFilters] = React.useState<{ name: string; id: string; post: string; dept: string }>(() => {
+        try {
+            const saved = sessionStorage.getItem('hrm_pim_filters');
+            return saved ? JSON.parse(saved) : { name: '', id: '', post: '', dept: '' };
+        } catch {
+            return { name: '', id: '', post: '', dept: '' };
+        }
+    });
+    const [statusFilter, setStatusFilter] = React.useState<'active' | 'past'>(() => {
+        return (sessionStorage.getItem('hrm_pim_status_filter') as 'active' | 'past') || 'active';
+    });
+
+    React.useEffect(() => {
+        sessionStorage.setItem('hrm_pim_filters', JSON.stringify(filters));
+    }, [filters]);
+
+    React.useEffect(() => {
+        sessionStorage.setItem('hrm_pim_status_filter', statusFilter);
+    }, [statusFilter]);
+
+    React.useEffect(() => {
+        sessionStorage.setItem('hrm_pim_view_mode', viewMode);
+    }, [viewMode]);
     const [departments, setDepartments] = React.useState<string[]>([]);
     const [showQuickInviteModal, setShowQuickInviteModal] = React.useState(false);
     const [inviteData, setInviteData] = React.useState({ firstName: '', lastName: '', email: '', role: 'employee' });
@@ -466,6 +483,17 @@ const EmployeeList = () => {
                     >
                         Past Employees (Offboarded)
                     </button>
+                    {(Object.values(filters).some(Boolean) || statusFilter !== 'active') && (
+                        <button
+                            onClick={() => {
+                                setFilters({ name: '', id: '', post: '', dept: '' });
+                                setStatusFilter('active');
+                            }}
+                            className="pb-3 text-xs font-semibold text-indigo-600 hover:text-indigo-800 ml-auto flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                            <X size={14} /> Reset Filters
+                        </button>
+                    )}
                 </div>
                 <div className="flex flex-col xl:flex-row gap-4 sm:gap-6 items-start xl:items-center justify-between">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 flex-1 w-full">
@@ -544,13 +572,13 @@ const EmployeeList = () => {
 
                         <div className="flex items-center gap-2.5 w-full xl:w-auto">
                             {['super-admin', 'admin'].includes(role) && (
-                                <button
-                                    onClick={() => navigate('/admin/export')}
+                                <Link
+                                    to="/admin/export"
                                     className="flex-1 xl:flex-none bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95 cursor-pointer"
                                     title="Custom Filter-based Excel Export"
                                 >
                                     <FileSpreadsheet size={16} className="text-emerald-400" /> Export Data
-                                </button>
+                                </Link>
                             )}
 
                             {canAddEmployee && (
@@ -561,12 +589,12 @@ const EmployeeList = () => {
                                     >
                                         <Mail size={16} /> Quick Invite via Email
                                     </button>
-                                    <button
-                                        onClick={() => navigate('/pim/add')}
+                                    <Link
+                                        to="/pim/add"
                                         className="flex-1 xl:flex-none bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm font-bold transition-all shadow-indigo-200 shadow-md hover:shadow-indigo-300 active:scale-95 cursor-pointer"
                                     >
                                         <Plus size={18} /> Add Full Profile
-                                    </button>
+                                    </Link>
                                 </>
                             )}
                         </div>
@@ -588,8 +616,8 @@ const EmployeeList = () => {
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 -mr-10 -mt-10 rounded-full" />
 
                                 {/* Avatar */}
-                                <div className="relative mb-4">
-                                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-lg overflow-hidden group-hover:scale-105 transition-transform">
+                                <Link to={`/pim/view/${emp.employeeId}`} className="block relative mb-4 group/avatar">
+                                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-lg overflow-hidden group-hover/avatar:scale-105 transition-transform">
                                         <Avatar
                                             src={getAvatarUrl(emp)}
                                             firstName={emp.firstName}
@@ -598,13 +626,15 @@ const EmployeeList = () => {
                                             initialsClassName="bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-600 text-2xl font-bold"
                                         />
                                     </div>
-                                </div>
+                                </Link>
 
                                 {/* Info */}
                                 <div className="space-y-1 mb-6">
-                                    <h5 className="font-bold text-slate-800 text-lg group-hover:text-indigo-600 transition-colors">
-                                        {formatEmployeeFullName(emp, emp.employeeId)}
-                                    </h5>
+                                    <Link to={`/pim/view/${emp.employeeId}`} className="block group/link">
+                                        <h5 className="font-bold text-slate-800 text-lg group-hover/link:text-indigo-600 transition-colors">
+                                            {formatEmployeeFullName(emp, emp.employeeId)}
+                                        </h5>
+                                    </Link>
                                     <p className="text-indigo-600 text-sm font-semibold tracking-tight">{emp.jobInfo?.designation || 'Software Engineer'}</p>
                                     <div className="flex items-center justify-center gap-1.5 text-slate-400 text-xs">
                                         <Building2 size={12} />
@@ -635,21 +665,21 @@ const EmployeeList = () => {
 
                                 {/* Actions */}
                                 <div className="flex items-center gap-2 w-full pt-4 border-t border-slate-100">
-                                    <button
-                                        onClick={() => navigate(`/pim/view/${emp.employeeId}`)}
+                                    <Link
+                                        to={`/pim/view/${emp.employeeId}`}
                                         className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"
                                     >
                                         <Eye size={14} /> View
-                                    </button>
+                                    </Link>
                                     {canEditSensitiveData() && (
                                         <div className="flex gap-2">
-                                            <button
-                                                onClick={() => navigate(`/pim/edit/${emp.employeeId}`)}
-                                                className="p-2 text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+                                            <Link
+                                                to={`/pim/edit/${emp.employeeId}`}
+                                                className="p-2 text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm flex items-center justify-center"
                                                 title="Edit"
                                             >
                                                 <Pencil size={14} />
-                                            </button>
+                                            </Link>
                                             <button
                                                 onClick={() => handleDeleteClick(emp.employeeId)}
                                                 className="p-2 text-rose-600 bg-rose-50 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"
@@ -680,8 +710,8 @@ const EmployeeList = () => {
                                     {paginatedEmployees.map((emp) => (
                                         <tr key={emp.employeeId} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100 relative group-hover:scale-110 transition-transform overflow-hidden">
+                                                <Link to={`/pim/view/${emp.employeeId}`} className="flex items-center gap-3 group/row">
+                                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold border border-indigo-100 relative group-hover/row:scale-110 transition-transform overflow-hidden">
                                                         <Avatar
                                                             src={getAvatarUrl(emp)}
                                                             firstName={emp.firstName}
@@ -691,10 +721,10 @@ const EmployeeList = () => {
                                                         />
                                                     </div>
                                                     <div>
-                                                        <p className="font-bold text-slate-800">{formatEmployeeFullName(emp, emp.employeeId)}</p>
+                                                        <p className="font-bold text-slate-800 group-hover/row:text-indigo-600 transition-colors">{formatEmployeeFullName(emp, emp.employeeId)}</p>
                                                         <p className="text-[11px] text-slate-400 font-medium">#{emp.employeeId}</p>
                                                     </div>
-                                                </div>
+                                                </Link>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <p className="font-bold text-slate-700">{emp.jobInfo?.designation || '-'}</p>
@@ -720,10 +750,10 @@ const EmployeeList = () => {
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <button onClick={() => navigate(`/pim/view/${emp.employeeId}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="View"><Eye size={16} /></button>
+                                                    <Link to={`/pim/view/${emp.employeeId}`} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-flex items-center justify-center" title="View"><Eye size={16} /></Link>
                                                     {canEditSensitiveData() && (
                                                         <>
-                                                            <button onClick={() => navigate(`/pim/edit/${emp.employeeId}`)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Edit"><Pencil size={16} /></button>
+                                                            <Link to={`/pim/edit/${emp.employeeId}`} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all inline-flex items-center justify-center" title="Edit"><Pencil size={16} /></Link>
                                                             <button onClick={() => handleDeleteClick(emp.employeeId)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Delete"><Trash size={16} /></button>
                                                         </>
                                                     )}
@@ -820,12 +850,12 @@ const EmployeeList = () => {
                                 </button>
                             )}
                             {!Object.values(filters).some(Boolean) && canCreateUser() && statusFilter === 'active' && (
-                                <button
-                                    onClick={() => navigate('/pim/add')}
+                                <Link
+                                    to="/pim/add"
                                     className="mt-4 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all text-sm flex items-center gap-2"
                                 >
                                     <Plus size={16} /> Add First Employee
-                                </button>
+                                </Link>
                             )}
                         </div>
                     </div>
@@ -1158,15 +1188,14 @@ const EmployeeList = () => {
                                                         <Bell size={12} />
                                                         <span>{isSendingThis ? 'Sending...' : 'Remind'}</span>
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => navigate(`/pim/view/${emp.employeeId}`)}
+                                                    <Link
+                                                        to={`/pim/view/${emp.employeeId}`}
                                                         className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                         title="Open Employee Profile"
                                                     >
                                                         <Eye size={12} />
                                                         <span>Profile</span>
-                                                    </button>
+                                                    </Link>
                                                     <span className="text-slate-400 hover:text-slate-600 p-1">
                                                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                                                     </span>

@@ -1283,6 +1283,8 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                     }
                     employee.providentFundHistory.push(historyEntry as any);
                     employee.providentFundBalance = (employee.providentFundBalance || 0) + pfContribution;
+                    employee.markModified('providentFundBalance');
+                    employee.markModified('providentFundHistory');
                 }
             }
 
@@ -1316,6 +1318,8 @@ router.put('/:runId/approve', authenticate, async (req: Request, res: Response, 
                         payrollRunId: run._id.toString(),
                         erpReferenceId: String(erpReferenceId || '').trim()
                     } as any);
+                    employee.markModified('providentFundBalance');
+                    employee.markModified('providentFundHistory');
                 }
             }
 
@@ -1458,6 +1462,7 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
                     if (existingDebitIndex !== -1) {
                         if (erpReferenceId && emp.providentFundHistory[existingDebitIndex].erpReferenceId !== erpReferenceId.trim()) {
                             emp.providentFundHistory[existingDebitIndex].erpReferenceId = erpReferenceId.trim();
+                            emp.markModified('providentFundHistory');
                             await emp.save();
                         }
                     } else {
@@ -1476,6 +1481,8 @@ router.put('/:runId/disburse', authenticate, async (req: Request, res: Response,
                             payrollRunId: run._id.toString(),
                             erpReferenceId: erpReferenceId.trim()
                         } as any);
+                        emp.markModified('providentFundBalance');
+                        emp.markModified('providentFundHistory');
                         await emp.save();
                     }
                 }

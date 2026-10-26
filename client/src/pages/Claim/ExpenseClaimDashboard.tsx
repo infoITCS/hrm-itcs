@@ -140,7 +140,7 @@ const ExpenseClaimDashboard = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
     const { role, hasSubAccess } = usePermissions();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const token = localStorage.getItem('token');
     const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
@@ -249,14 +249,24 @@ const ExpenseClaimDashboard = () => {
     // New form fields
     const [expenseDate, setExpenseDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
-    // PIM-style filters state
-    const [filterClaimNo, setFilterClaimNo] = useState('');
-    const [filterEmployeeName, setFilterEmployeeName] = useState('');
-    const [filterCategory, setFilterCategory] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
-    const [filterStartDate, setFilterStartDate] = useState('');
-    const [filterEndDate, setFilterEndDate] = useState('');
-    const [filterErpRef, setFilterErpRef] = useState('');
+    // PIM-style filters state (persisted in sessionStorage to prevent reset on tab/page refresh)
+    const [filterClaimNo, setFilterClaimNo] = useState(() => sessionStorage.getItem('hrm_claim_filter_no') || '');
+    const [filterEmployeeName, setFilterEmployeeName] = useState(() => sessionStorage.getItem('hrm_claim_filter_emp') || '');
+    const [filterCategory, setFilterCategory] = useState(() => sessionStorage.getItem('hrm_claim_filter_cat') || '');
+    const [filterStatus, setFilterStatus] = useState(() => sessionStorage.getItem('hrm_claim_filter_status') || '');
+    const [filterStartDate, setFilterStartDate] = useState(() => sessionStorage.getItem('hrm_claim_filter_start') || '');
+    const [filterEndDate, setFilterEndDate] = useState(() => sessionStorage.getItem('hrm_claim_filter_end') || '');
+    const [filterErpRef, setFilterErpRef] = useState(() => sessionStorage.getItem('hrm_claim_filter_erp') || '');
+
+    useEffect(() => {
+        sessionStorage.setItem('hrm_claim_filter_no', filterClaimNo);
+        sessionStorage.setItem('hrm_claim_filter_emp', filterEmployeeName);
+        sessionStorage.setItem('hrm_claim_filter_cat', filterCategory);
+        sessionStorage.setItem('hrm_claim_filter_status', filterStatus);
+        sessionStorage.setItem('hrm_claim_filter_start', filterStartDate);
+        sessionStorage.setItem('hrm_claim_filter_end', filterEndDate);
+        sessionStorage.setItem('hrm_claim_filter_erp', filterErpRef);
+    }, [filterClaimNo, filterEmployeeName, filterCategory, filterStatus, filterStartDate, filterEndDate, filterErpRef]);
 
     // Bulk actions state
     const [selectedClaimIds, setSelectedClaimIds] = useState<string[]>([]);
@@ -1318,6 +1328,15 @@ const ExpenseClaimDashboard = () => {
 
         setDecisionOpen(true);
 
+        // Reflect claimId in URL search params so it can be shared or opened in new tabs
+        if (c?._id && searchParams.get('claimId') !== c._id) {
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('claimId', c._id);
+                return next;
+            }, { replace: true });
+        }
+
         // Pre-fetch all receipts so the reviewer can see them inline
         const receipts: any[] = c?.receipts || [];
         if (receipts.length === 0) return;
@@ -1358,7 +1377,53 @@ const ExpenseClaimDashboard = () => {
         setEditSubCategory('');
         setEditCategoryReason('');
         setChangingCategoryLoading(false);
+
+        // Remove claimId from URL search params when modal is closed
+        if (searchParams.has('claimId')) {
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.delete('claimId');
+                return next;
+            }, { replace: true });
+        }
     };
+
+    const handleClaimClick = (e: React.MouseEvent, c: any) => {
+        // If user held Ctrl, Cmd, Shift, or used middle-click, allow native browser navigation to open new tab
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+            return;
+        }
+        e.preventDefault();
+        openDecision(c);
+    };
+
+    // Deep-linking / opening claim from URL in separate tabs
+    const targetClaimId = searchParams.get('claimId');
+    useEffect(() => {
+        if (!targetClaimId) return;
+        if (decisionClaim?._id === targetClaimId && decisionOpen) return;
+
+        const allLoaded = [...approvals, ...history, ...mine];
+        const found = allLoaded.find(c => c._id === targetClaimId);
+        if (found) {
+            openDecision(found);
+            return;
+        }
+
+        let isCurrent = true;
+        fetch(api.claim(targetClaimId), { headers })
+            .then(res => res.json())
+            .then(data => {
+                if (isCurrent && data?.success && data?.data) {
+                    openDecision(data.data);
+                }
+            })
+            .catch(() => {});
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [targetClaimId, approvals, history, mine, decisionClaim, decisionOpen]);
 
     const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
         if (!canManagePayment) {
@@ -1769,7 +1834,14 @@ const ExpenseClaimDashboard = () => {
                     {tabs.map(t => (
                         <button
                             key={t.id}
-                            onClick={() => setTab(t.id)}
+                            onClick={() => {
+                                setTab(t.id);
+                                setSearchParams(prev => {
+                                    const next = new URLSearchParams(prev);
+                                    next.set('tab', t.id);
+                                    return next;
+                                }, { replace: true });
+                            }}
                             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
                                 tab === t.id
                                     ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm'
@@ -2452,7 +2524,16 @@ const ExpenseClaimDashboard = () => {
                                     <tbody>
                                         {paginatedMine.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                <td className="px-4 py-3 font-bold whitespace-nowrap align-middle">
+                                                    <a
+                                                        href={`/claim?claimId=${c._id}&tab=mine`}
+                                                        onClick={(e) => handleClaimClick(e, c)}
+                                                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                                                        title="Click to view details (Right-click to open in new tab)"
+                                                    >
+                                                        {c.claimNo || '—'}
+                                                    </a>
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-600 align-middle">{c.category}</td>
                                                 <td className="px-4 py-3 text-slate-700 font-semibold whitespace-nowrap align-middle">
                                                     <div>{formatMoney(c.amountRequested, c.currency)}</div>
@@ -2535,17 +2616,14 @@ const ExpenseClaimDashboard = () => {
                                                                 Amend & Resubmit
                                                             </button>
                                                         )}
-                                                        <button
-                                                            onClick={() => {
-                                                                setDecisionClaim(c);
-                                                                setDecision('Approved');
-                                                                setDecisionOpen(true);
-                                                            }}
-                                                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors"
-                                                            title="View claim details and remarks"
+                                                        <a
+                                                            href={`/claim?claimId=${c._id}&tab=mine`}
+                                                            onClick={(e) => handleClaimClick(e, c)}
+                                                            className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-colors inline-flex items-center justify-center"
+                                                            title="View claim details and remarks (Right-click to open in new tab)"
                                                         >
                                                             <Eye size={15} />
-                                                        </button>
+                                                        </a>
                                                         {canCancelClaim(c) && (
                                                             <button
                                                                 onClick={(e) => openCancelModal(c._id, e)}
@@ -2671,7 +2749,16 @@ const ExpenseClaimDashboard = () => {
                                                         }}
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                <td className="px-4 py-3 font-bold whitespace-nowrap align-middle">
+                                                    <a
+                                                        href={`/claim?claimId=${c._id}&tab=approvals`}
+                                                        onClick={(e) => handleClaimClick(e, c)}
+                                                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                                                        title="Click to review (Right-click to open in new tab)"
+                                                    >
+                                                        {c.claimNo || '—'}
+                                                    </a>
+                                                </td>
                                                  <td className="px-4 py-3 text-slate-600 align-middle">
                                                      {c.employeeDetails ? (
                                                          <div>
@@ -2761,12 +2848,14 @@ const ExpenseClaimDashboard = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle">
-                                                    <button
-                                                        onClick={() => openDecision(c)}
-                                                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700"
+                                                    <a
+                                                        href={`/claim?claimId=${c._id}&tab=approvals`}
+                                                        onClick={(e) => handleClaimClick(e, c)}
+                                                        className="inline-block px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
+                                                        title="Review claim (Right-click to open in new tab)"
                                                     >
                                                         Review
-                                                    </button>
+                                                    </a>
                                                 </td>
                                             </tr>
                                         ))}
@@ -2924,7 +3013,16 @@ const ExpenseClaimDashboard = () => {
                                     <tbody>
                                         {paginatedHistory.map((c: any) => (
                                             <tr key={c._id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap align-middle">{c.claimNo || '—'}</td>
+                                                <td className="px-4 py-3 font-bold whitespace-nowrap align-middle">
+                                                    <a
+                                                        href={`/claim?claimId=${c._id}&tab=history`}
+                                                        onClick={(e) => handleClaimClick(e, c)}
+                                                        className="text-indigo-600 hover:text-indigo-800 hover:underline"
+                                                        title="Click to view details (Right-click to open in new tab)"
+                                                    >
+                                                        {c.claimNo || '—'}
+                                                    </a>
+                                                </td>
                                                  <td className="px-4 py-3 text-slate-600 align-middle">
                                                      {c.employeeDetails ? (
                                                          <div>
@@ -3075,13 +3173,14 @@ const ExpenseClaimDashboard = () => {
                                                 </td>
                                                 <td className="px-4 py-3 align-middle">
                                                     <div className="flex items-center gap-1.5">
-                                                        <button
-                                                            onClick={() => openDecision(c)}
+                                                        <a
+                                                            href={`/claim?claimId=${c._id}&tab=history`}
+                                                            onClick={(e) => handleClaimClick(e, c)}
                                                             className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-colors flex items-center gap-1"
-                                                            title="View Details & Scanned Receipts"
+                                                            title="View Details & Scanned Receipts (Right-click to open in new tab)"
                                                         >
                                                             <Eye size={13} /> Details
-                                                        </button>
+                                                        </a>
                                                         {canCancelClaim(c) && (
                                                             <button
                                                                 onClick={(e) => openCancelModal(c._id, e)}
@@ -5173,7 +5272,14 @@ const ExpenseClaimDashboard = () => {
                                                     <div key={c._id} className="p-3.5 bg-white border border-slate-200 rounded-xl hover:shadow-sm transition-all space-y-2">
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="font-bold text-slate-800 text-xs font-mono">{c.claimNo}</span>
+                                                                <a
+                                                                    href={`/claim?claimId=${c._id}&tab=history`}
+                                                                    onClick={(e) => handleClaimClick(e, c)}
+                                                                    className="font-bold text-indigo-600 hover:underline text-xs font-mono"
+                                                                    title="Click to view details (Right-click to open in new tab)"
+                                                                >
+                                                                    {c.claimNo}
+                                                                </a>
                                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${STATUS_COLORS[c.status] || 'bg-slate-100'}`}>
                                                                     {c.status}
                                                                 </span>

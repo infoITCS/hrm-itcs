@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
     ChevronLeft, User, Phone, Briefcase, FileText, Download, Edit2, History,
     GraduationCap, Users, Shield, AlertCircle, Check, X, Eye,
@@ -22,7 +22,6 @@ import { formatEmployeeFullName } from '../../utils/nameHelper';
 
 const EmployeeProfile = () => {
     const { id } = useParams();
-    const navigate = useNavigate();
     const { user, login } = useAuth();
     const { showToast } = useToast();
     const { canEditSensitiveData, canApproveDocuments, role } = usePermissions();
@@ -404,9 +403,9 @@ const EmployeeProfile = () => {
         <div className="space-y-6 animate-fadeIn">
             {/* Header / Banner */}
             <div className="flex flex-wrap items-center gap-4 animate-slide-up bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <button onClick={() => navigate('/pim')} className="p-2 hover:bg-slate-100 rounded-xl text-gray-400 hover:text-indigo-600 transition-all shrink-0">
+                <Link to="/pim" className="p-2 hover:bg-slate-100 rounded-xl text-gray-400 hover:text-indigo-600 transition-all shrink-0 inline-flex items-center justify-center">
                     <ChevronLeft size={24} />
-                </button>
+                </Link>
 
                 <div className="relative group shrink-0">
                     <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 text-2xl font-bold border-4 border-white shadow-md overflow-hidden transition-transform group-hover:scale-105 relative">
@@ -480,13 +479,13 @@ const EmployeeProfile = () => {
                     )}
 
                     {canEditSensitiveData() && (
-                        <button
-                            onClick={() => navigate(`/pim/edit/${employee.employeeId}`)}
+                        <Link
+                            to={`/pim/edit/${employee.employeeId}`}
                             className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all font-medium text-xs sm:text-sm shadow-sm hover:shadow-md"
                         >
                             <Edit2 size={14} />
                             <span className="hidden sm:inline">Edit Profile</span>
-                        </button>
+                        </Link>
                     )}
                 </div>
             </div>
@@ -1212,13 +1211,12 @@ const EmployeeProfile = () => {
                                             <Edit2 size={13} /> Adjust Medical Benefit
                                         </button>
                                     )}
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate(`/claims?tab=medical-records&emp=${employee.employeeId}`)}
+                                    <Link
+                                        to={`/claims?tab=medical-records&emp=${employee.employeeId}`}
                                         className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                                     >
                                         <FileText size={14} /> Full Medical Ledger
-                                    </button>
+                                    </Link>
                                 </div>
                             </div>
 

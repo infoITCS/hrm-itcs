@@ -2422,6 +2422,58 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
     }
 });
 
+// ── Fetch Single Expense Claim by ID ──────────────────────────────────────
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthRequest;
+    try {
+        const userId = authReq.user?.userId;
+        const role = authReq.user?.role || 'employee';
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid claim ID' });
+        }
+
+        const claim = await ExpenseClaim.findById(req.params.id)
+            .select('-receipts.fileData')
+            .populate('employeeDetails', 'firstName middleName lastName employeeId')
+            .populate('payrollRunId', 'title periodMonth periodYear status')
+            .lean();
+
+        if (!claim) return res.status(404).json({ message: 'Claim not found' });
+
+        const isOwner = String(claim.employeeUserId) === String(userId);
+        if (!isOwner && !isAdminLike(role)) {
+            if (role === 'manager') {
+                const managerEmployee = await Employee.findOne({ userId }).select('employeeId').lean() as any;
+                const managerEmployeeId = managerEmployee?.employeeId ? String(managerEmployee.employeeId) : '';
+                const managerMongoId = managerEmployee?._id ? String(managerEmployee._id) : '';
+                const managerIdentifiers = [managerEmployeeId, managerMongoId, String(userId)].filter(Boolean);
+
+                const isAssigned = (claim.approvals || []).some((a: any) =>
+                    managerIdentifiers.includes(String(a.assignedToEmployeeId)) ||
+                    managerIdentifiers.includes(String(a.assignedToUserId))
+                );
+
+                const isDirectReport = await Employee.exists({
+                    employeeId: claim.employeeId,
+                    'jobInfo.reportingManager': { $in: managerIdentifiers }
+                });
+
+                if (!isAssigned && !isDirectReport) {
+                    return res.status(403).json({ message: 'Forbidden' });
+                }
+            } else {
+                return res.status(403).json({ message: 'Forbidden' });
+            }
+        }
+
+        res.json({ success: true, data: claim });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ── Cancel an Expense Claim (Employee or Admin) ───────────────────────────
 router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     const authReq = req as AuthRequest;

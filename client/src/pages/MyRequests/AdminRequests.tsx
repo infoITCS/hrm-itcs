@@ -1167,17 +1167,52 @@ const AdminRequests = () => {
                                             </button>
                                             <button 
                                                 onClick={() => handleAction('Approved')}
-                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                title="Queue this withdrawal to be paid alongside the employee's monthly salary payslip"
                                             >
-                                                <CheckCircle size={15} /> Approve PF Withdrawal
+                                                <CheckCircle size={15} /> Approve for Payroll
+                                            </button>
+                                            <button 
+                                                onClick={() => handleAction('Completed')}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                title="Directly pay and deduct from PF balance now outside of the monthly payroll cycle"
+                                            >
+                                                <Banknote size={15} /> Approve & Disburse
                                             </button>
                                         </>
                                     )}
-                                    {(actionModal.status === 'Approved' || actionModal.status === 'Completed') && isAdminOrSuper && (
+                                    {actionModal.status === 'Approved' && isAdminOrSuper && (
+                                        <>
+                                            <button 
+                                                onClick={() => handleAction('Rejected')}
+                                                className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors font-medium text-sm"
+                                            >
+                                                Reject
+                                            </button>
+                                            {erpReferenceId.trim() !== (actionModal.erpReferenceId || '').trim() && (
+                                                <button 
+                                                    onClick={() => handleAction('Approved')}
+                                                    className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                >
+                                                    <FileText size={14} /> Save ERP Ref
+                                                </button>
+                                            )}
+                                            {actionModal.payoutStatus !== 'Paid' && (
+                                                <button 
+                                                    onClick={() => handleAction('Completed')}
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
+                                                    title="Disburse directly outside payroll and deduct from employee PF balance now"
+                                                >
+                                                    <Banknote size={15} /> Disburse & Complete
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                    {actionModal.status === 'Completed' && isAdminOrSuper && (
                                         <>
                                             {erpReferenceId.trim() !== (actionModal.erpReferenceId || '').trim() && (
                                                 <button 
-                                                    onClick={() => handleAction(actionModal.status)}
+                                                    onClick={() => handleAction('Completed')}
                                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors font-medium text-sm shadow-sm flex items-center gap-1.5"
                                                 >
                                                     <FileText size={14} /> Save ERP Reference ID

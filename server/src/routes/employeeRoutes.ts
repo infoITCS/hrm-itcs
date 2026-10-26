@@ -1237,6 +1237,7 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
 
         // Auto-heal / restore any legacy loan debits from PF balances and history
         for (const emp of employees) {
+            let modified = false;
             const history = emp.providentFundHistory || [];
             const loanDebits = history.filter(
                 (h: any) => h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout')))
@@ -1247,6 +1248,60 @@ router.get('/pf-report', authenticate, async (req: Request, res: Response, next:
                     (h: any) => !(h.type === 'debit' && (h.description && (h.description.includes('Loan Approved Payout') || h.description.includes('Loan Payout'))))
                 );
                 emp.providentFundBalance = (emp.providentFundBalance || 0) + totalLoanDeducted;
+                modified = true;
+            }
+
+            // Reconcile any disbursed PF withdrawals that were marked Paid/Completed but missing from ledger
+            const empPfRequests = await EmployeeRequest.find({
+                employeeId: emp.employeeId,
+                $and: [
+                    {
+                        $or: [
+                            { category: { $regex: /pf|provident/i } },
+                            { requestType: { $regex: /pf|provident/i } }
+                        ]
+                    },
+                    {
+                        $or: [
+                            { payoutStatus: 'Paid' },
+                            { status: 'Completed' }
+                        ]
+                    }
+                ]
+            }).lean();
+
+            for (const r of empPfRequests) {
+                const reqIdStr = r._id.toString();
+                const reqAmt = Math.ceil(Number(r.details?.requestedAmount || r.details?.amount || 0));
+                if (reqAmt <= 0) continue;
+
+                const hasDebit = (emp.providentFundHistory || []).some((h: any) =>
+                    h.type === 'debit' && (
+                        (r.erpReferenceId && h.erpReferenceId && h.erpReferenceId === r.erpReferenceId) ||
+                        (h.description && h.description.includes(reqIdStr.slice(-6)))
+                    )
+                );
+
+                if (!hasDebit) {
+                    const currentBal = Number(emp.providentFundBalance || 0);
+                    const debitAmt = Math.min(currentBal, reqAmt);
+                    emp.providentFundBalance = Math.max(0, currentBal - debitAmt);
+                    if (!emp.providentFundHistory) emp.providentFundHistory = [];
+                    emp.providentFundHistory.push({
+                        amount: debitAmt,
+                        type: 'debit',
+                        source: r.payrollRunId ? 'payroll' : 'manual',
+                        date: r.paidAt ? new Date(r.paidAt) : new Date(r.updatedAt || Date.now()),
+                        description: `PF Withdrawal Disbursement (Req #${reqIdStr.slice(-6)})`,
+                        erpReferenceId: (r.erpReferenceId || '').trim()
+                    } as any);
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                emp.markModified('providentFundBalance');
+                emp.markModified('providentFundHistory');
                 await emp.save();
             }
         }
@@ -2068,6 +2123,8 @@ router.post('/:id/pf-adjust', authenticate, async (req: Request, res: Response, 
             employee.providentFundBalance = (employee.providentFundBalance || 0) - adjustAmount;
         }
 
+        employee.markModified('providentFundBalance');
+        employee.markModified('providentFundHistory');
         await employee.save();
 
         // Map employee to return the updated EmpPFData shape
