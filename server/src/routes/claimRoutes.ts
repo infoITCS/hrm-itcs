@@ -716,6 +716,11 @@ router.get('/approvals/pending', authenticate, async (req: Request, res: Respons
             .select('-receipts.fileData')
             .sort({ createdAt: -1 })
             .populate('employeeDetails', 'firstName middleName lastName employeeId');
+
+        // Filter out personal claims for non-privileged roles (allow super-admin, admin, finance because there may only be one finance person)
+        if (!['super-admin', 'admin', 'finance'].includes(role)) {
+            claims = claims.filter((c: any) => String(c.employeeUserId) !== String(userId));
+        }
         res.json({ success: true, data: claims });
     } catch (err) {
         next(err);
@@ -781,6 +786,10 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
             try {
                 const claim = await ExpenseClaim.findById(claimId);
                 if (!claim || isFinalStatus(claim.status)) {
+                    failedIds.push(claimId);
+                    continue;
+                }
+                if (String(claim.employeeUserId) === String(userId) && !['super-admin', 'admin', 'finance'].includes(role)) {
                     failedIds.push(claimId);
                     continue;
                 }
@@ -941,7 +950,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         const claim = await ExpenseClaim.findById(req.params.id);
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
         if (isFinalStatus(claim.status)) return res.status(400).json({ message: 'Claim is already finalized' });
-        if (String(claim.employeeUserId) === String(userId) && role !== 'super-admin') {
+        if (String(claim.employeeUserId) === String(userId) && !['super-admin', 'admin', 'finance'].includes(role)) {
             return res.status(403).json({ message: 'Cannot approve/reject your own expense claim' });
         }
 

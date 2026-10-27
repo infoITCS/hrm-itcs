@@ -191,6 +191,7 @@ const ExpenseClaimDashboard = () => {
     } | null>(null);
     const [submitPreviewIndex, setSubmitPreviewIndex] = useState<number | null>(null);
     const uploadInputRef = useRef<HTMLInputElement>(null);
+    const suppressUrlSyncRef = useRef(false);
     const [submitting, setSubmitting] = useState(false);
 
     const submitReceiptUrls = useMemo(
@@ -1367,6 +1368,7 @@ const ExpenseClaimDashboard = () => {
     };
 
     const closeDecision = () => {
+        suppressUrlSyncRef.current = true;
         setDecisionOpen(false);
         // Revoke all blob URLs to free memory
         Object.values(receiptBlobs).forEach(u => window.URL.revokeObjectURL(u));
@@ -1385,13 +1387,14 @@ const ExpenseClaimDashboard = () => {
         setChangingCategoryLoading(false);
 
         // Remove claimId from URL search params when modal is closed
-        if (searchParams.has('claimId')) {
-            setSearchParams(prev => {
-                const next = new URLSearchParams(prev);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            if (next.has('claimId')) {
                 next.delete('claimId');
                 return next;
-            }, { replace: true });
-        }
+            }
+            return prev;
+        }, { replace: true });
     };
 
     const handleClaimClick = (e: React.MouseEvent, c: any) => {
@@ -1406,7 +1409,11 @@ const ExpenseClaimDashboard = () => {
     // Deep-linking / opening claim from URL in separate tabs
     const targetClaimId = searchParams.get('claimId');
     useEffect(() => {
-        if (!targetClaimId) return;
+        if (!targetClaimId) {
+            suppressUrlSyncRef.current = false;
+            return;
+        }
+        if (suppressUrlSyncRef.current) return;
         if (decisionClaim?._id === targetClaimId && decisionOpen) return;
 
         const allLoaded = [...approvals, ...history, ...mine];
@@ -1429,7 +1436,7 @@ const ExpenseClaimDashboard = () => {
         return () => {
             isCurrent = false;
         };
-    }, [targetClaimId, approvals, history, mine, decisionClaim, decisionOpen]);
+    }, [targetClaimId]);
 
     const handleToggleClaimPayout = async (claimId: string, currentPayoutStatus?: string) => {
         if (!canManagePayment) {
@@ -1475,6 +1482,13 @@ const ExpenseClaimDashboard = () => {
         if (!decisionClaim) return false;
         if (['Draft', 'Approved', 'Declined', 'Action Required'].includes(decisionClaim.status)) return false;
 
+        // Allow self-approval for Admin / Finance / Super-Admin because there is only one finance role in the team
+        const isOwn = Boolean(
+            (decisionClaim.employeeUserId && String(decisionClaim.employeeUserId) === String(user?.id)) ||
+            (decisionClaim.employeeId && String(decisionClaim.employeeId) === String(employee?.employeeId))
+        );
+        if (isOwn && !['super-admin', 'admin', 'finance'].includes(role)) return false;
+
         const currentPending = decisionClaim.approvals?.find((a: any) => a.status === 'Pending');
         if (!currentPending) return false;
 
@@ -1511,9 +1525,7 @@ const ExpenseClaimDashboard = () => {
                 });
                 const d = await r.json();
                 if (!r.ok) throw new Error(d?.message || 'Failed to send amendment request');
-                setDecisionOpen(false);
-                setDecisionClaim(null);
-                setDecisionErpId('');
+                closeDecision();
                 showToast('Claim sent back to employee for review and amendment', 'success');
                 await fetchApprovals();
                 await fetchMine();
@@ -1549,9 +1561,7 @@ const ExpenseClaimDashboard = () => {
             const d = await r.json();
             if (!r.ok) throw new Error(d?.message || 'Failed to submit decision');
 
-            setDecisionOpen(false);
-            setDecisionClaim(null);
-            setDecisionErpId('');
+            closeDecision();
             showToast(`Claim decision submitted (${decision})`, 'success');
             await fetchApprovals();
             await fetchMine();
@@ -4623,9 +4633,19 @@ const ExpenseClaimDashboard = () => {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-4 flex items-center justify-between">
-                                        <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                                            Claim Status: <span className={`font-bold px-2 py-0.5 rounded text-xs border ${STATUS_COLORS[decisionClaim.status] || 'bg-slate-100 text-slate-700'}`}>{decisionClaim.status}</span>
+                                    <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                                                Claim Status: <span className={`font-bold px-2 py-0.5 rounded text-xs border ${STATUS_COLORS[decisionClaim.status] || 'bg-slate-100 text-slate-700'}`}>{decisionClaim.status}</span>
+                                            </div>
+                                            {Boolean(
+                                                (decisionClaim.employeeUserId && String(decisionClaim.employeeUserId) === String(user?.id)) ||
+                                                (decisionClaim.employeeId && String(decisionClaim.employeeId) === String(employee?.employeeId))
+                                            ) && !['Draft', 'Approved', 'Declined', 'Action Required'].includes(decisionClaim.status) && !['super-admin', 'admin', 'finance'].includes(role) && (
+                                                <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                                                    ⚠️ Your Personal Claim — Self-approval is not permitted
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {canCancelClaim(decisionClaim) && (
