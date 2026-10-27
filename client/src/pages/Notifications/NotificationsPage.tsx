@@ -35,6 +35,8 @@ interface NotificationTask {
     status?: string;
 }
 
+const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 const NotificationsPage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -483,20 +485,44 @@ const NotificationsPage: React.FC = () => {
                                 <p className="text-amber-800">{selectedErpTask.message}</p>
                             </div>
 
-                            {selectedErpTask.meta?.amount !== undefined && (
-                                <div className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200 rounded-xl p-3">
-                                    <span className="text-slate-500 font-semibold">
-                                        {selectedErpTask.meta.employeeName
-                                            ? `Employee: ${selectedErpTask.meta.employeeName} (${selectedErpTask.meta.employeeId || ''})`
-                                            : selectedErpTask.meta.isBatch
-                                                ? `Batch Total (${selectedErpTask.meta.employeeCount || ''} employees)`
-                                                : 'Amount to Post'}
+                            {/* Transaction Details & Date Banner */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-slate-500 font-semibold flex items-center gap-1.5">
+                                        <Calendar size={13} className="text-slate-400" />
+                                        Date
                                     </span>
-                                    <span className="font-extrabold text-slate-800 font-mono text-sm">
-                                        Rs. {Number(selectedErpTask.meta.amount).toLocaleString()}
+                                    <span className="font-bold text-slate-800 flex items-center gap-1">
+                                        {selectedErpTask.time ? (
+                                            new Date(selectedErpTask.time).toLocaleDateString('en-PK', {
+                                                day: '2-digit',
+                                                month: 'short',
+                                                year: 'numeric'
+                                            })
+                                        ) : '—'}
+                                        {selectedErpTask.meta?.periodMonth && selectedErpTask.meta?.periodYear && (
+                                            <span className="text-slate-500 font-normal ml-1">
+                                                ({MONTH_NAMES[selectedErpTask.meta.periodMonth] || selectedErpTask.meta.periodMonth} {selectedErpTask.meta.periodYear})
+                                            </span>
+                                        )}
                                     </span>
                                 </div>
-                            )}
+
+                                {selectedErpTask.meta?.amount !== undefined && (
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/70">
+                                        <span className="text-slate-500 font-semibold">
+                                            {selectedErpTask.meta.employeeName
+                                                ? `Employee: ${selectedErpTask.meta.employeeName} (${selectedErpTask.meta.employeeId || ''})`
+                                                : selectedErpTask.meta.isBatch
+                                                    ? `Batch Total (${selectedErpTask.meta.employeeCount || ''} employees)`
+                                                    : 'Amount to Post'}
+                                        </span>
+                                        <span className="font-extrabold text-slate-800 font-mono text-sm">
+                                            Rs. {Number(selectedErpTask.meta.amount).toLocaleString()}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">

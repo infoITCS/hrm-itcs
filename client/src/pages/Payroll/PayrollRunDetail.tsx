@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Banknote, Loader2, CheckCircle2,
     PencilLine, Save, X, Plus, Trash2, Users,
-    TrendingDown, CreditCard, RefreshCw,
+    TrendingDown, CreditCard, RefreshCw, RotateCw,
     Eye, EyeOff, FileSpreadsheet, Building2, Calendar, Receipt, GripVertical, AlertCircle, Wallet
 } from 'lucide-react';
 import axios from 'axios';
@@ -24,6 +24,7 @@ interface Payslip {
     _id: string;
     payslipNo: string;
     employeeId: string;
+    payrollRunId?: string;
     beneficiaryAccount?: string;
     beneficiaryName?: string;
     beneficiaryBank?: string;
@@ -215,8 +216,8 @@ const calculateAnniversaryBonusFromEmployee = (
 // Inline Payslip Edit Panel with Category Dropdowns & Dynamic Beneficiary
 // ─────────────────────────────────────────────────────────────────────────────
 const PayslipEditPanel = ({
-    payslip, currency, allPayslips, periodYear, onClose, onSaved,
-}: { payslip: Payslip; currency: string; allPayslips: Payslip[]; periodYear?: number; onClose: () => void; onSaved: () => void }) => {
+    payslip, currency, allPayslips, periodYear, runId, onClose, onSaved,
+}: { payslip: Payslip; currency: string; allPayslips: Payslip[]; periodYear?: number; runId?: string; onClose: () => void; onSaved: () => void }) => {
     const empBank = payslip.employeeDetails?.bankDetails;
     const empOwnAccount = empBank?.accountNumber || empBank?.iban || '';
     const empOwnBank = empBank?.bankName || 'Meezan Bank';
@@ -225,6 +226,7 @@ const PayslipEditPanel = ({
 
     const [presetEarnings, setPresetEarnings] = useState<string[]>(PRESET_EARNINGS);
     const [presetDeductions, setPresetDeductions] = useState<string[]>(PRESET_DEDUCTIONS);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         const fetchComponents = async () => {
@@ -365,6 +367,36 @@ const PayslipEditPanel = ({
         }
     };
 
+    const handleRefreshLineItems = async () => {
+        const effectiveRunId = runId || payslip.payrollRunId;
+        if (!effectiveRunId) return;
+
+        if (!window.confirm(`Fetch latest approved expense claims and recalculate line items for ${empOwnName} (${payslip.employeeId})?\n\nThis will refresh their line items without affecting any other employees.`)) {
+            return;
+        }
+
+        setRefreshing(true);
+        setError('');
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.post(
+                api.payrollRegeneratePayslip(effectiveRunId, payslip._id),
+                {},
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (res.data?.payslip) {
+                setEarnings(res.data.payslip.earnings || []);
+                setDeductions(res.data.payslip.deductions || []);
+                if (res.data.payslip.notes) setNotes(res.data.payslip.notes);
+                onSaved();
+            }
+        } catch (err: any) {
+            setError(err.response?.data?.message || 'Failed to refresh line items.');
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100">
@@ -381,12 +413,24 @@ const PayslipEditPanel = ({
                             <span className="font-mono text-indigo-600 font-medium">{payslip.payslipNo}</span>
                         </p>
                     </div>
-                    <button 
-                        onClick={onClose} 
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                    >
-                        <X size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            disabled={refreshing}
+                            onClick={handleRefreshLineItems}
+                            className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                            title="Fetch latest approved expense claims and attendance without resetting other employees"
+                        >
+                            <RotateCw size={13} className={refreshing ? 'animate-spin text-emerald-600' : ''} />
+                            <span>{refreshing ? 'Refreshing...' : 'Refresh Line Items'}</span>
+                        </button>
+                        <button 
+                            onClick={onClose} 
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Modal Body */}
@@ -1108,6 +1152,32 @@ const PayrollRunDetail = () => {
 
     const authHeader = { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
 
+    const [regeneratingPayslipId, setRegeneratingPayslipId] = useState<string | null>(null);
+
+    const handleRegenerateSinglePayslip = (ps: Payslip) => {
+        const empName = formatEmployeeFullName(ps.employeeDetails, ps.employeeId);
+        triggerConfirm(
+            `Regenerate Payslip for ${empName}?`,
+            `This will recalculate attendance, meal allowances, loans, and fetch all newly approved expense claims for ${ps.employeeId} (${empName}).\n\nAll other employees' payslips and manual edits will remain completely untouched. Continue?`,
+            async () => {
+                setRegeneratingPayslipId(ps._id);
+                try {
+                    const res = await axios.post(
+                        api.payrollRegeneratePayslip(run?._id || id!, ps._id),
+                        {},
+                        authHeader
+                    );
+                    triggerSuccess('Payslip Regenerated', res.data?.message || `Payslip for ${ps.employeeId} regenerated successfully.`);
+                    setRefreshCounter(c => c + 1);
+                } catch (err: any) {
+                    triggerError('Regeneration Failed', err.response?.data?.message || 'Failed to regenerate payslip.');
+                } finally {
+                    setRegeneratingPayslipId(null);
+                }
+            }
+        );
+    };
+
     const handleGenerate = async () => {
         const defaultLastDay = run ? new Date(run.periodYear, run.periodMonth, 0).getDate() : 30;
         const periodStartStr = run?.startDate || `${run?.periodYear}-${String(run?.periodMonth).padStart(2, '0')}-01`;
@@ -1649,15 +1719,26 @@ const PayrollRunDetail = () => {
                                             </td>
                                             <td className="px-5 py-3.5 text-right font-bold text-indigo-700">{fmt(ps.netPay)}</td>
                                             {run.status === 'Draft' && (
-                                                <td className="px-5 py-3.5 text-right">
-                                                    <button
-                                                        id={`btn-edit-payslip-${ps._id}`}
-                                                        onClick={() => setEditingPayslip(ps)}
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                                                        title="Edit payslip & beneficiary details"
-                                                    >
-                                                        <PencilLine size={15} />
-                                                    </button>
+                                                <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <button
+                                                            id={`btn-regenerate-payslip-${ps._id}`}
+                                                            disabled={regeneratingPayslipId === ps._id}
+                                                            onClick={() => handleRegenerateSinglePayslip(ps)}
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                                                            title="Regenerate this employee's payslip (fetches new expense claims & line items without touching other employees)"
+                                                        >
+                                                            <RotateCw size={15} className={regeneratingPayslipId === ps._id ? 'animate-spin text-emerald-600' : ''} />
+                                                        </button>
+                                                        <button
+                                                            id={`btn-edit-payslip-${ps._id}`}
+                                                            onClick={() => setEditingPayslip(ps)}
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                            title="Edit payslip & beneficiary details"
+                                                        >
+                                                            <PencilLine size={15} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>
@@ -1674,6 +1755,7 @@ const PayrollRunDetail = () => {
                 <PayslipEditPanel
                     payslip={editingPayslip}
                     currency={run.currency}
+                    runId={run._id}
                     allPayslips={payslips}
                     periodYear={run.periodYear}
                     onClose={() => setEditingPayslip(null)}

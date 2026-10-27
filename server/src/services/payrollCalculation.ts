@@ -246,38 +246,75 @@ export interface PayrollBuildResult {
 
 export async function buildPayrollPayslips(
     run: IPayrollRun & { _id: mongoose.Types.ObjectId },
-    options: { persist?: boolean } = {}
+    options: { persist?: boolean; targetEmployeeId?: string } = {}
 ): Promise<PayrollBuildResult> {
     const persist = options.persist === true;
+    const targetEmployeeId = options.targetEmployeeId ? String(options.targetEmployeeId).trim() : undefined;
     const runId = run._id.toString();
+
+    let preservedPayslipNo: string | undefined;
+    let preservedCustomerRef: string | undefined;
+    let preservedBeneficiaryAccount: string | undefined;
+    let preservedBeneficiaryName: string | undefined;
+    let preservedBeneficiaryBank: string | undefined;
+    let preservedPaymentMethod: string | undefined;
+
+    if (targetEmployeeId) {
+        const existing = await Payslip.findOne({ payrollRunId: runId, employeeId: targetEmployeeId }).lean() as any;
+        if (existing) {
+            preservedPayslipNo = existing.payslipNo;
+            preservedCustomerRef = existing.customerReference;
+            preservedBeneficiaryAccount = existing.beneficiaryAccount;
+            preservedBeneficiaryName = existing.beneficiaryName;
+            preservedBeneficiaryBank = existing.beneficiaryBank;
+            preservedPaymentMethod = existing.paymentMethod;
+        }
+    }
 
     await upgradeCompletedProbations();
 
-    const employees = await Employee.find({
+    const employeeFilter: any = {
         $or: [
             { 'employmentStatus.status': { $exists: false } },
             { 'employmentStatus.status': { $in: [null, ''] } },
             { 'employmentStatus.status': { $nin: PAYROLL_EXCLUDED_STATUSES } },
             { employmentStatus: { $type: 'string', $nin: PAYROLL_EXCLUDED_STATUSES } },
         ],
-    }).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo loans salaryHistory');
+    };
+    if (targetEmployeeId) {
+        employeeFilter.employeeId = targetEmployeeId;
+    }
+
+    const employees = await Employee.find(employeeFilter).select('employeeId firstName middleName lastName salaryComponents bankDetails jobInfo employmentStatus financeInfo loans salaryHistory');
 
     if (!employees.length) {
-        throw Object.assign(new Error('No active employees found to generate payslips.'), { status: 400 });
+        throw Object.assign(new Error(targetEmployeeId ? `Employee ${targetEmployeeId} not eligible or not found for payroll.` : 'No active employees found to generate payslips.'), { status: 400 });
     }
 
     if (persist) {
-        await Payslip.deleteMany({ payrollRunId: runId });
-        await ExpenseClaim.updateMany(
-            { payrollRunId: run._id, payoutStatus: 'Included in Payroll' },
-            { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
-        );
-        await EmployeeRequest.deleteMany({
-            $or: [
-                { payrollRunId: run._id },
-                { employeeId: 'FINANCE-BATCH' },
-            ],
-        });
+        if (targetEmployeeId) {
+            await Payslip.deleteMany({ payrollRunId: runId, employeeId: targetEmployeeId });
+            await ExpenseClaim.updateMany(
+                { payrollRunId: run._id, employeeId: targetEmployeeId, payoutStatus: 'Included in Payroll' },
+                { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
+            );
+            await EmployeeRequest.deleteMany({
+                payrollRunId: run._id,
+                employeeId: targetEmployeeId,
+            });
+        } else {
+            await Payslip.deleteMany({ payrollRunId: runId });
+            await ExpenseClaim.updateMany(
+                { payrollRunId: run._id, payoutStatus: 'Included in Payroll' },
+                { payoutStatus: 'Unpaid', $unset: { payrollRunId: 1 } }
+            );
+            await EmployeeRequest.deleteMany({
+                $or: [
+                    { payrollRunId: run._id },
+                    { employeeId: 'FINANCE-BATCH' },
+                ],
+            });
+        }
     }
 
     const defaultLastDay = new Date(run.periodYear, run.periodMonth, 0).getDate();
@@ -512,7 +549,7 @@ export async function buildPayrollPayslips(
     let nextBankSeq = 1;
     const prefix = `PS-${run.periodYear}-${String(run.periodMonth).padStart(2, '0')}-`;
 
-    if (persist) {
+    if (persist && !preservedPayslipNo) {
         const counterKey = `payslipNo_${run.periodYear}_${String(run.periodMonth).padStart(2, '0')}`;
         const counter = await Counter.findOneAndUpdate(
             { key: counterKey },
@@ -853,13 +890,13 @@ export async function buildPayrollPayslips(
         }
 
         const netPay = grossPay - totalDeductions;
-        const payslipNo = `${prefix}${String(nextSeq).padStart(4, '0')}`;
-        nextSeq++;
+        const payslipNo = preservedPayslipNo || `${prefix}${String(nextSeq++).padStart(4, '0')}`;
 
-        const customerReference = generateCustomerReference(run.periodYear, run.periodMonth, nextBankSeq++);
-        const beneficiaryAccount = emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
-        const beneficiaryName = formatEmployeeFullName(emp, emp.employeeId);
-        const beneficiaryBank = emp.bankDetails?.bankName || companyDoc?.payrollSettings?.defaultBankName || 'Meezan Bank';
+        const customerReference = preservedCustomerRef || generateCustomerReference(run.periodYear, run.periodMonth, nextBankSeq++);
+        const beneficiaryAccount = preservedBeneficiaryAccount || emp.bankDetails?.accountNumber || emp.bankDetails?.iban || '';
+        const beneficiaryName = preservedBeneficiaryName || formatEmployeeFullName(emp, emp.employeeId);
+        const beneficiaryBank = preservedBeneficiaryBank || emp.bankDetails?.bankName || companyDoc?.payrollSettings?.defaultBankName || 'Meezan Bank';
+        const paymentMethod = preservedPaymentMethod || 'Bank Transfer';
 
         const empAttSummary = employeeAttendanceMap[emp.employeeId] || {
             workingDays: monthlyWorkingDays,
@@ -921,13 +958,27 @@ export async function buildPayrollPayslips(
             );
         }
 
+        const allRunPayslips = await Payslip.find({ payrollRunId: run._id }).lean();
+        const runTotals = computePayrollAmountTotals(allRunPayslips);
+
         await PayrollRun.findByIdAndUpdate(run._id, {
-            totalPayableAmount: totals.totalPayableAmount,
-            totalExpenseClaimsAmount: totals.totalExpenseClaimsAmount,
-            totalLoanDeductionsAmount: totals.totalLoanDeductionsAmount,
-            totalPfWithdrawalsAmount: totals.totalPfWithdrawalsAmount,
-            erpPayableAmount: totals.erpPayableAmount,
+            totalPayableAmount: runTotals.totalPayableAmount,
+            totalExpenseClaimsAmount: runTotals.totalExpenseClaimsAmount,
+            totalLoanDeductionsAmount: runTotals.totalLoanDeductionsAmount,
+            totalPfWithdrawalsAmount: runTotals.totalPfWithdrawalsAmount,
+            erpPayableAmount: runTotals.erpPayableAmount,
         });
+
+        if (targetEmployeeId) {
+            return {
+                payslips,
+                usedClaimIds,
+                usedPfRequestIds,
+                missingSalary,
+                expenseClaimsIncluded,
+                totals: runTotals,
+            };
+        }
     }
 
     return {

@@ -2,6 +2,7 @@ import Employee from '../models/Employee';
 import EmployeeRequest from '../models/EmployeeRequest';
 import Payslip from '../models/Payslip';
 import PayrollRun from '../models/PayrollRun';
+import LoanRepayment from '../models/LoanRepayment';
 import { formatEmployeeFullName } from '../utils/nameHelper';
 import { decryptNumber } from '../utils/encryption';
 
@@ -53,7 +54,8 @@ export function calculateConsolidatedMonthlyInstallment(
 export function computeSingleEmployeeLoanSummaryFromPreloadedData(
     emp: any,
     loanRequests: any[],
-    payslips: any[]
+    payslips: any[],
+    manualRepayments: any[] = []
 ): {
     totalDisbursed: number;
     remainingBalance: number;
@@ -67,6 +69,13 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
         for (const d of loanDeds) {
             repayments.push({
                 amount: Number(d.amount),
+            });
+        }
+    }
+    for (const mr of manualRepayments || []) {
+        if (Number(mr.amount) > 0) {
+            repayments.push({
+                amount: Number(mr.amount),
             });
         }
     }
@@ -188,7 +197,7 @@ export function computeSingleEmployeeLoanSummaryFromPreloadedData(
 }
 
 export async function buildBatchLoanData() {
-    const [employees, allApprovedLoans, allPayslips] = await Promise.all([
+    const [employees, allApprovedLoans, allPayslips, allManualRepayments] = await Promise.all([
         Employee.find({
             'employmentStatus.status': { $nin: ['Terminated', 'Resigned'] },
         }).select('employeeId firstName lastName jobInfo loans').lean(),
@@ -208,6 +217,7 @@ export async function buildBatchLoanData() {
             status: 'Finalized',
             'deductions.component': 'Loan Deduction',
         }).select('employeeId deductions').lean(),
+        LoanRepayment.find().sort({ repaymentDate: 1 }).lean(),
     ]);
 
     const reqsByEmp: Record<string, any[]> = {};
@@ -222,18 +232,25 @@ export async function buildBatchLoanData() {
         slipsByEmp[slip.employeeId].push(slip);
     }
 
-    return { employees, reqsByEmp, slipsByEmp };
+    const manualRepaymentsByEmp: Record<string, any[]> = {};
+    for (const mr of allManualRepayments) {
+        if (!manualRepaymentsByEmp[mr.employeeId]) manualRepaymentsByEmp[mr.employeeId] = [];
+        manualRepaymentsByEmp[mr.employeeId].push(mr);
+    }
+
+    return { employees, reqsByEmp, slipsByEmp, manualRepaymentsByEmp };
 }
 
 export async function buildComputedLoanMap(): Promise<Record<string, { balance: number; monthlyDeduction: number; totalDisbursed: number }>> {
-    const { employees, reqsByEmp, slipsByEmp } = await buildBatchLoanData();
+    const { employees, reqsByEmp, slipsByEmp, manualRepaymentsByEmp } = await buildBatchLoanData();
     const map: Record<string, { balance: number; monthlyDeduction: number; totalDisbursed: number }> = {};
 
     for (const emp of employees) {
         const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(
             emp,
             reqsByEmp[emp.employeeId] || [],
-            slipsByEmp[emp.employeeId] || []
+            slipsByEmp[emp.employeeId] || [],
+            manualRepaymentsByEmp[emp.employeeId] || []
         );
         map[emp.employeeId] = {
             balance: computed.remainingBalance,
@@ -494,6 +511,21 @@ export interface LoanRepaymentItem {
     notes?: string;
 }
 
+export interface ManualLoanRepaymentItem {
+    _id: string;
+    employeeId: string;
+    amount: number;
+    repaymentDate: Date | string;
+    paymentMethod: string;
+    erpReferenceId?: string;
+    evidenceUrl?: string;
+    evidenceFileName?: string;
+    notes?: string;
+    recordedBy: string;
+    recordedByName?: string;
+    createdAt: Date | string;
+}
+
 export interface EmployeeLoanDetailResult {
     employeeId: string;
     firstName: string;
@@ -510,6 +542,7 @@ export interface EmployeeLoanDetailResult {
     };
     loans: IndividualLoanItem[];
     repayments: LoanRepaymentItem[];
+    manualRepayments: ManualLoanRepaymentItem[];
 }
 
 export async function getEmployeeLoanDetails(employeeId: string): Promise<EmployeeLoanDetailResult> {
@@ -532,10 +565,13 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         ]
     }).sort({ requestedAt: 1 }).lean();
 
-    const payslips = await Payslip.find({
-        employeeId,
-        status: 'Finalized',
-    }).sort({ periodYear: 1, periodMonth: 1 }).lean();
+    const [payslips, manualRepaymentsDocs] = await Promise.all([
+        Payslip.find({
+            employeeId,
+            status: 'Finalized',
+        }).sort({ periodYear: 1, periodMonth: 1 }).lean(),
+        LoanRepayment.find({ employeeId }).sort({ repaymentDate: -1, createdAt: -1 }).lean(),
+    ]);
 
     const payrollRuns = await PayrollRun.find({
         status: { $in: ['Approved', 'Disbursed', 'Finalized', 'Draft'] }
@@ -584,7 +620,7 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         }
     }
 
-    const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(employee, loanRequests, payslips);
+    const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(employee, loanRequests, payslips, manualRepaymentsDocs);
 
     return {
         employeeId: employee.employeeId,
@@ -602,7 +638,172 @@ export async function getEmployeeLoanDetails(employeeId: string): Promise<Employ
         },
         loans: computed.loans,
         repayments: repayments.reverse(), // most recent repayments first
+        manualRepayments: manualRepaymentsDocs.map((m: any) => ({
+            _id: String(m._id),
+            employeeId: m.employeeId,
+            amount: m.amount,
+            repaymentDate: m.repaymentDate,
+            paymentMethod: m.paymentMethod,
+            erpReferenceId: m.erpReferenceId,
+            evidenceUrl: m.evidenceUrl,
+            evidenceFileName: m.evidenceFileName,
+            notes: m.notes,
+            recordedBy: m.recordedBy,
+            recordedByName: m.recordedByName,
+            createdAt: m.createdAt,
+        })),
     };
+}
+
+export async function recordManualLoanRepayment(
+    employeeId: string,
+    data: {
+        amount: number;
+        repaymentDate?: Date | string;
+        paymentMethod?: 'Bank Transfer' | 'Cash Deposit' | 'Cheque' | 'Online Transfer' | 'Other';
+        erpReferenceId?: string;
+        evidenceUrl?: string;
+        evidenceFileName?: string;
+        notes?: string;
+        recordedBy: string;
+        recordedByName?: string;
+    }
+) {
+    const employee = await Employee.findOne({ employeeId });
+    if (!employee) {
+        throw Object.assign(new Error('Employee not found.'), { status: 404 });
+    }
+
+    const repayAmount = Math.ceil(Number(data.amount));
+    if (!repayAmount || repayAmount <= 0) {
+        throw Object.assign(new Error('Repayment amount must be greater than zero.'), { status: 400 });
+    }
+
+    const [loanRequests, payslips, existingManualRepayments] = await Promise.all([
+        EmployeeRequest.find({
+            employeeId,
+            $or: [{ status: 'Completed' }, { payoutStatus: 'Paid' }],
+            category: { $regex: /loan/i }
+        }).lean(),
+        Payslip.find({ employeeId, status: 'Finalized' }).lean(),
+        LoanRepayment.find({ employeeId }).lean(),
+    ]);
+
+    const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(
+        employee,
+        loanRequests,
+        payslips,
+        existingManualRepayments
+    );
+
+    if (computed.remainingBalance <= 0) {
+        throw Object.assign(new Error('This employee has no outstanding loan balance to repay.'), { status: 400 });
+    }
+
+    if (repayAmount > computed.remainingBalance) {
+        throw Object.assign(
+            new Error(`Repayment amount (Rs. ${repayAmount.toLocaleString()}) cannot exceed the remaining balance of Rs. ${computed.remainingBalance.toLocaleString()}.`),
+            { status: 400 }
+        );
+    }
+
+    const repayment = await LoanRepayment.create({
+        employeeId,
+        amount: repayAmount,
+        repaymentDate: data.repaymentDate ? new Date(data.repaymentDate) : new Date(),
+        paymentMethod: data.paymentMethod || 'Bank Transfer',
+        erpReferenceId: data.erpReferenceId ? String(data.erpReferenceId).trim() : undefined,
+        evidenceUrl: data.evidenceUrl ? String(data.evidenceUrl).trim() : undefined,
+        evidenceFileName: data.evidenceFileName ? String(data.evidenceFileName).trim() : undefined,
+        notes: data.notes ? String(data.notes).trim() : undefined,
+        recordedBy: data.recordedBy,
+        recordedByName: data.recordedByName || 'Admin',
+    });
+
+    if (!employee.loans || employee.loans.length === 0) {
+        employee.loans = computed.loans.map(l => ({
+            loanId: l.loanId,
+            totalAmount: l.totalAmount,
+            monthlyInstallment: l.monthlyInstallment,
+            remainingAmount: l.remainingAmount,
+            status: l.status,
+            issueDate: l.issueDate ? new Date(l.issueDate) : new Date(),
+            notes: l.notes,
+            isCustomPlan: l.isCustomPlan,
+            customPlanReason: l.customPlanReason
+        }));
+    }
+
+    let remainingToDeduct = repayAmount;
+    for (const loan of employee.loans) {
+        if (loan.status === 'Active' && Number(loan.remainingAmount) > 0 && remainingToDeduct > 0) {
+            const deduct = Math.min(Number(loan.remainingAmount), remainingToDeduct);
+            loan.remainingAmount -= deduct;
+            remainingToDeduct -= deduct;
+            if (loan.remainingAmount <= 0) {
+                loan.remainingAmount = 0;
+                loan.status = 'Paid';
+            }
+        }
+    }
+
+    const stillActive = (employee.loans || []).filter((l: any) => l.status === 'Active' && Number(l.remainingAmount) > 0);
+    if (stillActive.length === 0) {
+        for (const loan of employee.loans) {
+            loan.monthlyInstallment = 0;
+        }
+    }
+
+    employee.markModified('loans');
+    await employee.save();
+
+    if (stillActive.length === 0) {
+        await EmployeeRequest.updateMany(
+            { employeeId, category: { $regex: /loan/i }, status: { $in: ['Approved', 'Completed'] } },
+            { $set: { 'details.remainingAmount': 0, 'details.recommendedMonthlyDeduction': 0 } }
+        );
+    }
+
+    return {
+        success: true,
+        repayment,
+        newRemainingBalance: Math.max(0, computed.remainingBalance - repayAmount),
+        allLoansPaid: stillActive.length === 0
+    };
+}
+
+export async function deleteManualLoanRepayment(repaymentId: string) {
+    const repayment = await LoanRepayment.findById(repaymentId);
+    if (!repayment) {
+        throw Object.assign(new Error('Repayment record not found.'), { status: 404 });
+    }
+
+    const employee = await Employee.findOne({ employeeId: repayment.employeeId });
+    if (!employee) {
+        throw Object.assign(new Error('Employee not found.'), { status: 404 });
+    }
+
+    let amountToRestore = Number(repayment.amount);
+    if (employee.loans && employee.loans.length > 0) {
+        for (const loan of employee.loans) {
+            const loanMax = Number(loan.totalAmount || 0);
+            const loanRem = Number(loan.remainingAmount || 0);
+            const diff = loanMax - loanRem;
+            if (diff > 0 && amountToRestore > 0) {
+                const addBack = Math.min(diff, amountToRestore);
+                loan.remainingAmount += addBack;
+                amountToRestore -= addBack;
+                if (loan.remainingAmount > 0 && loan.status === 'Paid') {
+                    loan.status = 'Active';
+                }
+            }
+        }
+        employee.markModified('loans');
+        await employee.save();
+    }
+
+    await LoanRepayment.findByIdAndDelete(repaymentId);
+    return { success: true };
 }
 
 export function getLoanInfoForPayroll(

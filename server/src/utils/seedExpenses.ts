@@ -85,10 +85,7 @@ export async function seedExpenseCategories() {
                     'Fuel / Mileage',
                     'Petrol / Diesel / CNG',
                     'Taxi / Ride Share',
-                    'Hotel Accommodation',
-                    'Flight / Train Ticket',
-                    'Meals / Per Diem',
-                    'Other Travel & Fuel'
+                    'Flight / Train Ticket'
                 ],
                 requiresReceipt: false,
                 assignedTo: 'Manager' as const
@@ -127,10 +124,7 @@ export async function seedExpenseCategories() {
                 'Fuel / Mileage',
                 'Petrol / Diesel / CNG',
                 'Taxi / Ride Share',
-                'Hotel Accommodation',
-                'Flight / Train Ticket',
-                'Meals / Per Diem',
-                'Other Travel & Fuel'
+                'Flight / Train Ticket'
             ]);
             if (legacyTravel?.subCategories) legacyTravel.subCategories.forEach((sc: string) => allSubCats.add(sc));
             if (legacyFuel?.subCategories) legacyFuel.subCategories.forEach((sc: string) => allSubCats.add(sc));
@@ -220,9 +214,13 @@ export async function seedExpenseCategories() {
             if (!existing) {
                 await ExpenseCategory.create(cat);
             } else {
-                const mergedSubCats = Array.from(new Set([...(existing.subCategories || []), ...cat.subCategories]));
+                if (cat.name === 'Travel & Fuel') {
+                    existing.subCategories = cat.subCategories;
+                } else {
+                    const mergedSubCats = Array.from(new Set([...(existing.subCategories || []), ...cat.subCategories]));
+                    existing.subCategories = mergedSubCats;
+                }
                 existing.assignedTo = cat.assignedTo;
-                existing.subCategories = mergedSubCats;
                 if (!existing.requiresReceipt && cat.requiresReceipt) {
                     existing.requiresReceipt = cat.requiresReceipt;
                 }

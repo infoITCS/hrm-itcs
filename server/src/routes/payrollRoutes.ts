@@ -1184,6 +1184,61 @@ router.post('/:runId/generate', authenticate, async (req: Request, res: Response
 });
 
 /**
+ * @route   POST /api/payroll/:runId/payslips/:payslipId/regenerate
+ * @desc    Regenerate a single employee's payslip without touching other employees or their manual edits.
+ * @access  admin, super-admin
+ */
+router.post('/:runId/payslips/:payslipId/regenerate', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthRequest;
+        if (!isAdmin(authReq.user!.role)) {
+            return res.status(403).json({ message: 'Forbidden. Admin access required.' });
+        }
+
+        const { runId, payslipId } = req.params;
+        if (!mongoose.isValidObjectId(runId) || !mongoose.isValidObjectId(payslipId)) {
+            return res.status(400).json({ message: 'Invalid run ID or payslip ID.' });
+        }
+
+        const run = await PayrollRun.findById(runId);
+        if (!run) return res.status(404).json({ message: 'Payroll run not found.' });
+
+        if (run.status !== 'Draft') {
+            return res.status(400).json({
+                message: `Cannot regenerate payslip for a run with status "${run.status}". Only Draft runs can be modified.`,
+            });
+        }
+
+        const existingPayslip = await Payslip.findOne({ _id: payslipId, payrollRunId: run._id });
+        if (!existingPayslip) {
+            return res.status(404).json({ message: 'Payslip not found in this payroll run.' });
+        }
+
+        const result = await buildPayrollPayslips(run, {
+            persist: true,
+            targetEmployeeId: existingPayslip.employeeId,
+        });
+
+        const updatedPayslip = await Payslip.findOne({
+            payrollRunId: run._id,
+            employeeId: existingPayslip.employeeId,
+        });
+
+        return res.json({
+            success: true,
+            message: `Regenerated payslip for ${existingPayslip.employeeId}.`,
+            payslip: updatedPayslip,
+            totals: result.totals,
+        });
+    } catch (err: any) {
+        if (err?.status === 400) {
+            return res.status(400).json({ message: err.message });
+        }
+        next(err);
+    }
+});
+
+/**
  * @route   PUT /api/payroll/:runId/approve
  * @desc    Approve a Draft payroll run → status becomes "Approved"
  * @access  admin, super-admin

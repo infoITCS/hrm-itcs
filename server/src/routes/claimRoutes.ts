@@ -428,12 +428,21 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         const decodedReceipts = decodeReceipts(receipts as ReceiptInput[] | undefined);
         const hasComment = notes && String(notes).trim().length >= 5;
         const hasReceipt = decodedReceipts.length > 0;
+        const subCat = (Array.isArray(subCategories) && subCategories[0]) ? String(subCategories[0]) : '';
+        const isRideOrTicket = /taxi|ride|indrive|careem|uber|ticket|flight|train/i.test(subCat);
+        const isFuelOrMileage = (typeof mileage === 'number' && mileage > 0) || /fuel|mileage|petrol|diesel|cng/i.test(subCat) || Boolean(resolvedFuelRate > 0 && /fuel/i.test(category));
 
-        if (catDoc.requiresReceipt) {
+        if (isRideOrTicket) {
+            if (!hasReceipt) {
+                return res.status(400).json({
+                    message: `Receipt upload is required for ${subCat || 'Ride Share / Ticket'} claims`
+                });
+            }
+        } else if (catDoc.requiresReceipt) {
             if (!hasReceipt) {
                 flags.push('MissingReceipt');
             }
-        } else if (!hasComment && !hasReceipt) {
+        } else if (!isFuelOrMileage && !hasComment && !hasReceipt) {
             // For other categories, at least one of comment or receipt is typically required
             flags.push('MissingCommentOrReceipt');
         }

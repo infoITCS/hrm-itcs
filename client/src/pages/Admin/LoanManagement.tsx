@@ -5,7 +5,8 @@ import { formatEmployeeFullName } from '../../utils/nameHelper';
 import {
     Banknote, Search, Pencil, Save, X, Loader2, Users, TrendingDown, Wallet,
     Eye, Calendar, History, FileText, ChevronRight, Download, CheckCircle2,
-    AlertCircle, AlertTriangle, RefreshCw, Layers, Check, Edit2, Plus
+    AlertCircle, AlertTriangle, RefreshCw, Layers, Check, Edit2, Plus,
+    Receipt, UploadCloud, Paperclip, Trash2
 } from 'lucide-react';
 
 interface LoanRow {
@@ -52,6 +53,21 @@ interface LoanRepaymentItem {
     note?: string;
 }
 
+interface ManualLoanRepaymentItem {
+    _id: string;
+    employeeId: string;
+    amount: number;
+    repaymentDate: string;
+    paymentMethod: 'Bank Transfer' | 'Cash Deposit' | 'Cheque' | 'Online Transfer' | 'Other';
+    erpReferenceId?: string;
+    evidenceUrl?: string;
+    evidenceFileName?: string;
+    notes?: string;
+    recordedBy: string;
+    recordedByName?: string;
+    createdAt: string;
+}
+
 interface EmployeeLoanDetailResult {
     employeeId: string;
     firstName: string;
@@ -68,6 +84,7 @@ interface EmployeeLoanDetailResult {
     };
     loans: IndividualLoanItem[];
     repayments: LoanRepaymentItem[];
+    manualRepayments?: ManualLoanRepaymentItem[];
 }
 
 interface MonthlyLoanDeductionItem {
@@ -127,7 +144,18 @@ export default function LoanManagement() {
     const [viewingEmployeeId, setViewingEmployeeId] = useState<string | null>(null);
     const [detailData, setDetailData] = useState<EmployeeLoanDetailResult | null>(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
-    const [detailTab, setDetailTab] = useState<'loans' | 'repayments'>('loans');
+    const [detailTab, setDetailTab] = useState<'loans' | 'repayments' | 'manual-repayments'>('loans');
+
+    // Record Manual Repayment modal state
+    const [repayModalOpen, setRepayModalOpen] = useState(false);
+    const [repayEmployee, setRepayEmployee] = useState<EmployeeLoanDetailResult | null>(null);
+    const [repayAmount, setRepayAmount] = useState('');
+    const [repayDate, setRepayDate] = useState(new Date().toISOString().slice(0, 10));
+    const [repayMethod, setRepayMethod] = useState<'Bank Transfer' | 'Cash Deposit' | 'Cheque' | 'Online Transfer' | 'Other'>('Bank Transfer');
+    const [repayErpRef, setRepayErpRef] = useState('');
+    const [repayNotes, setRepayNotes] = useState('');
+    const [repayEvidenceFile, setRepayEvidenceFile] = useState<File | null>(null);
+    const [submittingRepay, setSubmittingRepay] = useState(false);
 
     // Tab 2: Monthly Ledger & ERP state
     const now = new Date();
@@ -271,11 +299,14 @@ export default function LoanManagement() {
         setOverrideAlertModal(false);
     };
 
-    const openViewDetails = async (employeeId: string) => {
+    const openViewDetails = async (
+        employeeId: string,
+        initialTab: 'loans' | 'repayments' | 'manual-repayments' = 'loans'
+    ) => {
         setViewingEmployeeId(employeeId);
         setLoadingDetail(true);
         setDetailData(null);
-        setDetailTab('loans');
+        setDetailTab(initialTab);
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${api.admin}/loans/${employeeId}/details`, {
@@ -290,6 +321,93 @@ export default function LoanManagement() {
             showToast('Network error loading loan details', false);
         } finally {
             setLoadingDetail(false);
+        }
+    };
+
+    const openRecordRepayment = (detail: EmployeeLoanDetailResult) => {
+        setRepayEmployee(detail);
+        setRepayAmount('');
+        setRepayDate(new Date().toISOString().slice(0, 10));
+        setRepayMethod('Bank Transfer');
+        setRepayErpRef('');
+        setRepayNotes('');
+        setRepayEvidenceFile(null);
+        setRepayModalOpen(true);
+    };
+
+    const handleRecordRepaymentSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!repayEmployee) return;
+
+        const amt = Math.ceil(Number(repayAmount) || 0);
+        if (!amt || amt <= 0) {
+            showToast('Please enter a valid repayment amount.', false);
+            return;
+        }
+        if (amt > repayEmployee.summary.remainingBalance) {
+            showToast(`Amount cannot exceed remaining balance (${fmtPKR(repayEmployee.summary.remainingBalance)})`, false);
+            return;
+        }
+
+        setSubmittingRepay(true);
+        try {
+            const token = localStorage.getItem('token');
+            const formData = new FormData();
+            formData.append('amount', String(amt));
+            formData.append('repaymentDate', repayDate);
+            formData.append('paymentMethod', repayMethod);
+            if (repayErpRef.trim()) formData.append('erpReferenceId', repayErpRef.trim());
+            if (repayNotes.trim()) formData.append('notes', repayNotes.trim());
+            if (repayEvidenceFile) {
+                formData.append('evidence', repayEvidenceFile);
+            }
+
+            const res = await fetch(`${api.admin}/loans/${repayEmployee.employeeId}/repayments`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                body: formData,
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`Recorded repayment of ${fmtPKR(amt)} successfully!`, true);
+                setRepayModalOpen(false);
+                loadBalances();
+                await openViewDetails(repayEmployee.employeeId, 'manual-repayments');
+            } else {
+                showToast(data.message || 'Failed to record repayment', false);
+            }
+        } catch {
+            showToast('Network error recording repayment', false);
+        } finally {
+            setSubmittingRepay(false);
+        }
+    };
+
+    const handleDeleteManualRepayment = async (repaymentId: string) => {
+        if (!window.confirm('Are you sure you want to void this repayment? The deducted amount will be restored to the loan balance.')) {
+            return;
+        }
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${api.admin}/loans/repayments/${repaymentId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+                showToast('Repayment voided and balance restored.', true);
+                if (detailData) {
+                    loadBalances();
+                    await openViewDetails(detailData.employeeId, 'manual-repayments');
+                }
+            } else {
+                const err = await res.json();
+                showToast(err.message || 'Failed to void repayment', false);
+            }
+        } catch {
+            showToast('Network error voiding repayment', false);
         }
     };
 
@@ -975,6 +1093,17 @@ export default function LoanManagement() {
                                         >
                                             <History size={16} /> Salary Repayments ({detailData.repayments.length})
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDetailTab('manual-repayments')}
+                                            className={`pb-3 flex items-center gap-2 transition-colors border-b-2 -mb-px cursor-pointer ${
+                                                detailTab === 'manual-repayments'
+                                                    ? 'border-emerald-600 text-emerald-700'
+                                                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                                            }`}
+                                        >
+                                            <Receipt size={16} /> Manual Repayments ({detailData.manualRepayments?.length || 0})
+                                        </button>
                                     </div>
 
                                     {/* Tab 1: Individual Loans */}
@@ -1099,6 +1228,111 @@ export default function LoanManagement() {
                                             )}
                                         </div>
                                     )}
+
+                                    {/* Tab 3: Manual Direct Repayments */}
+                                    {detailTab === 'manual-repayments' && (
+                                        <div className="space-y-3">
+                                            {(!detailData.manualRepayments || detailData.manualRepayments.length === 0) ? (
+                                                <div className="text-center py-10 space-y-3 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
+                                                    <Receipt size={32} className="mx-auto text-slate-300" />
+                                                    <p className="text-sm font-semibold text-slate-600">No manual repayments recorded yet</p>
+                                                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                                                        Record direct bank transfers, cash deposits, or cheque payments made outside the monthly payroll cut.
+                                                    </p>
+                                                    {detailData.summary.remainingBalance > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => openRecordRepayment(detailData)}
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                                                        >
+                                                            <Plus size={14} /> Record Repayment Now
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                                                    <table className="w-full text-left text-xs">
+                                                        <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                                                            <tr>
+                                                                <th className="px-4 py-2.5">Date Paid</th>
+                                                                <th className="px-4 py-2.5 text-right">Amount Paid</th>
+                                                                <th className="px-4 py-2.5">Method</th>
+                                                                <th className="px-4 py-2.5">ERP / Voucher Ref</th>
+                                                                <th className="px-4 py-2.5">Proof / Evidence</th>
+                                                                <th className="px-4 py-2.5">Recorded By</th>
+                                                                <th className="px-4 py-2.5 text-center">Action</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {detailData.manualRepayments.map((rep) => (
+                                                                <tr key={rep._id} className="hover:bg-slate-50/60">
+                                                                    <td className="px-4 py-3 font-semibold text-slate-700 flex items-center gap-1">
+                                                                        <Calendar size={12} className="text-slate-400" />
+                                                                        {fmtDate(rep.repaymentDate)}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-right">
+                                                                        <span className="font-black text-emerald-600">+ {fmtPKR(rep.amount)}</span>
+                                                                    </td>
+                                                                    <td className="px-4 py-3">
+                                                                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                                            {rep.paymentMethod}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-4 py-3">
+                                                                        {rep.erpReferenceId ? (
+                                                                            <span className="px-2 py-0.5 rounded font-mono text-[11px] font-bold bg-slate-100 text-slate-700">
+                                                                                {rep.erpReferenceId}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="text-slate-400 text-[11px]">—</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3">
+                                                                        {rep.evidenceUrl ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const fullUrl = rep.evidenceUrl?.startsWith('http')
+                                                                                        ? rep.evidenceUrl
+                                                                                        : `${api.baseURL}${rep.evidenceUrl}`;
+                                                                                    window.open(fullUrl, '_blank');
+                                                                                }}
+                                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] border border-emerald-200 transition-colors cursor-pointer"
+                                                                                title={rep.evidenceFileName || 'View Evidence'}
+                                                                            >
+                                                                                <Paperclip size={12} />
+                                                                                <span className="truncate max-w-[120px]">
+                                                                                    {rep.evidenceFileName || 'View Receipt'}
+                                                                                </span>
+                                                                            </button>
+                                                                        ) : (
+                                                                            <span className="text-slate-400 text-[11px]">No file attached</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-slate-600">
+                                                                        <p className="font-semibold text-slate-800">{rep.recordedByName || 'Admin'}</p>
+                                                                        {rep.notes && (
+                                                                            <p className="text-[11px] text-slate-400 italic truncate max-w-[150px]">{rep.notes}</p>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-center">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleDeleteManualRepayment(rep._id)}
+                                                                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                                                            title="Void Repayment"
+                                                                        >
+                                                                            <Trash2 size={14} />
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </>
                             ) : null}
                         </div>
@@ -1112,21 +1346,224 @@ export default function LoanManagement() {
                             >
                                 Close
                             </button>
-                            {detailData && (
+                            <div className="flex items-center gap-2">
+                                {detailData && detailData.summary.remainingBalance > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => openRecordRepayment(detailData)}
+                                        className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-indigo-200"
+                                    >
+                                        <Plus size={14} /> Record Repayment
+                                    </button>
+                                )}
+                                {detailData && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const matchingRow = rows.find(r => r.employeeId === detailData.employeeId);
+                                            if (matchingRow) {
+                                                openEdit(matchingRow);
+                                            }
+                                        }}
+                                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                    >
+                                        <Pencil size={12} /> Edit Loan Balance
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* Record Manual Loan Repayment Modal */}
+            {repayModalOpen && repayEmployee && createPortal(
+                <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-fadeIn overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-auto p-6 space-y-5 border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                    <Receipt className="text-indigo-600" size={20} /> Record Manual Repayment
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    {formatEmployeeFullName(repayEmployee, repayEmployee.employeeId)} · #{repayEmployee.employeeId}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setRepayModalOpen(false)}
+                                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Current Balance Banner */}
+                        <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Outstanding Loan Balance</p>
+                                <p className="text-base font-black text-slate-900">{fmtPKR(repayEmployee.summary.remainingBalance)}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setRepayAmount(String(repayEmployee.summary.remainingBalance))}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+                            >
+                                Pay Full Balance
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleRecordRepaymentSubmit} className="space-y-4">
+                            {/* Repayment Amount & Payment Date */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        Repayment Amount (PKR) <span className="text-rose-500">*</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={repayEmployee.summary.remainingBalance}
+                                        value={repayAmount}
+                                        onChange={(e) => setRepayAmount(e.target.value)}
+                                        placeholder="e.g. 25000"
+                                        required
+                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        Payment Date <span className="text-rose-500">*</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={repayDate}
+                                        onChange={(e) => setRepayDate(e.target.value)}
+                                        required
+                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Payment Method & ERP Reference ID */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        Payment Method <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select
+                                        value={repayMethod}
+                                        onChange={(e) => setRepayMethod(e.target.value as any)}
+                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                    >
+                                        <option value="Bank Transfer">Bank Transfer</option>
+                                        <option value="Cash Deposit">Cash Deposit</option>
+                                        <option value="Online Transfer">Online Transfer</option>
+                                        <option value="Cheque">Cheque</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                                        ERP Ref / Voucher No.
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={repayErpRef}
+                                        onChange={(e) => setRepayErpRef(e.target.value)}
+                                        placeholder="e.g. ERP-REC-9082"
+                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Supporting Evidence File Upload */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Supporting Evidence / Slip <span className="text-slate-400 font-normal">(Receipt, Bank Transfer Slip, Cheque Copy)</span>
+                                </label>
+                                <div className="border border-dashed border-slate-300 rounded-2xl p-4 text-center hover:border-indigo-400 transition-colors bg-slate-50/50">
+                                    {repayEvidenceFile ? (
+                                        <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200">
+                                            <div className="flex items-center gap-2 text-xs truncate">
+                                                <Paperclip size={14} className="text-indigo-600 flex-shrink-0" />
+                                                <span className="font-semibold text-slate-800 truncate">{repayEvidenceFile.name}</span>
+                                                <span className="text-[10px] text-slate-400 flex-shrink-0">
+                                                    ({(repayEvidenceFile.size / 1024).toFixed(0)} KB)
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setRepayEvidenceFile(null)}
+                                                className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="cursor-pointer flex flex-col items-center gap-1.5 py-1">
+                                            <UploadCloud size={24} className="text-indigo-500" />
+                                            <span className="text-xs font-bold text-indigo-700">Click to upload proof</span>
+                                            <span className="text-[10px] text-slate-400">PDF, JPG, PNG or WEBP (Max 10MB)</span>
+                                            <input
+                                                type="file"
+                                                accept="image/*,.pdf"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        setRepayEvidenceFile(e.target.files[0]);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Remarks / Notes */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Remarks / Notes <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                                <textarea
+                                    rows={2}
+                                    value={repayNotes}
+                                    onChange={(e) => setRepayNotes(e.target.value)}
+                                    placeholder="Add any internal transaction or reconciliation notes..."
+                                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+
+                            {/* Footer Buttons */}
+                            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        const matchingRow = rows.find(r => r.employeeId === detailData.employeeId);
-                                        if (matchingRow) {
-                                            openEdit(matchingRow);
-                                        }
-                                    }}
-                                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                    onClick={() => setRepayModalOpen(false)}
+                                    disabled={submittingRepay}
+                                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                                 >
-                                    <Pencil size={12} /> Edit Loan Balance
+                                    Cancel
                                 </button>
-                            )}
-                        </div>
+                                <button
+                                    type="submit"
+                                    disabled={submittingRepay}
+                                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer shadow-sm shadow-indigo-200"
+                                >
+                                    {submittingRepay ? (
+                                        <>
+                                            <Loader2 size={14} className="animate-spin" /> Recording...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check size={14} /> Confirm & Deduct Balance
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>,
                 document.body

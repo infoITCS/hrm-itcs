@@ -56,10 +56,12 @@ export const api = {
     requestPayoutStatus: (id: string) => `${API_BASE_URL}/api/my-requests/${id}/payout-status`,
 
     // Payroll
+    payroll: `${API_BASE_URL}/api/payroll`,
     payrollRuns: `${API_BASE_URL}/api/payroll`,
     payrollPriorPeriodGap: (month: number | string, year: number | string) => `${API_BASE_URL}/api/payroll/prior-period-gap?month=${month}&year=${year}`,
     payrollRun: (id: string) => `${API_BASE_URL}/api/payroll/${id}`,
     payrollGenerate: (id: string) => `${API_BASE_URL}/api/payroll/${id}/generate`,
+    payrollRegeneratePayslip: (runId: string, payslipId: string) => `${API_BASE_URL}/api/payroll/${runId}/payslips/${payslipId}/regenerate`,
     payrollPreviewAmounts: (id: string) => `${API_BASE_URL}/api/payroll/${id}/preview-amounts`,
     payrollApprove: (id: string) => `${API_BASE_URL}/api/payroll/${id}/approve`,
     payrollDisburse: (id: string) => `${API_BASE_URL}/api/payroll/${id}/disburse`,

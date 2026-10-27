@@ -1003,6 +1003,12 @@ const ExpenseClaimDashboard = () => {
         if (!category) return 'Select a category';
         
         const selectedCat = categories.find(c => c.name === category);
+        const subCat = (subCategories && subCategories[0]) || '';
+        const isRideOrTicket = /taxi|ride|indrive|careem|uber|ticket|flight|train/i.test(subCat);
+
+        if (isRideOrTicket && receiptFiles.length === 0) {
+            return `Receipt upload is required for ${subCat || 'Ride Share / Ticket'} claims`;
+        }
         
         if (selectedCat && selectedCat.requiresReceipt && receiptFiles.length === 0) {
             return `Receipt upload is required for ${selectedCat.name} claims`;
@@ -1014,7 +1020,7 @@ const ExpenseClaimDashboard = () => {
             return `Amount exceeds remaining limit (${formatMoney(remainingMedicalLimit)}). Out-of-policy claims can only be submitted by HR or Admin.`;
         }
 
-        if (selectedCat && !selectedCat.requiresReceipt) {
+        if (selectedCat && !selectedCat.requiresReceipt && !isFuelCategory) {
             const hasComment = notes.trim().length >= 5;
             const hasReceipt = receiptFiles.length > 0;
             if (!hasComment && !hasReceipt) {
@@ -1022,7 +1028,7 @@ const ExpenseClaimDashboard = () => {
             }
         }
         return '';
-    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, mileage, isFuelCategory, forWhom, dependentId, category, categories, remainingMedicalLimit, notes, receiptFiles.length]);
+    }, [loadingEmployee, employee?.employeeId, isAdminLike, selectedEmployeeId, amountRequested, mileage, isFuelCategory, forWhom, dependentId, category, subCategories, categories, remainingMedicalLimit, notes, receiptFiles.length]);
 
     const handleSubmit = async () => {
         if (submitDisabledReason) return;
@@ -2255,7 +2261,15 @@ const ExpenseClaimDashboard = () => {
 
                             <div className="lg:col-span-2">
                                 <span className="text-xs font-bold text-slate-600">
-                                    Receipts {category === 'Medical' ? '(required)' : ['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) ? '(comment or receipt required)' : '(optional)'}
+                                    Receipts {
+                                        category === 'Medical' || selectedCategoryDoc?.requiresReceipt || /taxi|ride|indrive|careem|uber|ticket|flight|train/i.test((subCategories && subCategories[0]) || '')
+                                            ? '(required)' 
+                                            : isFuelCategory 
+                                                ? '(optional)' 
+                                                : ['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) 
+                                                    ? '(comment or receipt required)' 
+                                                    : '(optional)'
+                                    }
                                 </span>
                                 <div className="mt-2 flex flex-wrap items-center gap-3">
                                     <input
@@ -2496,10 +2510,7 @@ const ExpenseClaimDashboard = () => {
                                         <span className="text-slate-500 font-medium">Total Requested:</span>
                                         <span className="font-bold text-slate-900">PKR {filteredMineTotals.requested.toLocaleString('en-PK')}</span>
                                     </div>
-                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
-                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
-                                        <span className="font-bold text-slate-900">PKR {filteredMineTotals.allowed.toLocaleString('en-PK')}</span>
-                                    </div>
+
                                     <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
                                         <span className="text-slate-500 font-medium">Total Approved:</span>
                                         <span className="font-bold text-slate-900">PKR {filteredMineTotals.approved.toLocaleString('en-PK')}</span>
@@ -2512,12 +2523,10 @@ const ExpenseClaimDashboard = () => {
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Claim #</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[280px]">Flags</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[260px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Receipts & Submitted</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                             </tr>
                                         </thead>
@@ -2543,13 +2552,7 @@ const ExpenseClaimDashboard = () => {
                                                             {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
                                                         </div>
                                                     )}
-                                                    {c.amountRequested > c.amountAllowed && (
-                                                        <div className="text-[10px] text-rose-500 font-bold">
-                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
-                                                        </div>
-                                                    )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -2569,10 +2572,14 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '280px' }}>
-                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '280px' }}>
+                                                <td className="px-4 py-3 align-middle min-w-[260px]">
+                                                    <div className="flex flex-col items-start gap-1.5 w-full">
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
+                                                            <span
+                                                                key={f}
+                                                                className="w-full px-3 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold leading-normal text-left shadow-2xs"
+                                                                title={f}
+                                                            >
                                                                 {flagLabel(f)}
                                                             </span>
                                                         )) : (
@@ -2580,29 +2587,32 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap align-middle">
-                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700" title="System-locked submission timestamp">
-                                                        <Lock size={11} className="text-slate-500 shrink-0" />
-                                                        <span>{new Date(c.audit?.submittedAt || c.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                                                    </div>
-                                                </td>
                                                 <td className="px-4 py-3 align-middle">
-                                                    {(c.receipts || []).length ? (
-                                                        <div className="flex flex-col gap-1">
-                                                            {(c.receipts || []).map((r: any) => (
-                                                                <button
-                                                                    key={r._id}
-                                                                    onClick={() => downloadReceipt(c._id, r._id, r.fileName)}
-                                                                    className="text-left text-indigo-600 hover:text-indigo-700 font-semibold text-xs truncate max-w-[150px] block whitespace-nowrap"
-                                                                    title={r.fileName}
-                                                                >
-                                                                    {r.fileName}
-                                                                </button>
-                                                            ))}
+                                                    <div className="flex flex-col gap-1.5 items-start">
+                                                        {/* Receipts first */}
+                                                        {(c.receipts || []).length ? (
+                                                            <div className="flex flex-col gap-1">
+                                                                {(c.receipts || []).map((r: any) => (
+                                                                    <button
+                                                                        key={r._id}
+                                                                        onClick={() => downloadReceipt(c._id, r._id, r.fileName)}
+                                                                        className="text-left text-indigo-600 hover:text-indigo-800 font-semibold text-xs truncate max-w-[180px] block whitespace-nowrap cursor-pointer hover:underline"
+                                                                        title={r.fileName}
+                                                                    >
+                                                                        📎 {r.fileName}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400 italic">No receipts</span>
+                                                        )}
+
+                                                        {/* Submitted Date beneath */}
+                                                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-600 whitespace-nowrap" title="System-locked submission timestamp">
+                                                            <Lock size={10} className="text-slate-500 shrink-0" />
+                                                            <span>{new Date(c.audit?.submittedAt || c.createdAt).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                                         </div>
-                                                    ) : (
-                                                        <span className="text-xs text-slate-400">—</span>
-                                                    )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 align-middle whitespace-nowrap">
                                                     <div className="flex items-center gap-1.5">
@@ -2658,9 +2668,6 @@ const ExpenseClaimDashboard = () => {
                                                     {formatMoney(filteredMineTotals.requested)}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
-                                                    {formatMoney(filteredMineTotals.allowed)}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
                                                     {formatMoney(filteredMineTotals.approved)}
                                                 </td>
                                                 <td colSpan={4} className="px-4 py-3 text-xs text-slate-400"></td>
@@ -2698,10 +2705,7 @@ const ExpenseClaimDashboard = () => {
                                         <span className="text-slate-500 font-medium">Total Requested:</span>
                                         <span className="font-bold text-slate-900">PKR {filteredApprovalsTotals.requested.toLocaleString('en-PK')}</span>
                                     </div>
-                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
-                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
-                                        <span className="font-bold text-slate-900">PKR {filteredApprovalsTotals.allowed.toLocaleString('en-PK')}</span>
-                                    </div>
+
                                 </div>
                                 <div className="overflow-x-auto rounded-xl border border-slate-100">
                                     <table className="w-full text-sm min-w-[1100px]">
@@ -2725,9 +2729,8 @@ const ExpenseClaimDashboard = () => {
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[240px]">Flags</th>
+                                                <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[260px]">Flags</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Submitted At</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
                                             </tr>
@@ -2780,13 +2783,7 @@ const ExpenseClaimDashboard = () => {
                                                             {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
                                                         </div>
                                                     )}
-                                                    {c.amountRequested > c.amountAllowed && (
-                                                        <div className="text-[10px] text-rose-500 font-bold">
-                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
-                                                        </div>
-                                                    )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <div className="flex items-center gap-1.5 flex-wrap">
                                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${STATUS_COLORS[c.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -2830,10 +2827,14 @@ const ExpenseClaimDashboard = () => {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 align-middle" style={{ minWidth: '300px' }}>
-                                                    <div className="flex items-center gap-1.5" style={{ minWidth: '300px' }}>
+                                                <td className="px-4 py-3 align-middle min-w-[260px]">
+                                                    <div className="flex flex-col items-start gap-1.5 w-full">
                                                         {(c.eligibility?.flags || []).length ? (c.eligibility.flags || []).map((f: string) => (
-                                                            <span key={f} className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold" style={{ whiteSpace: 'nowrap' }} title={f}>
+                                                            <span
+                                                                key={f}
+                                                                className="w-full px-3 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold leading-normal text-left shadow-2xs"
+                                                                title={f}
+                                                            >
                                                                 {flagLabel(f)}
                                                             </span>
                                                         )) : (
@@ -2868,9 +2869,6 @@ const ExpenseClaimDashboard = () => {
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
                                                     {formatMoney(filteredApprovalsTotals.requested)}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
-                                                    {formatMoney(filteredApprovalsTotals.allowed)}
                                                 </td>
                                                 <td colSpan={4} className="px-4 py-3 text-xs text-slate-400"></td>
                                             </tr>
@@ -2984,10 +2982,7 @@ const ExpenseClaimDashboard = () => {
                                         <span className="text-slate-500 font-medium">Total Requested:</span>
                                         <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.requested.toLocaleString('en-PK')}</span>
                                     </div>
-                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
-                                        <span className="text-slate-500 font-medium">Total Allowed:</span>
-                                        <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.allowed.toLocaleString('en-PK')}</span>
-                                    </div>
+
                                     <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-xs">
                                         <span className="text-slate-500 font-medium">Total Approved:</span>
                                         <span className="font-bold text-slate-900">PKR {filteredHistoryTotals.approved.toLocaleString('en-PK')}</span>
@@ -3001,7 +2996,6 @@ const ExpenseClaimDashboard = () => {
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Employee</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Category</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Requested</th>
-                                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Allowed</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Approved</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status</th>
                                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">ERP Ref #</th>
@@ -3044,13 +3038,7 @@ const ExpenseClaimDashboard = () => {
                                                             {c.fuelRatePerUnit && <span className="text-slate-400 font-normal">(@ PKR {c.fuelRatePerUnit})</span>}
                                                         </div>
                                                     )}
-                                                    {c.amountRequested > c.amountAllowed && (
-                                                        <div className="text-[10px] text-rose-500 font-bold">
-                                                            Disallowed: {formatMoney(c.amountRequested - c.amountAllowed, c.currency)}
-                                                        </div>
-                                                    )}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.amountAllowed, c.currency)}</td>
                                                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap align-middle">{formatMoney(c.approvedTotal, c.currency)}</td>
                                                 <td className="px-4 py-3 whitespace-nowrap align-middle">
                                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -3214,9 +3202,6 @@ const ExpenseClaimDashboard = () => {
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
                                                     {formatMoney(filteredHistoryTotals.requested)}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
-                                                    {formatMoney(filteredHistoryTotals.allowed)}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-slate-900 font-bold text-sm">
                                                     {formatMoney(filteredHistoryTotals.approved)}

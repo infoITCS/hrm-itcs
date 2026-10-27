@@ -12,6 +12,7 @@ import WorkflowTask from '../models/WorkflowTask';
 import logger from '../utils/logger';
 import RolePermission from '../models/RolePermission';
 import { SYSTEM_MODULES, computeEffectivePermissionsAndScopes, getDefaultScopeForRole, getDefaultSubTabAccess } from '../utils/permissionUtils';
+import { upload } from '../middleware/upload';
 
 const router = Router();
 
@@ -854,5 +855,93 @@ router.patch('/loans/:employeeId', authenticate, requireLoanAccess, async (req: 
         next(error);
     }
 });
+
+/**
+ * @route   POST /api/admin/loans/:employeeId/repayments
+ * @desc    Record manual loan repayment with optional supporting evidence file
+ */
+router.post(
+    '/loans/:employeeId/repayments',
+    authenticate,
+    requireLoanAccess,
+    upload.single('evidence'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        const authReq = req as AuthRequest;
+        try {
+            const { amount, repaymentDate, paymentMethod, erpReferenceId, notes } = req.body;
+            if (!amount || Number(amount) <= 0) {
+                return res.status(400).json({ message: 'Valid repayment amount is required.' });
+            }
+
+            const evidenceUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
+            const evidenceFileName = req.file ? req.file.originalname : undefined;
+
+            const { recordManualLoanRepayment } = await import('../services/loanManagementService');
+            const result = await recordManualLoanRepayment(req.params.employeeId, {
+                amount: Number(amount),
+                repaymentDate,
+                paymentMethod,
+                erpReferenceId,
+                evidenceUrl,
+                evidenceFileName,
+                notes,
+                recordedBy: authReq.user?.userId || 'admin',
+                recordedByName: (authReq.user as any)?.name || authReq.user?.email || authReq.user?.role || 'Admin',
+            });
+
+            await AuditLog.create({
+                action: 'CREATE',
+                targetResource: 'LoanRepayment',
+                targetId: req.params.employeeId,
+                performedBy: authReq.user?.userId || 'System',
+                details: {
+                    amount: Number(amount),
+                    repaymentDate,
+                    paymentMethod,
+                    erpReferenceId,
+                    evidenceFileName,
+                    notes,
+                },
+            });
+
+            res.status(201).json(result);
+        } catch (error: any) {
+            if (error.status === 400 || error.status === 404) {
+                return res.status(error.status).json({ message: error.message });
+            }
+            next(error);
+        }
+    }
+);
+
+/**
+ * @route   DELETE /api/admin/loans/repayments/:repaymentId
+ * @desc    Void/Delete a manual repayment and restore loan balance (Super Admin / HR only)
+ */
+router.delete(
+    '/loans/repayments/:repaymentId',
+    authenticate,
+    requireLoanAccess,
+    async (req: Request, res: Response, next: NextFunction) => {
+        const authReq = req as AuthRequest;
+        try {
+            const { deleteManualLoanRepayment } = await import('../services/loanManagementService');
+            const result = await deleteManualLoanRepayment(req.params.repaymentId);
+
+            await AuditLog.create({
+                action: 'DELETE',
+                targetResource: 'LoanRepayment',
+                targetId: req.params.repaymentId,
+                performedBy: authReq.user?.userId || 'System',
+                details: { repaymentId: req.params.repaymentId },
+            });
+
+            res.json(result);
+        } catch (error: any) {
+            if (error.status === 404) return res.status(404).json({ message: error.message });
+            next(error);
+        }
+    }
+);
 
 export default router;
