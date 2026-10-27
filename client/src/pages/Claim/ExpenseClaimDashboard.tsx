@@ -1010,7 +1010,7 @@ const ExpenseClaimDashboard = () => {
             return `Receipt upload is required for ${subCat || 'Ride Share / Ticket'} claims`;
         }
         
-        if (selectedCat && selectedCat.requiresReceipt && receiptFiles.length === 0) {
+        if (selectedCat && selectedCat.requiresReceipt && !isFuelCategory && receiptFiles.length === 0) {
             return `Receipt upload is required for ${selectedCat.name} claims`;
         }
         
@@ -2262,10 +2262,10 @@ const ExpenseClaimDashboard = () => {
                             <div className="lg:col-span-2">
                                 <span className="text-xs font-bold text-slate-600">
                                     Receipts {
-                                        category === 'Medical' || selectedCategoryDoc?.requiresReceipt || /taxi|ride|indrive|careem|uber|ticket|flight|train/i.test((subCategories && subCategories[0]) || '')
-                                            ? '(required)' 
-                                            : isFuelCategory 
-                                                ? '(optional)' 
+                                        isFuelCategory 
+                                            ? '(optional)' 
+                                            : category === 'Medical' || selectedCategoryDoc?.requiresReceipt || /taxi|ride|indrive|careem|uber|ticket|flight|train/i.test((subCategories && subCategories[0]) || '')
+                                                ? '(required)' 
                                                 : ['Training & Certification', 'Sales/Customer Gifts', 'Other'].includes(category) 
                                                     ? '(comment or receipt required)' 
                                                     : '(optional)'

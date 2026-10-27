@@ -438,7 +438,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
                     message: `Receipt upload is required for ${subCat || 'Ride Share / Ticket'} claims`
                 });
             }
-        } else if (catDoc.requiresReceipt) {
+        } else if (catDoc.requiresReceipt && !isFuelOrMileage) {
             if (!hasReceipt) {
                 flags.push('MissingReceipt');
             }
