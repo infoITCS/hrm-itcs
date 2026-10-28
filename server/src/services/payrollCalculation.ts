@@ -222,7 +222,11 @@ export function computePayrollAmountTotals(payslips: any[]) {
         totalExpenseClaimsAmount,
         totalLoanDeductionsAmount,
         totalPfWithdrawalsAmount,
-        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount - totalPfWithdrawalsAmount,
+        // ⚠️ CRITICAL ACCOUNTING RULE (DO NOT MODIFY):
+        // Per corporate ERP policy, loan deductions are posted under a separate Loan Recovery voucher in ERP.
+        // Therefore, loan deductions MUST be added back to Net Pay to yield the full salary voucher:
+        // Payroll ERP Amount = Total Net - Expense Claims - PF Withdrawals + Loan Deductions
+        erpPayableAmount: totalPayableAmount - totalExpenseClaimsAmount - totalPfWithdrawalsAmount + totalLoanDeductionsAmount,
     };
 }
 

@@ -10,6 +10,7 @@ import {
 import axios from 'axios';
 import { api } from '../../utils/api';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useToast } from '../../contexts/ToastContext';
 import AlertModal from '../../components/UI/AlertModal';
 import { formatEmployeeFullName } from '../../utils/nameHelper';
 import { isExpenseClaimPayrollEarning } from '../../utils/expenseClaimPayroll';
@@ -218,6 +219,7 @@ const calculateAnniversaryBonusFromEmployee = (
 const PayslipEditPanel = ({
     payslip, currency, allPayslips, periodYear, runId, onClose, onSaved,
 }: { payslip: Payslip; currency: string; allPayslips: Payslip[]; periodYear?: number; runId?: string; onClose: () => void; onSaved: () => void }) => {
+    const { showAlert } = useToast();
     const empBank = payslip.employeeDetails?.bankDetails;
     const empOwnAccount = empBank?.accountNumber || empBank?.iban || '';
     const empOwnBank = empBank?.bankName || 'Meezan Bank';
@@ -367,34 +369,37 @@ const PayslipEditPanel = ({
         }
     };
 
-    const handleRefreshLineItems = async () => {
+    const handleRefreshLineItems = () => {
         const effectiveRunId = runId || payslip.payrollRunId;
         if (!effectiveRunId) return;
 
-        if (!window.confirm(`Fetch latest approved expense claims and recalculate line items for ${empOwnName} (${payslip.employeeId})?\n\nThis will refresh their line items without affecting any other employees.`)) {
-            return;
-        }
-
-        setRefreshing(true);
-        setError('');
-        try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post(
-                api.payrollRegeneratePayslip(effectiveRunId, payslip._id),
-                {},
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            if (res.data?.payslip) {
-                setEarnings(res.data.payslip.earnings || []);
-                setDeductions(res.data.payslip.deductions || []);
-                if (res.data.payslip.notes) setNotes(res.data.payslip.notes);
-                onSaved();
+        showAlert(
+            'Refresh Line Items',
+            `Fetch latest approved expense claims and recalculate line items for ${empOwnName} (${payslip.employeeId})?\n\nThis will refresh their line items without affecting any other employees.`,
+            'confirm',
+            async () => {
+                setRefreshing(true);
+                setError('');
+                try {
+                    const token = localStorage.getItem('token');
+                    const res = await axios.post(
+                        api.payrollRegeneratePayslip(effectiveRunId, payslip._id),
+                        {},
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                    if (res.data?.payslip) {
+                        setEarnings(res.data.payslip.earnings || []);
+                        setDeductions(res.data.payslip.deductions || []);
+                        if (res.data.payslip.notes) setNotes(res.data.payslip.notes);
+                        onSaved();
+                    }
+                } catch (err: any) {
+                    setError(err.response?.data?.message || 'Failed to refresh line items.');
+                } finally {
+                    setRefreshing(false);
+                }
             }
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to refresh line items.');
-        } finally {
-            setRefreshing(false);
-        }
+        );
     };
 
     return createPortal(
@@ -1356,7 +1361,11 @@ const PayrollRunDetail = () => {
                 totalExpenseClaimsAmount: claims,
                 totalLoanDeductionsAmount: totalLoanDeductions,
                 totalPfWithdrawalsAmount: totalPfWithdrawals,
-                erpPayableAmount: totalPayable - claims - totalPfWithdrawals,
+                // ⚠️ CRITICAL ACCOUNTING RULE (DO NOT MODIFY):
+                // Per corporate ERP policy, loan deductions are posted under a separate Loan Recovery voucher in ERP.
+                // Therefore, loan deductions MUST be added back to Net Pay to yield the full salary voucher:
+                // Payroll ERP Amount = Total Net - Expense Claims - PF Withdrawals + Loan Deductions
+                erpPayableAmount: totalPayable - claims - totalPfWithdrawals + totalLoanDeductions,
                 claimCount: 0,
             };
         }
@@ -1592,7 +1601,7 @@ const PayrollRunDetail = () => {
                                     <CreditCard size={11} /> Loan Deductions
                                 </p>
                                 <p className="text-xl font-black text-purple-900">{fmt(displayAmounts.totalLoanDeductionsAmount ?? 0)}</p>
-                                <p className="text-[10px] text-purple-700/80 mt-1">Separate Loan ERP ID</p>
+                                <p className="text-[10px] text-purple-700/80 mt-1">Separate Loan ERP ID — added back</p>
                             </div>
                             <div className="rounded-xl p-4 bg-emerald-50 border border-emerald-200 ring-1 ring-emerald-100">
                                 <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Payroll ERP Amount</p>
@@ -1647,7 +1656,8 @@ const PayrollRunDetail = () => {
                     <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100 shadow-sm">
                         <p className="text-xs text-indigo-600 mb-1 flex items-center gap-1"><CreditCard size={12} /> Total Net Pay</p>
                         <p className="text-xl font-bold text-indigo-700">{fmt(totalNet)}</p>
-                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims - totalPfWithdrawals))}</p>
+                        {/* ⚠️ CRITICAL ACCOUNTING RULE: erpPayableAmount = Total Net - Expense Claims - PF Withdrawals + Loan Deductions */}
+                        <p className="text-[10px] text-indigo-500 mt-1">ERP payroll: {fmt(displayAmounts?.erpPayableAmount ?? (totalNet - totalExpenseClaims - totalPfWithdrawals + totalLoanDeductions))}</p>
                     </div>
                 </div>
             )}
