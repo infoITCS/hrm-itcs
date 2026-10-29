@@ -37,7 +37,8 @@ const isWfhMarked = (entry?: { isWfh?: boolean; note?: string; status?: Attendan
 
 const toStatusSelectValue = (entry: TodayRosterEntry): StatusSelectValue => {
     if (entry.status === 'Present' && isWfhMarked(entry)) return 'Present (WFH)';
-    return entry.status || 'Present';
+    if (!entry.status || entry.status === 'N/A') return 'Absent';
+    return entry.status;
 };
 
 const toLocalIsoString = (dateStr?: string) => {

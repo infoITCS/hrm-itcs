@@ -411,7 +411,7 @@ export async function getTodayRoster(
         const shiftNotStartedYet = isToday && now.getTime() < shiftStartTime.getTime();
 
         let effectiveStatus = rec?.status;
-        if (!effectiveStatus) {
+        if (!effectiveStatus || effectiveStatus === 'N/A') {
             if (isWeekend(dateStr)) effectiveStatus = 'Weekend';
             else if (isFuture || shiftNotStartedYet) effectiveStatus = 'N/A';
             else effectiveStatus = 'Absent';
@@ -866,7 +866,7 @@ export async function getEmployeeMonthlyAttendance(
             const todayStr = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
             const isFuture = dateStr > todayStr;
             const weekend = isWeekend(dateStr);
-            const defaultStatus = weekend ? 'Weekend' : 'N/A';
+            const defaultStatus = weekend ? 'Weekend' : (isFuture ? 'N/A' : 'Absent');
             days.push({
                 date: dateStr,
                 checkIn: undefined,

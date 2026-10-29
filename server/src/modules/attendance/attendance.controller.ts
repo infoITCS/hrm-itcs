@@ -457,9 +457,11 @@ export async function updateRecord(req: AuthRequest, res: Response) {
             }
 
             if ((record as any).checkIn && (record as any).checkOut) {
-                (record as any).workDurationMinutes = Math.floor(
+                let workMinutes = Math.max(0, Math.floor(
                     ((record as any).checkOut.getTime() - (record as any).checkIn.getTime()) / 60000
-                );
+                ));
+                if (workMinutes >= 360) workMinutes -= 60;
+                (record as any).workDurationMinutes = workMinutes;
             }
         }
 
@@ -480,7 +482,7 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             return res.status(400).json({ success: false, message: `Invalid status: ${VALID_STATUSES.join(', ')}` });
         }
 
-        const effectiveStatus = status ?? 'Present';
+        const effectiveStatus = (!status || status === 'N/A') ? 'Present' : status;
 
         // Check if employee has an approved formal leave on this date
         if (!req.body.forceOverride) {
@@ -540,6 +542,7 @@ export async function createManualRecord(req: AuthRequest, res: Response) {
             workDurationMinutes = dIn && dOut
                 ? Math.max(0, Math.floor((dOut.getTime() - dIn.getTime()) / 60000))
                 : 0;
+            if (workDurationMinutes >= 360) workDurationMinutes -= 60;
 
             if (dIn) {
                 const employee = await repo.findEmployeeWithShift(employeeId);
@@ -671,10 +674,25 @@ export async function getDevices(_req: AuthRequest, res: Response) {
 
 export async function updateDevice(req: AuthRequest, res: Response) {
     try {
-        const device = await repo.upsertDevice(req.params.sn, req.body);
+        const oldSN = req.params.sn;
+        const newSN = req.body.deviceSN ? String(req.body.deviceSN).trim() : oldSN;
+
+        if (newSN && newSN !== oldSN) {
+            const existing = await repo.findDeviceBySN(newSN);
+            if (existing) {
+                return res.status(400).json({ success: false, message: `Device with Serial Number "${newSN}" already exists` });
+            }
+        }
+
+        const device = await repo.upsertDevice(oldSN, { ...req.body, deviceSN: newSN });
         if (!device) return res.status(404).json({ success: false, message: 'Device not found' });
         res.json({ success: true, data: device });
-    } catch (err: any) { res.status(500).json({ success: false, message: err.message }); }
+    } catch (err: any) {
+        if (err.code === 11000) {
+            return res.status(400).json({ success: false, message: 'A device with this Serial Number (SN) already exists' });
+        }
+        res.status(500).json({ success: false, message: err.message });
+    }
 }
 
 export async function exportCSV(req: AuthRequest, res: Response) {
