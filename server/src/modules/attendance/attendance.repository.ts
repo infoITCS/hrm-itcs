@@ -61,7 +61,7 @@ export async function countRecords(filter: RecordFilter): Promise<number> {
 
 export async function upsertRecord(employeeId: string, date: string, data: Record<string, any>) {
     const existing = await AttendanceRecord.findOne({ employeeId, date }).lean() as any;
-    if (existing?.manuallyAdjusted) return existing;
+    if (!data?.manuallyAdjusted && existing?.manuallyAdjusted) return existing;
     return AttendanceRecord.findOneAndUpdate(
         { employeeId, date },
         { $set: { employeeId, date, ...data } },
@@ -137,7 +137,7 @@ export async function markPunchesProcessed(employeeId: string, dateStr: string, 
     const filter: Record<string, any> = { employeeId };
     if (isOvernight) {
         const start = new Date(startOfDay(dateStr).getTime() + 12 * 60 * 60 * 1000);
-        const end = new Date(startOfDay(dateStr).getTime() + 34 * 60 * 60 * 1000);
+        const end = new Date(startOfDay(dateStr).getTime() + 36 * 60 * 60 * 1000);
         filter.punchTime = { $gte: start, $lte: end };
     } else {
         filter.punchTime = { $gte: startOfDay(dateStr), $lte: endOfDay(dateStr) };
@@ -338,6 +338,10 @@ export async function findLocationConfigs(locationNames: string[]) {
 
 export async function findAllDevices() {
     return DeviceLocation.find().sort({ locationName: 1 }).lean();
+}
+
+export async function findDeviceBySN(deviceSN: string) {
+    return DeviceLocation.findOne({ deviceSN }).lean();
 }
 
 export async function upsertDevice(deviceSN: string, data: Record<string, any>) {
