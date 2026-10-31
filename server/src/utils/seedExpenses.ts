@@ -200,7 +200,7 @@ export async function seedExpenseCategories() {
                 }
                 if (modified) {
                     claim.markModified('approvals');
-                    await claim.save();
+                    await ExpenseClaim.updateOne({ _id: claim._id }, { $set: { status: claim.status, approvals: (claim as any).approvals } });
                     console.log(`[AutoHeal] Unlocked stuck claim ${claim.claimNo} for Finance approval`);
                 }
             }
@@ -274,7 +274,7 @@ export async function seedExpenseCategories() {
                     requiresAuthorization: false
                 } as any
             ];
-            await claim.save();
+            await ExpenseClaim.updateOne({ _id: claim._id }, { $set: { status: claim.status, approvals: (claim as any).approvals } });
         }
 
         // B) Finance direct categories: Office Rent, Utilities, Postage and Delivery, Meal Allowance / Kitchen Expenses, Other
@@ -294,7 +294,7 @@ export async function seedExpenseCategories() {
                     requiresAuthorization: false
                 } as any
             ];
-            await claim.save();
+            await ExpenseClaim.updateOne({ _id: claim._id }, { $set: { status: claim.status, approvals: (claim as any).approvals } });
         }
 
         logger.info('Seeded and synchronized Expense Categories with Manager/HR/Finance routing');

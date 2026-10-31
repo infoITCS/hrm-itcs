@@ -882,7 +882,18 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                 (claim as any).audit.lastUpdatedAt = new Date();
                 (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
 
-                await claim.save();
+                await ExpenseClaim.updateOne(
+                    { _id: claim._id },
+                    {
+                        $set: {
+                            status: claim.status,
+                            approvals: claim.approvals,
+                            approvedTotal: claim.approvedTotal,
+                            'audit.lastUpdatedAt': (claim as any).audit.lastUpdatedAt,
+                            'audit.lastUpdatedByUserId': (claim as any).audit.lastUpdatedByUserId
+                        }
+                    }
+                );
 
                 // Trigger employee notification email asynchronously
                 (async () => {
@@ -976,7 +987,6 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             }
             if (healed) {
                 claim.markModified('approvals');
-                await claim.save();
             }
         }
 
@@ -1107,7 +1117,19 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         (claim as any).audit.lastUpdatedAt = new Date();
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
 
-        await claim.save();
+        const updateFields: any = {
+            status: claim.status,
+            approvals: claim.approvals,
+            'audit.lastUpdatedAt': (claim as any).audit.lastUpdatedAt,
+            'audit.lastUpdatedByUserId': (claim as any).audit.lastUpdatedByUserId
+        };
+        if (typeof claim.approvedTotal === 'number') {
+            updateFields.approvedTotal = claim.approvedTotal;
+        }
+        if (claim.erpReferenceId !== undefined) {
+            updateFields.erpReferenceId = claim.erpReferenceId;
+        }
+        await ExpenseClaim.updateOne({ _id: claim._id }, { $set: updateFields });
 
         // Trigger employee notification email asynchronously
         (async () => {
@@ -2494,7 +2516,14 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
             } as any);
         }
 
-        await claim.save();
+        const payoutUpdates: any = {
+            payoutStatus: claim.payoutStatus,
+            paidAt: claim.paidAt,
+        };
+        if (claim.erpReferenceId) payoutUpdates.erpReferenceId = claim.erpReferenceId;
+        if (claim.comments) payoutUpdates.comments = claim.comments;
+
+        await ExpenseClaim.updateOne({ _id: claim._id }, { $set: payoutUpdates });
         res.json({ success: true, message: `Claim payout status updated to ${payoutStatus}`, claim });
     } catch (err) {
         next(err);
