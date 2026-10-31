@@ -784,7 +784,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
 
         for (const claimId of claimIds) {
             try {
-                const claim = await ExpenseClaim.findById(claimId);
+                const claim = await ExpenseClaim.findById(claimId).select('-receipts.fileData');
                 if (!claim || isFinalStatus(claim.status)) {
                     failedIds.push(claimId);
                     continue;
@@ -877,6 +877,7 @@ router.patch('/bulk-decision', authenticate, async (req: Request, res: Response,
                     }
                 }
 
+                claim.markModified('approvals');
                 (claim as any).audit = (claim as any).audit || {};
                 (claim as any).audit.lastUpdatedAt = new Date();
                 (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
@@ -947,7 +948,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
         const { decision, comments, approvedAmount, authorizationBy, erpReferenceId } = req.body || {};
         if (!['Approved', 'Declined'].includes(decision)) return res.status(400).json({ message: 'decision must be Approved or Declined' });
 
-        const claim = await ExpenseClaim.findById(req.params.id);
+        const claim = await ExpenseClaim.findById(req.params.id).select('-receipts.fileData');
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
         if (isFinalStatus(claim.status)) return res.status(400).json({ message: 'Claim is already finalized' });
         if (String(claim.employeeUserId) === String(userId) && !['super-admin', 'admin', 'finance'].includes(role)) {
@@ -1075,8 +1076,19 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             claim.status = 'Declined';
             claim.approvedTotal = 0;
         } else {
+            // When Finance (the final approval stage) approves, ensure any prior bypassed stages cannot hold the claim pending
+            if (currentStage === 'finance') {
+                for (const a of claim.approvals) {
+                    if (a.stage !== 'finance' && a.status === 'Pending') {
+                        a.status = 'Approved' as any;
+                        a.comments = a.comments || 'Bypassed upon final Finance approval';
+                        a.decidedAt = a.decidedAt || new Date();
+                    }
+                }
+            }
+
             const nextPending = claim.approvals.find((a: any) => a.status === 'Pending');
-            if (nextPending) {
+            if (nextPending && currentStage !== 'finance') {
                 if (typeof pending.approvedAmount === 'number') {
                     nextPending.amountAllowed = pending.approvedAmount;
                 }
@@ -1090,6 +1102,7 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
             }
         }
 
+        claim.markModified('approvals');
         (claim as any).audit = (claim as any).audit || {};
         (claim as any).audit.lastUpdatedAt = new Date();
         (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
@@ -1137,24 +1150,24 @@ router.patch('/:id/decision', authenticate, async (req: Request, res: Response, 
                         req.headers.origin as string
                     );
                 }
+
+                // Notify HR/Finance when entering their queues (non-blocking)
+                const hrEmailsList = await getHrEmails();
+                const financeEmailsList = await getFinanceEmails();
+                if (claim.status === 'Pending HR' && hrEmailsList.length) {
+                    const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
+                    const employeeName = formatEmployeeFullName(employee, claim.employeeId);
+                    for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
+                }
+                if (claim.status === 'Pending Finance' && financeEmailsList.length) {
+                    const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
+                    const employeeName = formatEmployeeFullName(employee, claim.employeeId);
+                    for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
+                }
             } catch (emailErr) {
-                console.error('[Expense Email] Failed to send status email to employee:', emailErr);
+                console.error('[Expense Email] Failed to send status email:', emailErr);
             }
         })();
-
-        // Notify HR/Finance when entering their queues
-        const hrEmailsList = await getHrEmails();
-        const financeEmailsList = await getFinanceEmails();
-        if (claim.status === 'Pending HR' && hrEmailsList.length) {
-            const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-            const employeeName = formatEmployeeFullName(employee, claim.employeeId);
-            for (const to of hrEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending HR review`);
-        }
-        if (claim.status === 'Pending Finance' && financeEmailsList.length) {
-            const employee = await Employee.findOne({ employeeId: claim.employeeId }).lean() as any;
-            const employeeName = formatEmployeeFullName(employee, claim.employeeId);
-            for (const to of financeEmailsList) void sendHRNotificationEmail(to, employeeName, `expense claim ${claim.claimNo} is pending finance review`);
-        }
 
         await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
@@ -1437,6 +1450,17 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                 } else {
                     hrStage.status = 'Pending' as any;
                 }
+            } else if (status === 'Pending Line Manager' || status === 'Submitted') {
+                let lmStage = claim.approvals.find((a: any) => a.stage === 'lineManager');
+                if (!lmStage) {
+                    (claim.approvals as any).unshift({
+                        stage: 'lineManager',
+                        status: 'Pending' as any,
+                        amountAllowed: typeof approvedTotal === 'number' ? approvedTotal : claim.amountAllowed,
+                    } as any);
+                } else {
+                    lmStage.status = 'Pending' as any;
+                }
             } else if (status === 'Approved') {
                 for (const a of claim.approvals) {
                     if (a.status !== 'Approved') {
@@ -1478,6 +1502,9 @@ router.patch('/:id/admin-correct', authenticate, async (req: Request, res: Respo
                     isActionRequest: false
                 } as any);
             }
+
+            claim.markModified('approvals');
+            claim.markModified('comments');
         }
         if (typeof notes === 'string' && notes.trim()) claim.notes = notes;
 
@@ -1546,16 +1573,20 @@ router.patch('/:id/erp-reference', authenticate, authorize(['admin', 'super-admi
             return res.status(400).json({ message: 'erpReferenceId is required' });
         }
 
-        const claim = await ExpenseClaim.findById(req.params.id);
+        const claim = await ExpenseClaim.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: {
+                    erpReferenceId: erpReferenceId.trim(),
+                    'audit.lastUpdatedAt': new Date(),
+                    'audit.lastUpdatedByUserId': new mongoose.Types.ObjectId(String(userId))
+                }
+            },
+            { new: true }
+        ).select('-receipts.fileData').populate('employeeDetails', 'firstName middleName lastName employeeId');
+
         if (!claim) return res.status(404).json({ message: 'Claim not found' });
 
-        claim.erpReferenceId = erpReferenceId.trim();
-        (claim as any).audit = (claim as any).audit || {};
-        (claim as any).audit.lastUpdatedAt = new Date();
-        (claim as any).audit.lastUpdatedByUserId = new mongoose.Types.ObjectId(String(userId));
-        await claim.save();
-
-        await claim.populate('employeeDetails', 'firstName middleName lastName employeeId');
         res.json({ success: true, data: sanitizeClaimForJson(claim) });
     } catch (err) {
         next(err);
@@ -2119,13 +2150,30 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
             } as any);
         }
 
-        // Reset approval workflow based on category routing (Finance vs HR)
+        // Reset approval workflow based on category routing (Finance vs HR vs Manager)
         const workflow = await buildWorkflow(claim.category);
+        const emp = await Employee.findOne({ userId }).select('firstName lastName employeeId jobInfo').lean() as any;
+        let reportingManagerId = emp?.jobInfo?.reportingManager ? String(emp.jobInfo.reportingManager) : '';
+        if (reportingManagerId) {
+            const mgrDoc = await Employee.findOne({
+                $or: [
+                    { employeeId: reportingManagerId },
+                    { _id: mongoose.isValidObjectId(reportingManagerId) ? reportingManagerId : undefined },
+                    { userId: reportingManagerId }
+                ]
+            }).select('employeeId').lean() as any;
+            if (mgrDoc?.employeeId) {
+                reportingManagerId = mgrDoc.employeeId;
+            }
+        }
         claim.approvals = workflow.map(stage => ({
             stage,
             status: 'Pending' as any,
             amountAllowed: claim.amountAllowed,
             requiresAuthorization: stage === 'hr' && outOfPolicy,
+            ...(stage === 'lineManager'
+                ? { assignedToEmployeeId: reportingManagerId || undefined }
+                : {}),
         })) as any;
 
         claim.status = stageToStatus(workflow[0]) as any;
@@ -2136,12 +2184,25 @@ router.patch('/:id/amend', authenticate, async (req: Request, res: Response, nex
 
         await claim.save();
 
-        // Notify appropriate team (Finance or HR) of resubmission
+        // Notify appropriate team (Line Manager, Finance, or HR) of resubmission
         (async () => {
             try {
-                const targetEmails = claim.status === 'Pending Finance' ? await getFinanceEmails() : await getHrEmails();
-                const emp = await Employee.findOne({ userId }).select('firstName lastName employeeId').lean() as any;
                 const empName = emp ? formatEmployeeFullName(emp, emp.employeeId) : authorName;
+                let targetEmails: string[] = [];
+                if (claim.status === 'Pending Line Manager' && reportingManagerId) {
+                    const manager = await Employee.findOne({
+                        $or: [
+                            { employeeId: reportingManagerId },
+                            { _id: mongoose.isValidObjectId(reportingManagerId) ? reportingManagerId : undefined },
+                            { userId: reportingManagerId }
+                        ]
+                    }).lean() as any;
+                    const managerEmail = manager?.workEmail || manager?.email;
+                    if (managerEmail) targetEmails = [managerEmail];
+                }
+                if (targetEmails.length === 0) {
+                    targetEmails = claim.status === 'Pending Finance' ? await getFinanceEmails() : await getHrEmails();
+                }
                 for (const to of targetEmails) {
                     await sendExpenseClaimAmendedEmail(
                         to,
@@ -2409,7 +2470,7 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
             return res.status(400).json({ message: 'Invalid payoutStatus' });
         }
 
-        const claim = await ExpenseClaim.findById(req.params.id);
+        const claim = await ExpenseClaim.findById(req.params.id).select('-receipts.fileData');
         if (!claim) {
             return res.status(404).json({ message: 'Claim not found' });
         }
@@ -2422,15 +2483,15 @@ router.patch('/:id/payout-status', authenticate, authorize(['admin', 'super-admi
             claim.paidAt = undefined;
         }
 
-        if (remarks) {
+        if (remarks && String(remarks).trim()) {
             claim.comments = claim.comments || [];
             claim.comments.push({
-                userId: authReq.user?.userId,
-                userName: authReq.user?.email || 'Finance',
-                role: role,
-                comment: `[Payment Status: ${payoutStatus}] ${remarks.trim()}`,
+                authorUserId: new mongoose.Types.ObjectId(String(authReq.user!.userId)),
+                authorName: authReq.user?.email || 'Finance',
+                authorRole: authReq.user!.role,
+                message: `[Payment Status: ${payoutStatus}] ${String(remarks).trim()}`,
                 createdAt: new Date()
-            });
+            } as any);
         }
 
         await claim.save();
