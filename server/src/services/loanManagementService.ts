@@ -285,14 +285,15 @@ export function loanInfoFromEmployeeRecord(emp: any): { balance: number; monthly
 }
 
 export async function buildAllEmployeeLoanSummaries(options: { activeOnly?: boolean } = {}): Promise<EmployeeLoanSummary[]> {
-    const { employees, reqsByEmp, slipsByEmp } = await buildBatchLoanData();
+    const { employees, reqsByEmp, slipsByEmp, manualRepaymentsByEmp } = await buildBatchLoanData();
     const summaries: EmployeeLoanSummary[] = [];
 
     for (const emp of employees) {
         const computed = computeSingleEmployeeLoanSummaryFromPreloadedData(
             emp,
             reqsByEmp[emp.employeeId] || [],
-            slipsByEmp[emp.employeeId] || []
+            slipsByEmp[emp.employeeId] || [],
+            manualRepaymentsByEmp[emp.employeeId] || []
         );
 
         if (computed.status === 'None' && (!computed.loans || computed.loans.length === 0)) continue;
